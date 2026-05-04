@@ -69,11 +69,90 @@ class FileOrganizer @Inject constructor(
 
     /**
      * Calculates the total storage consumed by internally-downloaded files.
-     * Does not include tracks written to an external SAF target (those
-     * aren't app-owned, and the user sees them in their file manager).
+     * Internal music dir only; does not include SAF-targeted files —
+     * see [computeMusicLibrarySize] for storage-mode-aware totals.
      */
     fun getTotalStorageBytes(): Long =
         musicDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    /**
+     * Storage-mode-aware total music size on disk. Walks the right place
+     * based on the user's [StoragePreference]:
+     *  - Internal mode (default): walks `filesDir/music`
+     *  - SAF mode (user picked an external folder): walks the persisted
+     *    tree URI via [DocumentFile.fromTreeUri]
+     *
+     * Returns the sum of every file under that root regardless of DB state.
+     * Used by Home to display Storage truthfully on legacy libraries where
+     * `tracks.file_size_bytes` is unreliable (many older download paths
+     * left it at 0 and the backfill couldn't recover it).
+     *
+     * Returns `LibrarySizeBreakdown(total, lossless, losslessCount)` so the
+     * caller doesn't have to walk the tree three times for three numbers.
+     */
+    suspend fun computeMusicLibrarySize(): LibrarySizeBreakdown {
+        val externalUri = storagePreference.externalTreeUri.first()
+        return if (externalUri != null) {
+            walkSafTree(externalUri)
+        } else {
+            walkInternalDir()
+        }
+    }
+
+    private fun walkInternalDir(): LibrarySizeBreakdown {
+        var total = 0L
+        var lossless = 0L
+        var losslessCount = 0
+        musicDir.walkTopDown().filter { it.isFile }.forEach { file ->
+            val size = file.length()
+            total += size
+            if (file.extension.lowercase() in LOSSLESS_EXTENSIONS) {
+                lossless += size
+                losslessCount++
+            }
+        }
+        return LibrarySizeBreakdown(total, lossless, losslessCount)
+    }
+
+    /**
+     * Walks a SAF tree URI counting/sizing every file recursively. SAF
+     * is slower than `File.walkTopDown` because every node is a
+     * ContentResolver query — we go through DocumentFile to keep the
+     * path-tolerant API. Suspended + IO-dispatched at the call-site
+     * (HomeViewModel) so the cost stays off the main thread.
+     */
+    private fun walkSafTree(treeUri: Uri): LibrarySizeBreakdown {
+        var total = 0L
+        var lossless = 0L
+        var losslessCount = 0
+        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return LibrarySizeBreakdown(0, 0, 0)
+        val stack = ArrayDeque<DocumentFile>().apply { addLast(root) }
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            if (node.isDirectory) {
+                node.listFiles().forEach { stack.addLast(it) }
+            } else if (node.isFile) {
+                val size = node.length()
+                total += size
+                val name = node.name?.lowercase().orEmpty()
+                val ext = name.substringAfterLast('.', "")
+                if (ext in LOSSLESS_EXTENSIONS) {
+                    lossless += size
+                    losslessCount++
+                }
+            }
+        }
+        return LibrarySizeBreakdown(total, lossless, losslessCount)
+    }
+
+    private companion object {
+        // Mirrors `LibraryViewModel.LOSSLESS_CODECS` and
+        // `core/ui/.../FlacBadge.kt`. Kept duplicated rather than reaching
+        // across the data → ui boundary; the set is short and stable.
+        private val LOSSLESS_EXTENSIONS = setOf(
+            "flac", "alac", "wav", "ape", "tta", "wv", "aiff",
+        )
+    }
 
     /**
      * Moves [tempFile] (written by yt-dlp to the cache) into its final
@@ -180,3 +259,14 @@ class FileOrganizer @Inject constructor(
         val sizeBytes: Long,
     )
 }
+
+/**
+ * One-walk breakdown of the music library on disk. Returned from
+ * [FileOrganizer.computeMusicLibrarySize] so consumers get total + lossless
+ * sizes + lossless count without three separate tree walks.
+ */
+data class LibrarySizeBreakdown(
+    val totalBytes: Long,
+    val losslessBytes: Long,
+    val losslessFileCount: Int,
+)

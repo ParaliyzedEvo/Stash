@@ -26,6 +26,8 @@ import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.lastfm.LastFmSession
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.db.dao.ListeningEventDao
+import com.stash.data.download.files.LibrarySizeBreakdown
+import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
@@ -62,6 +64,7 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val tokenManager: TokenManager,
     private val musicRepository: MusicRepository,
+    private val librarySizeHolder: LibrarySizeHolder,
     private val qualityPreference: QualityPreference,
     private val themePreference: ThemePreference,
     private val storagePreference: StoragePreference,
@@ -95,7 +98,7 @@ class SettingsViewModel @Inject constructor(
         tokenManager.spotifyAuthState,
         tokenManager.youTubeAuthState,
         musicRepository.getTrackCount(),
-        musicRepository.getTotalStorageBytes(),
+        librarySizeHolder.size,
         qualityPreference.qualityTier,
         themePreference.themeMode,
         storagePreference.externalTreeUri,
@@ -114,7 +117,7 @@ class SettingsViewModel @Inject constructor(
         val spotifyAuth = values[0] as AuthState
         val youTubeAuth = values[1] as AuthState
         val trackCount = values[2] as Int
-        val storageBytes = values[3] as Long
+        val storageBytes = (values[3] as LibrarySizeBreakdown).totalBytes
         val quality = values[4] as QualityTier
         val theme = values[5] as ThemeMode
         val externalTree = values[6] as Uri?

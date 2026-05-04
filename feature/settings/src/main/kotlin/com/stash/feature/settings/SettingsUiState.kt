@@ -12,7 +12,7 @@ import com.stash.core.model.ThemeMode
  * @property spotifyAuthState Current Spotify authentication lifecycle state.
  * @property youTubeAuthState Current YouTube Music authentication lifecycle state.
  * @property audioQuality Selected download / streaming quality tier.
- * @property totalStorageBytes Total bytes used by downloaded tracks on disk.
+ * @property totalStorageBytes Total bytes occupied by the music library on disk (filesystem walk via [com.stash.data.download.files.LibrarySizeHolder]).
  * @property totalTracks Number of tracks currently stored in the library.
  * @property showYouTubeCookieDialog Whether the YouTube cookie input dialog should be visible.
  * @property showSpotifyCookieDialog Whether the Spotify sp_dc cookie input dialog should be visible.
