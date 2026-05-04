@@ -33,10 +33,19 @@ class QualityPreferencesManager @Inject constructor(
 ) : QualityPreference {
     private val qualityKey = stringPreferencesKey("quality_tier")
 
-    /** Emits the current [QualityTier], defaulting to [QualityTier.BEST]. */
+    /**
+     * Emits the current [QualityTier], defaulting to [QualityTier.MAX] (v0.9.8+).
+     *
+     * Pre-v0.9.8 the default was [QualityTier.BEST]; users who explicitly
+     * picked a tier keep their saved value because DataStore preserves
+     * explicit writes. Users who never opened the Audio Quality card
+     * pick up the new MAX default on next launch — both are 256 kbps
+     * (BEST and MAX differ only in the yt-dlp arg string), so this is a
+     * silent improvement, not a regression.
+     */
     override val qualityTier: Flow<QualityTier> = context.qualityDataStore.data.map { prefs ->
         val name = prefs[qualityKey]
-        name?.let { runCatching { QualityTier.valueOf(it) }.getOrNull() } ?: QualityTier.BEST
+        name?.let { runCatching { QualityTier.valueOf(it) }.getOrNull() } ?: QualityTier.MAX
     }
 
     /** Persists the selected [tier]. */

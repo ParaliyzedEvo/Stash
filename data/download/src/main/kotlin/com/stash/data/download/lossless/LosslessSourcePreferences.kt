@@ -41,20 +41,26 @@ class LosslessSourcePreferences @Inject constructor(
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = androidx.datastore.preferences.core.booleanPreferencesKey("enabled")
     private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
+    private val bannerDismissedKey = androidx.datastore.preferences.core.booleanPreferencesKey("home_banner_dismissed")
 
     /**
      * Master switch for the lossless-source pipeline. When false, the
      * download path skips the registry entirely and goes straight to
      * yt-dlp — same behaviour as before the lossless feature shipped.
      *
-     * Defaults to false: lossless files are 5-10× larger than Opus, so
-     * users opt in explicitly via Settings rather than getting a
-     * surprise storage hit. The toggle lives on this preferences class
-     * (rather than its own DataStore) so all lossless-related settings
-     * stay in one place and the schema can evolve together.
+     * Defaults to true (v0.9.8+): fresh installs land lossless-ready;
+     * existing v0.9.7 users who explicitly toggled it off keep their
+     * saved value (DataStore preserves explicit writes). Users who
+     * never opened the toggle pick up the new default — functionally
+     * identical to v0.9.7 behaviour because the captcha is unverified
+     * (silent yt-dlp/MP3 fallback via SquidWtfCaptchaInterceptor).
+     *
+     * The toggle lives on this preferences class (rather than its own
+     * DataStore) so all lossless-related settings stay in one place
+     * and the schema can evolve together.
      */
     val enabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
-        prefs[enabledKey] ?: false
+        prefs[enabledKey] ?: true
     }
 
     suspend fun enabledNow(): Boolean = enabled.first()
@@ -96,6 +102,22 @@ class LosslessSourcePreferences @Inject constructor(
             if (trimmed == null) prefs.remove(captchaCookieKey)
             else prefs[captchaCookieKey] = trimmed
         }
+    }
+
+    /**
+     * Whether the user has dismissed the "Try lossless audio" Home
+     * banner. Once dismissed, the banner never shows again — same
+     * forever-dismissed semantics as `LastFmSessionPreference.bannerDismissed`.
+     *
+     * Defaults to false. Only read by [com.stash.feature.home.HomeViewModel];
+     * Settings has no UI for un-dismissing.
+     */
+    val bannerDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
+        prefs[bannerDismissedKey] ?: false
+    }
+
+    suspend fun setBannerDismissed(value: Boolean) {
+        context.losslessDataStore.edit { prefs -> prefs[bannerDismissedKey] = value }
     }
 
     /**
