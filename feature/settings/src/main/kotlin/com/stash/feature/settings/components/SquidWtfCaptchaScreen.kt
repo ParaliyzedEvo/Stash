@@ -60,7 +60,13 @@ fun SquidWtfCaptchaScreen(
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var statusText by remember {
-        mutableStateOf("Click Download on any track and solve the captcha. The cookie will save automatically.")
+        mutableStateOf(
+            "To verify:\n" +
+                "1. Search for any song\n" +
+                "2. Tap Download on a track\n" +
+                "3. Solve the captcha popup\n" +
+                "Cookie saves automatically once verified."
+        )
     }
     var captured by remember { mutableStateOf(false) }
 

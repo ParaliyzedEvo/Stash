@@ -446,16 +446,16 @@ private fun SettingsContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Lossless downloads (experimental)",
+                            text = "Lossless downloads",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (uiState.losslessEnabled) {
-                                "Try Qobuz proxy first; FLAC ~10× larger"
+                                "On — studio-quality FLAC via Qobuz. ~10× larger files."
                             } else {
-                                "Off — uses YouTube/yt-dlp like before"
+                                "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -488,7 +488,7 @@ private fun SettingsContent(
                                     contentColor = MaterialTheme.colorScheme.primary,
                                 ),
                             ) {
-                                Text("Verify in browser")
+                                Text("Connect to squid.wtf")
                             }
                             if (uiState.squidWtfCaptchaCookie.isNotEmpty()) {
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -504,6 +504,12 @@ private fun SettingsContent(
                                 )
                             }
                         }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Search any song → tap Download → solve the captcha. Stash captures the cookie automatically.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
                         // -- Advanced expander row (chevron + label) -----------
                         Spacer(modifier = Modifier.height(8.dp))

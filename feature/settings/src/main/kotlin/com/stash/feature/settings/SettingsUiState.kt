@@ -24,7 +24,7 @@ import com.stash.core.model.ThemeMode
 data class SettingsUiState(
     val spotifyAuthState: AuthState = AuthState.NotConnected,
     val youTubeAuthState: AuthState = AuthState.NotConnected,
-    val audioQuality: QualityTier = QualityTier.BEST,
+    val audioQuality: QualityTier = QualityTier.MAX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /**
      * Network + power conditions under which Stash runs background
@@ -43,7 +43,7 @@ data class SettingsUiState(
      * 5-10× larger than Opus, so the UI should warn at least once
      * before enabling.
      */
-    val losslessEnabled: Boolean = false,
+    val losslessEnabled: Boolean = true,
     /**
      * Manually-pasted `captcha_verified_at` cookie value from
      * `qobuz.squid.wtf`. Bridges the captcha gate until WebView-based
