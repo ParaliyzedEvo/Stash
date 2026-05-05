@@ -33,6 +33,8 @@ fun TrackEntity.toDomain(): Track = Track(
     matchDismissed = matchDismissed,
     isrc = isrc,
     explicit = explicit,
+    bitsPerSample = bitsPerSample,
+    sampleRateHz = sampleRateHz,
 )
 
 /**
@@ -63,4 +65,6 @@ fun Track.toEntity(): TrackEntity = TrackEntity(
     matchDismissed = matchDismissed,
     isrc = isrc,
     explicit = explicit,
+    bitsPerSample = bitsPerSample,
+    sampleRateHz = sampleRateHz,
 )

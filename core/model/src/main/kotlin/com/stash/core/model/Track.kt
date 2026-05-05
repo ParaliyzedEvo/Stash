@@ -34,4 +34,13 @@ data class Track(
      * prefers candidates whose explicitness matches the source.
      */
     val explicit: Boolean? = null,
+    /**
+     * Bit-depth of the on-disk audio (16, 24, 32). NULL when unknown
+     * (lossy codecs, legacy rows pre-backfill, unparseable files).
+     */
+    val bitsPerSample: Int? = null,
+    /**
+     * Audio sample rate in Hz (44100, 48000, 96000, 192000). NULL when unknown.
+     */
+    val sampleRateHz: Int? = null,
 )
