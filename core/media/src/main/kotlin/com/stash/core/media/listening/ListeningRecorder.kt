@@ -63,6 +63,9 @@ class ListeningRecorder @Inject constructor(
                                         trackId = track.id,
                                         startedAt = sessionStart,
                                         scrobbled = false,
+                                        // v0.9.13: insert IS the completion event — recorder only fires
+                                        // after threshold delay. AutoSaveScrobbler reads completed_at.
+                                        completedAt = sessionStart,
                                     ),
                                 )
                             }.onFailure { Log.w(TAG, "Failed to insert listening event", it) }

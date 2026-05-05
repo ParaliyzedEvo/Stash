@@ -69,6 +69,42 @@ interface ListeningEventDao {
     )
     suspend fun markYtScrobbled(eventId: Long)
 
+    /**
+     * v0.9.13: Mark a listening event as having crossed the completion
+     * threshold. Called by [ListeningRecorder] at insert time.
+     */
+    @Query("UPDATE listening_events SET completed_at = :ts WHERE id = :eventId")
+    suspend fun markCompleted(eventId: Long, ts: Long)
+
+    /**
+     * v0.9.13: Count how many DISTINCT calendar days (UTC) within the
+     * window have a completed listen for this track. Used by the
+     * AutoSaveScrobbler threshold check. SQLite-native — no app-side
+     * aggregation. Typical execution time: 1-2ms.
+     *
+     * `date(.., 'unixepoch')` converts epoch-millis to YYYY-MM-DD.
+     * COUNT(DISTINCT date) gives unique-day count.
+     */
+    @Query(
+        """
+        SELECT COUNT(DISTINCT date(completed_at / 1000, 'unixepoch'))
+        FROM listening_events
+        WHERE track_id = :trackId
+          AND completed_at IS NOT NULL
+          AND completed_at > :sinceMs
+        """
+    )
+    suspend fun distinctDaysCompletedFor(trackId: Long, sinceMs: Long): Int
+
+    /**
+     * v0.9.13: Reactive most-recent completion. Used by the
+     * AutoSaveScrobbler to wake up when new completions land — same
+     * trigger pattern as LastFmScrobbler's `pendingScrobbleCount()`
+     * Flow. Returns null if no completion ever recorded.
+     */
+    @Query("SELECT MAX(completed_at) FROM listening_events WHERE completed_at IS NOT NULL")
+    fun observeMostRecentCompletion(): Flow<Long?>
+
     /** Count of unscrobbled-to-YT events. Drives the Settings health badge. */
     @Query("SELECT COUNT(*) FROM listening_events WHERE yt_scrobbled = 0")
     fun pendingYtScrobbleCount(): Flow<Int>
