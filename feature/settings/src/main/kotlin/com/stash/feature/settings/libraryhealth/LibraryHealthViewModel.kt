@@ -1,12 +1,17 @@
 package com.stash.feature.settings.libraryhealth
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.LibraryHealthBucket
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +35,7 @@ import kotlinx.coroutines.withContext
  */
 @HiltViewModel
 class LibraryHealthViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
     private val metadataExtractor: AudioDurationExtractor,
 ) : ViewModel() {
@@ -143,6 +149,18 @@ class LibraryHealthViewModel @Inject constructor(
             }
             refresh()
         }
+    }
+
+    /**
+     * Enqueues [QualityInfoBackfillWorker] without WorkManager constraints
+     * — the user explicitly opted in by tapping the row, so we don't gate
+     * on battery state. The worker self-re-enqueues if the library has
+     * more than 500 lossless rows missing quality info.
+     */
+    fun runQualityInfoBackfill() {
+        WorkManager.getInstance(appContext).enqueue(
+            OneTimeWorkRequestBuilder<QualityInfoBackfillWorker>().build()
+        )
     }
 
     companion object {

@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +94,10 @@ fun LibraryHealthScreen(
             buckets = state.buckets,
             onRunBackfill = viewModel::runBackfill,
         )
+
+        Spacer(Modifier.height(20.dp))
+
+        QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
 
         Spacer(Modifier.height(40.dp))
     }
@@ -294,6 +299,41 @@ private fun BackfillSection(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QualityInfoRefreshSection(onClick: () -> Unit) {
+    val context = LocalContext.current
+    SectionHeader(title = "Quality info")
+    GlassCard {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = "Refresh quality info",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Re-extract bit-depth + sample-rate for FLAC tracks where it's missing. " +
+                    "Runs in the background.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    onClick()
+                    android.widget.Toast.makeText(
+                        context,
+                        "Refreshing quality info — running in background.",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            ) {
+                Text("Refresh")
             }
         }
     }
