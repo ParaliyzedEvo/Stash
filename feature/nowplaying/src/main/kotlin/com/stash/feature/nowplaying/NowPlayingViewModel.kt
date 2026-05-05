@@ -281,10 +281,12 @@ class NowPlayingViewModel @Inject constructor(
             if (defaults.isEmpty()) return@launch
             val results = likeDispatcher.like(track, defaults)
             results.forEach { (dest, result) ->
-                if (result.isFailure) {
-                    val msg = "Couldn't save to ${friendlyName(dest)}"
-                    _userMessages.tryEmit(msg)
+                val cause = result.exceptionOrNull() ?: return@forEach
+                if (cause is com.stash.core.data.social.NoSpotifyUriException ||
+                    cause is com.stash.core.data.social.NoYouTubeIdException) {
+                    return@forEach  // Silently skip: track simply isn't on this platform.
                 }
+                _userMessages.tryEmit("Couldn't save to ${friendlyName(dest)}")
             }
         }
     }
