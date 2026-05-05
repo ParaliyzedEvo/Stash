@@ -74,8 +74,25 @@ class NowPlayingViewModel @Inject constructor(
             playerRepository.currentPosition,
         ) { state, positionMs ->
             _uiState.update { current ->
+                // v0.9.13: smart-merge of player snapshot with locally-mutated
+                // Like timestamps. The player re-emits the same Track object on
+                // every position tick (~10/s); without this preservation step,
+                // applyOptimisticLikeState's writes get stomped within ~100ms
+                // and the heart icon flips back to outline. Forward-only
+                // semantics make non-null preservation always correct: a
+                // timestamp once set never legitimately needs to revert.
+                val incoming = state.currentTrack
+                val mergedTrack = if (incoming != null && current.currentTrack?.id == incoming.id) {
+                    incoming.copy(
+                        stashLikedAt = current.currentTrack?.stashLikedAt ?: incoming.stashLikedAt,
+                        spotifySavedAt = current.currentTrack?.spotifySavedAt ?: incoming.spotifySavedAt,
+                        ytMusicSavedAt = current.currentTrack?.ytMusicSavedAt ?: incoming.ytMusicSavedAt,
+                    )
+                } else {
+                    incoming
+                }
                 current.copy(
-                    currentTrack = state.currentTrack,
+                    currentTrack = mergedTrack,
                     isPlaying = state.isPlaying,
                     currentPositionMs = positionMs,
                     durationMs = state.durationMs,
