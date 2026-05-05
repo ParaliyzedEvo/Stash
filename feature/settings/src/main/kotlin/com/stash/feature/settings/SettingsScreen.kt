@@ -311,6 +311,24 @@ private fun SettingsContent(
             authState = uiState.spotifyAuthState,
             onConnect = onConnectSpotify,
             onDisconnect = onDisconnectSpotify,
+            // v0.9.13: auto-save toggle lives INSIDE the Spotify card, mirroring
+            // the YT Music history pattern below. Hidden when disconnected so
+            // the card stays compact for users who haven't connected yet.
+            extraContent = if (uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected) {
+                {
+                    com.stash.feature.settings.components.SpotifyAutoSaveSection(
+                        enabled = uiState.autoSaveEnabled,
+                        threshold = uiState.autoSaveThreshold,
+                        autoSavedCountLast7Days = uiState.autoSavedCountLast7Days,
+                        spotifyConnected = true,
+                        onToggle = onAutoSaveEnabledChanged,
+                        onThresholdChanged = onAutoSaveThresholdChanged,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            } else {
+                null
+            },
         )
 
         AccountConnectionCard(
@@ -645,99 +663,48 @@ private fun SettingsContent(
         }
 
         // -- Library & Likes section -----------------------------------------
-        // v0.9.13: opt-in auto-save to Spotify Liked Songs after N
-        // distinct play-days, plus per-destination defaults that drive
-        // the heart button's single-tap behaviour. The auto-save block is
-        // gated on Spotify being connected; the heart-defaults block
-        // hides the per-service rows the user hasn't connected.
-        SectionHeader(title = "Library & Likes")
-
+        // v0.9.13: per-destination defaults that drive the heart button's
+        // single-tap behaviour. The auto-save toggle now lives INSIDE the
+        // Spotify card above (mirroring YT Music's "Send plays" pattern), so
+        // this section just owns the compact chip row of heart defaults.
         val spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected
         val ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected
+        SectionHeader(title = "Library & Likes")
 
-        // Auto-save block
         GlassCard {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Auto-save liked tracks",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (spotifyConnected) {
-                                "Save to Spotify Liked Songs after you've played a track on N distinct days. Helps your Daily Mix and Discover Weekly stay fresh."
-                            } else {
-                                "Connect Spotify to enable auto-save."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = uiState.autoSaveEnabled,
-                        onCheckedChange = onAutoSaveEnabledChanged,
-                        enabled = spotifyConnected,
-                    )
-                }
-                if (uiState.autoSaveEnabled) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Threshold: ${uiState.autoSaveThreshold} day${if (uiState.autoSaveThreshold == 1) "" else "s"} in 30",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = uiState.autoSaveThreshold.toFloat(),
-                        onValueChange = { onAutoSaveThresholdChanged(it.toInt().coerceIn(1, 10)) },
-                        valueRange = 1f..10f,
-                        steps = 8, // 1..10 inclusive — 8 steps BETWEEN endpoints
-                    )
-                    Text(
-                        text = "Last 7 days: ${uiState.autoSavedCountLast7Days} tracks auto-saved",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Heart-button defaults block
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text(
-                    text = "When you tap \u2665 on a track\u2026",
+                    text = "When you tap \u2665, save to:",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                CheckboxRow(
-                    label = "Save to Stash Liked Songs",
-                    checked = uiState.heartDefaultStash,
-                    onCheckedChange = onHeartDefaultStashChanged,
-                )
-                if (spotifyConnected) {
-                    CheckboxRow(
-                        label = "Save to Spotify Liked Songs",
-                        checked = uiState.heartDefaultSpotify,
-                        onCheckedChange = onHeartDefaultSpotifyChanged,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.FilterChip(
+                        selected = uiState.heartDefaultStash,
+                        onClick = { onHeartDefaultStashChanged(!uiState.heartDefaultStash) },
+                        label = { Text("Stash") },
                     )
+                    if (spotifyConnected) {
+                        androidx.compose.material3.FilterChip(
+                            selected = uiState.heartDefaultSpotify,
+                            onClick = { onHeartDefaultSpotifyChanged(!uiState.heartDefaultSpotify) },
+                            label = { Text("Spotify") },
+                        )
+                    }
+                    if (ytConnected) {
+                        androidx.compose.material3.FilterChip(
+                            selected = uiState.heartDefaultYtMusic,
+                            onClick = { onHeartDefaultYtMusicChanged(!uiState.heartDefaultYtMusic) },
+                            label = { Text("YT Music") },
+                        )
+                    }
                 }
-                if (ytConnected) {
-                    CheckboxRow(
-                        label = "Save to YouTube Music Liked Music",
-                        checked = uiState.heartDefaultYtMusic,
-                        onCheckedChange = onHeartDefaultYtMusicChanged,
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Long-press the heart for per-track choices.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1446,35 +1413,6 @@ private fun StorageRow(label: String, value: String) {
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-/**
- * v0.9.13: tap-anywhere row containing a Material3 [Checkbox] and a
- * label. Used by the Library & Likes "When you tap ♥" block to render
- * per-destination defaults compactly. Tapping anywhere on the row
- * toggles the checkbox.
- */
-@Composable
-private fun CheckboxRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
