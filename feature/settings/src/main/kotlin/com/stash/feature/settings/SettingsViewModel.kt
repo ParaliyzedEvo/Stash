@@ -31,6 +31,7 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.core.data.repository.MusicRepository
@@ -112,6 +113,7 @@ class SettingsViewModel @Inject constructor(
         listeningEventDao.pendingYtScrobbleCount(),
         losslessPrefs.enabled,
         losslessPrefs.captchaCookieValue,
+        losslessPrefs.qualityTier,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -131,6 +133,7 @@ class SettingsViewModel @Inject constructor(
         val ytPendingCount = values[14] as Int
         val losslessEnabled = values[15] as Boolean
         val squidWtfCaptchaCookie = (values[16] as String?).orEmpty()
+        val losslessQualityTier = values[17] as LosslessQualityTier
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -168,6 +171,7 @@ class SettingsViewModel @Inject constructor(
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
             squidWtfCaptchaCookie = squidWtfCaptchaCookie,
+            losslessQualityTier = losslessQualityTier,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -595,6 +599,17 @@ class SettingsViewModel @Inject constructor(
     fun onLosslessEnabledChanged(enabled: Boolean) {
         viewModelScope.launch {
             losslessPrefs.setEnabled(enabled)
+        }
+    }
+
+    /**
+     * Persist the user's lossless quality tier. Forward-only: existing
+     * downloaded tracks are unchanged. New downloads go out at the
+     * selected tier on the next sync.
+     */
+    fun onLosslessQualityTierChanged(tier: LosslessQualityTier) {
+        viewModelScope.launch {
+            losslessPrefs.setQualityTier(tier)
         }
     }
 

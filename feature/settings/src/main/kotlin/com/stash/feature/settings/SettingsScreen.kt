@@ -65,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.material3.AlertDialog
@@ -171,6 +172,7 @@ fun SettingsScreen(
         onYouTubeHistoryEnabledChanged = viewModel::onYouTubeHistoryEnabledChanged,
         onRetryYouTubeHistory = viewModel::onRetryYouTubeHistory,
         onLosslessEnabledChanged = viewModel::onLosslessEnabledChanged,
+        onLosslessQualityTierChanged = viewModel::onLosslessQualityTierChanged,
         onSquidWtfCaptchaCookieChanged = viewModel::onSquidWtfCaptchaCookieChanged,
         onResetLosslessRateLimiter = viewModel::onResetLosslessRateLimiter,
         onNavigateToEqualizer = onNavigateToEqualizer,
@@ -208,6 +210,7 @@ private fun SettingsContent(
     onYouTubeHistoryEnabledChanged: (Boolean) -> Unit,
     onRetryYouTubeHistory: () -> Unit,
     onLosslessEnabledChanged: (Boolean) -> Unit,
+    onLosslessQualityTierChanged: (LosslessQualityTier) -> Unit,
     onSquidWtfCaptchaCookieChanged: (String) -> Unit,
     onResetLosslessRateLimiter: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
@@ -510,6 +513,56 @@ private fun SettingsContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+
+                        // -- Lossless quality picker --------------------------
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Lossless quality",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Column(modifier = Modifier.selectableGroup()) {
+                            // Order top-down: MAX → HI_RES → CD (best-quality first).
+                            listOf(
+                                LosslessQualityTier.MAX,
+                                LosslessQualityTier.HI_RES,
+                                LosslessQualityTier.CD,
+                            ).forEach { tier ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .selectable(
+                                            selected = uiState.losslessQualityTier == tier,
+                                            onClick = { onLosslessQualityTierChanged(tier) },
+                                            role = Role.RadioButton,
+                                        )
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = uiState.losslessQualityTier == tier,
+                                        onClick = null, // handled by Row's selectable
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.primary,
+                                            unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        ),
+                                    )
+                                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                                        Text(
+                                            text = tier.displayLabel,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = tier.sizeHint,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         // -- Advanced expander row (chevron + label) -----------
                         Spacer(modifier = Modifier.height(8.dp))

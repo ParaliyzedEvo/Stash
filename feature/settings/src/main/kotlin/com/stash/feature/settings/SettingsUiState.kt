@@ -5,6 +5,7 @@ import com.stash.core.data.youtube.YouTubeScrobblerHealth
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
+import com.stash.data.download.lossless.LosslessQualityTier
 
 /**
  * Immutable UI state for the Settings screen.
@@ -48,6 +49,13 @@ data class SettingsUiState(
      * because captcha-unverified silently falls back to yt-dlp/MP3).
      */
     val losslessEnabled: Boolean = true,
+    /**
+     * Selected lossless quality tier (CD / Hi-Res / Max). Defaults to HI_RES
+     * which matches [LosslessSourcePreferences]'s stored default. The actual
+     * first-emission from the DataStore flow replaces this within a few ms on
+     * cold start; the default only guards the brief pre-emission window.
+     */
+    val losslessQualityTier: LosslessQualityTier = LosslessQualityTier.HI_RES,
     /**
      * Manually-pasted `captcha_verified_at` cookie value from
      * `qobuz.squid.wtf`. Bridges the captcha gate until WebView-based
