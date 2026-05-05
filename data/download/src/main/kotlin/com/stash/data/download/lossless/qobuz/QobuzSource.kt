@@ -104,7 +104,9 @@ class QobuzSource @Inject constructor(
         // when the track is non-streamable in the deployment's region;
         // callLimited swallows the exception and returns null so we
         // fall through to the next source cleanly.
-        val requestedQuality = QobuzQuality.FLAC_HIRES_192
+        val tier = losslessPrefs.qualityTierNow()
+        val requestedQuality = tier.qobuzCode
+        Log.d(TAG, "squid_qobuz: requested quality=$requestedQuality (tier=${tier.name})")
         val download = callLimited {
             apiClient.getFileUrl(best.first.id, requestedQuality)
         } ?: return null
