@@ -64,7 +64,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         StashMixRecipeEntity::class,
         DiscoveryQueueEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -383,6 +383,22 @@ abstract class StashDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN bits_per_sample INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE tracks ADD COLUMN sample_rate_hz INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * v17 → v18: add Like-state timestamps to tracks (spotify /
+         * ytmusic / stash) and `completed_at` to listening_events.
+         * All nullable INTEGER, default NULL — same shape as v0.9.11's
+         * MIGRATION_16_17 quality-info columns. v0.9.13 ships the
+         * heart button + auto-save scrobbler that populate these.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN spotify_saved_at INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN ytmusic_saved_at INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN stash_liked_at INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE listening_events ADD COLUMN completed_at INTEGER DEFAULT NULL")
             }
         }
     }

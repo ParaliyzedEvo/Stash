@@ -67,4 +67,15 @@ data class ListeningEventEntity(
      */
     @ColumnInfo(name = "yt_scrobbled", defaultValue = "0")
     val ytScrobbled: Boolean = false,
+
+    /**
+     * v0.9.13: timestamp (epoch-millis) when the play crossed the
+     * completion threshold (`min(durationMs/2, 240_000)` clamped to
+     * `[30_000, 240_000]` per `ListeningRecorder`). NULL = not yet
+     * marked complete; non-NULL = a "real" listen for analytics
+     * purposes (auto-save threshold counting, future Top Tracks
+     * surfaces).
+     */
+    @ColumnInfo(name = "completed_at")
+    val completedAt: Long? = null,
 )

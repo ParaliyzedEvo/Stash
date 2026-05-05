@@ -173,4 +173,27 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "sample_rate_hz")
     val sampleRateHz: Int? = null,
+
+    /**
+     * v0.9.13: timestamp (epoch-millis) when this track was saved to
+     * the user's Spotify Liked Songs by either auto-save or manual
+     * heart. NULL = not saved. Forward-only; never cleared.
+     */
+    @ColumnInfo(name = "spotify_saved_at")
+    val spotifySavedAt: Long? = null,
+
+    /**
+     * v0.9.13: timestamp (epoch-millis) when this track was liked on
+     * YouTube Music via the heart button. NULL = not liked. Forward-only.
+     */
+    @ColumnInfo(name = "ytmusic_saved_at")
+    val ytMusicSavedAt: Long? = null,
+
+    /**
+     * v0.9.13: timestamp (epoch-millis) when this track was added to
+     * the local Stash "Liked Songs" playlist via the heart button.
+     * NULL = not yet. Forward-only.
+     */
+    @ColumnInfo(name = "stash_liked_at")
+    val stashLikedAt: Long? = null,
 )
