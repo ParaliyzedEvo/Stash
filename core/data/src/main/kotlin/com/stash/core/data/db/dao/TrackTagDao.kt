@@ -75,7 +75,6 @@ interface TrackTagDao {
         """
         SELECT t.id FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.is_blacklisted = 0
           AND t.id NOT IN (SELECT DISTINCT track_id FROM track_tags)
         ORDER BY t.date_added DESC
         LIMIT :limit
@@ -88,7 +87,6 @@ interface TrackTagDao {
         """
         SELECT COUNT(*) FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.is_blacklisted = 0
           AND t.id NOT IN (SELECT DISTINCT track_id FROM track_tags)
         """
     )

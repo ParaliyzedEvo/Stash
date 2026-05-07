@@ -143,16 +143,17 @@ class SyncViewModel @Inject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
     private val musicRepository: com.stash.core.data.repository.MusicRepository,
+    private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
 ) : ViewModel() {
 
     /**
      * Reactive count of blocked songs, displayed as a badge on the
      * "Blocked Songs" row in the Sync screen's Library section.
-     * Moved here from SettingsViewModel in Phase 8 so Library actions
-     * are grouped with Sync-adjacent maintenance tasks.
+     * v0.9.15: sources from BlocklistGuard (track_blocklist) instead
+     * of the dropped tracks.is_blacklisted flag.
      */
     val blockedCount: StateFlow<Int> =
-        musicRepository.getBlacklistedCount()
+        blocklistGuard.observeCount()
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),

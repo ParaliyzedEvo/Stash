@@ -135,7 +135,6 @@ interface PlaylistDao {
                   WHERE pt.playlist_id = p.id
                     AND pt.removed_at IS NULL
                     AND t.is_downloaded = 1
-                    AND t.is_blacklisted = 0
               )
           )
         ORDER BY p.name ASC

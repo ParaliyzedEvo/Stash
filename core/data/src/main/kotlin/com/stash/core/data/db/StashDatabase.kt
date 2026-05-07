@@ -67,7 +67,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         DiscoveryQueueEntity::class,
         TrackBlocklistEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -465,6 +465,109 @@ abstract class StashDatabase : RoomDatabase() {
                     WHERE is_blacklisted = 1
                     """.trimIndent()
                 )
+            }
+        }
+
+        /**
+         * v19 -> v20: drop the now-unused `is_blacklisted` column from
+         * tracks. The source of truth moved to `track_blocklist` in v19;
+         * after Phase 2 wired the chokepoints and Phase 3 made
+         * `BlocklistGuard.block` hard-delete the tracks row, no Kotlin
+         * code reads or writes the flag anymore.
+         *
+         * SQLite's column drop only landed in 3.35 (Android 12+ / API 31)
+         * and Room's schema validator wants exact DDL, so we use the
+         * recreate-table dance. The CREATE TABLE statement below is the
+         * verbatim createSql from core/data/schemas/.../20.json — DO NOT
+         * hand-edit. Likewise the index list below mirrors 20.json's
+         * indices array exactly.
+         */
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Defensively disable FK enforcement during the dance
+                // (no FK targets `tracks.id` directly today, but the
+                // pragma is cheap insurance against a future FK addition
+                // running during the recreate).
+                db.execSQL("PRAGMA foreign_keys=OFF")
+
+                db.execSQL("ALTER TABLE tracks RENAME TO tracks_v19")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tracks` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`artist` TEXT NOT NULL, " +
+                        "`album` TEXT NOT NULL, " +
+                        "`duration_ms` INTEGER NOT NULL, " +
+                        "`file_path` TEXT, " +
+                        "`file_format` TEXT NOT NULL, " +
+                        "`quality_kbps` INTEGER NOT NULL, " +
+                        "`file_size_bytes` INTEGER NOT NULL, " +
+                        "`source` TEXT NOT NULL, " +
+                        "`spotify_uri` TEXT, " +
+                        "`youtube_id` TEXT, " +
+                        "`album_art_url` TEXT, " +
+                        "`album_art_path` TEXT, " +
+                        "`date_added` INTEGER NOT NULL, " +
+                        "`last_played` INTEGER, " +
+                        "`play_count` INTEGER NOT NULL, " +
+                        "`is_downloaded` INTEGER NOT NULL, " +
+                        "`canonical_title` TEXT NOT NULL, " +
+                        "`canonical_artist` TEXT NOT NULL, " +
+                        "`match_confidence` REAL NOT NULL, " +
+                        "`match_dismissed` INTEGER NOT NULL, " +
+                        "`match_flagged` INTEGER NOT NULL DEFAULT 0, " +
+                        "`isrc` TEXT, " +
+                        "`explicit` INTEGER, " +
+                        "`music_video_type` TEXT, " +
+                        "`yt_canonical_video_id` TEXT, " +
+                        "`bits_per_sample` INTEGER, " +
+                        "`sample_rate_hz` INTEGER, " +
+                        "`spotify_saved_at` INTEGER, " +
+                        "`ytmusic_saved_at` INTEGER, " +
+                        "`stash_liked_at` INTEGER" +
+                        ")"
+                )
+
+                // Copy every column EXCEPT is_blacklisted. Enumerated
+                // explicitly to avoid SELECT * pulling the dropped column.
+                db.execSQL(
+                    """
+                    INSERT INTO tracks (
+                        id, title, artist, album, duration_ms, file_path, file_format,
+                        quality_kbps, file_size_bytes, source, spotify_uri, youtube_id,
+                        album_art_url, album_art_path, date_added, last_played, play_count,
+                        is_downloaded, canonical_title, canonical_artist, match_confidence,
+                        match_dismissed, match_flagged, isrc, explicit, music_video_type,
+                        yt_canonical_video_id, bits_per_sample, sample_rate_hz,
+                        spotify_saved_at, ytmusic_saved_at, stash_liked_at
+                    )
+                    SELECT
+                        id, title, artist, album, duration_ms, file_path, file_format,
+                        quality_kbps, file_size_bytes, source, spotify_uri, youtube_id,
+                        album_art_url, album_art_path, date_added, last_played, play_count,
+                        is_downloaded, canonical_title, canonical_artist, match_confidence,
+                        match_dismissed, match_flagged, isrc, explicit, music_video_type,
+                        yt_canonical_video_id, bits_per_sample, sample_rate_hz,
+                        spotify_saved_at, ytmusic_saved_at, stash_liked_at
+                    FROM tracks_v19
+                    """.trimIndent()
+                )
+
+                db.execSQL("DROP TABLE tracks_v19")
+
+                // Re-create every index from 20.json#indices. Names must
+                // match exactly or runMigrationsAndValidate will fail.
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tracks_spotify_uri` ON `tracks` (`spotify_uri`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tracks_youtube_id` ON `tracks` (`youtube_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_artist` ON `tracks` (`artist`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_album` ON `tracks` (`album`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_date_added` ON `tracks` (`date_added`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_last_played` ON `tracks` (`last_played`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_play_count` ON `tracks` (`play_count`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_title_artist` ON `tracks` (`title`, `artist`)")
+
+                db.execSQL("PRAGMA foreign_keys=ON")
             }
         }
     }

@@ -104,6 +104,9 @@ class BlocklistGuard @Inject constructor(
     /** UI feed for the Blocked Songs viewer. */
     fun observeBlocklist(): Flow<List<TrackBlocklistEntity>> = blocklistDao.observeAll()
 
+    /** Reactive count for the Sync-tab "Blocked Songs" badge. */
+    fun observeCount(): Flow<Int> = blocklistDao.observeCount()
+
     private companion object {
         const val TAG = "BlocklistGuard"
     }

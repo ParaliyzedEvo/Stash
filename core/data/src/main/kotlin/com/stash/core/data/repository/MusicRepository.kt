@@ -302,14 +302,8 @@ interface MusicRepository {
      */
     suspend fun blacklistTrack(trackId: Long)
 
-    /** Clear the blacklist flag on a previously-blocked track. */
+    /** Clear the blacklist on a previously-blocked track (looks up by id, derives canonical key). */
     suspend fun unblacklistTrack(trackId: Long)
-
-    /** All currently-blacklisted tracks for the Settings viewer. */
-    fun getBlacklistedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>>
-
-    /** Count of blacklisted tracks for the Settings row badge. */
-    fun getBlacklistedCount(): Flow<Int>
 
     // ── Sync history ────────────────────────────────────────────────────
 

@@ -160,12 +160,16 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT artist
-        FROM tracks
-        WHERE is_downloaded = 1
-          AND is_blacklisted = 0
-          AND artist != ''
-        GROUP BY LOWER(artist)
+        SELECT t.artist
+        FROM tracks t
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE t.is_downloaded = 1
+          AND t.artist != ''
+          AND bl.canonical_key IS NULL
+        GROUP BY LOWER(t.artist)
         ORDER BY COUNT(*) DESC
         LIMIT :limit
         """
@@ -1060,61 +1064,18 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE match_flagged = 1")
     fun getFlaggedCount(): Flow<Int>
 
-    // ── Blacklist (never-download list) ─────────────────────────────────
+    // ── Library candidate pool ──────────────────────────────────────────
 
     /**
-     * Toggle the "never download again" flag for a specific track. When set,
-     * DiffWorker skips this track's identity on every future sync — the
-     * download queue, playlist_tracks link, and file download are all
-     * bypassed until [updateBlacklisted] is called with `false` again.
+     * v0.9.15: All downloaded tracks — the candidate pool for Stash Mix
+     * recipes. The blocklist is now its own identity-keyed table
+     * (`track_blocklist`); blocked tracks have their tracks-row hard
+     * deleted by [com.stash.core.data.blocklist.BlocklistGuard.block], so
+     * this query needs no AND clause to exclude them. (Renamed from
+     * `getAllDownloadedNonBlacklisted` after the column drop in v20.)
      */
-    @Query("UPDATE tracks SET is_blacklisted = :blacklisted WHERE id = :trackId")
-    suspend fun updateBlacklisted(trackId: Long, blacklisted: Boolean)
-
-    /**
-     * Blacklist-and-clear: atomically flags the track as blocked and wipes
-     * on-disk state so a later unblacklist can cleanly re-download. Paired
-     * with file deletion in [MusicRepositoryImpl.blacklistTrack] so the
-     * DB + filesystem stay in sync.
-     */
-    @Query(
-        """
-        UPDATE tracks SET
-            is_blacklisted = 1,
-            is_downloaded = 0,
-            file_path = NULL,
-            album_art_path = NULL
-        WHERE id = :trackId
-        """
-    )
-    suspend fun markBlacklistedAndClear(trackId: Long)
-
-    /** All blacklisted tracks — drives the Settings → Blocked Songs viewer. */
-    @Query(
-        """
-        SELECT * FROM tracks
-        WHERE is_blacklisted = 1
-        ORDER BY artist ASC, title ASC
-        """
-    )
-    fun getBlacklistedTracks(): Flow<List<TrackEntity>>
-
-    /** Count of blacklisted tracks for the Settings row badge. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_blacklisted = 1")
-    fun getBlacklistedCount(): Flow<Int>
-
-    /**
-     * All downloaded, non-blacklisted tracks — the candidate pool for
-     * Stash Mix recipes. No ordering specified; callers re-sort based on
-     * their own scoring.
-     */
-    @Query(
-        """
-        SELECT * FROM tracks
-        WHERE is_downloaded = 1 AND is_blacklisted = 0
-        """
-    )
-    suspend fun getAllDownloadedNonBlacklisted(): List<TrackEntity>
+    @Query("SELECT * FROM tracks WHERE is_downloaded = 1")
+    suspend fun getAllDownloaded(): List<TrackEntity>
 
     // ── Protected-playlist cascade helpers ───────────────────────────────
 

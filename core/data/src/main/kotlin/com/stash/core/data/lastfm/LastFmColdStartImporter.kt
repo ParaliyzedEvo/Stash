@@ -67,7 +67,7 @@ class LastFmColdStartImporter @Inject constructor(
                 // For cold-start we accept case-insensitive matches done
                 // in-memory over a single library scan below.
             }
-            val allTracks = trackDao.getAllDownloadedNonBlacklisted()
+            val allTracks = trackDao.getAllDownloaded()
             val byArtistLower = allTracks.groupBy { it.artist.lowercase() }
             for (artist in topArtists) {
                 val tracks = byArtistLower[artist.name.lowercase()] ?: continue
@@ -83,7 +83,7 @@ class LastFmColdStartImporter @Inject constructor(
             lastFmApiClient.getUserLovedTracks(username = username, limit = 200).getOrNull()
         }.getOrNull().orEmpty()
         if (loved.isNotEmpty()) {
-            val canonicalIndex = trackDao.getAllDownloadedNonBlacklisted()
+            val canonicalIndex = trackDao.getAllDownloaded()
                 .associateBy { "${it.artist.lowercase()}\u0001${it.title.lowercase()}" }
             for (lv in loved) {
                 val key = "${lv.artist.lowercase()}\u0001${lv.title.lowercase()}"

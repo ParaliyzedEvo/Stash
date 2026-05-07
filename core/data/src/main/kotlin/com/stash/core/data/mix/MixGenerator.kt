@@ -78,7 +78,7 @@ class MixGenerator @Inject constructor(
     suspend fun generate(recipe: StashMixRecipeEntity): List<TrackEntity> {
         // Step 1: candidate pool — start from every downloaded,
         // non-blacklisted track in the library.
-        val rawPool = trackDao.getAllDownloadedNonBlacklisted()
+        val rawPool = trackDao.getAllDownloaded()
 
         // Step 2: era filter (cheap, done in-memory).
         var pool = filterByEra(rawPool, recipe)

@@ -183,7 +183,7 @@ class MusicRepositoryImpl @Inject constructor(
         videoIds.mapNotNull { trackDao.findByYoutubeId(it)?.toDomain() }
 
     override suspend fun getAllDownloadedTracks(): List<Track> =
-        trackDao.getAllDownloadedNonBlacklisted().map { it.toDomain() }
+        trackDao.getAllDownloaded().map { it.toDomain() }
 
     override fun getTrackCount(): Flow<Int> =
         trackDao.getTotalCount()
@@ -474,12 +474,6 @@ class MusicRepositoryImpl @Inject constructor(
         )
         blocklistGuard.unblock(key)
     }
-
-    override fun getBlacklistedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>> =
-        trackDao.getBlacklistedTracks()
-
-    override fun getBlacklistedCount(): Flow<Int> =
-        trackDao.getBlacklistedCount()
 
     // ── Sync history ────────────────────────────────────────────────────
 
