@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -60,6 +62,21 @@ class PlayerRepositoryImpl @Inject constructor(
                 evictTrackFromQueue(trackId)
             }
         }
+
+        // v0.9.14: Library-shuffle auto-grow watcher. Subscribes to player
+        // state and refills the queue with more shuffled library tracks
+        // once the user nears the tail. Inactive unless shuffleLibrary()
+        // armed it; setQueue() disarms it so per-playlist queues stay
+        // finite and predictable.
+        scope.launch {
+            playerState.collect { state ->
+                if (!libraryShuffleActive) return@collect
+                val remaining = state.queue.size - state.currentIndex - 1
+                if (remaining in 0 until LIBRARY_SHUFFLE_GROW_THRESHOLD) {
+                    growLibraryShuffle()
+                }
+            }
+        }
     }
 
     private val _playerState = MutableStateFlow(PlayerState())
@@ -80,6 +97,25 @@ class PlayerRepositoryImpl @Inject constructor(
     /** Cached [MediaController] instance; null until [ensureController] succeeds. */
     @Volatile
     private var controllerDeferred: MediaController? = null
+
+    /**
+     * v0.9.14: True while a "Shuffle Library" queue is active. Set by
+     * [shuffleLibrary], cleared by [setQueue]. Drives the auto-grow watcher.
+     */
+    @Volatile
+    private var libraryShuffleActive: Boolean = false
+
+    /**
+     * v0.9.14: Cached snapshot of the user's downloaded library at the moment
+     * [shuffleLibrary] was called. Auto-grow appends from this list (minus
+     * tracks already queued). Survives app process for as long as library-
+     * shuffle stays armed; cleared when leaving via [setQueue].
+     */
+    @Volatile
+    private var librarySnapshot: List<Track> = emptyList()
+
+    /** Serializes auto-grow operations so multiple state updates can't fan out. */
+    private val growMutex = Mutex()
 
     // ---- Public API ----
 
@@ -104,11 +140,73 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setQueue(tracks: List<Track>, startIndex: Int) {
+        // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
+        // library-shuffle mode behind. Snapshot is cleared so a stale Track
+        // list doesn't grow back into a different queue later.
+        libraryShuffleActive = false
+        librarySnapshot = emptyList()
+
         val controller = ensureController() ?: return
         val mediaItems = tracks.map { it.toMediaItem() }
         controller.setMediaItems(mediaItems, startIndex, /* startPositionMs = */ 0L)
         controller.prepare()
         controller.play()
+    }
+
+    override suspend fun shuffleLibrary() {
+        val controller = ensureController() ?: return
+        val all = musicRepository.getAllDownloadedTracks()
+        if (all.isEmpty()) return
+
+        val shuffled = all.shuffled()
+        librarySnapshot = shuffled
+        libraryShuffleActive = true
+
+        val mediaItems = shuffled.map { it.toMediaItem() }
+        controller.setMediaItems(mediaItems, /* startIndex = */ 0, /* startPositionMs = */ 0L)
+        // Match user expectation: pressing "Shuffle Library" implies shuffle
+        // is on, regardless of the previous toggle state. The Media3 shuffle
+        // mode toggles randomized advance order; we already pre-shuffled the
+        // queue ourselves, so we leave shuffleModeEnabled alone — the queue
+        // we hand to the controller IS the playback order.
+        controller.prepare()
+        controller.play()
+    }
+
+    /**
+     * Append the next slice of unused library tracks to the controller's
+     * timeline. Mutex-guarded so a flurry of state updates (each track
+     * change emits two or three) can't fan out into concurrent grows.
+     *
+     * Strategy: rebuild the "currently queued" set by reading the controller
+     * timeline, take everything from [librarySnapshot] not in that set,
+     * shuffle those, append [LIBRARY_SHUFFLE_GROW_BATCH]. If the snapshot is
+     * exhausted (whole library is in the queue already), reshuffle the
+     * snapshot for a fresh slice — looping is preferable to silence for the
+     * "just keep music playing" intent of this entry point.
+     */
+    private suspend fun growLibraryShuffle() {
+        growMutex.withLock {
+            val controller = controllerDeferred ?: return
+            val snapshot = librarySnapshot
+            if (snapshot.isEmpty()) return
+
+            val queuedIds = buildSet {
+                for (i in 0 until controller.mediaItemCount) {
+                    val id = controller.getMediaItemAt(i).mediaMetadata.extras
+                        ?.getLong(EXTRA_TRACK_ID)
+                        ?: controller.getMediaItemAt(i).mediaId.toLongOrNull()
+                    if (id != null) add(id)
+                }
+            }
+
+            val unused = snapshot.filterNot { it.id in queuedIds }
+            val pool = if (unused.isEmpty()) snapshot else unused
+            val toAppend = pool.shuffled().take(LIBRARY_SHUFFLE_GROW_BATCH)
+            if (toAppend.isEmpty()) return
+
+            controller.addMediaItems(toAppend.map { it.toMediaItem() })
+        }
     }
 
     override suspend fun addNext(track: Track) {
@@ -356,6 +454,12 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val TAG = "StashPlayer"
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
         private const val EXTRA_TRACK_ID = "stash_track_id"
+
+        /** Auto-grow fires once the remaining queue tail drops below this many tracks. */
+        private const val LIBRARY_SHUFFLE_GROW_THRESHOLD = 5
+
+        /** How many tracks each grow appends. Big enough to outpace a fast-skipping user. */
+        private const val LIBRARY_SHUFFLE_GROW_BATCH = 50
     }
 
     /**

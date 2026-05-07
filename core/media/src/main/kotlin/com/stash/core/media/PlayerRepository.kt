@@ -41,6 +41,14 @@ interface PlayerRepository {
     suspend fun setQueue(tracks: List<Track>, startIndex: Int = 0)
 
     /**
+     * v0.9.14: Replace the queue with a freshly-shuffled snapshot of the
+     * user's entire downloaded library, begin playback, and arm the
+     * auto-grow watcher so the queue refills from the unused remainder
+     * once the user nears the tail. No-op if no tracks are downloaded.
+     */
+    suspend fun shuffleLibrary()
+
+    /**
      * Insert [track] immediately after the currently-playing track in the queue.
      * Playback continues uninterrupted; the inserted track will play next.
      */

@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,6 +108,7 @@ fun LibraryScreen(
     LibraryContent(
         state = state,
         importState = importState,
+        onShuffleLibrary = viewModel::shuffleLibrary,
         onTabSelected = viewModel::selectTab,
         onSearchQueryChanged = viewModel::setSearchQuery,
         onSortOrderChanged = viewModel::setSortOrder,
@@ -139,6 +141,7 @@ fun LibraryScreen(
 private fun LibraryContent(
     state: LibraryUiState,
     importState: com.stash.data.download.files.LocalImportState,
+    onShuffleLibrary: () -> Unit,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
@@ -224,6 +227,20 @@ private fun LibraryContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // -- Shuffle Library CTA (v0.9.14) --
+        // Pre-existing per-playlist queues only ever held ~30-50 tracks, so
+        // shuffle "felt like the same songs" once libraries grew past a few
+        // hundred. This entry point seeds the queue from EVERY downloaded
+        // track and arms an auto-grow watcher in PlayerRepository so the
+        // queue refills as the user nears the tail. Sized to read as the
+        // primary action on the tab without crowding the search bar below.
+        ShuffleLibraryCard(
+            onClick = onShuffleLibrary,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         // -- Glassmorphic search bar --
         GlassSearchBar(
             query = state.searchQuery,
@@ -305,6 +322,53 @@ private fun LibraryContent(
                     onAddAlbumToQueue = onAddAlbumToQueue,
                 )
             }
+        }
+    }
+}
+
+// ── Shuffle Library CTA (v0.9.14) ────────────────────────────────────────────
+
+/**
+ * Compact glass row that drops a freshly-shuffled snapshot of every
+ * downloaded track into the queue. Sized to read as a peer of the search
+ * bar below — the action is self-explanatory; no subtitle, no trailing
+ * play indicator. Glass treatment matches the rest of the Library tab
+ * chrome instead of competing with it.
+ */
+@Composable
+private fun ShuffleLibraryCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Shuffle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = "Shuffle Library",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
         }
     }
 }

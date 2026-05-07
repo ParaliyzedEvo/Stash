@@ -180,6 +180,9 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun findByYoutubeIds(videoIds: Collection<String>): List<Track> =
         videoIds.mapNotNull { trackDao.findByYoutubeId(it)?.toDomain() }
 
+    override suspend fun getAllDownloadedTracks(): List<Track> =
+        trackDao.getAllDownloadedNonBlacklisted().map { it.toDomain() }
+
     override fun getTrackCount(): Flow<Int> =
         trackDao.getTotalCount()
 

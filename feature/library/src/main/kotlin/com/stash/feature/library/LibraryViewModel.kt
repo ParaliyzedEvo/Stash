@@ -286,6 +286,22 @@ class LibraryViewModel @Inject constructor(
     // ── Playlist actions ────────────────────────────────────────────────
 
     /**
+     * v0.9.14: Shuffle the entire downloaded library. Replaces the current
+     * queue with a freshly-randomised snapshot of every downloaded track and
+     * arms the player's auto-grow watcher so playback runs indefinitely
+     * without the user having to rebuild a queue every album.
+     *
+     * Driven by the "Shuffle Library" card at the top of the Library tab —
+     * a fix for the v0.9.13 complaint that per-playlist shuffle queues felt
+     * like the same 30 songs on repeat with 1700+ tracks downloaded.
+     */
+    fun shuffleLibrary() {
+        viewModelScope.launch {
+            playerRepository.shuffleLibrary()
+        }
+    }
+
+    /**
      * Load all downloaded tracks for [playlist] and begin playback from the first track.
      * Only tracks with a non-null [Track.filePath] (i.e. downloaded) are queued.
      */

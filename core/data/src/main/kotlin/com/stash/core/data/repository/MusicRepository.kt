@@ -67,6 +67,14 @@ interface MusicRepository {
      */
     suspend fun findByYoutubeIds(videoIds: Collection<String>): List<Track>
 
+    /**
+     * v0.9.14: Snapshot of every downloaded, non-blacklisted track. Used by
+     * the "Shuffle Library" entry point to seed a queue from the entire
+     * on-disk library, and by the auto-grow watcher to refill the queue
+     * once the user nears the tail. Returned unordered — caller shuffles.
+     */
+    suspend fun getAllDownloadedTracks(): List<Track>
+
     /** Total number of tracks (reactive). */
     fun getTrackCount(): Flow<Int>
 
