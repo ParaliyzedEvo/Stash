@@ -38,6 +38,8 @@ class MusicRepositoryImpl @Inject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
     private val discoveryQueueDao: com.stash.core.data.db.dao.DiscoveryQueueDao,
+    private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
+    private val trackMatcher: com.stash.core.data.sync.TrackMatcher,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -452,15 +454,25 @@ class MusicRepositoryImpl @Inject constructor(
     ): Boolean = trackDao.isTrackInProtectedPlaylistExcluding(trackId, excludePlaylistId)
 
     override suspend fun blacklistTrack(trackId: Long) {
+        // v0.9.15: Delegate to BlocklistGuard for the atomic transaction
+        // (insert blocklist row + delete playlist_tracks + delete queue
+        // rows + delete tracks row + delete files). Identity-keyed so a
+        // re-like on a different source can't resurrect the track.
         val track = trackDao.getById(trackId) ?: return
-        track.filePath?.let { deleteTrackFile(it) }
-        track.albumArtPath?.let { deleteTrackFile(it) }
-        trackDao.markBlacklistedAndClear(trackId)
+        blocklistGuard.block(track, com.stash.core.data.blocklist.BlockSource.OTHER)
         _trackDeletions.tryEmit(trackId)
     }
 
     override suspend fun unblacklistTrack(trackId: Long) {
-        trackDao.updateBlacklisted(trackId, false)
+        // v0.9.15: After Phase 3 ships, the tracks row is gone for blocked
+        // identities so this getById returns null. Settings UI should call
+        // BlocklistGuard.unblock(canonicalKey) directly going forward; this
+        // method exists only for backward-compat with any pre-rebind caller.
+        val track = trackDao.getById(trackId) ?: return
+        val key = com.stash.core.data.blocklist.BlocklistKey.of(
+            artist = track.artist, title = track.title, matcher = trackMatcher,
+        )
+        blocklistGuard.unblock(key)
     }
 
     override fun getBlacklistedTracks(): Flow<List<com.stash.core.data.db.entity.TrackEntity>> =
