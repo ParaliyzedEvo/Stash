@@ -7,6 +7,12 @@ plugins {
 android {
     namespace = "com.stash.core.data"
 
+    // MigrationTestHelper reads schema JSONs from test assets so
+    // runMigrationsAndValidate can compare the migrated DB to the target
+    // schema. Without this, `helper.runMigrationsAndValidate(..., 19, ...)`
+    // throws FileNotFoundException for "19.json".
+    sourceSets["test"].assets.srcDir("$projectDir/schemas")
+
     testOptions {
         unitTests {
             // Return Kotlin defaults (Unit) from stubbed Android SDK methods —

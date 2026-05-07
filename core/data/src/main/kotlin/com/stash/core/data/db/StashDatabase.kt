@@ -406,5 +406,66 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE listening_events ADD COLUMN completed_at INTEGER DEFAULT NULL")
             }
         }
+
+        /**
+         * v18 -> v19: introduce identity-keyed `track_blocklist` table and
+         * seed it from existing `tracks.is_blacklisted = 1` rows. The
+         * `is_blacklisted` column is NOT yet dropped (column drop happens
+         * in v19->v20 once all read paths have been removed in Phase 3) —
+         * this migration is purely additive to keep rollback-on-failure safe.
+         *
+         * v18 schema confirmed via core/data/schemas/.../18.json:
+         *   - canonical_artist TEXT NOT NULL
+         *   - canonical_title  TEXT NOT NULL
+         *   - spotify_uri      TEXT (nullable)
+         *   - youtube_id       TEXT (nullable)
+         *   - date_added       INTEGER NOT NULL
+         *   - is_blacklisted   INTEGER NOT NULL DEFAULT 0
+         *
+         * The seed query uses raw SQL string concat over canonical_artist +
+         * canonical_title to derive the blocklist key. The runtime path uses
+         * BlocklistKey.fromStoredCanonicals() which produces an identical
+         * shape, ensuring the integrity worker can match these rows later.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS track_blocklist (
+                        canonical_key TEXT NOT NULL PRIMARY KEY,
+                        artist        TEXT NOT NULL,
+                        title         TEXT NOT NULL,
+                        spotify_uri   TEXT,
+                        youtube_id    TEXT,
+                        blocked_at    INTEGER NOT NULL,
+                        blocked_from  TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_track_blocklist_spotify_uri ON track_blocklist(spotify_uri)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_track_blocklist_youtube_id ON track_blocklist(youtube_id)"
+                )
+
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO track_blocklist
+                        (canonical_key, artist, title, spotify_uri, youtube_id, blocked_at, blocked_from)
+                    SELECT
+                        canonical_artist || '|' || canonical_title AS canonical_key,
+                        artist,
+                        title,
+                        spotify_uri,
+                        youtube_id,
+                        CASE WHEN date_added > 0 THEN date_added ELSE strftime('%s','now') * 1000 END,
+                        'MIGRATION_V19'
+                    FROM tracks
+                    WHERE is_blacklisted = 1
+                    """.trimIndent()
+                )
+            }
+        }
     }
 }
