@@ -256,6 +256,35 @@ fun HomeScreen(
             }
         }
 
+        // ── Tracks waiting for lossless (FLAC-only deferred set) ─────
+        // v0.9.17: surfaces WAITING_FOR_LOSSLESS rows with one-tap
+        // recovery. State picker is in the ViewModel; this only renders
+        // when [WaitingForLosslessBannerState] is non-Hidden. All four
+        // action callbacks route through existing nav surfaces — no new
+        // nav graph entries.
+        if (uiState.waitingForLosslessBanner !is com.stash.feature.home.banner.WaitingForLosslessBannerState.Hidden) {
+            item {
+                Spacer(Modifier.height(6.dp))
+                com.stash.feature.home.banner.WaitingForLosslessBanner(
+                    state = uiState.waitingForLosslessBanner,
+                    onSolveCaptcha = {
+                        // The captcha WebView is reachable via Settings →
+                        // Audio Quality card. Mirror LosslessConnectBanner's
+                        // path: queue the focus target then navigate.
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onConnect = {
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onRetry = viewModel::onRetryDeferredRequested,
+                    onDismiss = viewModel::dismissWaitingForLosslessBanner,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
         // ── Mixes (split by source, each with a Play All button) ─────
         if (uiState.spotifyMixes.isNotEmpty() || uiState.youtubeMixes.isNotEmpty()) {
             item {
