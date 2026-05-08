@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.data.db.dao.DownloadQueueDao
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +38,7 @@ private val Context.losslessDataStore: DataStore<Preferences> by preferencesData
 @Singleton
 class LosslessSourcePreferences @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val downloadQueueDao: DownloadQueueDao,
 ) {
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
@@ -70,6 +72,10 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun setEnabled(value: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[enabledKey] = value }
+        // WAITING_FOR_LOSSLESS only makes sense under "lossless on +
+        // fallback off". Disabling lossless releases all deferred rows
+        // back to PENDING for the standard yt-dlp worker chain.
+        if (!value) downloadQueueDao.requeueWaitingForLossless()
     }
 
     /**
@@ -90,6 +96,10 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun setYoutubeFallbackEnabled(value: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[youtubeFallbackKey] = value }
+        // Enabling YouTube fallback means deferred rows can now be
+        // satisfied via the legacy yt-dlp pipeline — release them back
+        // to PENDING. Disabling fallback is a no-op for the queue.
+        if (value) downloadQueueDao.requeueWaitingForLossless()
     }
 
     /**

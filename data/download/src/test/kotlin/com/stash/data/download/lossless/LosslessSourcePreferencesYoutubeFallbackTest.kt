@@ -2,6 +2,7 @@ package com.stash.data.download.lossless
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,7 +31,9 @@ class LosslessSourcePreferencesYoutubeFallbackTest {
         // Wipe any prior DataStore state from earlier test runs.
         context.filesDir.resolve("datastore/lossless_source_preferences.preferences_pb")
             .delete()
-        prefs = LosslessSourcePreferences(context)
+        // `relaxed = true` (not `relaxUnitFun`) — `requeueWaitingForLossless()`
+        // returns Int, not Unit, so the more permissive relaxed mode is needed.
+        prefs = LosslessSourcePreferences(context, mockk(relaxed = true))
     }
 
     @Test
