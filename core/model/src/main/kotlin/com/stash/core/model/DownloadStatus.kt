@@ -13,4 +13,18 @@ enum class DownloadStatus {
     COMPLETED,
     FAILED,
     SKIPPED,
+
+    /**
+     * v0.9.17+: the lossless registry could not serve this track (squid
+     * captcha expired, kennyy down, etc.) AND the user has not enabled
+     * yt-dlp fallback. The row sits in this state until [LosslessRetryWorker]
+     * re-resolves it (signals: cookie pasted, lastKnownBadCookie cleared,
+     * circuit breaker reset) and flips it back to PENDING for the standard
+     * download worker chain.
+     *
+     * Distinct from FAILED — failed carries "give up" semantics in
+     * DiffWorker / Library Health and surfaces as red errors. This is a
+     * deliberate hold, not a problem.
+     */
+    WAITING_FOR_LOSSLESS,
 }

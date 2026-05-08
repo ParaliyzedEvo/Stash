@@ -70,7 +70,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         TrackBlocklistEntity::class,
         TrackSkipEventEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -621,6 +621,21 @@ abstract class StashDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_track_skip_events_track_id ON track_skip_events(track_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_track_skip_events_skipped_at ON track_skip_events(skipped_at)")
+            }
+        }
+
+        /**
+         * v21 -> v22 (v0.9.17): introduces DownloadStatus.WAITING_FOR_LOSSLESS.
+         *
+         * The `download_queue.status` column is TEXT storing the enum
+         * `.name`, so the new value parses without an ALTER TABLE — no
+         * DDL change is required. This migration is intentionally a
+         * no-op on disk; its only job is to advance the schema version
+         * so Room is happy that the new enum vocabulary is "expected".
+         */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No-op DDL: TEXT columns accept new enum names natively.
             }
         }
     }
