@@ -161,6 +161,49 @@ interface ListeningEventDao {
     suspend fun getPlayCountsSince(sinceEpochMs: Long): List<TrackPlayCount>
 
     /**
+     * v0.9.16: Per-track plays + most-recent-play timestamp for the
+     * recency-decayed affinity term in [com.stash.core.data.mix.MixGenerator].
+     */
+    data class TrackPlayCountWithLatest(
+        val trackId: Long,
+        val plays: Int,
+        val latestPlayedAt: Long,
+    )
+
+    /**
+     * v0.9.16: Listening-event total + completed-listen count over a
+     * window. Used by the recommender's completion-rate scoring term:
+     * tracks with high completion vs. starts get an affinity boost.
+     */
+    data class CompletionStats(
+        val trackId: Long,
+        val total: Int,
+        val completed: Int,
+    )
+
+    @Query(
+        """
+        SELECT track_id AS trackId, COUNT(*) AS plays, MAX(started_at) AS latestPlayedAt
+        FROM listening_events
+        WHERE started_at >= :sinceEpochMs
+        GROUP BY track_id
+        """
+    )
+    suspend fun getPlayCountsSinceWithLatest(sinceEpochMs: Long): List<TrackPlayCountWithLatest>
+
+    @Query(
+        """
+        SELECT track_id AS trackId,
+               COUNT(*) AS total,
+               SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed
+        FROM listening_events
+        WHERE track_id IN (:trackIds) AND started_at >= :sinceMs
+        GROUP BY track_id
+        """
+    )
+    suspend fun getCompletionStatsSince(trackIds: List<Long>, sinceMs: Long): List<CompletionStats>
+
+    /**
      * Track IDs played at least once since [sinceEpochMs]. Used for the
      * freshness-window filter — mix recipes exclude tracks in this set
      * so a Rediscovery mix never surfaces last week's plays.
