@@ -26,6 +26,7 @@ import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
+import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -172,6 +173,15 @@ class StashApplication : Application(), Configuration.Provider {
             val mode = downloadNetworkPreference.current()
             TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
             StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
+            TrackInfoEnrichmentWorker.schedulePeriodic(this@StashApplication)
+            // First-launch one-shot so users with a fresh install don't
+            // wait 24h for the first enrichment pass. KEEP policy means
+            // a re-launch before the worker completes doesn't re-enqueue.
+            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                "stash_track_info_enrichment_oneshot",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
+            )
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced

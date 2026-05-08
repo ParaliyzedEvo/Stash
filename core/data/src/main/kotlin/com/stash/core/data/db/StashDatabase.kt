@@ -17,6 +17,7 @@ import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
@@ -98,6 +99,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun discoveryQueueDao(): DiscoveryQueueDao
 
     abstract fun trackBlocklistDao(): TrackBlocklistDao
+
+    abstract fun trackSkipEventDao(): TrackSkipEventDao
 
 
     companion object {

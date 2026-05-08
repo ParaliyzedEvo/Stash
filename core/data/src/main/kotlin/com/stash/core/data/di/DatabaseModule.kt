@@ -101,4 +101,8 @@ object DatabaseModule {
     @Provides
     fun provideTrackBlocklistDao(db: StashDatabase): com.stash.core.data.db.dao.TrackBlocklistDao =
         db.trackBlocklistDao()
+
+    @Provides
+    fun provideTrackSkipEventDao(db: StashDatabase): com.stash.core.data.db.dao.TrackSkipEventDao =
+        db.trackSkipEventDao()
 }

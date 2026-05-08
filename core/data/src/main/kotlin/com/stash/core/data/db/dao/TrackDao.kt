@@ -1031,6 +1031,48 @@ interface TrackDao {
     @Query("UPDATE tracks SET music_video_type = :type WHERE id = :trackId")
     suspend fun updateMusicVideoType(trackId: Long, type: String?)
 
+    /**
+     * v0.9.16: Track ids whose Last.fm enrichment hasn't run yet
+     * (mbid + lastfm_user_playcount columns are both NULL). Used by
+     * [com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker]
+     * to drive its batched per-day enrichment loop.
+     */
+    @Query(
+        """
+        SELECT id FROM tracks
+        WHERE is_downloaded = 1
+          AND mbid IS NULL
+          AND lastfm_user_playcount IS NULL
+        ORDER BY date_added DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun findTracksNeedingLastfmEnrichment(limit: Int): List<Long>
+
+    /**
+     * v0.9.16: Persist the Last.fm `track.getInfo` payload for a single
+     * track. Sentinels (mbid = "", userPlaycount = 0) are written when
+     * Last.fm has no data so [findTracksNeedingLastfmEnrichment]
+     * doesn't re-pick the row on subsequent passes.
+     */
+    @Query(
+        """
+        UPDATE tracks SET
+            mbid = :mbid,
+            lastfm_user_playcount = :userPlaycount,
+            lastfm_listeners = :listeners,
+            lastfm_user_loved = :userLoved
+        WHERE id = :trackId
+        """
+    )
+    suspend fun setLastfmEnrichment(
+        trackId: Long,
+        mbid: String?,
+        userPlaycount: Int?,
+        listeners: Long?,
+        userLoved: Boolean,
+    )
+
     /** Find a downloaded track by canonical identity (for auto-reconciliation). */
     @Query("""
         SELECT * FROM tracks
