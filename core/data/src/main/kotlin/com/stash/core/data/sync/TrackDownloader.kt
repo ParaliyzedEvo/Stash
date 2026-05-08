@@ -14,6 +14,18 @@ sealed class TrackDownloadOutcome {
 
     /** Download failed. [error] describes exactly what went wrong. */
     data class Failed(val error: String) : TrackDownloadOutcome()
+
+    /**
+     * v0.9.17 — strict-FLAC stay-in-queue signal. The lossless registry
+     * had no source for this track and yt-dlp fallback is disabled, so
+     * the track was NOT downloaded but is NOT a retryable failure either.
+     * The DAO row is already at [com.stash.core.model.DownloadStatus.WAITING_FOR_LOSSLESS]
+     * by the time the worker sees this — the worker must NOT increment
+     * retry count, NOT mark FAILED, and return [androidx.work.ListenableWorker.Result.success]
+     * so WorkManager doesn't reschedule. The reactive triggers in
+     * `LosslessRetryScheduler` (Task 9) own the re-attempt signal.
+     */
+    data object Deferred : TrackDownloadOutcome()
 }
 
 /**

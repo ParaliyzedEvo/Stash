@@ -1,7 +1,9 @@
 package com.stash.data.download
 
+import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.model.DownloadStatus
 import com.stash.core.model.Track
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,6 +18,7 @@ import javax.inject.Singleton
 @Singleton
 class TrackDownloaderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
+    private val downloadQueueDao: DownloadQueueDao,
 ) : TrackDownloader {
 
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
@@ -24,12 +27,22 @@ class TrackDownloaderImpl @Inject constructor(
             is TrackDownloadResult.Unmatched -> TrackDownloadOutcome.Unmatched(result.rejectedVideoId)
             is TrackDownloadResult.Failed -> TrackDownloadOutcome.Failed(result.error)
             // v0.9.17: Deferred is the strict-FLAC stay-in-queue signal.
-            // Task 5 translates this into a DownloadStatus.WAITING_FOR_LOSSLESS
-            // DAO write so the track persists in the queue until the
-            // LosslessRetryWorker re-resolves. Until that lands, surface as
-            // Failed so the worker doesn't silently lose the track.
-            TrackDownloadResult.Deferred ->
-                TrackDownloadOutcome.Failed("deferred: lossless unavailable, fallback off")
+            // Translate to a DownloadStatus.WAITING_FOR_LOSSLESS DAO write so
+            // the row persists in the queue (out of the retryable-FAILED set)
+            // until the LosslessRetryScheduler re-resolves it. The benign
+            // [TrackDownloadOutcome.Deferred] outcome tells [TrackDownloadWorker]
+            // not to increment retries, not to mark FAILED, and not to fail
+            // the worker chain.
+            TrackDownloadResult.Deferred -> {
+                val queueEntry = downloadQueueDao.getByTrackId(track.id)
+                queueEntry?.let {
+                    downloadQueueDao.updateStatus(
+                        id = it.id,
+                        status = DownloadStatus.WAITING_FOR_LOSSLESS,
+                    )
+                }
+                TrackDownloadOutcome.Deferred
+            }
         }
     }
 }

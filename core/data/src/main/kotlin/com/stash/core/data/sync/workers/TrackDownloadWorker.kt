@@ -368,6 +368,15 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     firstError.compareAndSet(null, outcome.error.take(500))
                                     failedCount.incrementAndGet()
                                 }
+                                is TrackDownloadOutcome.Deferred -> {
+                                    // v0.9.17 strict-FLAC: lossless source unavailable
+                                    // and yt-dlp fallback off. The DAO row was already
+                                    // written to WAITING_FOR_LOSSLESS by
+                                    // TrackDownloaderImpl — do NOT increment retries,
+                                    // do NOT mark FAILED, do NOT tally as failure.
+                                    // LosslessRetryScheduler owns the re-attempt signal.
+                                    Log.i(TAG, "Deferred (waiting for lossless): ${track.artist} - ${track.title}")
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to download track ${queueItem.trackId}", e)
