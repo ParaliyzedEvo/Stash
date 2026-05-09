@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * Periodic worker that regenerates every active Stash Mix. For each
@@ -307,8 +308,17 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // DONE row is keyed by track id, not identity. `filter` doesn't
         // accept suspend lambdas, so the blocklist check is a manual
         // loop that calls the suspend guard sequentially.
+        // v0.9.19 follow-up: cap discovery survivors at the recipe's stated
+        // slot count (targetLength * discoveryRatio). DAO query orders by
+        // completed_at DESC so newest-DONE survivors win when we have to cut.
+        // Library shortfall-fill in MixGenerator is intentionally untouched —
+        // total playlist size for Daily Discover settles at up-to-50 (library)
+        // + up-to-20 (discovery) = <=70, replacing the previous unbounded growth.
+        val discoveryCap = (recipe.targetLength * recipe.discoveryRatio)
+            .roundToInt()
+            .coerceAtLeast(0)
         val candidateIds = discoveryQueueDao
-            .getDoneTrackIdsForRecipe(recipe.id)
+            .getDoneTrackIdsForRecipe(recipe.id, limit = discoveryCap)
             .filter { it !in librarySet }
         val discoveryTrackIds = buildList {
             for (trackId in candidateIds) {

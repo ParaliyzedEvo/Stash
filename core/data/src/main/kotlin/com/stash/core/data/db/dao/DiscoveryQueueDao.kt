@@ -76,17 +76,30 @@ interface DiscoveryQueueDao {
      * playlist — without this step, a Discovery download that completed
      * between refreshes gets wiped from the mix and then garbage-
      * collected by the orphan sweeper.
+     *
+     * v0.9.19 follow-up: capped at [limit] rows ordered by
+     * `completed_at DESC`, so newest-DONE survivors win when
+     * `materializeMix` trims to the recipe's discovery slot count
+     * (`targetLength * discoveryRatio`). Without the cap, every DONE row
+     * accumulated for the recipe got re-linked, growing the playlist
+     * unboundedly across release transitions (Daily Discover went
+     * 50 -> 100 between v0.9.18 and v0.9.19 because ~50 survivors had
+     * accumulated). SQLite treats NULL as "smaller than any value" under
+     * `DESC`, so any pathological NULL `completed_at` rows fall to the
+     * end naturally, but they're already excluded by the status filter
+     * since worker DONE transitions stamp the timestamp.
      */
     @Query(
         """
-        SELECT dq.track_id FROM discovery_queue dq
-        INNER JOIN tracks t ON t.id = dq.track_id
-        WHERE dq.recipe_id = :recipeId
-          AND dq.status = 'DONE'
-          AND dq.track_id IS NOT NULL
+        SELECT track_id FROM discovery_queue
+        WHERE recipe_id = :recipeId
+          AND status = 'DONE'
+          AND track_id IS NOT NULL
+        ORDER BY completed_at DESC
+        LIMIT :limit
         """
     )
-    suspend fun getDoneTrackIdsForRecipe(recipeId: Long): List<Long>
+    suspend fun getDoneTrackIdsForRecipe(recipeId: Long, limit: Int): List<Long>
 
     /**
      * Track ids referenced by any non-terminal discovery row (PENDING /
