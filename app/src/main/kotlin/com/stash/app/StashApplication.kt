@@ -169,6 +169,7 @@ class StashApplication : Application(), Configuration.Provider {
             maybeReseedStashMixes()
             StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
             maybeRetuneStashDiscover()
+            maybeRetuneStashMixes()
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
             // one-shots are safe (unique-work policy = REPLACE).
@@ -357,6 +358,40 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
+     * v0.9.20 pivot: Daily Discover + Deep Cuts move from library-substrate
+     * to recommendation-substrate (85% discovery, 15% library). Deep Cuts
+     * switches seed strategy from NONE to TRACK_SIMILAR. Gated by
+     * [STASH_MIX_RECIPE_TUNING_VERSION] so the migration runs exactly once
+     * per install. Fresh installs skip this because [StashMixDefaults]
+     * already seeds with the new values.
+     */
+    private suspend fun maybeRetuneStashMixes() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
+        if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return
+
+        var totalUpdated = 0
+        for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
+            val updated = stashMixRecipeDao.retuneBuiltin(
+                name = recipe.name,
+                discoveryRatio = recipe.discoveryRatio,
+                freshnessWindowDays = recipe.freshnessWindowDays,
+                targetLength = recipe.targetLength,
+                affinityBias = recipe.affinityBias,
+                seedStrategy = recipe.seedStrategy,
+            )
+            totalUpdated += updated
+        }
+        Log.i(
+            "StashMigration",
+            "Retuned $totalUpdated builtin mix recipe(s) to v$STASH_MIX_RECIPE_TUNING_VERSION",
+        )
+        prefs.edit()
+            .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
+            .apply()
+    }
+
+    /**
      * Retroactively enables `sync_enabled = 1` on every YouTube playlist in
      * the local DB exactly once. Fixes the parity gap where YouTube
      * playlists discovered before the Sync-preferences UI was extended to
@@ -493,6 +528,16 @@ class StashApplication : Application(), Configuration.Provider {
          *    used to fill the non-discovery slots drop on next refresh.
          */
         private const val STASH_DISCOVER_TUNING_VERSION = 2
+
+        /**
+         * Bump when the built-in Stash Mix recipes' tunables change and
+         * existing installs should adopt them.
+         *  - v1 = 2026-05-11 v0.9.20 pivot: Daily Discover + Deep Cuts
+         *    move from library-substrate to recommendation-substrate
+         *    (85% discovery, 15% library). Deep Cuts switches seed
+         *    strategy from NONE to TRACK_SIMILAR.
+         */
+        private const val STASH_MIX_RECIPE_TUNING_VERSION = 1
 
         /**
          * v0.9.13: bump when [maybeBackfillCodecsFromExtension] should run
