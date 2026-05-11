@@ -426,7 +426,12 @@ class HomeViewModel @Inject constructor(
     fun onRetryDeferredRequested() {
         viewModelScope.launch {
             // Snapshot the current count before we kick the worker so the
-            // start message and the math after both reference the same N.
+            // start message has a number to show. This is an approximation:
+            // a concurrent TrackDownloadWorker flipping rows out of
+            // WAITING_FOR_LOSSLESS between this read and the sweep can make
+            // countAtStart drift from the worker's own KEY_TOTAL. The result
+            // message below uses the worker-authoritative total, so the math
+            // stays consistent — only the start-message N can be stale.
             val countAtStart = downloadQueueDao.waitingForLosslessCount().first()
             if (countAtStart <= 0) return@launch  // banner shouldn't be visible
 
