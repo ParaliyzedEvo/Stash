@@ -115,6 +115,15 @@ class LosslessRetryWorkerTest {
 
         assertEquals(2, result.outputData.getInt(LosslessRetryWorker.KEY_RESOLVED, -1))
         assertEquals(3, result.outputData.getInt(LosslessRetryWorker.KEY_TOTAL, -1))
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.PENDING)
+        }
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(id = 102L, status = DownloadStatus.PENDING)
+        }
+        coVerify(exactly = 0) {
+            downloadQueueDao.updateStatus(id = 101L, status = DownloadStatus.PENDING)
+        }
     }
 
     private fun entry(id: Long, trackId: Long) = DownloadQueueEntity(

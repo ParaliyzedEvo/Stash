@@ -46,7 +46,7 @@ class LosslessRetryWorker @AssistedInject constructor(
         val deferred = downloadQueueDao.waitingForLosslessTracks()
         if (deferred.isEmpty()) {
             return Result.success(
-                androidx.work.workDataOf(
+                workDataOf(
                     KEY_RESOLVED to 0,
                     KEY_TOTAL to 0,
                 ),
@@ -80,7 +80,7 @@ class LosslessRetryWorker @AssistedInject constructor(
             }
         }
         return Result.success(
-            androidx.work.workDataOf(
+            workDataOf(
                 KEY_RESOLVED to resolvedCount,
                 KEY_TOTAL to deferred.size,
             ),
