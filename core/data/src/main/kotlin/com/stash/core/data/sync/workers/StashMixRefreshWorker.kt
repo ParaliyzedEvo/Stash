@@ -86,7 +86,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "StashMixRefresh"
         private const val WORK_NAME = "stash_mix_refresh"
-        private const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
+        const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
         private const val TOP_ARTISTS_LIMIT = 8
         private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
         private const val AFFINITY_LOOKBACK_DAYS = 180L
