@@ -447,15 +447,28 @@ class HomeViewModel @Inject constructor(
                 request,
             ).await()
 
-            // Observe the unique-work Flow. Filter to OUR enqueued request's
-            // id so historical entries from earlier sessions don't fire stale
-            // "Resolved …" Toasts. Under KEEP policy a coalesced tap will see
-            // the SAME id as the in-flight work, so this still drains correctly
-            // on every tap.
+            // Under KEEP policy a coalesced tap means WorkManager kept the
+            // existing work's id and dropped our request.id entirely. Filtering
+            // on request.id would hang forever waiting for an id that never
+            // gets enqueued. So we take a snapshot of the current WorkInfo list
+            // for this unique name and lock in whichever is most relevant:
+            //   1) the in-flight (non-terminal) WorkInfo if one exists
+            //   2) else the most-recent WorkInfo in the list (already terminal,
+            //      e.g. the sweep finished between await() and our snapshot —
+            //      fire its result immediately)
+            //   3) else our own request.id as a defensive fallback (truly nothing
+            //      yet — the Flow will emit again when our work materializes).
+            val initial = WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(LosslessRetryWorker.UNIQUE_WORK_NAME)
+                .first()
+            val targetId = initial.firstOrNull { !it.state.isFinished }?.id
+                ?: initial.firstOrNull()?.id
+                ?: request.id
+
             WorkManager.getInstance(context)
                 .getWorkInfosForUniqueWorkFlow(LosslessRetryWorker.UNIQUE_WORK_NAME)
                 .firstOrNull { infos ->
-                    val ours = infos.firstOrNull { it.id == request.id } ?: return@firstOrNull false
+                    val ours = infos.firstOrNull { it.id == targetId } ?: return@firstOrNull false
                     when (ours.state) {
                         WorkInfo.State.SUCCEEDED -> {
                             val resolved = ours.outputData.getInt(LosslessRetryWorker.KEY_RESOLVED, 0)
