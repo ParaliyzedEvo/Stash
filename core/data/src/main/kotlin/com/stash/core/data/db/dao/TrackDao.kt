@@ -1083,6 +1083,27 @@ interface TrackDao {
     """)
     suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
 
+    /**
+     * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")
+     * for every downloaded track. Used by [com.stash.core.data.sync.workers.StashMixRefreshWorker]'s
+     * discovery pre-filter to drop Last.fm candidates that would dedup
+     * to library content downstream — keeping discovery_queue PENDING
+     * rows representative of genuinely-new music instead of "rediscovery"
+     * hits.
+     *
+     * `is_downloaded = 1` restricts to playable content. Stub TrackEntities
+     * (created by StashDiscoveryWorker before their files land) are excluded
+     * so we don't double-filter against in-flight discoveries.
+     */
+    @Query(
+        """
+        SELECT DISTINCT (canonical_artist || '|' || canonical_title) AS k
+        FROM tracks
+        WHERE is_downloaded = 1
+        """
+    )
+    suspend fun getLibraryCanonicalKeys(): List<String>
+
     // ── Wrong-match flagging (user-initiated) ───────────────────────────
 
     /**
