@@ -1,0 +1,208 @@
+package com.stash.data.download
+
+import android.content.Context
+import androidx.work.WorkerParameters
+import com.stash.core.data.audio.AudioDurationExtractor
+import com.stash.core.data.blocklist.BlocklistGuard
+import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.TrackDownloadOutcome
+import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.model.DownloadStatus
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.coVerifyOrder
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+/**
+ * MockK tests for [DiscoveryDownloadWorker] — the v0.9.20 worker that
+ * drains discovery_queue PENDING/retryable-FAILED rows (sync_id IS NULL)
+ * via the existing [TrackDownloader] abstraction. Mirrors the
+ * [com.stash.data.download.lossless.LosslessRetryWorkerTest] MockK pattern.
+ */
+class DiscoveryDownloadWorkerTest {
+
+    private val appContext: Context = mockk(relaxed = true)
+    private val workerParams: WorkerParameters = mockk(relaxed = true)
+    private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
+    private val trackDao: TrackDao = mockk(relaxed = true)
+    private val trackDownloader: TrackDownloader = mockk()
+    private val audioDurationExtractor: AudioDurationExtractor = mockk(relaxed = true)
+    private val blocklistGuard: BlocklistGuard = mockk {
+        coEvery { isBlocked(any(), any(), any(), any()) } returns false
+    }
+    private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
+
+    private fun newWorker() = DiscoveryDownloadWorker(
+        appContext, workerParams,
+        downloadQueueDao, trackDao, trackDownloader,
+        audioDurationExtractor, blocklistGuard, syncNotificationManager,
+    )
+
+    @Test fun `empty queue returns success and does not invoke TrackDownloader`() = runTest {
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns emptyList()
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
+    @Test fun `successful download marks COMPLETED and writes isDownloaded`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Success(
+            filePath = "/tmp/file.flac",
+        )
+        coEvery { audioDurationExtractor.extract(any()) } returns null
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) {
+            trackDao.markAsDownloaded(
+                trackId = 1L,
+                filePath = "/tmp/file.flac",
+                fileSizeBytes = any(),
+                // downloadedAt has a default of System.currentTimeMillis() at call time;
+                // MockK resolves defaults at verification time, so an explicit any()
+                // matcher avoids a sub-millisecond timestamp mismatch.
+                downloadedAt = any(),
+                sampleRateHz = null,
+                bitsPerSample = null,
+            )
+        }
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(
+                id = 100L,
+                status = DownloadStatus.COMPLETED,
+                completedAt = any(),
+            )
+        }
+    }
+
+    @Test fun `unmatched outcome marks FAILED with NO_MATCH and increments retry count`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Unmatched(
+            rejectedVideoId = "abc123",
+        )
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { downloadQueueDao.incrementRetryCount(100L) }
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(
+                id = 100L,
+                status = DownloadStatus.FAILED,
+                failureType = any(),
+                errorMessage = any(),
+                rejectedVideoId = "abc123",
+            )
+        }
+    }
+
+    @Test fun `failed outcome marks FAILED with DOWNLOAD_ERROR`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed(
+            error = "yt-dlp timeout",
+        )
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { downloadQueueDao.incrementRetryCount(100L) }
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(
+                id = 100L,
+                status = DownloadStatus.FAILED,
+                failureType = any(),
+                errorMessage = match { it.contains("yt-dlp timeout") },
+            )
+        }
+    }
+
+    @Test fun `deferred outcome does NOT touch the queue row`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Deferred
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.FAILED, any(), any(), any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.COMPLETED, completedAt = any()) }
+        coVerify(exactly = 0) { downloadQueueDao.incrementRetryCount(any()) }
+    }
+
+    @Test fun `blocked track deletes the queue row and does NOT invoke TrackDownloader`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns true
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { downloadQueueDao.deleteByTrackId(1L) }
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
+    @Test fun `already-downloaded track is idempotently marked COMPLETED without re-downloading`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L, isDownloaded = true, filePath = "/already/here.flac")
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.COMPLETED, completedAt = any())
+        }
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
+    @Test fun `IN_PROGRESS stamp is written BEFORE invoking TrackDownloader`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed("fail")
+
+        newWorker().doWork()
+
+        // The order matters — IN_PROGRESS must land before the downloader runs.
+        // coVerifyOrder enforces sequence; plain coVerify only checks existence.
+        coVerifyOrder {
+            downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.IN_PROGRESS)
+            trackDownloader.downloadTrack(any(), any())
+        }
+    }
+
+    private fun entry(id: Long, trackId: Long) = DownloadQueueEntity(
+        id = id,
+        trackId = trackId,
+        status = DownloadStatus.PENDING,
+        syncId = null,
+        searchQuery = "artist - title",
+    )
+
+    private fun stubTrack(
+        id: Long,
+        isDownloaded: Boolean = false,
+        filePath: String? = null,
+    ) = TrackEntity(
+        id = id,
+        title = "Track $id",
+        artist = "Artist $id",
+        canonicalTitle = "track $id",
+        canonicalArtist = "artist $id",
+        isDownloaded = isDownloaded,
+        filePath = filePath,
+    )
+}
