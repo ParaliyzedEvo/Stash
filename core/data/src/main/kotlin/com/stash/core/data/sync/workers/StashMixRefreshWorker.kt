@@ -228,6 +228,22 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // playlists in a single refresh run.
         val orderedRecipes = active.sortedBy { recipeDedupPriority(it) }
         val excludeIds = mutableSetOf<Long>()
+
+        // v0.9.20 follow-up: single-recipe path needs explicit seeding from the
+        // OTHER mixes' current playlist contents. The batch-mode loop accumulates
+        // excludeIds naturally as it iterates; the single-element loop has nothing
+        // to accumulate, so we seed it manually from the materialized state of the
+        // other builtin mixes. Effect: manual refresh of one mix no longer overlaps
+        // with whatever is currently in the others.
+        if (targetId > 0L) {
+            val otherPlaylistIds = recipeDao.getActive()
+                .filter { it.id != targetId && it.playlistId != null }
+                .mapNotNull { it.playlistId }
+            if (otherPlaylistIds.isNotEmpty()) {
+                excludeIds += playlistDao.getTrackIdsForPlaylists(otherPlaylistIds)
+            }
+        }
+
         for (recipe in orderedRecipes) {
             // Snapshot to an immutable Set per iteration so callees can't
             // observe (or accidentally mutate) the accumulator, and so

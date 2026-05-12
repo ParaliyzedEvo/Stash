@@ -400,4 +400,16 @@ interface PlaylistDao {
     /** Soft-delete a single track from a playlist. */
     @Query("UPDATE playlist_tracks SET removed_at = CURRENT_TIMESTAMP WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
     suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long)
+
+    /**
+     * Returns DISTINCT track ids that appear in any of the given playlists.
+     * Used by [com.stash.core.data.sync.workers.StashMixRefreshWorker]'s
+     * single-recipe refresh path to seed `excludeIds` from the user's
+     * currently-materialized OTHER mixes — without this, a manual refresh
+     * of one mix sees an empty exclude set and naturally produces overlap
+     * with the others (the very symptom PR 3's batch-mode dedup was meant
+     * to fix).
+     */
+    @Query("SELECT DISTINCT track_id FROM playlist_tracks WHERE playlist_id IN (:playlistIds)")
+    suspend fun getTrackIdsForPlaylists(playlistIds: List<Long>): List<Long>
 }
