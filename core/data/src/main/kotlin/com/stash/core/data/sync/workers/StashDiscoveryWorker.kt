@@ -134,7 +134,22 @@ class StashDiscoveryWorker @AssistedInject constructor(
             Log.i(TAG, "aged out $aged stale PENDING row(s) older than 30 days")
         }
 
-        val pending = discoveryQueueDao.getPending(BATCH_SIZE)
+        // v0.9.21: pre-filter the PENDING fetch by under-cap recipes so a
+        // single recipe's deferred-at-cap backlog doesn't starve other
+        // recipes' fresh candidates out of the BATCH_SIZE window. See
+        // conversation 2026-05-12: First Listen had 100+ deferred-at-cap
+        // PENDING rows clogging the head of the queue so Deep Cuts'
+        // freshly-queued candidates never reached the worker.
+        val cappedRecipeIds = discoveryQueueDao.findRecipesAtWeeklyCap(
+            sinceMillis = System.currentTimeMillis() - WEEK_MS,
+            cap = PER_RECIPE_WEEKLY_CAP,
+        )
+        val pending = if (cappedRecipeIds.isEmpty()) {
+            discoveryQueueDao.getPending(BATCH_SIZE)
+        } else {
+            Log.i(TAG, "recipes at cap (excluded from fetch): $cappedRecipeIds")
+            discoveryQueueDao.getPendingExcludingRecipes(cappedRecipeIds, BATCH_SIZE)
+        }
         if (pending.isEmpty()) {
             Log.d(TAG, "no pending discoveries")
             // Don't return early — fall through to the chain. download_queue
@@ -148,6 +163,9 @@ class StashDiscoveryWorker @AssistedInject constructor(
 
             // Per-recipe caps — counted lazily to avoid a DAO hit per candidate.
             val recipeBudget = HashMap<Long, Int>()
+            // Per-recipe one-shot "cap fired" log so a recipe with dozens of
+            // pending rows doesn't spam logcat with the same deferral line.
+            val cappedRecipesLogged = HashSet<Long>()
 
             for (entry in pending) {
                 val used = recipeBudget.getOrPut(entry.recipeId) {
@@ -155,7 +173,13 @@ class StashDiscoveryWorker @AssistedInject constructor(
                 }
                 if (used >= PER_RECIPE_WEEKLY_CAP) {
                     // Leave as PENDING so next week's cycle can pick it up.
-                    Log.d(TAG, "recipe ${entry.recipeId} hit weekly cap — deferring")
+                    if (cappedRecipesLogged.add(entry.recipeId)) {
+                        Log.i(
+                            TAG,
+                            "recipe ${entry.recipeId} at cap " +
+                                "($used downloaded in last 7d, limit $PER_RECIPE_WEEKLY_CAP) — deferring pending",
+                        )
+                    }
                     continue
                 }
 

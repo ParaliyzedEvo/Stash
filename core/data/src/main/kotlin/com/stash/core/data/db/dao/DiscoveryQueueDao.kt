@@ -29,6 +29,52 @@ interface DiscoveryQueueDao {
     suspend fun getPending(limit: Int): List<DiscoveryQueueEntity>
 
     /**
+     * Pending entries that aren't in the supplied at-cap recipe set.
+     * Without this fairness filter, a single recipe's deferred-at-cap
+     * backlog (rows that keep getting skipped because their recipe is
+     * over its weekly download budget) sits at the head of the queue and
+     * starves out fresher candidates from under-cap recipes. See
+     * conversation 2026-05-12: First Listen had 100+ deferred PENDING
+     * blocking Deep Cuts' freshly-queued candidates from ever being
+     * processed.
+     *
+     * Pass an empty list to behave like [getPending] — Room rejects
+     * empty `IN ()` SQL so the worker special-cases the empty case
+     * before calling.
+     */
+    @Query(
+        """
+        SELECT * FROM discovery_queue
+        WHERE status = 'PENDING'
+          AND recipe_id NOT IN (:cappedRecipeIds)
+        ORDER BY queued_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getPendingExcludingRecipes(
+        cappedRecipeIds: List<Long>,
+        limit: Int,
+    ): List<DiscoveryQueueEntity>
+
+    /**
+     * Recipe ids currently over the weekly download cap. Mirrors
+     * [countRecentCompletedForRecipe]'s join + filter exactly so the
+     * pre-fetch and per-row checks agree.
+     */
+    @Query(
+        """
+        SELECT dq.recipe_id FROM discovery_queue dq
+        INNER JOIN tracks t ON t.id = dq.track_id
+        WHERE dq.status = 'DONE'
+          AND dq.completed_at >= :sinceMillis
+          AND t.is_downloaded = 1
+        GROUP BY dq.recipe_id
+        HAVING COUNT(*) >= :cap
+        """
+    )
+    suspend fun findRecipesAtWeeklyCap(sinceMillis: Long, cap: Int): List<Long>
+
+    /**
      * Count of discovery entries completed within [sinceMillis] for a
      * specific recipe — enforces the per-recipe weekly cap so discovery
      * doesn't spiral.
