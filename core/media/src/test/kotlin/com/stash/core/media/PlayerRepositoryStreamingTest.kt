@@ -90,13 +90,19 @@ class PlayerRepositoryStreamingTest {
         // cleared external storage, e.g.). isStreamable=false here so we
         // expect NotAvailable, proving the file-existence check actually
         // matters rather than blindly trusting the column.
+        // streamingPreference.current() returns false (the post-Stash-v0.9.30
+        // routing checks this before the isStreamable fall-through, but the
+        // path then surfaces NotAvailable for a non-streamable row).
+        coEvery { streamingPreference.current() } returns false
         repo.filePathExistsOnDisk = { false }
         val track = downloaded(id = 1L, path = "/storage/music/missing.flac")
             .copy(isStreamable = false)
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isEqualTo(StreamRoutingResult.NotAvailable)
+        // With streaming pref off and the file missing, the routing returns
+        // OfflineMode (streaming-off check fires before isStreamable check).
+        assertThat(result).isEqualTo(StreamRoutingResult.OfflineMode)
     }
 
     @Test
@@ -146,9 +152,12 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun buildMediaItem_unavailableTrack_returnsNotAvailable() = runTest {
-        // Not downloaded AND not streamable — library row should be greyed
-        // out; this is the defense-in-depth no-op path.
+    fun buildMediaItem_unavailableTrack_returnsOfflineMode() = runTest {
+        // Not downloaded AND not streamable, with streaming off — routing
+        // exits early on the streaming-pref check before any isStreamable
+        // logic. AvailabilityCheckWorker that drove isStreamable was
+        // removed in Stash v0.9.30; Kennyy is now the sole source of truth.
+        coEvery { streamingPreference.current() } returns false
         val track = TrackEntity(
             id = 4L,
             title = "x",
@@ -159,7 +168,7 @@ class PlayerRepositoryStreamingTest {
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isEqualTo(StreamRoutingResult.NotAvailable)
+        assertThat(result).isEqualTo(StreamRoutingResult.OfflineMode)
     }
 
     @Test
