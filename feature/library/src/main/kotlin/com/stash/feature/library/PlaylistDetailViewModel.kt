@@ -176,7 +176,13 @@ class PlaylistDetailViewModel @Inject constructor(
                 uiState.value.tracks.filter { it.filePath != null }
             }
             if (playable.isEmpty()) return@launch
-            playerRepository.setQueue(playable.shuffled(), 0)
+            val shuffled = playable.shuffled()
+            _tappedTrackId.value = shuffled[0].id
+            try {
+                playerRepository.setQueue(shuffled, 0)
+            } finally {
+                _tappedTrackId.value = null
+            }
         }
     }
 
@@ -193,7 +199,12 @@ class PlaylistDetailViewModel @Inject constructor(
                 uiState.value.tracks.filter { it.filePath != null }
             }
             if (playable.isEmpty()) return@launch
-            playerRepository.setQueue(playable, 0)
+            _tappedTrackId.value = playable[0].id
+            try {
+                playerRepository.setQueue(playable, 0)
+            } finally {
+                _tappedTrackId.value = null
+            }
         }
     }
 

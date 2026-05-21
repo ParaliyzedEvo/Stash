@@ -137,7 +137,13 @@ class ArtistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val downloaded = uiState.value.tracks.filter { it.filePath != null }
             if (downloaded.isEmpty()) return@launch
-            playerRepository.setQueue(downloaded.shuffled(), 0)
+            val shuffled = downloaded.shuffled()
+            _tappedTrackId.value = shuffled[0].id
+            try {
+                playerRepository.setQueue(shuffled, 0)
+            } finally {
+                _tappedTrackId.value = null
+            }
         }
     }
 
