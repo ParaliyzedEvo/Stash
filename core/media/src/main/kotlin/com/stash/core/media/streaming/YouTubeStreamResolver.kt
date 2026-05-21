@@ -8,6 +8,7 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -71,7 +72,14 @@ class YouTubeStreamResolver @Inject constructor(
 
         val url = withTimeoutOrNull(YT_RESOLVE_TIMEOUT_MS) {
             runCatching { urlExtractor.extractStreamUrl(videoId) }
-                .onFailure { Log.d(TAG, "extraction failed for $videoId: ${it.message}") }
+                .onFailure { t ->
+                    // CancellationException MUST propagate — swallowing it would
+                    // surface as StreamRoutingResult.NotAvailable upstream, firing
+                    // a "Couldn't find this track" snackbar for a track that was
+                    // simply preempted by a newer tap or queue change.
+                    if (t is CancellationException) throw t
+                    Log.d(TAG, "extraction failed for $videoId: ${t.message}")
+                }
                 .getOrNull()
         } ?: return null
 
@@ -116,7 +124,10 @@ class YouTubeStreamResolver @Inject constructor(
         if (query.isBlank()) return null
         return withTimeoutOrNull(YT_SEARCH_TIMEOUT_MS) {
             val results = runCatching { ytMusicApiClient.searchAll(query) }
-                .onFailure { Log.d(TAG, "search failed for '$query': ${it.message}") }
+                .onFailure { t ->
+                    if (t is CancellationException) throw t
+                    Log.d(TAG, "search failed for '$query': ${t.message}")
+                }
                 .getOrNull() ?: return@withTimeoutOrNull null
 
             // YT Music search returns sections of various kinds — Top
