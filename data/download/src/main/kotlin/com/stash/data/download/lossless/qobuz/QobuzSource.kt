@@ -109,6 +109,7 @@ class QobuzSource @Inject constructor(
         resolveInternal(query, bypassRateLimit = true)
 
     private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
+        Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
         // 1. Search squid.wtf for candidates. ISRC is Qobuz's best
         // index key — when we have one, send it as the query directly.
         val searchTerm = query.isrc ?: "${query.artist} ${query.title}"
@@ -116,7 +117,10 @@ class QobuzSource @Inject constructor(
             ?: return null
 
         val candidates = searchData.tracks?.items.orEmpty()
-        if (candidates.isEmpty()) return null
+        if (candidates.isEmpty()) {
+            Log.d(TAG, "no_match artist='${query.artist}' title='${query.title}' (search returned empty)")
+            return null
+        }
 
         // 2. Score and pick the best candidate that crosses the
         // confidence threshold.
@@ -135,7 +139,7 @@ class QobuzSource @Inject constructor(
             val top = scored.sortedByDescending { it.second }.take(3)
             Log.d(
                 TAG,
-                "no candidate above threshold ($MIN_CONFIDENCE) for '${query.artist} - ${query.title}': " +
+                "reason=below_confidence no candidate above threshold ($MIN_CONFIDENCE) for '${query.artist} - ${query.title}': " +
                     top.joinToString(", ") { (c, s) ->
                         "[${"%.2f".format(s)} '${c.title}' by '${c.performer?.name}']"
                     },
@@ -169,28 +173,31 @@ class QobuzSource @Inject constructor(
             ?: albumImage?.thumbnail
             ?: albumImage?.small
 
-        return SourceResult(
+        val format = AudioFormat(
+            // squid.wtf strips the upstream `mime_type`; map from
+            // the requested format_id since Qobuz returns the
+            // matching codec for each.
+            codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
+            // Bitrate left at 0 — FLAC is variable; the
+            // canonical value comes from AudioDurationExtractor
+            // after the file's on disk.
+            bitrateKbps = 0,
+            sampleRateHz = (best.first.maximumSamplingRate * 1000f).toInt(),
+            bitsPerSample = best.first.maximumBitDepth,
+        )
+        val result = SourceResult(
             sourceId = id,
             downloadUrl = download.url,
             // squid.wtf's CDN URLs are pre-signed query strings — no
             // extra headers needed for the actual file fetch.
             downloadHeaders = emptyMap(),
-            format = AudioFormat(
-                // squid.wtf strips the upstream `mime_type`; map from
-                // the requested format_id since Qobuz returns the
-                // matching codec for each.
-                codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
-                // Bitrate left at 0 — FLAC is variable; the
-                // canonical value comes from AudioDurationExtractor
-                // after the file's on disk.
-                bitrateKbps = 0,
-                sampleRateHz = (best.first.maximumSamplingRate * 1000f).toInt(),
-                bitsPerSample = best.first.maximumBitDepth,
-            ),
+            format = format,
             confidence = best.second,
             sourceTrackId = best.first.id.toString(),
             coverArtUrl = artUrl,
         )
+        Log.d(TAG, "resolved '${query.title}' url=${result.downloadUrl.take(60)}... codec=${format.codec}")
+        return result
     }
 
     override suspend fun rateLimitState(): RateLimitState = rateLimiter.stateOf(id)
@@ -215,6 +222,8 @@ class QobuzSource @Inject constructor(
             rateLimiter.reportSuccess(id)
             result
         } catch (e: QobuzApiException) {
+            val isCaptchaRequired = e.status == 403 &&
+                e.message?.contains("Captcha", ignoreCase = true) == true
             when {
                 e.status == 429 -> rateLimiter.reportRateLimited(id)
                 // 403 "Captcha required" is the normal expired-cookie
@@ -224,8 +233,8 @@ class QobuzSource @Inject constructor(
                 // disable the source for 30min even after the user
                 // refreshes the cookie. We skip the call but don't
                 // accumulate failures.
-                e.status == 403 && e.message?.contains("Captcha", ignoreCase = true) == true -> {
-                    Log.i(TAG, "captcha required — cookie likely expired; skipping without circuit-break")
+                isCaptchaRequired -> {
+                    Log.w(TAG, "failed reason=captcha_required cookie likely expired; skipping without circuit-break")
                     captchaExpiredNotifier.notifyExpired()
                     // Mark the current cookie as bad so isEnabled() skips squid until
                     // the user pastes a new value. Prevents wasting ~16s/track on
@@ -235,11 +244,13 @@ class QobuzSource @Inject constructor(
                 }
                 else -> rateLimiter.reportFailure(id)
             }
-            Log.w(TAG, "squid.wtf API call failed: $e")
+            if (!isCaptchaRequired) {
+                Log.w(TAG, "failed reason=network squid.wtf API call failed", e)
+            }
             null
         } catch (e: Exception) {
             rateLimiter.reportFailure(id)
-            Log.w(TAG, "squid.wtf call threw: ${e.javaClass.simpleName}: ${e.message}")
+            Log.w(TAG, "failed reason=network squid.wtf call threw: ${e.javaClass.simpleName}: ${e.message}", e)
             null
         }
     }
