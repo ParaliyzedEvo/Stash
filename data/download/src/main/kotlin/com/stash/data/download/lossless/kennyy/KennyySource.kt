@@ -46,6 +46,23 @@ class KennyySource @Inject constructor(
 
     override val displayName: String = "Qobuz (kennyy.com.br)"
 
+    /**
+     * Set to true by [callLimited] when the most recent call failed due
+     * to a network/HTTP/proxy error (NOT a catalog miss). Read by
+     * [com.stash.core.media.streaming.KennyyStreamResolver] to disambiguate
+     * "request failed" from "no match" before recording the outcome with
+     * KennyyHealthMonitor.
+     *
+     * @Volatile because the flag is written from one coroutine and read
+     * from another (resolver runs on the IO dispatcher; reader is the
+     * caller scope). resolveImmediate-style callers are serialized by
+     * the rate limiter / single-flight contract so concurrent races on
+     * the flag itself aren't a concern in practice.
+     */
+    @Volatile
+    var lastResolveFailedNetwork: Boolean = false
+        private set
+
     override suspend fun isEnabled(): Boolean {
         // No credentials gate — the only reason to skip this source is
         // the circuit breaker.
@@ -72,6 +89,7 @@ class KennyySource @Inject constructor(
         resolveInternal(query, bypassRateLimit = true)
 
     private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
+        lastResolveFailedNetwork = false
         Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
         // 1. Search kennyy.com.br for candidates. ISRC is Qobuz's best
         // index key — when we have one, send it as the query directly.
@@ -177,11 +195,12 @@ class KennyySource @Inject constructor(
                 e.status == 429 -> rateLimiter.reportRateLimited(id)
                 else -> rateLimiter.reportFailure(id)
             }
-            // Task 9 will plumb `lastResolveFailedNetwork = true` here.
+            lastResolveFailedNetwork = true
             Log.w(TAG, "failed reason=network kennyy.com.br API call failed", e)
             null
         } catch (e: Exception) {
             rateLimiter.reportFailure(id)
+            lastResolveFailedNetwork = true
             Log.w(TAG, "failed reason=network kennyy.com.br call threw: ${e.javaClass.simpleName}: ${e.message}", e)
             null
         }

@@ -6,7 +6,9 @@ import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.kennyy.KennyySource
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -14,8 +16,9 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class KennyyStreamResolverTest {
 
-    private val fakeKennyy: KennyySource = mockk()
-    private val resolver = KennyyStreamResolver(fakeKennyy)
+    private val fakeKennyy: KennyySource = mockk(relaxed = true)
+    private val monitor: KennyyHealthMonitor = mockk(relaxed = true)
+    private val resolver = KennyyStreamResolver(fakeKennyy, monitor)
 
     @Test
     fun resolve_returnsNullWhenKennyyHasNoMatch() = runTest {
@@ -60,6 +63,31 @@ class KennyyStreamResolverTest {
         val result = resolver.resolve(stubTrack())
 
         assertThat(result).isNull()
+    }
+
+    @Test
+    fun resolve_recordsSuccess_whenUrlValid() = runTest {
+        coEvery { fakeKennyy.resolveImmediate(any()) } returns stubSourceResult(
+            downloadUrl = "https://streaming-qobuz-std.akamaized.net/file?uid=1&etsp=1778893323&hmac=abc",
+        )
+        resolver.resolve(stubTrack())
+        verify { monitor.recordSuccess() }
+    }
+
+    @Test
+    fun resolve_recordsFailure_whenSourceFlagsNetworkFailure() = runTest {
+        coEvery { fakeKennyy.resolveImmediate(any()) } returns null
+        every { fakeKennyy.lastResolveFailedNetwork } returns true
+        resolver.resolve(stubTrack())
+        verify { monitor.recordFailure() }
+    }
+
+    @Test
+    fun resolve_recordsNoMatch_whenSourceReturnsNullWithoutNetworkFailure() = runTest {
+        coEvery { fakeKennyy.resolveImmediate(any()) } returns null
+        every { fakeKennyy.lastResolveFailedNetwork } returns false
+        resolver.resolve(stubTrack())
+        verify { monitor.recordNoMatch() }
     }
 
     private fun stubTrack(): TrackEntity = TrackEntity(

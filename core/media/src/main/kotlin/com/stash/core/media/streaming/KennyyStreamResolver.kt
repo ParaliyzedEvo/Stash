@@ -82,6 +82,7 @@ data class StreamUrl(
 @Singleton
 class KennyyStreamResolver @Inject constructor(
     private val source: KennyySource,
+    private val healthMonitor: KennyyHealthMonitor,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         Log.d(TAG, "resolve attempt id=${track.id} title='${track.title}'")
@@ -96,14 +97,25 @@ class KennyyStreamResolver @Inject constructor(
         // is user-initiated and must not queue behind background
         // AvailabilityCheckWorker batches that hold the limiter at 1
         // req/s. See KennyySource.resolveImmediate KDoc for rationale.
-        val result = source.resolveImmediate(query) ?: run {
-            Log.d(TAG, "no_result id=${track.id}")
+        val result = source.resolveImmediate(query)
+        if (result == null) {
+            if (source.lastResolveFailedNetwork) {
+                healthMonitor.recordFailure()
+                Log.d(TAG, "no_result id=${track.id} (network failure)")
+            } else {
+                healthMonitor.recordNoMatch()
+                Log.d(TAG, "no_result id=${track.id} (no match)")
+            }
             return null
         }
-        val etspMs = parseEtspMs(result.downloadUrl) ?: run {
+        val etspMs = parseEtspMs(result.downloadUrl)
+        if (etspMs == null) {
+            // Treat unparseable URL as a proxy-side anomaly worth signaling.
+            healthMonitor.recordFailure()
             Log.w(TAG, "no_etsp id=${track.id}")
             return null
         }
+        healthMonitor.recordSuccess()
         Log.d(
             TAG,
             "resolved id=${track.id} origin=$ORIGIN expiresInSec=${(etspMs - System.currentTimeMillis()) / 1000}",
