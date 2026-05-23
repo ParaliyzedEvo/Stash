@@ -1048,7 +1048,7 @@ Expected: FAIL — `buildFfmpegArgs` doesn't exist yet, `Track` constructor does
 
 - [ ] **Step 3: Refactor + expand `MetadataEmbedder`**
 
-Open `data/download/src/main/kotlin/com/stash/data/download/files/MetadataEmbedder.kt`. Replace the file content:
+Open `data/download/src/main/kotlin/com/stash/data/download/files/MetadataEmbedder.kt`. Replace the file content. **Note:** the existing constructor takes `fileOrganizer: FileOrganizer` but `embedMetadata` never uses it (only `context.applicationInfo.nativeLibraryDir`). Drop the parameter — it's dead weight and simplifies the integration test setup in Task 14.
 
 ```kotlin
 package com.stash.data.download.files
@@ -1083,7 +1083,6 @@ import javax.inject.Singleton
 @Singleton
 class MetadataEmbedder @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val fileOrganizer: FileOrganizer,
     private val appVersion: AppVersionProvider,
 ) {
     suspend fun embedMetadata(
@@ -1227,7 +1226,9 @@ Refactor: the ffmpeg argv buildList is extracted into a pure
 companion helper buildFfmpegArgs so the tag-writing logic is
 unit-testable without spawning a process. The outer embedMetadata
 suspends shell-out is unchanged and still covered by the
-androidTest integration suite.
+androidTest integration suite. Dropped the unused FileOrganizer
+constructor parameter — the embed pass only needed Context and now
+AppVersionProvider.
 
 KDoc on QualityPreferencesManager.toYtDlpArgs now describes the
 --embed-metadata flag accurately as a fallback tag layer rather
@@ -1956,8 +1957,7 @@ class MetadataBackfillWorkerTest {
         coEvery { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(0)
         coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returns emptyList()
 
-        val worker = TestListenableWorkerBuilder<MetadataBackfillWorker>(/* ... */).build()
-        val result = worker.doWork()
+        val result = buildSubject().doWork()
 
         assertEquals(ListenableWorker.Result.success(), result)
         coVerify { backfillState.markStarted(0) }
@@ -1975,7 +1975,8 @@ class MetadataBackfillWorkerTest {
         coEvery { albumArtCache.resolveArt(any()) } returns null
         coEvery { metadataEmbedder.embedMetadata(any(), any(), any()) } answers { firstArg() }
 
-        val result = /* run worker */
+        buildSubject().doWork()
+
         coVerify { trackDao.setMetadataEmbeddedAt(eq(1L), match { it > 0L }) }
         coVerify { trackDao.setMetadataEmbeddedAt(eq(2L), match { it > 0L }) }
         sampleFile.delete()
@@ -1986,7 +1987,8 @@ class MetadataBackfillWorkerTest {
         coEvery { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(1)
         coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returnsMany listOf(rows, emptyList())
 
-        /* run worker */
+        buildSubject().doWork()
+
         coVerify { trackDao.setMetadataEmbeddedAt(eq(5L), eq(0L)) }
         coVerify { backfillState.incrementSafSkipped() }
         coVerify(exactly = 0) { metadataEmbedder.embedMetadata(any(), any(), any()) }
@@ -1997,7 +1999,8 @@ class MetadataBackfillWorkerTest {
         coEvery { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(1)
         coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returnsMany listOf(rows, emptyList())
 
-        /* run worker */
+        buildSubject().doWork()
+
         coVerify { trackDao.setMetadataEmbeddedAt(eq(9L), eq(0L)) }
         coVerify(exactly = 0) { backfillState.incrementSafSkipped() }
     }
@@ -2540,17 +2543,14 @@ import java.io.File
 class MetadataEmbeddingIntegrationTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
-    // FileOrganizer is required by MetadataEmbedder's constructor but its
-    // methods aren't called during the embed pass — embedMetadata only
-    // uses `context.applicationInfo.nativeLibraryDir`. Mock it to satisfy
-    // the constructor and assert nothing in this test exercises its
-    // methods.
-    private val fileOrganizer: FileOrganizer = mockk(relaxed = true)
     private val versionProvider = object : AppVersionProvider {
         override val versionName: String = "0.9.35-test"
         override val versionCode: Int = 71
     }
-    private val embedder = MetadataEmbedder(context, fileOrganizer, versionProvider)
+    // Task 5 drops FileOrganizer from MetadataEmbedder's constructor
+    // because the embed pass never used it. Only `context` and
+    // `appVersion` are needed here.
+    private val embedder = MetadataEmbedder(context, versionProvider)
 
     private lateinit var artFile: File
 
@@ -2603,7 +2603,7 @@ class MetadataEmbeddingIntegrationTest {
 }
 ```
 
-The `FileOrganizer(context, TODO())` placeholder needs to be replaced with whatever instantiates `FileOrganizer` in the existing androidTest setup — if there isn't one yet, build a no-op stub `StoragePreference` that returns a flow of `null` from `externalTreeUri`.
+No `FileOrganizer` stub needed — Task 5 removed that parameter from `MetadataEmbedder`'s constructor.
 
 - [ ] **Step 3: Run the integration test on a connected device**
 
