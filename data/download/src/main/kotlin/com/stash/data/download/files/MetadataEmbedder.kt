@@ -1,6 +1,7 @@
 package com.stash.data.download.files
 
 import android.content.Context
+import android.util.Log
 import com.stash.core.common.AppVersionProvider
 import com.stash.core.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -46,16 +47,31 @@ class MetadataEmbedder @Inject constructor(
 
         try {
             val ffmpegPath = resolveFfmpegBinary() ?: return@withContext audioFile
-            val process = ProcessBuilder(listOf(ffmpegPath.absolutePath) + args)
+            val pb = ProcessBuilder(listOf(ffmpegPath.absolutePath) + args)
                 .redirectErrorStream(true)
-                .start()
-            process.waitFor()
+            // Android's dynamic linker does NOT auto-search the executable's
+            // directory for sibling .so files. The bundled ffmpeg needs
+            // libc++_shared.so and the libav*.so siblings that youtubedl-android
+            // extracts into noBackupFilesDir/youtubedl-android/packages/.
+            // Without LD_LIBRARY_PATH the process fails to launch with
+            // "CANNOT LINK EXECUTABLE ... library libc++_shared.so not found".
+            // Mirrors FFmpegBridgeImpl.ldLibraryPath().
+            pb.environment()["LD_LIBRARY_PATH"] = ldLibraryPath()
+            val process = pb.start()
+            val exit = process.waitFor()
+
+            if (exit != 0) {
+                Log.w(TAG, "ffmpeg exited with code $exit for ${audioFile.absolutePath}")
+            }
 
             if (outputFile.exists() && outputFile.length() > 0) {
                 audioFile.delete()
                 outputFile.renameTo(audioFile)
+            } else {
+                Log.w(TAG, "ffmpeg produced no output for ${audioFile.absolutePath} (exit=$exit)")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "ffmpeg embed failed for ${audioFile.absolutePath}: ${e.message}", e)
             outputFile.delete()
         }
 
@@ -68,7 +84,24 @@ class MetadataEmbedder @Inject constructor(
         return candidates.map { File(nativeDir, it) }.firstOrNull { it.exists() }
     }
 
+    /**
+     * Reconstructs the `LD_LIBRARY_PATH` that youtubedl-android sets
+     * internally so the bundled ffmpeg can dlopen its sibling .so files
+     * (libc++_shared.so, libav*.so). Order mirrors FFmpegBridgeImpl —
+     * see core/data/.../FFmpegBridge.kt#ldLibraryPath for the precedent.
+     */
+    private fun ldLibraryPath(): String {
+        val base = File(context.noBackupFilesDir, "youtubedl-android/packages")
+        return buildString {
+            append(File(base, "python/usr/lib").absolutePath); append(':')
+            append(File(base, "ffmpeg/usr/lib").absolutePath); append(':')
+            append(File(base, "aria2c/usr/lib").absolutePath)
+        }
+    }
+
     companion object {
+        private const val TAG = "MetadataEmbedder"
+
         private fun sanitize(value: String): String =
             value.replace(Regex("[\\x00-\\x1f]"), "")
 
