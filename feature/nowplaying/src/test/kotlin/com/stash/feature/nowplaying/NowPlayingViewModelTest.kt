@@ -1,5 +1,6 @@
 package com.stash.feature.nowplaying
 
+import android.content.Context
 import app.cash.turbine.test
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
@@ -8,6 +9,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
+import com.stash.data.lyrics.LyricsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -83,12 +85,21 @@ class NowPlayingViewModelFindInFlacTest {
     }
     private val stashLikedRepository: StashLikedPlaylistRepository = mockk(relaxed = true)
     private val upgrader: LosslessUpgrader = mockk()
+    // v0.9.36 Task 12 — Now Playing now depends on the lyrics repository
+    // (for the lyrics sheet) and an application Context (used as a
+    // sink for WorkManager.getInstance on the priority-fetch path).
+    // These tests don't exercise either surface, so a relaxed mock for
+    // both is enough to satisfy the constructor.
+    private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val appContext: Context = mockk(relaxed = true)
 
     private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
         stashLikedRepository = stashLikedRepository,
         losslessUpgrader = upgrader,
+        lyricsRepository = lyricsRepository,
+        appContext = appContext,
     )
 
     private val nonFlacTrack = Track(

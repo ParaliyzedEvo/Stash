@@ -1,22 +1,36 @@
 package com.stash.feature.nowplaying
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.palette.graphics.Palette
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.PlaylistInfo
+import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.lyrics.worker.LyricsFetchWorker
+import com.stash.feature.nowplaying.ui.LyricsViewState
+import com.stash.feature.nowplaying.ui.lyricsViewStateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +42,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +61,13 @@ class NowPlayingViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val stashLikedRepository: com.stash.core.data.social.stash.StashLikedPlaylistRepository,
     private val losslessUpgrader: LosslessUpgrader,
+    // v0.9.36 Task 12 — lyrics sheet observes the lyrics row and may
+    // enqueue a priority on-open fetch. WorkManager is sourced via
+    // `WorkManager.getInstance(appContext)` to match the rest of the
+    // codebase (see LyricsBackfillScheduler for the same shape — it's
+    // not Hilt-injectable in this project).
+    private val lyricsRepository: LyricsRepository,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
@@ -70,6 +92,69 @@ class NowPlayingViewModel @Inject constructor(
      * v0.9.27: holds optimistic heart-toggle states to prevent flickering.
      */
     private val optimisticLikeState = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+
+    // ------------------------------------------------------------------
+    // v0.9.36 Task 12 — Lyrics sheet state
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether the lyrics sheet is currently open. Toggled by
+     * [onShowLyrics] / [onDismissLyrics]; the Compose layer collects
+     * this and conditionally renders [com.stash.feature.nowplaying.ui.LyricsBottomSheet].
+     */
+    private val _lyricsSheetOpen = MutableStateFlow(false)
+    val lyricsSheetOpen: StateFlow<Boolean> = _lyricsSheetOpen.asStateFlow()
+
+    /**
+     * Re-derives [LyricsViewState] from the currently-playing track and
+     * the observed [com.stash.core.data.db.entity.LyricsEntity] row.
+     *
+     * Tracks the `currentTrack` field of [uiState] (the same field the
+     * rest of Now Playing reads) so the sheet always reflects the
+     * track that's currently displayed/playing — no separate "selected
+     * for lyrics" state. When the track flips, [flatMapLatest] cancels
+     * the old observer and subscribes to the new track's row.
+     *
+     * SharingStarted.WhileSubscribed(5_000) keeps the flow warm for
+     * 5 seconds after the sheet closes so a quick close+reopen doesn't
+     * re-derive from scratch.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lyricsViewState: StateFlow<LyricsViewState> = uiState
+        .map { it.currentTrack }
+        .distinctUntilChanged { old, new -> old?.id == new?.id }
+        .flatMapLatest { track ->
+            if (track == null) {
+                flowOf(LyricsViewState.None)
+            } else {
+                lyricsRepository.observe(track.id).map { row ->
+                    lyricsViewStateFor(track, row)
+                }
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = LyricsViewState.Loading,
+        )
+
+    /**
+     * Polls [PlayerRepository.currentPosition] at the existing 250ms
+     * cadence — same flow the [observePlayerStateLive] combine already
+     * consumes, so the player only ticks once.
+     *
+     * Exposed as a dedicated StateFlow so the lyrics sheet doesn't have
+     * to subscribe to the full [uiState] (which re-emits on every
+     * heart toggle, every queue change, every album-art recolor). The
+     * synced renderer only cares about the position, so this is the
+     * narrower subscription that matches what it needs.
+     */
+    val currentPositionMs: StateFlow<Long> = playerRepository.currentPosition
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = 0L,
+        )
 
     init {
         observePlayerStateLive()
@@ -397,6 +482,79 @@ class NowPlayingViewModel @Inject constructor(
                 _userMessages.tryEmit("Deleted from your device.")
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // v0.9.36 — Lyrics sheet actions
+    // ------------------------------------------------------------------
+
+    /**
+     * Open the lyrics sheet for the currently-playing track. If the
+     * track has never had a fetch attempt (`lyricsFetchedAt == null`),
+     * also enqueue a priority [LyricsFetchWorker] so the sheet
+     * transitions from Loading → Synced/Plain/None without waiting on
+     * the post-download or backfill paths.
+     *
+     * Safe to call when nothing is playing — the sheet just opens
+     * empty and observes whatever the next track produces.
+     */
+    fun onShowLyrics() {
+        _lyricsSheetOpen.value = true
+        val track = _uiState.value.currentTrack ?: return
+        if (track.lyricsFetchedAt == null && track.id > 0L) {
+            enqueuePriorityFetch(track.id)
+        }
+    }
+
+    /** Close the lyrics sheet without affecting playback. */
+    fun onDismissLyrics() {
+        _lyricsSheetOpen.value = false
+    }
+
+    /**
+     * Retry the lyrics fetch for the currently-playing track. Re-enqueues
+     * with [ExistingWorkPolicy.REPLACE] so an in-flight (probably failing)
+     * attempt is cancelled in favour of a fresh one. No-op when nothing
+     * is playing or when the track has no valid id (search-preview rows).
+     */
+    fun onLyricsRetry() {
+        val track = _uiState.value.currentTrack ?: return
+        if (track.id > 0L) enqueuePriorityFetch(track.id)
+    }
+
+    /**
+     * Tap-to-seek on a synced lyric line. Routed through the same
+     * player-controller seek path that the progress bar uses
+     * ([onSeekTo]) so the seek is bounded by the current duration.
+     */
+    fun onLyricsLineSeek(timestampMs: Long) {
+        onSeekTo(timestampMs)
+    }
+
+    /**
+     * Enqueue a priority lyrics fetch for [trackId]. Unique-name keyed
+     * by `lyrics_priority_<trackId>` with REPLACE policy so opening the
+     * sheet always jumps the queue with a fresh expedited request.
+     *
+     * `OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST` keeps the
+     * worker valid in low-quota windows — it'll just run as a normal
+     * job instead of an expedited one. Matches the LyricsBackfillScheduler
+     * convention.
+     */
+    private fun enqueuePriorityFetch(trackId: Long) {
+        WorkManager.getInstance(appContext).enqueueUniqueWork(
+            "${LyricsFetchWorker.UNIQUE_PREFIX_PRIORITY}$trackId",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<LyricsFetchWorker>()
+                .setInputData(workDataOf(LyricsFetchWorker.KEY_TRACK_ID to trackId))
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build(),
+        )
     }
 
     // ------------------------------------------------------------------

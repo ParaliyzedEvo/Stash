@@ -68,6 +68,7 @@ import com.stash.core.model.isFlac
 import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
+import com.stash.feature.nowplaying.ui.LyricsBottomSheet
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
 
 /**
@@ -124,6 +125,23 @@ fun NowPlayingScreen(
             },
             onRemoveTrack = viewModel::onRemoveFromQueue,
             onMoveTrack = viewModel::onMoveInQueue,
+        )
+    }
+
+    // v0.9.36 Task 12 — lyrics bottom sheet. The IconButton that
+    // toggles this lives in Task 13; until then, no UI affordance
+    // triggers `onShowLyrics()`. The block below is the real wiring
+    // that Task 13 will hook into.
+    val showLyrics by viewModel.lyricsSheetOpen.collectAsStateWithLifecycle()
+    if (showLyrics) {
+        val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
+        val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
+        LyricsBottomSheet(
+            state = lyricsState,
+            currentPositionMs = lyricsPositionMs,
+            onSeek = viewModel::onLyricsLineSeek,
+            onRetry = viewModel::onLyricsRetry,
+            onDismiss = viewModel::onDismissLyrics,
         )
     }
 
