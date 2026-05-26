@@ -221,6 +221,12 @@ fun StashNavHost(
                         launchSingleTop = true
                     }
                 },
+                onNavigateToRecentlyAdded = {
+                    navController.navigate(RecentlyAddedRoute)
+                },
+                onNavigateToLocalSongs = {
+                    navController.navigate(LocalSongsRoute)
+                },
             )
         }
         composable<LibraryRoute> {
@@ -366,6 +372,18 @@ fun StashNavHost(
 
         composable<FailedDownloadsRoute> {
             FailedDownloadsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable<RecentlyAddedRoute> {
+            com.stash.feature.home.RecentlyAddedScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<LocalSongsRoute> {
+            com.stash.feature.home.LocalSongsScreen(
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable<SearchArtistRoute> {

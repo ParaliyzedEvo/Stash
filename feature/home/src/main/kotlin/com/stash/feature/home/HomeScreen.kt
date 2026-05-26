@@ -128,6 +128,8 @@ fun HomeScreen(
     onNavigateToLikedSongs: (String?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
+    onNavigateToRecentlyAdded: () -> Unit = {},
+    onNavigateToLocalSongs: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -417,6 +419,7 @@ fun HomeScreen(
             item {
                 SectionHeader(title = "Stash Mixes  (Beta)")
             }
+            item { Spacer(Modifier.height(12.dp)) }
             item {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -438,6 +441,11 @@ fun HomeScreen(
         if (uiState.hasAnyLikedSongs) {
             item {
                 Spacer(Modifier.height(20.dp))
+                SectionHeader(
+                    title = "Liked Songs",
+                    actionText = "View All",
+                    onActionClick = { onNavigateToLikedSongs(null) },
+                )
                 LikedSongsCard(
                     totalCount = uiState.totalLikedCount,
                     spotifyCount = uiState.spotifyLikedCount,
@@ -490,7 +498,11 @@ fun HomeScreen(
         if (uiState.recentlyAdded.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(20.dp))
-                SectionHeader(title = "Recently Added")
+                SectionHeader(
+                    title = "Recently Added",
+                    actionText = "View All",
+                    onActionClick = onNavigateToRecentlyAdded,
+                )
             }
             item {
                 val visible = uiState.recentlyAdded.take(5)
@@ -521,7 +533,11 @@ fun HomeScreen(
         if (uiState.localSongs.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(20.dp))
-                SectionHeader(title = "Local Songs")
+                SectionHeader(
+                    title = "Local Songs",
+                    actionText = "View All",
+                    onActionClick = onNavigateToLocalSongs,
+                )
             }
             item {
                 val visible = uiState.localSongs.take(5)
@@ -1014,7 +1030,6 @@ private fun SourceSubHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SourceIndicator(source = source, size = 8.dp)
         Text(
             text = label,
             style = MaterialTheme.typography.titleLarge,
@@ -1198,7 +1213,7 @@ private fun LikedSongsCard(
                     )
                 }
 
-                // Living heart icon on the right
+                // Heart icon — uses Material theme primary colour
                 Box(
                     modifier = Modifier
                         .size(52.dp)
@@ -1209,17 +1224,13 @@ private fun LikedSongsCard(
                             )
                         }
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(gradientColor1, gradientColor2)
-                            )
-                        ),
+                        .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp),
                     )
                 }

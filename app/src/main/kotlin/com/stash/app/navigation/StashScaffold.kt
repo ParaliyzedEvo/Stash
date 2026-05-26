@@ -89,9 +89,27 @@ fun StashScaffold(
             val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
                                 currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
                                 isWebLoginOpen
+            // Hide mini player on Settings, Account, and all inner detail/sub pages
+            // so it doesn't overlap content that already has its own back-button header.
+            val innerPageRoutes = setOf(
+                SettingsRoute::class.qualifiedName,
+                AccountRoute::class.qualifiedName,
+                EqualizerRoute::class.qualifiedName,
+                LibraryHealthRoute::class.qualifiedName,
+                BlockedSongsRoute::class.qualifiedName,
+                FailedMatchesRoute::class.qualifiedName,
+                FailedDownloadsRoute::class.qualifiedName,
+                PlaylistDetailRoute::class.qualifiedName,
+                AlbumDetailRoute::class.qualifiedName,
+                ArtistDetailRoute::class.qualifiedName,
+                LikedSongsDetailRoute::class.qualifiedName,
+                SearchArtistRoute::class.qualifiedName,
+                SearchAlbumRoute::class.qualifiedName,
+                RecentlyAddedRoute::class.qualifiedName,
+                LocalSongsRoute::class.qualifiedName,
+            )
             val hideMiniPlayer = hideBottomBar ||
-                                 currentRoute == SettingsRoute::class.qualifiedName ||
-                                 currentRoute == AccountRoute::class.qualifiedName
+                                 innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
             if (!hideBottomBar) {
                 Column {
                     if (!hideMiniPlayer) {
