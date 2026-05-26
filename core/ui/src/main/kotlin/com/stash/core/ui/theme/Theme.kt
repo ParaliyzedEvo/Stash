@@ -113,7 +113,6 @@ fun StashTheme(
             baseScheme.copy(
                 background = Color.Black,
                 surface = Color.Black,
-                surfaceVariant = Color(0xFF0C0C12),
             )
         }
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -135,7 +134,9 @@ fun StashTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            @Suppress("DEPRECATION")
             window.statusBarColor = Color.Transparent.toArgb()
+            @Suppress("DEPRECATION")
             window.navigationBarColor = Color.Transparent.toArgb()
             val insetsController = WindowCompat.getInsetsController(window, view)
             // Light status-bar icons on dark theme, dark icons on light theme.
