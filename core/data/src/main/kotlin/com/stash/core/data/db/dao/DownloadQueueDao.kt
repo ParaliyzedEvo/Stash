@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.ColumnInfo
+import androidx.room.Transaction
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
@@ -176,9 +177,162 @@ interface DownloadQueueDao {
         rejectedVideoId: String? = null,
     )
 
+    // ── Failed Downloads viewer (Library Health phase 1) ────────────────
+
+    /** Look up a single queue row by primary key. Used by the
+     *  Failed Downloads viewer and by tests that need to read back
+     *  exactly what [markFailed] / [atomicallyClaimForRetry] wrote. */
+    @Query("SELECT * FROM download_queue WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): DownloadQueueEntity?
+
+    /**
+     * Reactive feed for the Failed Downloads viewer (Task 16). Joins the
+     * queue row to its [com.stash.core.data.db.entity.TrackEntity] for
+     * title / artist / album art, and pulls a single playlist name via a
+     * scalar subquery so the viewer can show "from <playlist>" without a
+     * separate query per row.
+     *
+     * Returns the first sync-enabled playlist a track belongs to, falling
+     * back to the first non-sync-enabled playlist if none are enabled —
+     * `ORDER BY p.sync_enabled DESC, p.id ASC` prefers enabled rows (1 > 0)
+     * and uses the smallest id as a stable tie-breaker. This matches the
+     * spec §3.6 rule "pick the first sync-enabled playlist arbitrarily"
+     * while still surfacing *some* name for orphaned tracks whose only
+     * memberships are sync-disabled.
+     *
+     * Excludes `NONE` (the implicit value for non-failed rows that may
+     * still carry a `FAILED` status from legacy data) and `NO_MATCH`
+     * (which has its own dedicated Failed Matches detail screen — see
+     * [getUnmatchedTracks]).
+     */
+    @Query("""
+        SELECT dq.id AS queueId, t.id AS trackId, t.title, t.artist,
+               t.album_art_url AS albumArtUrl,
+               (SELECT p.name FROM playlists p
+                 INNER JOIN playlist_tracks pt ON pt.playlist_id = p.id
+                 WHERE pt.track_id = t.id AND pt.removed_at IS NULL
+                 ORDER BY p.sync_enabled DESC, p.id ASC LIMIT 1) AS playlistName,
+               dq.failure_type AS failureType,
+               dq.error_message AS errorMessage,
+               dq.retry_count AS retryCount,
+               dq.completed_at AS completedAt
+          FROM download_queue dq
+          INNER JOIN tracks t ON t.id = dq.track_id
+         WHERE dq.status = 'FAILED'
+           AND dq.failure_type != 'NONE'
+           AND dq.failure_type != 'NO_MATCH'
+         ORDER BY COALESCE(dq.completed_at, dq.created_at) DESC
+    """)
+    fun getFailedDownloads(): Flow<List<FailedDownloadRow>>
+
+    /**
+     * Atomic single-row retry claim: flip status FAILED → PENDING, clear
+     * the classified failure_type / error_message in one UPDATE. Returns
+     * the number of rows affected so the caller can detect lost races
+     * (e.g. another worker already claimed the row).
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING', error_message = NULL, failure_type = 'NONE'
+         WHERE id = :queueId AND status = 'FAILED'
+    """)
+    suspend fun atomicallyClaimForRetry(queueId: Long): Int
+
+    /** Internal helper for [atomicallyClaimGroupForRetry]. */
+    @Query("SELECT id FROM download_queue WHERE status = 'FAILED' AND failure_type = :type")
+    suspend fun selectFailedIdsByType(type: DownloadFailureType): List<Long>
+
+    /** Internal helper for [atomicallyClaimAllForRetry]. */
+    @Query("SELECT id FROM download_queue WHERE status = 'FAILED' AND failure_type NOT IN ('NONE', 'NO_MATCH')")
+    suspend fun selectAllNonMatchFailedIds(): List<Long>
+
+    /** Internal helper: bulk flip a known set of FAILED rows back to PENDING. */
+    @Query("UPDATE download_queue SET status='PENDING', error_message=NULL, failure_type='NONE' WHERE id IN (:ids)")
+    suspend fun resetToPending(ids: List<Long>)
+
+    /**
+     * Atomic group retry: select all FAILED rows of a given failure type
+     * then flip them back to PENDING inside a single transaction. Returns
+     * the list of queue IDs that were claimed (so the caller can enqueue
+     * the corresponding workers).
+     */
+    @Transaction
+    suspend fun atomicallyClaimGroupForRetry(type: DownloadFailureType): List<Long> {
+        val ids = selectFailedIdsByType(type)
+        if (ids.isNotEmpty()) resetToPending(ids)
+        return ids
+    }
+
+    /**
+     * Atomic "retry all": flip every classified-failure FAILED row back to
+     * PENDING (excluding `NO_MATCH` and `NONE`) inside a single transaction.
+     * Returns the list of queue IDs claimed.
+     */
+    @Transaction
+    suspend fun atomicallyClaimAllForRetry(): List<Long> {
+        val ids = selectAllNonMatchFailedIds()
+        if (ids.isNotEmpty()) resetToPending(ids)
+        return ids
+    }
+
+    /**
+     * Thin wrapper over the existing [updateStatus] — sets status=FAILED +
+     * error_message + classified failure_type + completed_at in one place,
+     * while leaving the existing [updateStatus] contract (which supports
+     * `rejected_video_id` for the NO_MATCH lane) untouched. Pass
+     * `rejectedVideoId=null` because the classified-failure caller has no
+     * rejected match to record.
+     */
+    suspend fun markFailed(
+        queueId: Long,
+        errorMessage: String?,
+        failureType: DownloadFailureType,
+        completedAt: Long = System.currentTimeMillis(),
+    ) {
+        updateStatus(
+            id = queueId,
+            status = DownloadStatus.FAILED,
+            errorMessage = errorMessage,
+            completedAt = completedAt,
+            failureType = failureType,
+            rejectedVideoId = null,
+        )
+    }
+
     /** Increment the retry count for a download queue entry. */
     @Query("UPDATE download_queue SET retry_count = retry_count + 1 WHERE id = :id")
     suspend fun incrementRetryCount(id: Long)
+
+    /**
+     * Used when a download attempt is interrupted by a transient cause
+     * (network drop, storage hiccup, mid-run auth expiry, etc.). Leaves the
+     * row at PENDING for the next sync to retry, but bumps retry_count and
+     * records the last error type/message for telemetry. Crucially: status
+     * is PENDING, NOT FAILED — the track itself isn't broken, the sync just
+     * couldn't finish it this time.
+     *
+     * Note: `failure_type` is populated for telemetry but the row stays at
+     * status=PENDING, which keeps it out of the Failed Downloads viewer's
+     * `getFailedDownloads()` query (that query gates on `status='FAILED'`).
+     *
+     * Callers should escalate to [markFailed] once retry_count reaches the
+     * `TRANSIENT_RETRY_LIMIT` defined at the worker layer, so persistently-
+     * stuck rows eventually surface to the user.
+     */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'PENDING',
+               error_message = :lastErrorMessage,
+               failure_type = :lastFailureType,
+               retry_count = retry_count + 1,
+               completed_at = NULL
+         WHERE id = :queueId
+    """)
+    suspend fun revertToPendingAfterInterruption(
+        queueId: Long,
+        lastErrorMessage: String?,
+        lastFailureType: DownloadFailureType,
+    )
 
     /**
      * Stamp a YouTube URL onto a pending queue row that doesn't have one
@@ -414,4 +568,24 @@ data class UnmatchedTrackView(
     val createdAt: Long,
     val rejectedVideoId: String?,
     val searchQuery: String,
+)
+
+/**
+ * Room projection for the Failed Downloads viewer (Task 16). One row per
+ * FAILED queue entry whose `failure_type` is a classified, retryable
+ * failure (i.e. not `NONE` and not `NO_MATCH` — the latter has its own
+ * dedicated screen). `playlistName` is a single representative playlist
+ * scalar-subqueried at the SQL layer to avoid an N+1.
+ */
+data class FailedDownloadRow(
+    val queueId: Long,
+    val trackId: Long,
+    val title: String,
+    val artist: String,
+    val albumArtUrl: String?,
+    val playlistName: String?,
+    val failureType: DownloadFailureType,
+    val errorMessage: String?,
+    val retryCount: Int,
+    val completedAt: Long?,
 )

@@ -19,7 +19,8 @@ import javax.inject.Singleton
  * the Settings UI's "blocked from N" label.
  */
 enum class BlockSource {
-    NOW_PLAYING, CONTEXT_MENU, PLAYLIST_DELETE, MIGRATION_V19, INTEGRITY_WORKER, OTHER
+    NOW_PLAYING, CONTEXT_MENU, PLAYLIST_DELETE,
+    MIGRATION_V19, INTEGRITY_WORKER, FAILED_DOWNLOADS, OTHER
 }
 
 /**

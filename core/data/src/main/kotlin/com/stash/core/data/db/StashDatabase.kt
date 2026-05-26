@@ -73,7 +73,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         TrackSkipEventEntity::class,
         LyricsEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -769,6 +769,34 @@ abstract class StashDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_lyrics_track_id ON lyrics(track_id)")
+            }
+        }
+
+        /**
+         * v28 → v29 (v0.9.38 / library-health-phase1): rewrite every
+         * legacy `download_queue.failure_type = 'DOWNLOAD_ERROR'` row
+         * to `'UNKNOWN'`.
+         *
+         * Phase 1 of the library-health epic deletes the `DOWNLOAD_ERROR`
+         * constant from [com.stash.core.model.download.DownloadFailureType]
+         * in favour of a richer failure-type vocabulary
+         * (UNKNOWN + classifier-emitted variants). Without this migration
+         * the converter's `valueOf(it)` call in
+         * [com.stash.core.data.db.converter.Converters.fromFailureType]
+         * would crash with `IllegalArgumentException` the first time Room
+         * read a legacy `'DOWNLOAD_ERROR'` row. Room guarantees migrations
+         * run before any DAO read on the upgraded schema, so once this
+         * migration ships the converter only ever sees valid enum names.
+         *
+         * UPDATE-in-place is safe because `failure_type` is a TEXT column
+         * (storing the enum `.name`), so swapping one literal for another
+         * needs no DDL.
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE download_queue SET failure_type = 'UNKNOWN' WHERE failure_type = 'DOWNLOAD_ERROR'"
+                )
             }
         }
     }

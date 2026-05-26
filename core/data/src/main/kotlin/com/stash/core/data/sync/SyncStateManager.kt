@@ -6,6 +6,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class AuthExpiryState(
+    val spotifyExpired: Boolean,
+    val youtubeExpired: Boolean,
+) {
+    val anyExpired: Boolean get() = spotifyExpired || youtubeExpired
+}
+
 /**
  * Centralized, in-memory manager for the current sync phase.
  *
@@ -32,6 +39,22 @@ class SyncStateManager @Inject constructor() {
         get() = _phase.value !is SyncPhase.Idle &&
             _phase.value !is SyncPhase.Completed &&
             _phase.value !is SyncPhase.Error
+
+    private val _authExpiry = MutableStateFlow(AuthExpiryState(false, false))
+
+    /**
+     * Per-source auth expiry state. The Sync tab's AuthExpiredBanner
+     * (composable) subscribes to this flow to show a "Re-authenticate"
+     * CTA when either Spotify or YouTube returns expired credentials.
+     * Updated by PlaylistFetchWorker at the head of each sync after
+     * running the AuthHealthProbe pair.
+     */
+    val authExpiry: StateFlow<AuthExpiryState> = _authExpiry.asStateFlow()
+
+    /** Probed at sync start by PlaylistFetchWorker. */
+    fun onAuthExpiryProbed(state: AuthExpiryState) {
+        _authExpiry.value = state
+    }
 
     /** Transition to [SyncPhase.Authenticating]. */
     fun onAuthenticating() {

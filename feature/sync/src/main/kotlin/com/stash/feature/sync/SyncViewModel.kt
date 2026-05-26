@@ -7,6 +7,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.data.sync.AuthExpiryState
 import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -186,6 +187,34 @@ class SyncViewModel @Inject constructor(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = 0,
+            )
+
+    /**
+     * Reactive count of FAILED rows in download_queue. Drives the
+     * "Failed Downloads" card on the Sync tab — the card hides itself
+     * when this is 0 so a healthy library shows no clutter.
+     */
+    val failedDownloadsCount: StateFlow<Int> =
+        downloadQueueDao.getFailedDownloads()
+            .map { it.size }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = 0,
+            )
+
+    /**
+     * Per-source auth expiry state from SyncStateManager. The Sync tab's
+     * AuthExpiredBanner subscribes to this flow and renders nothing when
+     * `anyExpired == false`, so re-auth surfaces only when probes flag a
+     * problem at sync start.
+     */
+    val authExpiry: StateFlow<AuthExpiryState> =
+        syncStateManager.authExpiry
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = AuthExpiryState(false, false),
             )
 
     private val _uiState = MutableStateFlow(SyncUiState())

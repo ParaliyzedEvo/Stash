@@ -11,14 +11,18 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
+import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.data.sync.AuthExpiryState
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
+import com.stash.core.data.sync.auth.SpotifyAuthHealthProbe
+import com.stash.core.data.sync.auth.YoutubeAuthHealthProbe
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.StepStatus
@@ -66,6 +70,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
     private val syncPreferencesManager: SyncPreferencesManager,
+    private val spotifyAuthHealthProbe: SpotifyAuthHealthProbe,
+    private val youtubeAuthHealthProbe: YoutubeAuthHealthProbe,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -79,6 +85,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // so a sync doesn't spend minutes walking radio. User playlists +
         // Liked Songs use the full MAX_PAGES default in YTMusicApiClient.
         private const val HOME_MIX_MAX_PAGES = 1
+
+        // Shared reason string for auth-expiry short-circuit so the
+        // sync_history FAILED row and the SyncStateManager onError call
+        // can't drift out of sync.
+        private const val AUTH_EXPIRED_REASON = "Credentials expired — re-authenticate to resume sync"
     }
 
     /**
@@ -132,6 +143,35 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     errorMessage = "No authenticated services",
                 )
                 syncStateManager.onError("No authenticated services")
+                return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
+            }
+
+            // Step 2b: Probe live auth health for each connected source. If
+            // either source returns expired credentials we abort the chain
+            // before any playlist IO — downstream workers (DiffWorker,
+            // TrackDownloadWorker, SyncFinalizeWorker) won't run because
+            // Result.failure() short-circuits the WorkContinuation. The
+            // AuthExpiredBanner composable reads syncStateManager.authExpiry
+            // to render the per-source "Re-authenticate" CTA.
+            val probeResult = runAuthProbes(
+                tokenManager = tokenManager,
+                spotifyProbe = spotifyAuthHealthProbe,
+                youtubeProbe = youtubeAuthHealthProbe,
+            )
+            syncStateManager.onAuthExpiryProbed(probeResult.state)
+            if (probeResult.shortCircuit) {
+                Log.i(
+                    TAG,
+                    "Auth expired (spotify=${probeResult.state.spotifyExpired}, " +
+                        "youtube=${probeResult.state.youtubeExpired}); aborting chain",
+                )
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.FAILED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = AUTH_EXPIRED_REASON,
+                )
+                syncStateManager.onError(AUTH_EXPIRED_REASON)
                 return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
@@ -784,3 +824,50 @@ internal fun filterStudioOnly(tracks: List<YTMusicTrack>): List<YTMusicTrack> =
         it.musicVideoType != MusicVideoType.UGC &&
         it.musicVideoType != MusicVideoType.PODCAST_EPISODE
     }
+
+/**
+ * Outcome of running the two [com.stash.core.data.sync.auth.AuthHealthProbe]
+ * implementations at the head of a sync run.
+ *
+ * @property state Per-source expiry flags to write to
+ *  [SyncStateManager.onAuthExpiryProbed]. Drives the AuthExpiredBanner UI.
+ * @property shortCircuit `true` when the worker should abort the chain
+ *  (return `Result.failure()`) because at least one connected source has
+ *  expired credentials. Equivalent to `state.anyExpired`.
+ */
+internal data class AuthProbeResult(
+    val state: AuthExpiryState,
+    val shortCircuit: Boolean,
+)
+
+/**
+ * Runs [spotifyProbe] and [youtubeProbe] in parallel, but only for sources
+ * the user has actually connected. Skipping disconnected sources is critical
+ * UX — a user who never linked YouTube must never see a "YouTube expired"
+ * banner just because the probe network call would fail.
+ *
+ * Extracted from [PlaylistFetchWorker.doWork] so the orchestration can be
+ * unit-tested without spinning up a HiltWorker/WorkerParameters harness for
+ * an @AssistedInject worker. See [PlaylistFetchWorkerAuthProbeTest].
+ */
+internal suspend fun runAuthProbes(
+    tokenManager: TokenManager,
+    spotifyProbe: SpotifyAuthHealthProbe,
+    youtubeProbe: YoutubeAuthHealthProbe,
+): AuthProbeResult = coroutineScope {
+    val spotifyConnected = tokenManager.spotifyAuthState.first() is AuthState.Connected
+    val youtubeConnected = tokenManager.youTubeAuthState.first() is AuthState.Connected
+
+    val spotifyDeferred = async {
+        if (spotifyConnected) spotifyProbe.isExpired() else false
+    }
+    val youtubeDeferred = async {
+        if (youtubeConnected) youtubeProbe.isExpired() else false
+    }
+
+    val state = AuthExpiryState(
+        spotifyExpired = spotifyDeferred.await(),
+        youtubeExpired = youtubeDeferred.await(),
+    )
+    AuthProbeResult(state = state, shortCircuit = state.anyExpired)
+}

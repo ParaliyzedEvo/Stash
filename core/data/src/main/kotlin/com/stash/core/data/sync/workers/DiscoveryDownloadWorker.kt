@@ -240,7 +240,7 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         downloadQueueDao.updateStatus(
             id = queueItem.id,
             status = DownloadStatus.FAILED,
-            failureType = DownloadFailureType.DOWNLOAD_ERROR,
+            failureType = DownloadFailureType.UNKNOWN,
             errorMessage = outcome.error.take(500),
         )
     }

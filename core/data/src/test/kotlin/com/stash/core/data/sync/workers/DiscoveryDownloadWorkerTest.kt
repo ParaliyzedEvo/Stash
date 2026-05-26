@@ -109,7 +109,7 @@ class DiscoveryDownloadWorkerTest {
         }
     }
 
-    @Test fun `failed outcome marks FAILED with DOWNLOAD_ERROR`() = runTest {
+    @Test fun `failed outcome marks FAILED with UNKNOWN`() = runTest {
         val entry = entry(id = 100L, trackId = 1L)
         coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
         coEvery { trackDao.getById(1L) } returns stubTrack(1L)

@@ -23,6 +23,9 @@ import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.data.sync.classifier.DownloadFailureClassifier
+import com.stash.core.data.sync.classifier.DownloadPhase
+import com.stash.core.data.sync.classifier.FailureContext
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.SyncState
@@ -55,13 +58,33 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val audioDurationExtractor: AudioDurationExtractor,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val classifier: DownloadFailureClassifier,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_DOWNLOADED = "downloaded"
         const val KEY_FAILED = "failed"
+
+        /**
+         * Optional input-data key. When present and non-`-1L`, the worker
+         * runs in single-track mode against exactly this `download_queue`
+         * row instead of the full sync-chain pass. Used by
+         * `SingleTrackDownloadEnqueuer` (Task 9.5) to power one-tap retries
+         * from the Failed Downloads viewer.
+         */
+        const val KEY_QUEUE_ID = "queue_id"
         private const val TAG = "TrackDownloadWorker"
+
+        /**
+         * Cap on the number of transient interruptions (network drop,
+         * storage hiccup, mid-run auth expiry, UNKNOWN) we'll tolerate
+         * before escalating a queue row from PENDING to FAILED. Once this
+         * many consecutive attempts have ended in non-terminal failure,
+         * the row surfaces in the Failed Downloads viewer so the user can
+         * see and act on it instead of silently re-retrying forever.
+         */
+        const val TRANSIENT_RETRY_LIMIT = 10
     }
 
     /**
@@ -84,6 +107,15 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Single-track retry path (Task 9). When the enqueuer hands us a
+        // specific download_queue row, skip the full sync-chain bookkeeping
+        // (orphan sweeps, requeue, parallel fan-out) and just drive that
+        // one row through the downloader.
+        val singleQueueId = inputData.getLong(KEY_QUEUE_ID, -1L)
+        if (singleQueueId != -1L) {
+            return runSingleTrackMode(singleQueueId)
+        }
+
         val startedAtMs = System.currentTimeMillis()
         val syncId = inputData.getLong(DiffWorker.KEY_SYNC_ID, -1L)
         if (syncId == -1L) {
@@ -232,10 +264,19 @@ class TrackDownloadWorker @AssistedInject constructor(
                             val trackEntity = trackDao.getById(queueItem.trackId)
                             if (trackEntity == null) {
                                 Log.w(TAG, "Track ${queueItem.trackId} not found in DB, skipping")
-                                downloadQueueDao.updateStatus(
-                                    id = queueItem.id,
-                                    status = DownloadStatus.FAILED,
-                                    errorMessage = "Track not found in database",
+                                val err = "Track not found in database"
+                                val type = classifier.classify(
+                                    FailureContext(
+                                        phase = DownloadPhase.MATCHING,
+                                        errorText = err,
+                                        httpStatus = null,
+                                        causeChain = emptyList(),
+                                    )
+                                )
+                                downloadQueueDao.markFailed(
+                                    queueId = queueItem.id,
+                                    errorMessage = err.take(1000),
+                                    failureType = type,
                                 )
                                 failedCount.incrementAndGet()
                                 return@launch
@@ -373,15 +414,48 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 }
                                 is TrackDownloadOutcome.Failed -> {
                                     Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
-                                    downloadQueueDao.incrementRetryCount(queueItem.id)
-                                    downloadQueueDao.updateStatus(
-                                        id = queueItem.id,
-                                        status = DownloadStatus.FAILED,
-                                        failureType = DownloadFailureType.DOWNLOAD_ERROR,
-                                        errorMessage = outcome.error.take(500),
+                                    val type = classifier.classify(
+                                        FailureContext(
+                                            phase = DownloadPhase.DOWNLOADING,
+                                            errorText = outcome.error,
+                                            httpStatus = null,
+                                            causeChain = emptyList(),
+                                        )
                                     )
-                                    firstError.compareAndSet(null, outcome.error.take(500))
-                                    failedCount.incrementAndGet()
+                                    val truncated = outcome.error.take(1000)
+                                    val isTerminal = DownloadFailureClassifier.isTerminal(type)
+                                    val exhausted = queueItem.retryCount >= TRANSIENT_RETRY_LIMIT
+                                    if (isTerminal || exhausted) {
+                                        // Real terminal failure OR transient that won't
+                                        // stop happening — surface in the viewer.
+                                        // markFailed bumps completed_at; retry_count is
+                                        // incremented separately to match prior tally
+                                        // semantics for terminal failures.
+                                        downloadQueueDao.incrementRetryCount(queueItem.id)
+                                        downloadQueueDao.markFailed(
+                                            queueId = queueItem.id,
+                                            errorMessage = truncated,
+                                            failureType = type,
+                                        )
+                                        firstError.compareAndSet(null, truncated)
+                                        failedCount.incrementAndGet()
+                                    } else {
+                                        // Interruption — bump retry_count, retain
+                                        // error_message + failure_type for telemetry,
+                                        // but leave status PENDING so the next sync
+                                        // re-attempts. revertToPendingAfterInterruption
+                                        // increments retry_count itself, so we don't
+                                        // also call incrementRetryCount here.
+                                        downloadQueueDao.revertToPendingAfterInterruption(
+                                            queueId = queueItem.id,
+                                            lastErrorMessage = truncated,
+                                            lastFailureType = type,
+                                        )
+                                        Log.i(
+                                            TAG,
+                                            "Interrupted (type=$type), keeping queue ${queueItem.id} PENDING for next sync: ${truncated.take(120)}",
+                                        )
+                                    }
                                 }
                                 is TrackDownloadOutcome.Deferred -> {
                                     // v0.9.17 strict-FLAC: lossless source unavailable
@@ -393,14 +467,60 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     Log.i(TAG, "Deferred (waiting for lossless): ${track.artist} - ${track.title}")
                                 }
                             }
+                        } catch (ce: kotlinx.coroutines.CancellationException) {
+                            // The worker is being cancelled (user hit "Cancel" on the
+                            // notification, or WorkManager pulled the plug). DO NOT mark
+                            // the row FAILED — propagate cleanly so the row stays PENDING
+                            // (status was set to IN_PROGRESS earlier in this block; the
+                            // worker-level resetStaleInProgress() on the next run flips
+                            // it back to PENDING). Marking thousands of in-flight rows
+                            // FAILED on cancel was the root cause of the "2325 failed
+                            // rows after Stop" smoke-test crash.
+                            throw ce
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to download track ${queueItem.trackId}", e)
-                            downloadQueueDao.updateStatus(
-                                id = queueItem.id,
-                                status = DownloadStatus.FAILED,
-                                errorMessage = e.message,
+                            // Cycle-safe cause-chain extraction: Throwable.getCause() can
+                            // return `this` or form cycles, which would hang generateSequence
+                            // and OOM .toList(). Guard with self-reference check + depth cap.
+                            val causeChain = generateSequence<Throwable>(e) { it.cause.takeIf { c -> c !== it } }
+                                .take(16)
+                                .map { it::class.java.simpleName }
+                                .toList()
+                            val type = classifier.classify(
+                                FailureContext(
+                                    phase = DownloadPhase.DOWNLOADING,
+                                    errorText = e.message,
+                                    httpStatus = null,
+                                    causeChain = causeChain,
+                                )
                             )
-                            failedCount.incrementAndGet()
+                            val truncated = e.message?.take(1000)
+                            val isTerminal = DownloadFailureClassifier.isTerminal(type)
+                            val exhausted = queueItem.retryCount >= TRANSIENT_RETRY_LIMIT
+                            if (isTerminal || exhausted) {
+                                // Real terminal failure OR transient that won't stop
+                                // happening — surface in Failed Downloads viewer.
+                                downloadQueueDao.markFailed(
+                                    queueId = queueItem.id,
+                                    errorMessage = truncated,
+                                    failureType = type,
+                                )
+                                failedCount.incrementAndGet()
+                            } else {
+                                // Interruption — leave row at PENDING so next sync
+                                // re-attempts. Bump retry_count + record last-error
+                                // for telemetry. Does NOT increment failedCount: this
+                                // is not a tracked failure in the per-sync tally.
+                                downloadQueueDao.revertToPendingAfterInterruption(
+                                    queueId = queueItem.id,
+                                    lastErrorMessage = truncated,
+                                    lastFailureType = type,
+                                )
+                                Log.i(
+                                    TAG,
+                                    "Interrupted (type=$type), keeping queue ${queueItem.id} PENDING for next sync: ${truncated?.take(120)}",
+                                )
+                            }
                         }
 
                         // Update progress notification after each completed track.
@@ -468,6 +588,22 @@ class TrackDownloadWorker @AssistedInject constructor(
                     KEY_FAILED to finalFailed,
                 )
             )
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // User cancelled the sync (or system pulled the plug). Drop the
+            // sync history row to a clean state and reset the in-memory phase
+            // back to Idle so the UI stops showing a progress card. DO NOT
+            // mark the sync FAILED — cancellation isn't a failure, and the
+            // chain's leftover IN_PROGRESS queue rows will be reset to
+            // PENDING by the next run's resetStaleInProgress() sweep.
+            Log.i(TAG, "Sync cancelled by user or system")
+            syncHistoryDao.updateStatus(
+                id = syncId,
+                status = SyncState.IDLE,
+                completedAt = System.currentTimeMillis(),
+                errorMessage = "Cancelled",
+            )
+            syncStateManager.reset()
+            throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Download worker failed", e)
             syncHistoryDao.updateStatus(
@@ -479,6 +615,167 @@ class TrackDownloadWorker @AssistedInject constructor(
             syncStateManager.onError("Download failed: ${e.message}", e)
             return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
         }
+    }
+
+    /**
+     * Single-track retry path. Reads exactly one `download_queue` row and
+     * drives it through the same [TrackDownloader] the chain uses, then
+     * translates the [TrackDownloadOutcome] into a queue update. Used by
+     * `SingleTrackDownloadEnqueuer` (Task 9.5) — one OneTimeWorkRequest per
+     * row, so concurrency for "Retry all" comes from WorkManager fanning
+     * out N independent instances rather than the chain's supervisorScope
+     * fan-out.
+     *
+     * This path deliberately omits the chain-mode bookkeeping (sync history
+     * tally, orphan sweep, requeue, foreground-progress fraction over
+     * `total`), since the retry is a single sequential invocation and the
+     * Failed Downloads viewer drives its own UI off the queue Flow.
+     */
+    private suspend fun runSingleTrackMode(queueId: Long): Result {
+        // Single-track mode does NOT publish into SyncStateManager.phase — that singleton
+        // flow is shared with a possibly-running chain sync and overwriting it would
+        // stomp the chain's progress counter. The Failed Downloads viewer reads queue
+        // rows directly via DownloadQueueDao.getFailedDownloads().
+        val entry = downloadQueueDao.getById(queueId)
+        if (entry == null) {
+            Log.w(TAG, "Single-track mode: queue row $queueId not found")
+            return Result.success()
+        }
+        val trackEntity = trackDao.getById(entry.trackId)
+        if (trackEntity == null) {
+            Log.w(TAG, "Single-track mode: track ${entry.trackId} not found for queue $queueId")
+            return Result.failure()
+        }
+
+        val track = trackEntity.toDomain()
+        Log.i(
+            TAG,
+            "Single-track mode: queueId=$queueId trackId=${entry.trackId} (${track.artist} - ${track.title})",
+        )
+
+        // Swap the foreground notification to single-track wording so the user
+        // sees "Retrying download — Artist – Title" instead of the chain-mode
+        // "Syncing playlists / Preparing downloads…" copy.
+        setForeground(
+            createForegroundInfo(
+                title = "Retrying download",
+                text = "${track.artist} – ${track.title}",
+                progress = -1f, // indeterminate — single-track has no N-of-M progress
+            ),
+        )
+
+        // Manual retries deliberately do NOT increment retry_count — user-initiated
+        // attempts should not consume the auto-retry budget owned by chain mode.
+
+        // Mark the row IN_PROGRESS before invoking the downloader so the Failed
+        // Downloads viewer reflects the active state and spam-tapping Retry is
+        // idempotent (the row leaves FAILED immediately and re-enqueue paths
+        // can no-op on non-FAILED rows). Relies on updateStatus's defaults to
+        // null out error_message / completed_at / rejected_video_id and reset
+        // failure_type to NONE, matching the chain-mode IN_PROGRESS call.
+        downloadQueueDao.updateStatus(
+            id = entry.id,
+            status = DownloadStatus.IN_PROGRESS,
+        )
+
+        val outcome = try {
+            trackDownloader.downloadTrack(
+                track = track,
+                preResolvedUrl = entry.youtubeUrl,
+            )
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // Single-track retries are user-initiated, but WorkManager can
+            // still cancel us (e.g. the user backgrounded the app for too
+            // long). Don't mark the row FAILED — the queue stays in whatever
+            // state IN_PROGRESS-with-cancel left it; the next sync's
+            // resetStaleInProgress() will flip it back to PENDING.
+            throw ce
+        } catch (e: Exception) {
+            Log.e(TAG, "Single-track downloader threw for queue ${entry.id}", e)
+            val truncated = (e.message ?: e::class.simpleName ?: "Unknown error").take(1000)
+            // Cycle-safe cause-chain extraction (see chain mode for rationale).
+            val causeChain = generateSequence<Throwable>(e) { it.cause.takeIf { c -> c !== it } }
+                .take(16)
+                .map { it::class.java.simpleName }
+                .toList()
+            val type = classifier.classify(
+                FailureContext(
+                    phase = DownloadPhase.DOWNLOADING,
+                    errorText = e.message,
+                    httpStatus = null,
+                    causeChain = causeChain,
+                ),
+            )
+            // Single-track mode is user-initiated, so we DO want feedback
+            // even on transient interruptions — surface them. Only the
+            // chain-mode path uses revertToPendingAfterInterruption (a
+            // sync passing through and leaving the row for the next sweep).
+            // A failed manual retry should show the user what went wrong.
+            downloadQueueDao.markFailed(
+                queueId = entry.id,
+                errorMessage = truncated,
+                failureType = type,
+            )
+            // Catastrophe is handled; don't ask WorkManager to retry this row.
+            return Result.success()
+        }
+
+        when (outcome) {
+            is TrackDownloadOutcome.Success -> {
+                downloadQueueDao.updateStatus(
+                    id = entry.id,
+                    status = DownloadStatus.COMPLETED,
+                    errorMessage = null,
+                    completedAt = System.currentTimeMillis(),
+                    failureType = DownloadFailureType.NONE,
+                    rejectedVideoId = null,
+                )
+                Log.i(TAG, "Single-track mode: Success for queue ${entry.id}")
+            }
+            is TrackDownloadOutcome.Failed -> {
+                val truncated = outcome.error.take(1000)
+                val type = classifier.classify(
+                    FailureContext(
+                        phase = DownloadPhase.DOWNLOADING,
+                        errorText = outcome.error,
+                        httpStatus = null,
+                        causeChain = emptyList(),
+                    ),
+                )
+                downloadQueueDao.markFailed(
+                    queueId = entry.id,
+                    errorMessage = truncated,
+                    failureType = type,
+                )
+                Log.w(
+                    TAG,
+                    "Single-track mode: Failed for queue ${entry.id} (type=$type): ${truncated.take(120)}",
+                )
+            }
+            is TrackDownloadOutcome.Unmatched -> {
+                val err = "No YouTube match for: ${track.artist} - ${track.title}"
+                downloadQueueDao.updateStatus(
+                    id = entry.id,
+                    status = DownloadStatus.FAILED,
+                    errorMessage = err,
+                    completedAt = System.currentTimeMillis(),
+                    failureType = DownloadFailureType.NO_MATCH,
+                    rejectedVideoId = outcome.rejectedVideoId,
+                )
+                Log.w(TAG, "Single-track mode: Unmatched for queue ${entry.id}")
+            }
+            is TrackDownloadOutcome.Deferred -> {
+                // v0.9.17 strict-FLAC: lossless source unavailable and
+                // yt-dlp fallback off. The DAO row was already moved to
+                // WAITING_FOR_LOSSLESS by TrackDownloaderImpl — leave it
+                // alone and return success so WorkManager doesn't reschedule.
+                Log.i(
+                    TAG,
+                    "Single-track mode: Deferred for queue ${entry.id} (lossless source unavailable)",
+                )
+            }
+        }
+        return Result.success()
     }
 
     /**

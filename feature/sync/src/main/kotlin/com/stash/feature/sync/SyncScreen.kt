@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.FilterChip
@@ -50,6 +51,7 @@ import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.sync.components.AuthExpiredBanner
 import com.stash.feature.sync.components.RecentSyncRow
 import com.stash.feature.sync.components.RecentSyncsCard
 import com.stash.feature.sync.components.SyncRowStatus
@@ -70,10 +72,14 @@ fun SyncScreen(
     modifier: Modifier = Modifier,
     onNavigateToFailedMatches: () -> Unit = {},
     onNavigateToBlockedSongs: () -> Unit = {},
+    onNavigateToFailedDownloads: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
+    val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
+    val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -81,6 +87,18 @@ fun SyncScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // -- Auth expiry banner ----------------------------------------------
+        // Mounted ABOVE the SyncStatusCard so users see "session expired"
+        // before anything else when probes flag expired Spotify/YouTube
+        // credentials. The banner renders zero-height when neither source
+        // is expired, so it's a no-op for healthy logins.
+        item {
+            AuthExpiredBanner(
+                state = authState,
+                onReauth = onNavigateToSettings,
+            )
+        }
+
         // -- Header -----------------------------------------------------------
         item {
             Spacer(Modifier.height(8.dp))
@@ -138,6 +156,19 @@ fun SyncScreen(
                     unmatchedCount = uiState.unmatchedCount,
                     flaggedCount = uiState.flaggedCount,
                     onClick = onNavigateToFailedMatches,
+                )
+            }
+        }
+
+        // -- Failed downloads card -------------------------------------------
+        // Sibling to the review-queue card. Surfaces tracks that couldn't
+        // be downloaded (auth, network, storage, ...) so the user can
+        // retry or block from one screen. Hidden when count is 0.
+        if (failedDownloadsCount > 0) {
+            item(key = "failed_downloads") {
+                FailedDownloadsCard(
+                    count = failedDownloadsCount,
+                    onClick = onNavigateToFailedDownloads,
                 )
             }
         }
@@ -425,6 +456,78 @@ private fun UnmatchedSongsCard(
                 )
                 Text(
                     text = sub,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+// -- Failed downloads warning card --------------------------------------------
+
+/**
+ * Red-tinted warning card surfaced when one or more tracks failed to
+ * download (auth, network, storage, codec, ...). Tapping navigates to
+ * the FailedDownloads screen where the user can review classified
+ * reasons and retry or block per track. Modeled after [UnmatchedSongsCard]
+ * to keep the Sync-tab warning surfaces visually consistent.
+ *
+ * @param count   Number of FAILED rows in download_queue.
+ * @param onClick Navigation callback — routes to the Failed Downloads screen.
+ */
+@Composable
+private fun FailedDownloadsCard(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val accent = Color(0xFFEF4444) // Red — distinct from the amber UnmatchedSongsCard.
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            accent.copy(alpha = 0.15f),
+                            Color.Transparent,
+                        )
+                    )
+                )
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.ErrorOutline,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Failed Downloads",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "$count track${if (count != 1) "s" else ""} need attention",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
