@@ -428,11 +428,23 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
+        val localSongs = musicData.allTracks.filter { it.isDownloaded }
+            .sortedByDescending { it.dateAdded }
+            .take(20)
+
+        val likedSongs = musicData.allTracks.filter {
+            it.spotifySavedAt != null || it.ytMusicSavedAt != null || it.stashLikedAt != null
+        }.sortedByDescending {
+            maxOf(it.spotifySavedAt ?: 0L, it.ytMusicSavedAt ?: 0L, it.stashLikedAt ?: 0L)
+        }.take(20)
+
         HomeUiState(
             stashMixes = stashMixes,
             spotifyMixes = spotifyMixes,
             youtubeMixes = youtubeMixes,
             recentlyAdded = musicData.recentlyAdded,
+            localSongs = localSongs,
+            likedSongs = likedSongs,
             spotifyLikedPlaylists = spotifyLikedPlaylists,
             youtubeLikedPlaylists = youtubeLikedPlaylists,
             spotifyLikedCount = spotifyLikedCount,

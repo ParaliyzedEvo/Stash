@@ -69,7 +69,7 @@ fun SourcePreferencesCard(
             .clickable { expanded = !expanded },
         color = ec.glassBackground,
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, ec.glassBorder),
+
     ) {
         Row(
             modifier = Modifier

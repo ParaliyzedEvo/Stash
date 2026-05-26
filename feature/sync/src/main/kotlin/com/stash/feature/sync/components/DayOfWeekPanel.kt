@@ -40,7 +40,7 @@ fun DayOfWeekPanel(
         modifier = modifier.fillMaxWidth(),
         color = purple.copy(alpha = 0.06f),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, purple.copy(alpha = 0.25f)),
+
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

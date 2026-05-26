@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -45,6 +46,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -53,6 +56,8 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -164,6 +169,7 @@ fun LibraryScreen(
             onPlayAlbum = onNavigateToAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
             onStartImport = viewModel::startLocalImport,
+            onStartFolderImport = viewModel::startFolderImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
             selection = selection,
@@ -326,6 +332,7 @@ private fun LibraryContent(
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
     onStartImport: (List<Uri>) -> Unit,
+    onStartFolderImport: (Uri) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
     selection: SelectionState,
@@ -347,6 +354,11 @@ private fun LibraryContent(
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
         }
+        val folderPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+        ) { uri: Uri? ->
+            if (uri != null) onStartFolderImport(uri)
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -359,27 +371,60 @@ private fun LibraryContent(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
             )
-            // Filled-tonal button (icon + label) instead of a ghost
-            // IconButton — users were missing the plain '+' too easily. The
-            // tonal background + "Import" word makes the affordance obvious
-            // without dominating the heading row.
-            androidx.compose.material3.FilledTonalButton(
-                onClick = { importPicker.launch(arrayOf("audio/*")) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 14.dp,
-                    vertical = 8.dp,
-                ),
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Import",
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            var showImportMenu by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.wrapContentSize()) {
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { showImportMenu = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 14.dp,
+                        vertical = 8.dp,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Import",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showImportMenu,
+                    onDismissRequest = { showImportMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Import Files") },
+                        onClick = {
+                            showImportMenu = false
+                            importPicker.launch(arrayOf("audio/*"))
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Audiotrack,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Import Folder") },
+                        onClick = {
+                            showImportMenu = false
+                            folderPicker.launch(null)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -514,7 +559,7 @@ private fun ShuffleLibraryCard(
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Row(
             modifier = Modifier
@@ -555,7 +600,7 @@ private fun GlassSearchBar(
             .clip(RoundedCornerShape(16.dp)),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         TextField(
             value = query,
@@ -730,6 +775,7 @@ private fun SourceFilterChipRow(
 
 private fun SourceFilter.displayName(): String = when (this) {
     SourceFilter.ALL -> "All"
+    SourceFilter.LOCAL -> "Downloaded"
     SourceFilter.YOUTUBE -> "YouTube"
     SourceFilter.SPOTIFY -> "Spotify"
     SourceFilter.FLAC -> "FLAC"
@@ -1449,9 +1495,7 @@ private fun ArtistsGrid(
                         .clickable { showSingleTrack = !showSingleTrack },
                     color = StashTheme.extendedColors.glassBackground,
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, StashTheme.extendedColors.glassBorder,
-                    ),
+
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -1668,9 +1712,7 @@ private fun AlbumsGrid(
                         .clickable { showSingleTrack = !showSingleTrack },
                     color = StashTheme.extendedColors.glassBackground,
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, StashTheme.extendedColors.glassBorder,
-                    ),
+
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),

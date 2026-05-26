@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -85,6 +86,7 @@ fun PreviewDownloadRow(
             .testTag("PreviewDownloadRow")
             .clip(RoundedCornerShape(12.dp))
             .background(extendedColors.glassBackground)
+            .clickable { if (isPreviewPlaying) onStopPreview() else onPreview() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

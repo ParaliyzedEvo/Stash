@@ -2,6 +2,7 @@ package com.stash.core.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.stash.core.model.ThemeMode
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -12,6 +13,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import android.os.Build
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 
 // ── Color schemes ────────────────────────────────────────────────────────
@@ -64,6 +69,7 @@ val StashLightColorScheme = lightColorScheme(
 
 // ── LocalIsDarkTheme — queried by composables that need theme-aware assets
 //    (e.g. the wordmark drawable selection in HomeScreen). ────────────────
+//    Also compatible with official Material You UI theme guidelines.
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
 
 /**
@@ -74,6 +80,9 @@ val LocalIsDarkTheme = staticCompositionLocalOf { true }
  * When the caller wants to mirror the system, pass
  * `isSystemInDarkTheme()` — that's also the default for safety.
  *
+ * Supports Android 12+ [dynamicColor] (Material You / Material UI Theme) 
+ * dynamic system color schemes extracted from the wallpaper.
+ *
  * Switching between schemes is done purely in Compose state — no activity
  * recreation, no resource configuration override — so the flip is instant
  * and any `animateColorAsState` wrappers can animate between the two sets.
@@ -83,11 +92,44 @@ val LocalIsDarkTheme = staticCompositionLocalOf { true }
  */
 @Composable
 fun StashTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) StashDarkColorScheme else StashLightColorScheme
-    val extendedColors = if (darkTheme) StashExtendedColorsDark else StashExtendedColorsLight
+    val darkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.AMOLED -> true
+    }
+    val context = LocalContext.current
+    val colorScheme = when {
+        themeMode == ThemeMode.AMOLED -> {
+            val baseScheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                dynamicDarkColorScheme(context)
+            } else {
+                StashDarkColorScheme
+            }
+            baseScheme.copy(
+                background = Color.Black,
+                surface = Color.Black,
+                surfaceVariant = Color(0xFF0C0C12),
+            )
+        }
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        darkTheme -> StashDarkColorScheme
+        else -> StashLightColorScheme
+    }
+    val extendedColors = StashExtendedColors(
+        elevatedSurface = colorScheme.surfaceVariant,
+        glassBackground = colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        glassBackgroundHover = colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        glassBorder = colorScheme.outline.copy(alpha = 0.12f),
+        glassBorderBright = colorScheme.outline.copy(alpha = 0.24f),
+        textTertiary = colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    )
 
     val view = LocalView.current
     if (!view.isInEditMode) {

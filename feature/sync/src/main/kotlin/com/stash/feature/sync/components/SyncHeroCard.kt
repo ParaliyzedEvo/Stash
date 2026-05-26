@@ -83,7 +83,7 @@ fun SyncHeroCard(
         modifier = modifier.fillMaxWidth(),
         color = Color.Transparent,
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, purple.copy(alpha = 0.35f)),
+
     ) {
         Column(
             modifier = Modifier

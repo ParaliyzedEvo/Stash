@@ -94,28 +94,46 @@ fun SyncStatusCard(
                 // gating is the design that v0.9.0 originally shipped
                 // with; the coupling was a regression introduced in
                 // c3c6529 and is now reverted.
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    StatItem(
-                        label = "Tracks",
-                        value = syncStatus.totalTracks.toString(),
-                        subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
-                    )
-                    StatItem(
-                        label = "Spotify",
-                        value = syncStatus.spotifyTracks.toString(),
-                    )
-                    StatItem(
-                        label = "YouTube",
-                        value = syncStatus.youTubeTracks.toString(),
-                    )
-                    StatItem(
-                        label = "Storage",
-                        value = formatBytes(syncStatus.storageUsedBytes),
-                        subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Tracks",
+                                value = syncStatus.totalTracks.toString(),
+                                subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Spotify",
+                                value = syncStatus.spotifyTracks.toString(),
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "YouTube",
+                                value = syncStatus.youTubeTracks.toString(),
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Storage",
+                                value = formatBytes(syncStatus.storageUsedBytes),
+                                subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
+                            )
+                        }
+                    }
                 }
                 if (syncStatus.lastSyncTime != null) {
                     Text(

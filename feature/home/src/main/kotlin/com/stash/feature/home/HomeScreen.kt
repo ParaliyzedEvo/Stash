@@ -50,7 +50,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -252,6 +252,8 @@ fun HomeScreen(
 
         // ── Supporter pill (full row) ─────────────────────────────────
         // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
+        // Commented out to hide the Ko-fi supporter tip jar card
+        /*
         item {
             val tipJar = uiState.tipJar
             val pillSupporters = remember(tipJar) {
@@ -267,6 +269,7 @@ fun HomeScreen(
                     .padding(bottom = 12.dp),
             )
         }
+        */
 
         // ── Last.fm connect nudge ────────────────────────────────────
         // Shown only when we have creds wired AND the user has local
@@ -500,6 +503,56 @@ fun HomeScreen(
             }
         }
 
+        // ── Liked Songs Carousel ─────────────────────────────────────
+        if (uiState.likedSongs.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Liked Songs")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(
+                        uiState.likedSongs,
+                        key = { _, track -> "liked-${track.id}" },
+                    ) { index, track ->
+                        CompactTrackCard(
+                            track = track,
+                            onClick = {
+                                viewModel.playTrack(uiState.likedSongs, index)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Local Songs Carousel ─────────────────────────────────────
+        if (uiState.localSongs.isNotEmpty()) {
+            item {
+                SectionHeader(title = "Local Songs")
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(
+                        uiState.localSongs,
+                        key = { _, track -> "local-${track.id}" },
+                    ) { index, track ->
+                        CompactTrackCard(
+                            track = track,
+                            onClick = {
+                                viewModel.playTrack(uiState.localSongs, index)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
         // ── Liked Songs card (with source split + smart collapse) ────
         if (uiState.hasAnyLikedSongs) {
             item {
@@ -527,69 +580,50 @@ fun HomeScreen(
             }
         }
 
-        // ── Playlists grid ───────────────────────────────────────────
-        // Always rendered so the Create Playlist card is available even when
-        // the user has no custom playlists yet.
+        // ── Trending Playlists ───────────────────────────────────────
         item {
-            SectionHeader(title = "Playlists")
+            SectionHeader(title = "Trending Playlists")
         }
         item {
-            PlaylistSortChipRow(
-                activeSort = uiState.playlistSortOrder,
-                onSortSelected = viewModel::setPlaylistSortOrder,
-            )
-        }
-        // 2-column grid virtualized via the outer LazyColumn: each chunked
-        // row is its own LazyColumn item, so only the rows near the viewport
-        // get composed/measured. The pre-Phase-8 version wrapped the whole
-        // grid in a single item{} + non-lazy Column, which forced every
-        // PlaylistGridCard (33+ in a typical library) to compose + layout +
-        // load its AsyncImage every time the parent item was near-visible.
-        // That was the dominant source of vertical-scroll jank; horizontal
-        // carousels stayed smooth because they were already real LazyRows.
-        itemsIndexed(
-            items = playlistGridRows,
-            key = { index, row ->
-                // Row-stable key so LazyColumn can reuse layouts when the
-                // user's playlist list mutates (rename, delete, reorder).
-                row.joinToString("-") { tile ->
-                    when (tile) {
-                        PlaylistTile.Create -> "create"
-                        is PlaylistTile.Item -> tile.playlist.id.toString()
-                    }
-                }
-            },
-        ) { index, rowItems ->
-            Row(
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        // Spacing between rows — previously handled by the
-                        // outer Column's spacedBy(12). Done inline here so
-                        // each item carries its own bottom padding.
-                        top = if (index == 0) 0.dp else 12.dp,
-                    ),
             ) {
-                rowItems.forEach { tile ->
-                    when (tile) {
-                        is PlaylistTile.Create -> CreatePlaylistCard(
-                            onClick = { showCreateDialog = true },
-                            modifier = Modifier.weight(1f),
-                        )
-                        is PlaylistTile.Item -> PlaylistGridCard(
-                            playlist = tile.playlist,
-                            onClick = { onNavigateToPlaylist(tile.playlist.id) },
-                            onLongPress = { selectedPlaylist = tile.playlist },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                items(MOCK_TRENDING_PLAYLISTS, key = { it.id }) { playlist ->
+                    DailyMixCard(
+                        playlist = playlist,
+                        onClick = {
+                            if (uiState.localSongs.isNotEmpty()) {
+                                viewModel.playTrack(uiState.localSongs.shuffled(), 0)
+                            }
+                        },
+                        onLongPress = {},
+                    )
                 }
-                // Pad single-item rows with a spacer
-                if (rowItems.size == 1) {
-                    Spacer(Modifier.weight(1f))
+            }
+        }
+
+        // ── Your Playlists ───────────────────────────────────────────
+        item {
+            SectionHeader(title = "Your Playlists")
+        }
+        item {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    CreatePlaylistCard(
+                        onClick = { showCreateDialog = true },
+                        modifier = Modifier.width(160.dp)
+                    )
+                }
+                items(uiState.playlists, key = { it.id }) { playlist ->
+                    DailyMixCard(
+                        playlist = playlist,
+                        onClick = { onNavigateToPlaylist(playlist.id) },
+                        onLongPress = { selectedPlaylist = playlist },
+                    )
                 }
             }
         }
@@ -839,17 +873,18 @@ private fun DailyMixCard(
     buildState: MixBuildState = MixBuildState.READY,
 ) {
     val extendedColors = StashTheme.extendedColors
-    val gradientColors = if (playlist.source == MusicSource.SPOTIFY) {
-        listOf(
-            extendedColors.spotifyGreen.copy(alpha = 0.4f),
-            Color.Transparent,
-        )
-    } else {
-        listOf(
-            extendedColors.youtubeRed.copy(alpha = 0.4f),
-            Color.Transparent,
-        )
+    val gradientColors = when (playlist.source) {
+        MusicSource.SPOTIFY -> listOf(extendedColors.spotifyGreen.copy(alpha = 0.4f), Color.Transparent)
+        MusicSource.YOUTUBE -> listOf(extendedColors.youtubeRed.copy(alpha = 0.4f), Color.Transparent)
+        else -> listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), Color.Transparent)
     }
+
+    val stashMixBanner = if (playlist.type == PlaylistType.STASH_MIX || playlist.type == PlaylistType.DOWNLOADS_MIX) {
+        getStashMixBannerUrl(playlist.name)
+    } else {
+        null
+    }
+    val fallbackArt = stashMixBanner ?: playlist.artUrl
 
     Surface(
         modifier = modifier
@@ -860,8 +895,8 @@ private fun DailyMixCard(
                 onLongClick = onLongPress,
             ),
         color = extendedColors.glassBackground,
-        shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+        shape = RoundedCornerShape(24.dp),
+
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Album art background. For daily mixes with 2 tile URLs
@@ -871,7 +906,7 @@ private fun DailyMixCard(
             // single background as before.
             DailyMixCoverBackground(
                 tileUrls = playlist.artTileUrls,
-                fallback = playlist.artUrl,
+                fallback = fallbackArt,
                 modifier = Modifier.fillMaxSize(),
             )
             // Gradient overlay for text readability
@@ -953,7 +988,7 @@ private fun CompactTrackCard(
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1048,7 +1083,7 @@ private fun MixesSectionHeader(
                     .clickable(onClick = onPlayBoth),
                 color = accent.copy(alpha = 0.14f),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.4f)),
+
             ) {
                 Row(
                     modifier = Modifier
@@ -1122,7 +1157,7 @@ private fun SourceSubHeader(
                     .clickable(onClick = onPlayAll),
                 color = accent.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+
             ) {
                 Row(
                     modifier = Modifier
@@ -1233,7 +1268,7 @@ private fun LikedSongsCard(
         modifier = modifier.fillMaxWidth(),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Column(
             modifier = Modifier
@@ -1455,8 +1490,8 @@ private fun PlaylistGridCard(
                 onLongClick = onLongPress,
             ),
         color = extendedColors.glassBackground,
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+        shape = RoundedCornerShape(20.dp),
+
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Album art background (if available)
@@ -1543,8 +1578,8 @@ private fun CreatePlaylistCard(
             .height(100.dp)
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+        shape = RoundedCornerShape(20.dp),
+
     ) {
         Row(
             modifier = Modifier
@@ -1688,7 +1723,7 @@ private fun LastFmConnectBanner(
         modifier = modifier.fillMaxWidth(),
         color = accent.copy(alpha = 0.10f),
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+
     ) {
         Row(
             modifier = Modifier
@@ -1754,7 +1789,7 @@ private fun LosslessConnectBanner(
         modifier = modifier.fillMaxWidth(),
         color = accent.copy(alpha = 0.10f),
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+
     ) {
         Row(
             modifier = Modifier
@@ -1874,7 +1909,7 @@ private fun SupporterPill(
         modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1969,5 +2004,21 @@ private fun PlaylistSortOrder.displayName(): String = when (this) {
     PlaylistSortOrder.RECENT -> "Recently Added"
     PlaylistSortOrder.ALPHABETICAL -> "A-Z"
     PlaylistSortOrder.MOST_PLAYED -> "Most Played"
+}
+
+private val MOCK_TRENDING_PLAYLISTS = listOf(
+    Playlist(id = -10, name = "Chill Vibes", trackCount = 24, artUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400", source = MusicSource.BOTH),
+    Playlist(id = -11, name = "Workout Energy", trackCount = 30, artUrl = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400", source = MusicSource.BOTH),
+    Playlist(id = -12, name = "Focus & Flow", trackCount = 18, artUrl = "https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?w=400", source = MusicSource.BOTH),
+    Playlist(id = -13, name = "Late Night Beats", trackCount = 20, artUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400", source = MusicSource.BOTH)
+)
+
+private fun getStashMixBannerUrl(name: String): String {
+    return when (name) {
+        "Daily Discover" -> "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=400"
+        "Deep Cuts" -> "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400"
+        "First Listen" -> "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400"
+        else -> "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400"
+    }
 }
 

@@ -107,7 +107,7 @@ fun TrackListItem(
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
         ) {

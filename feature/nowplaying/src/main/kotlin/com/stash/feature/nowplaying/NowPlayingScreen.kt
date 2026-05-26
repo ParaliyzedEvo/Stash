@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,7 +33,10 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lyrics
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +94,7 @@ fun NowPlayingScreen(
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isAmoled = MaterialTheme.colorScheme.background == Color.Black
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -246,6 +252,7 @@ fun NowPlayingScreen(
             dominantColor = uiState.dominantColor,
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
+            isAmoled = isAmoled,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -351,18 +358,6 @@ fun NowPlayingScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // -- Progress bar --
-            GlowingProgressBar(
-                progress = uiState.progressFraction,
-                accentColor = uiState.vibrantColor,
-                elapsedMs = uiState.currentPositionMs,
-                totalMs = uiState.durationMs,
-                onSeek = viewModel::onSeekTo,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
             // -- Playback controls --
             PlaybackControls(
                 isPlaying = uiState.isPlaying,
@@ -375,6 +370,18 @@ fun NowPlayingScreen(
                 onSkipPrevious = viewModel::onSkipPrevious,
                 onToggleShuffle = viewModel::onToggleShuffle,
                 onCycleRepeatMode = viewModel::onCycleRepeatMode,
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // -- Progress bar --
+            GlowingProgressBar(
+                progress = uiState.progressFraction,
+                accentColor = uiState.vibrantColor,
+                elapsedMs = uiState.currentPositionMs,
+                totalMs = uiState.durationMs,
+                onSeek = viewModel::onSeekTo,
+                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(48.dp))
@@ -427,21 +434,6 @@ private fun TopBar(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Flag as wrong match — only shown when a track is loaded. Lives
-        // here (not in the Playlist Detail row menu) because Now Playing
-        // is where the user actually realises "this isn't the right song"
-        // — their ears are the ground truth.
-        if (hasTrack) {
-            IconButton(onClick = onFlagWrongMatch) {
-                Icon(
-                    imageVector = Icons.Default.Flag,
-                    contentDescription = "Flag as wrong match",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
         // v0.9.13: Like button — Stash-only toggle. Tap on empty saves to
         // Stash Liked Songs; tap on filled removes. Long-press is a no-op
         // by design; the override sheet was deprecated in favor of the
@@ -455,49 +447,6 @@ private fun TopBar(
             )
         }
 
-        // Download / Remove-download toggle — single button that flips
-        // based on the current track's on-disk state. Streaming-mode
-        // users use this to grab the song they're listening to right now
-        // without leaving Now Playing.
-        if (hasTrack) {
-            IconButton(onClick = onDownloadTap) {
-                Icon(
-                    imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                    contentDescription = if (isDownloaded) "Remove download" else "Download",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // Save to playlist — only shown when a track is loaded.
-        if (hasTrack) {
-            IconButton(onClick = onSaveClick) {
-                Icon(
-                    imageVector = Icons.Default.BookmarkBorder,
-                    contentDescription = "Save to Playlist",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // v0.9.36 Task 13 — Lyrics. Sits next to Queue because both
-        // surfaces are "playback context" — what's coming next, what
-        // the singer is saying right now. Hidden when no track is loaded
-        // (same gating as Save/Download/Like) so an empty Now Playing
-        // doesn't show a button that opens an empty sheet.
-        if (hasTrack) {
-            IconButton(onClick = onLyricsClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Lyrics,
-                    contentDescription = "Lyrics",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
         IconButton(onClick = onQueueClick) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
@@ -505,6 +454,81 @@ private fun TopBar(
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
             )
+        }
+
+        if (hasTrack) {
+            var menuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More actions",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Save to Playlist") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.BookmarkBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onSaveClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isDownloaded) "Remove download" else "Download") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDownloadTap()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Lyrics") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Lyrics,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onLyricsClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Flag as Wrong Match") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Flag,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onFlagWrongMatch()
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -526,14 +550,20 @@ private fun AlbumArtSection(
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .padding(horizontal = 8.dp)
+    ) {
         // Glow behind the artwork.
         Box(
             modifier = Modifier
-                .size(260.dp)
+                .fillMaxSize()
                 .shadow(
                     elevation = 40.dp,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(8.dp),
                     ambientColor = accentColor.copy(alpha = 0.25f),
                     spotColor = accentColor.copy(alpha = 0.25f),
                 ),
@@ -558,8 +588,8 @@ private fun AlbumArtSection(
                 }
             },
             modifier = Modifier
-                .size(280.dp)
-                .clip(RoundedCornerShape(20.dp)),
+                .fillMaxSize()
+                .clip(RoundedCornerShape(8.dp)),
         )
     }
 }
@@ -580,6 +610,16 @@ private fun PlaybackControls(
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
 ) {
+    // Dynamic bouncy scale spring-physics micro-animation on state change (Expressive UI)
+    val playButtonScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPlaying) 1.08f else 1.0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+        ),
+        label = "playButtonScaleAnimation"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -613,6 +653,10 @@ private fun PlaybackControls(
             enabled = !isBuffering,
             modifier = Modifier
                 .size(64.dp)
+                .graphicsLayer {
+                    scaleX = playButtonScale
+                    scaleY = playButtonScale
+                }
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(accentColor, accentColor.copy(alpha = 0.7f)),

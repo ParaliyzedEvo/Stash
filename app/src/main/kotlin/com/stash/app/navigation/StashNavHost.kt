@@ -1,7 +1,13 @@
 package com.stash.app.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -19,6 +25,7 @@ import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
 import com.stash.feature.search.SearchScreen
+import com.stash.feature.settings.AccountScreen
 import com.stash.feature.settings.BlockedSongsScreen
 import com.stash.feature.settings.SettingsHubScreen
 import com.stash.feature.settings.equalizer.EqualizerScreen
@@ -35,10 +42,12 @@ private const val SLIDE_DURATION_MS = 350
  *
  * Contains all top-level tab destinations plus the full-screen Now Playing
  * route which enters with a slide-up and exits with a slide-down transition.
+ * Uses smooth, premium dynamic horizontal slide and fade global page transitions.
  */
 @Composable
 fun StashNavHost(
     navController: NavHostController,
+    onWebLoginChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     // Forwarded to detail screens that support multi-select so the host can hide
     // the mini-player while a screen is in selection mode. General by design:
@@ -46,10 +55,149 @@ fun StashNavHost(
     // in later tasks — only the Playlist destination consumes it today.
     onSelectionModeChanged: (Boolean) -> Unit = {},
 ) {
+    val topLevelRoutes = remember {
+        setOf(
+            HomeRoute::class.qualifiedName,
+            LibraryRoute::class.qualifiedName,
+            SearchRoute::class.qualifiedName,
+            AccountRoute::class.qualifiedName,
+            SettingsRoute::class.qualifiedName
+        )
+    }
+
+    fun isTopLevel(route: String?): Boolean {
+        if (route == null) return false
+        return topLevelRoutes.any { route.startsWith(it ?: "") }
+    }
+
     NavHost(
         navController = navController,
         startDestination = HomeRoute,
         modifier = modifier,
+        enterTransition = {
+            val initialRoute = initialState.destination.route
+            val targetRoute = targetState.destination.route
+            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+                fadeIn(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + scaleIn(
+                    initialScale = 0.98f,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            } else {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + fadeIn(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            }
+        },
+        exitTransition = {
+            val initialRoute = initialState.destination.route
+            val targetRoute = targetState.destination.route
+            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+                fadeOut(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + scaleOut(
+                    targetScale = 1.02f,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            } else {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + fadeOut(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            }
+        },
+        popEnterTransition = {
+            val initialRoute = initialState.destination.route
+            val targetRoute = targetState.destination.route
+            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+                fadeIn(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + scaleIn(
+                    initialScale = 0.98f,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            } else {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + fadeIn(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            }
+        },
+        popExitTransition = {
+            val initialRoute = initialState.destination.route
+            val targetRoute = targetState.destination.route
+            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+                fadeOut(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + scaleOut(
+                    targetScale = 1.02f,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            } else {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                ) + fadeOut(
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    )
+                )
+            }
+        }
     ) {
         composable<HomeRoute> {
             HomeScreen(
@@ -333,25 +481,37 @@ fun StashNavHost(
             enterTransition = {
                 slideIntoContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(SLIDE_DURATION_MS),
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
                 )
             },
             exitTransition = {
                 slideOutOfContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(SLIDE_DURATION_MS),
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
                 )
             },
             popEnterTransition = {
                 slideIntoContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(SLIDE_DURATION_MS),
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
                 )
             },
             popExitTransition = {
                 slideOutOfContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(SLIDE_DURATION_MS),
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
                 )
             },
         ) {

@@ -130,6 +130,7 @@ fun StashScaffold(
     ) { innerPadding ->
         StashNavHost(
             navController = navController,
+            onWebLoginChanged = { isWebLoginOpen = it },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -150,7 +151,7 @@ private fun StashBottomBar(
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
-        windowInsets = WindowInsets(0.dp),
+
     ) {
         TopLevelDestination.entries.forEach { dest ->
             val isSelected = currentRoute == dest.route::class.qualifiedName

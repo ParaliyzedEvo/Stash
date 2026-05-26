@@ -2,13 +2,18 @@
 package com.stash.core.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -19,6 +24,7 @@ import com.stash.core.common.ArtUrlUpgrader
  * 140dp square album card with rounded thumbnail, title, and "year • artist" subtitle.
  *
  * Used in search results and on Artist Profile discography rails.
+ * Features premium spring-physics scale tactile feedback when pressed.
  *
  * @param title Album title shown on the first text row.
  * @param artist Artist name for the subtitle.
@@ -39,12 +45,35 @@ fun AlbumSquareCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Column(modifier = modifier.width(140.dp).clickable(onClick = onClick)) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+        ),
+        label = "albumCardPressedScale"
+    )
+
+    Column(
+        modifier = modifier
+            .width(140.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                onClick = onClick,
+                interactionSource = interactionSource,
+                indication = androidx.compose.foundation.LocalIndication.current
+            )
+    ) {
         AsyncImage(
             model = ArtUrlUpgrader.upgrade(thumbnailUrl),
             contentDescription = title,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)),
         )
         Spacer(Modifier.height(6.dp))
         Text(
