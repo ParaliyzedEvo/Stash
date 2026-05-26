@@ -81,20 +81,6 @@ fun SyncScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // -- Sync status card (relocated from Home) ---------------------------
-        // Lives at the very top of the Sync tab so library-status info
-        // sits with the rest of the Sync surface (was previously the
-        // first content card on Home, directly under the supporter pill).
-        item {
-            Spacer(Modifier.height(8.dp))
-            SyncStatusCard(
-                syncStatus = uiState.syncStatus,
-                spotifyConnected = uiState.spotifyConnected,
-                youTubeConnected = uiState.youTubeConnected,
-                hasEverSynced = uiState.hasEverSynced,
-            )
-        }
-
         // -- Header -----------------------------------------------------------
         item {
             Spacer(Modifier.height(8.dp))
@@ -103,6 +89,19 @@ fun SyncScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
+            )
+        }
+
+        // -- Sync status card (relocated from Home) ---------------------------
+        // Lives at the very top of the Sync tab so library-status info
+        // sits with the rest of the Sync surface (was previously the
+        // first content card on Home, directly under the supporter pill).
+        item {
+            SyncStatusCard(
+                syncStatus = uiState.syncStatus,
+                spotifyConnected = uiState.spotifyConnected,
+                youTubeConnected = uiState.youTubeConnected,
+                hasEverSynced = uiState.hasEverSynced,
             )
         }
 
@@ -309,9 +308,7 @@ private fun LibraryMaintenanceCard(
         modifier = Modifier.fillMaxWidth(),
         color = StashTheme.extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp, StashTheme.extendedColors.glassBorder,
-        ),
+
     ) {
         Row(
             modifier = Modifier
@@ -397,7 +394,7 @@ private fun UnmatchedSongsCard(
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Row(
             modifier = Modifier

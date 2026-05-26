@@ -85,6 +85,18 @@ import com.stash.feature.settings.components.AudioQualityPicker
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeCookieDialog
 import com.stash.feature.settings.components.YouTubeHistorySyncSection
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.IconButton
 
 /**
  * Top-level Settings screen composable.
@@ -98,10 +110,18 @@ fun SettingsScreen(
     onNavigateToEqualizer: () -> Unit = {},
     onNavigateToLibraryHealth: () -> Unit = {},
     onNavigateToSquidWtfCaptcha: () -> Unit = {},
+    onNavigateToSync: () -> Unit = {},
+    onNavigateToAccount: () -> Unit = {},
+    onWebLoginChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val isWebLoginActive = uiState.showSpotifyWebLogin || uiState.showYouTubeWebLogin
+    LaunchedEffect(isWebLoginActive) {
+        onWebLoginChanged(isWebLoginActive)
+    }
 
     // Spotify WebView login (full-screen overlay)
     if (uiState.showSpotifyWebLogin) {
@@ -257,6 +277,8 @@ fun SettingsScreen(
         onNavigateToEqualizer = onNavigateToEqualizer,
         onNavigateToLibraryHealth = onNavigateToLibraryHealth,
         onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
+        onNavigateToSync = onNavigateToSync,
+        onNavigateToAccount = onNavigateToAccount,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
         streamingEnabled = viewModel.streamingEnabled.collectAsStateWithLifecycle().value,
@@ -267,6 +289,63 @@ fun SettingsScreen(
         onSetPickerIntent = { pendingPickerIntent = it },
         modifier = modifier,
     )
+}
+
+/**
+ * Stateless inner content for [SettingsScreen], accepting all state and
+ * callbacks as parameters for testability and preview support.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private enum class SettingsSubScreen {
+    MAIN,
+    PLAYBACK,
+    AUDIO_QUALITY,
+    STORAGE_BACKUP,
+    APPEARANCE,
+    DIAGNOSTICS_ABOUT,
+}
+
+@Composable
+private fun SettingsCategoryRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
@@ -317,6 +396,8 @@ private fun SettingsContent(
     onNavigateToEqualizer: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
+    onNavigateToSync: () -> Unit,
+    onNavigateToAccount: () -> Unit,
     /**
      * Returns the latest crash file + its FileProvider URI, or null if
      * none exists. Called only when the user taps the share button —
@@ -342,16 +423,28 @@ private fun SettingsContent(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
+    var activeSubScreen by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(SettingsSubScreen.MAIN)
+    }
 
-    // v0.9.13: deep-link scroll anchors. Each requester is attached to
-    // the relevant section's container modifier; bringIntoView() runs in
-    // a LaunchedEffect once on first composition with a non-null focus.
+    if (activeSubScreen != SettingsSubScreen.MAIN) {
+        BackHandler {
+            activeSubScreen = SettingsSubScreen.MAIN
+        }
+    }
+
+    // deep-link scroll anchors (kept for safety)
     val losslessRequester = remember { BringIntoViewRequester() }
     val lastFmRequester = remember { BringIntoViewRequester() }
     LaunchedEffect(focusOnEntry) {
         when (focusOnEntry) {
-            com.stash.core.data.navigation.SettingsFocus.LOSSLESS -> losslessRequester.bringIntoView()
-            com.stash.core.data.navigation.SettingsFocus.LASTFM -> lastFmRequester.bringIntoView()
+            com.stash.core.data.navigation.SettingsFocus.LOSSLESS -> {
+                activeSubScreen = SettingsSubScreen.AUDIO_QUALITY
+                losslessRequester.bringIntoView()
+            }
+            com.stash.core.data.navigation.SettingsFocus.LASTFM -> {
+                onNavigateToAccount() // LastFm is in Account tab now!
+            }
             null -> Unit
         }
     }
@@ -363,1150 +456,829 @@ private fun SettingsContent(
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        // -- Header -----------------------------------------------------------
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        if (activeSubScreen == SettingsSubScreen.MAIN) {
+            // -- Header --
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
 
-        // -- Support section --------------------------------------------------
-        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            GlassCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SettingsCategoryRow(
+                        icon = Icons.Default.PlayArrow,
+                        title = "Playback",
+                        subtitle = "Online streaming, cellular data preferences",
+                        onClick = { activeSubScreen = SettingsSubScreen.PLAYBACK },
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Audiotrack,
+                        title = "Audio Quality",
+                        subtitle = "Download codec, Lossless routing, YouTube fallback",
+                        onClick = { activeSubScreen = SettingsSubScreen.AUDIO_QUALITY },
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Storage,
+                        title = "Storage & Backup",
+                        subtitle = "Download location, library moves, database backup",
+                        onClick = { activeSubScreen = SettingsSubScreen.STORAGE_BACKUP },
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Palette,
+                        title = "Appearance",
+                        subtitle = "App theme and AMOLED black mode",
+                        onClick = { activeSubScreen = SettingsSubScreen.APPEARANCE },
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Equalizer,
+                        title = "Equalizer",
+                        subtitle = "Audio frequency controls and effects",
+                        onClick = onNavigateToEqualizer,
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.GraphicEq,
+                        title = "Library Health",
+                        subtitle = "Bitrate breakdown and file format checks",
+                        onClick = onNavigateToLibraryHealth,
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Sync,
+                        title = "Sync Settings",
+                        subtitle = "Auto-sync, download blacklist, failed matches",
+                        onClick = onNavigateToSync,
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Info,
+                        title = "Diagnostics & About",
+                        subtitle = "Crash reports, version details, and updates",
+                        onClick = { activeSubScreen = SettingsSubScreen.DIAGNOSTICS_ABOUT },
+                    )
+                }
+            }
 
-        SectionHeader(title = "Support Stash")
-
-        GlassCard {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "If Stash replaced a subscription for you, consider supporting the project.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Row(
+            // -- Support section + Report a Bug --
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            SectionHeader(title = "Support & Feedback")
+            GlassCard {
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { uriHandler.openUri("https://ko-fi.com/rawnald") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
+                    Text(
+                        text = "If Stash replaced a subscription for you, consider supporting the project.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FavoriteBorder,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Donate", style = MaterialTheme.typography.labelMedium)
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri("https://ko-fi.com/rawnald") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.FavoriteBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Donate", style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Star", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
 
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash") },
-                        modifier = Modifier.weight(1f),
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri("https://github.com/rawnaldclark/Stash/issues") },
+                        modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Star,
+                            imageVector = Icons.Default.BugReport,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Star", style = MaterialTheme.typography.labelMedium)
+                        Text("Report a Bug", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
-        }
 
-        // -- Playback (Online / Offline mode) --------------------------------
-        // Canonical home for the streaming-mode preference. Settings is where
-        // users expect to find app-wide modes; the Home top-bar chip
-        // (StreamingModeChip) is the quick-access surface that writes to the
-        // same preference. Both render the OnlineOfflinePicker so the control
-        // surface is identical regardless of entry point.
-        if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
-            SectionHeader(title = "Playback")
-            GlassCard {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    com.stash.core.ui.components.OnlineOfflinePicker(
-                        streamingEnabled = streamingEnabled,
-                        onSelect = onStreamingToggle,
+            Spacer(modifier = Modifier.height(80.dp))
+        } else {
+            // -- Sub-screen Header --
+            val title = when (activeSubScreen) {
+                SettingsSubScreen.PLAYBACK -> "Playback"
+                SettingsSubScreen.AUDIO_QUALITY -> "Audio Quality"
+                SettingsSubScreen.STORAGE_BACKUP -> "Storage & Backup"
+                SettingsSubScreen.APPEARANCE -> "Appearance"
+                SettingsSubScreen.DIAGNOSTICS_ABOUT -> "Diagnostics & About"
+                else -> ""
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { activeSubScreen = SettingsSubScreen.MAIN }) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onBackground,
                     )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
 
-                    // Cellular toggle. Visible regardless of streaming on/off so
-                    // the user can pre-set their preference. When streaming is off
-                    // the value still persists; PlayerRepositoryImpl reads it only
-                    // when streamingEnabled == true so there's no behavioral coupling.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+            // -- Sub-screen Contents --
+            when (activeSubScreen) {
+                SettingsSubScreen.PLAYBACK -> {
+                    if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
+                        GlassCard {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onStreamingToggle(!streamingEnabled) }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Online Streaming",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = "Stream music from online sources when connected.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Switch(
+                                        checked = streamingEnabled,
+                                        onCheckedChange = onStreamingToggle,
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Stream on cellular",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = "Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Switch(
+                                        checked = streamOnCellular,
+                                        onCheckedChange = onStreamOnCellularToggle,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsSubScreen.AUDIO_QUALITY -> {
+                    if (!uiState.losslessEnabled) {
+                        GlassCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectableGroup(),
+                            ) {
+                                Text(
+                                    text = "Download quality",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                AudioQualityPicker(
+                                    selected = uiState.audioQuality,
+                                    onSelected = onQualityChanged,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    GlassCard(modifier = Modifier.bringIntoViewRequester(losslessRequester)) {
+                        var advancedExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
+                        val chevronRotation by animateFloatAsState(
+                            targetValue = if (advancedExpanded) 90f else 0f,
+                            label = "advancedChevron",
+                        )
+                        var fallbackExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
+                        val fallbackChevronRotation by animateFloatAsState(
+                            targetValue = if (fallbackExpanded) 90f else 0f,
+                            label = "fallback-chevron",
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectableGroup(),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Lossless downloads",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (uiState.losslessEnabled) {
+                                            "FLAC routing active. Files ~10\u00D7 larger than MP3."
+                                        } else {
+                                            "Studio-quality FLAC via Qobuz. Files ~10\u00D7 larger than MP3."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = uiState.losslessEnabled,
+                                    onCheckedChange = onLosslessEnabledChanged,
+                                    modifier = Modifier.semantics { role = Role.Switch },
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = uiState.losslessEnabled,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut(),
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    LosslessRoutingStatus(
+                                        squidStatus = uiState.squidCaptchaStatus,
+                                        onSolveCaptcha = onNavigateToSquidWtfCaptcha,
+                                    )
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "Lossless quality",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Column(modifier = Modifier.selectableGroup()) {
+                                        listOf(
+                                            LosslessQualityTier.MAX,
+                                            LosslessQualityTier.HI_RES,
+                                            LosslessQualityTier.CD,
+                                        ).forEach { tier ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .selectable(
+                                                        selected = uiState.losslessQualityTier == tier,
+                                                        onClick = { onLosslessQualityTierChanged(tier) },
+                                                        role = Role.RadioButton,
+                                                    )
+                                                    .padding(vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                RadioButton(
+                                                    selected = uiState.losslessQualityTier == tier,
+                                                    onClick = null,
+                                                    colors = RadioButtonDefaults.colors(
+                                                        selectedColor = MaterialTheme.colorScheme.primary,
+                                                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    ),
+                                                )
+                                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                                    Text(
+                                                        text = tier.displayLabel,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                    Text(
+                                                        text = tier.sizeHint,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { fallbackExpanded = !fallbackExpanded }
+                                            .semantics {
+                                                role = Role.Button
+                                                stateDescription = if (fallbackExpanded) "expanded" else "collapsed"
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.graphicsLayer(rotationZ = fallbackChevronRotation),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "YouTube fallback",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(
+                                            text = if (uiState.youtubeFallbackEnabled) "on" else "off",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+
+                                    AnimatedVisibility(
+                                        visible = fallbackExpanded,
+                                        enter = expandVertically() + fadeIn(),
+                                        exit = shrinkVertically() + fadeOut(),
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Switch(
+                                                    checked = uiState.youtubeFallbackEnabled,
+                                                    onCheckedChange = onYoutubeFallbackChanged,
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "Use YouTube when lossless fails",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                            if (uiState.youtubeFallbackEnabled) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                AudioQualityPicker(
+                                                    selected = uiState.audioQuality,
+                                                    onSelected = onQualityChanged,
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { advancedExpanded = !advancedExpanded }
+                                            .semantics {
+                                                role = Role.Button
+                                                stateDescription = if (advancedExpanded) "expanded" else "collapsed"
+                                            }
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Advanced",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+
+                                    AnimatedVisibility(
+                                        visible = advancedExpanded,
+                                        enter = expandVertically() + fadeIn(),
+                                        exit = shrinkVertically() + fadeOut(),
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Or paste the captcha_verified_at cookie value directly:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            OutlinedTextField(
+                                                value = uiState.squidWtfCaptchaCookie,
+                                                onValueChange = onSquidWtfCaptchaCookieChanged,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                label = { Text("captcha_verified_at value") },
+                                                singleLine = true,
+                                                placeholder = { Text("e.g. 1777687404951") },
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            TextButton(
+                                                onClick = onResetLosslessRateLimiter,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(
+                                                    text = "Reset lossless attempts",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsSubScreen.STORAGE_BACKUP -> {
+                    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
+                    ) { uri ->
+                        if (uri != null) onExportDatabase(uri)
+                    }
+                    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        if (uri != null) onImportDatabase(uri)
+                    }
+
+                    val storageContext = LocalContext.current
+                    val externalTree = uiState.externalTreeUri
+                    val externalFolderName = remember(externalTree) {
+                        externalTree?.lastPathSegment
+                            ?.substringAfterLast(':', "")
+                            ?.substringAfterLast('/', "")
+                            ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                            ?.takeIf { it.isNotBlank() }
+                            ?: externalTree?.let { "External folder" }
+                            ?: ""
+                    }
+                    val internalPath = remember(storageContext) {
+                        java.io.File(storageContext.filesDir, "music").absolutePath
+                    }
+
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = "Stream on cellular",
+                                text = "Backup",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.",
+                                text = "Export settings and database or import from a previous backup.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = { exportLauncher.launch("stash-backup.zip") },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                ) {
+                                    Text("Export Backup")
+                                }
+                                OutlinedButton(
+                                    onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                ) {
+                                    Text("Import Backup")
+                                }
+                            }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Switch(
-                            checked = streamOnCellular,
-                            onCheckedChange = onStreamOnCellularToggle,
-                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            StorageRow(label = "Total tracks", value = "${uiState.totalTracks}")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            StorageRow(label = "Storage used", value = formatBytes(uiState.totalStorageBytes))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = extendedColors.glassBorder)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = "Download location",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = when {
+                                    externalTree == null -> "Internal (app-private)"
+                                    externalFolderName.isBlank() -> "External folder (SD card / USB)"
+                                    else -> externalFolderName
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (externalTree != null) {
+                                    "Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB."
+                                } else {
+                                    internalPath
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSetPickerIntent(PickerIntent.SetOnly)
+                                        treePicker?.launch(null)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                ) {
+                                    Text(
+                                        text = if (externalTree != null) "Change folder" else "Pick SD / folder",
+                                    )
+                                }
+                                if (externalTree != null) {
+                                    OutlinedButton(
+                                        onClick = { onSetExternalStorage(null) },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.primary,
+                                        ),
+                                    ) {
+                                        Text("Use internal")
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "New downloads go to the selected location.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            var movableCount by remember { mutableStateOf<Int?>(null) }
+                            LaunchedEffect(uiState.moveLibraryState, externalTree) {
+                                if (uiState.moveLibraryState !is com.stash.data.download.files.MoveLibraryState.Running) {
+                                    movableCount = runCatching { countMovableTracks() }.getOrNull()
+                                }
+                            }
+
+                            val showMoveSection = when (uiState.moveLibraryState) {
+                                com.stash.data.download.files.MoveLibraryState.Idle ->
+                                    (movableCount ?: 0) > 0
+                                else -> true
+                            }
+
+                            if (showMoveSection) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = extendedColors.glassBorder)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                MoveLibrarySection(
+                                    state = uiState.moveLibraryState,
+                                    hasExternalFolder = externalTree != null,
+                                    movableCount = movableCount ?: 0,
+                                    onStart = {
+                                        if (externalTree != null) {
+                                            onStartMoveLibrary(externalTree)
+                                        } else {
+                                            onSetPickerIntent(PickerIntent.SetAndMove)
+                                            treePicker?.launch(null)
+                                        }
+                                    },
+                                    onCancel = onCancelMoveLibrary,
+                                    onDismiss = onDismissMoveLibrary,
+                                )
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        // -- Accounts section -------------------------------------------------
-        SectionHeader(title = "Accounts")
+                SettingsSubScreen.APPEARANCE -> {
+                    GlassCard {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectableGroup(),
+                        ) {
+                            Text(
+                                text = "Theme",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
 
-        AccountConnectionCard(
-            serviceName = "Spotify",
-            icon = Icons.Rounded.MusicNote,
-            accentColor = extendedColors.spotifyGreen,
-            authState = uiState.spotifyAuthState,
-            onConnect = onConnectSpotify,
-            onDisconnect = onDisconnectSpotify,
-            // v0.9.13: auto-save toggle lives INSIDE the Spotify card, mirroring
-            // the YT Music history pattern below. Always rendered so the
-            // feature stays discoverable; SpotifyAutoSaveSection itself
-            // handles the disconnected-greyed state internally.
-            extraContent = {
-                com.stash.feature.settings.components.SpotifyAutoSaveSection(
-                    enabled = uiState.autoSaveEnabled,
-                    threshold = uiState.autoSaveThreshold,
-                    autoSavedCountLast7Days = uiState.autoSavedCountLast7Days,
-                    spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = onAutoSaveEnabledChanged,
-                    onThresholdChanged = onAutoSaveThresholdChanged,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            },
-        )
-
-        AccountConnectionCard(
-            serviceName = "YouTube Music",
-            icon = Icons.Rounded.PlayCircle,
-            accentColor = extendedColors.youtubeRed,
-            authState = uiState.youTubeAuthState,
-            onConnect = onConnectYouTube,
-            onDisconnect = onDisconnectYouTube,
-            // Sync toggle lives INSIDE the YT Music card, below the connect
-            // row. Always rendered so the feature stays discoverable for
-            // users who haven't connected yet — YouTubeHistorySyncSection
-            // greys itself out and shows "Connect YouTube Music first" in
-            // the disconnected state.
-            extraContent = {
-                YouTubeHistorySyncSection(
-                    enabled = uiState.ytHistoryEnabled,
-                    health = uiState.ytHistoryHealth,
-                    pendingCount = uiState.ytPendingCount,
-                    ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = onYouTubeHistoryEnabledChanged,
-                    onRetry = onRetryYouTubeHistory,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            },
-        )
-
-        // Last.fm lives in the Accounts group (v0.4.1 relocation) so
-        // users who are scanning for "sign-in / connect" surfaces see
-        // all three services together. The actual connect UX is still
-        // different enough (web-auth vs cookie / OAuth) that we render
-        // via its own composable instead of AccountConnectionCard.
-        val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-        GlassCard(
-            modifier = Modifier.bringIntoViewRequester(lastFmRequester),
-        ) {
-            LastFmSection(
-                state = uiState.lastFmState,
-                onConnect = {
-                    onConnectLastFm { url ->
-                        runCatching { lastFmUriHandler.openUri(url) }
-                    }
-                },
-                onFinish = onFinishLastFmAuth,
-                onDisconnect = onDisconnectLastFm,
-                onDismissError = onDismissLastFmError,
-                onSyncScrobblesNow = onSyncScrobblesNow,
-                isScrobbleDraining = uiState.isScrobbleDraining,
-            )
-            // Surface the result of a manual drain inline (keeps the
-            // Settings screen Compose-local; no scaffold/snackbar host
-            // dependency). The Text sticks around for ~3s and fades; the
-            // VM clears the state so repeated taps render fresh.
-            uiState.scrobbleDrainResult?.let { result ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = when {
-                        !result.sessionPresent -> "Connect Last.fm first."
-                        result.submitted == 0 -> "No new scrobbles to send."
-                        else -> "Sent ${result.submitted} scrobble${if (result.submitted == 1) "" else "s"} to Last.fm."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                androidx.compose.runtime.LaunchedEffect(result) {
-                    kotlinx.coroutines.delay(3000)
-                    onClearScrobbleDrainResult()
-                }
-            }
-        }
-
-        // -- Audio Quality section (top-level) --------------------------------
-        // v0.9.17: when lossless is on, this top-level card hides — the YT
-        // tier picker is reachable through the "YouTube fallback" expander
-        // inside the lossless card below, so the user has a single mental
-        // anchor for "audio quality." When lossless is off, today's layout
-        // is preserved exactly: standalone picker governing yt-dlp tier.
-        if (!uiState.losslessEnabled) {
-            SectionHeader(title = "Audio Quality")
-
-            GlassCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectableGroup(),
-                ) {
-                    // -- Download quality (radio group) -------------------------
-                    Text(
-                        text = "Download quality",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    AudioQualityPicker(
-                        selected = uiState.audioQuality,
-                        onSelected = onQualityChanged,
-                    )
-                }
-            }
-        }
-
-        // -- Lossless audio card ---------------------------------------------
-        GlassCard(modifier = Modifier.bringIntoViewRequester(losslessRequester)) {
-            var advancedExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
-            val chevronRotation by animateFloatAsState(
-                targetValue = if (advancedExpanded) 90f else 0f,
-                label = "advancedChevron",
-            )
-            // v0.9.17: YouTube-fallback expander state. Re-keyed on the
-            // losslessEnabled flip so the card collapses cleanly when the
-            // user toggles lossless off (returning the picker to its top-
-            // level home) and on (revealing it nested behind the expander).
-            var fallbackExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
-            val fallbackChevronRotation by animateFloatAsState(
-                targetValue = if (fallbackExpanded) 90f else 0f,
-                label = "fallback-chevron",
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectableGroup(),
-            ) {
-                // -- Lossless toggle row -------------------------------------
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Lossless downloads",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (uiState.losslessEnabled) {
-                                "FLAC routing active. Files ~10\u00D7 larger than MP3."
-                            } else {
-                                "Studio-quality FLAC via Qobuz. Files ~10\u00D7 larger than MP3."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = uiState.losslessEnabled,
-                        onCheckedChange = onLosslessEnabledChanged,
-                        modifier = Modifier.semantics { role = Role.Switch },
-                    )
-                }
-
-                // -- Routing status + advanced expander (only when lossless on) -
-                AnimatedVisibility(
-                    visible = uiState.losslessEnabled,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // v0.9.13 ROUTING block — replaces the prominent
-                        // "Connect to squid.wtf" CTA. The previous treatment
-                        // implied lossless required a captcha to function;
-                        // it doesn't — kenny carries lossless on its own,
-                        // squid is an optional second source. Now we show
-                        // both sources and let the user solve the captcha
-                        // inline if they want the redundancy.
-                        LosslessRoutingStatus(
-                            squidStatus = uiState.squidCaptchaStatus,
-                            onSolveCaptcha = onNavigateToSquidWtfCaptcha,
-                        )
-
-                        // -- Lossless quality picker --------------------------
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Lossless quality",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Column(modifier = Modifier.selectableGroup()) {
-                            // Order top-down: MAX → HI_RES → CD (best-quality first).
-                            listOf(
-                                LosslessQualityTier.MAX,
-                                LosslessQualityTier.HI_RES,
-                                LosslessQualityTier.CD,
-                            ).forEach { tier ->
+                            val themeOptions = listOf(
+                                ThemeMode.LIGHT to "Light",
+                                ThemeMode.DARK to "Dark",
+                                ThemeMode.SYSTEM to "Follow system",
+                                ThemeMode.AMOLED to "Pitch Black (AMOLED)",
+                            )
+                            themeOptions.forEach { (mode, label) ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .selectable(
-                                            selected = uiState.losslessQualityTier == tier,
-                                            onClick = { onLosslessQualityTierChanged(tier) },
+                                            selected = uiState.themeMode == mode,
+                                            onClick = { onThemeChanged(mode) },
                                             role = Role.RadioButton,
                                         )
                                         .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     RadioButton(
-                                        selected = uiState.losslessQualityTier == tier,
-                                        onClick = null, // handled by Row's selectable
+                                        selected = uiState.themeMode == mode,
+                                        onClick = null,
                                         colors = RadioButtonDefaults.colors(
                                             selectedColor = MaterialTheme.colorScheme.primary,
                                             unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                         ),
                                     )
-                                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                                        Text(
-                                            text = tier.displayLabel,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
-                                        Text(
-                                            text = tier.sizeHint,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // -- YouTube fallback expander row (v0.9.17) -----------
-                        // Hosts the relocated yt-dlp tier picker plus the
-                        // master fallback toggle. Mirrors the Advanced
-                        // expander's chevron / padding / label treatment.
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { fallbackExpanded = !fallbackExpanded }
-                                .semantics {
-                                    role = Role.Button
-                                    stateDescription = if (fallbackExpanded) "expanded" else "collapsed"
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                modifier = Modifier.graphicsLayer(rotationZ = fallbackChevronRotation),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "YouTube fallback",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = if (uiState.youtubeFallbackEnabled) "on" else "off",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        AnimatedVisibility(
-                            visible = fallbackExpanded,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Switch(
-                                        checked = uiState.youtubeFallbackEnabled,
-                                        onCheckedChange = onYoutubeFallbackChanged,
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Use YouTube when lossless fails",
+                                        text = label,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                }
-                                if (uiState.youtubeFallbackEnabled) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    AudioQualityPicker(
-                                        selected = uiState.audioQuality,
-                                        onSelected = onQualityChanged,
-                                    )
-                                }
-                            }
-                        }
-
-                        // -- Advanced expander row (chevron + label) -----------
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { advancedExpanded = !advancedExpanded }
-                                .semantics {
-                                    role = Role.Button
-                                    // Spec §Accessibility: announce collapsed/expanded
-                                    // state to screen readers.
-                                    stateDescription = if (advancedExpanded) "expanded" else "collapsed"
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null, // parent Row carries role + stateDescription + label
-                                modifier = Modifier.graphicsLayer(rotationZ = chevronRotation),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Advanced",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        AnimatedVisibility(
-                            visible = advancedExpanded,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Or paste the captcha_verified_at cookie value directly:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedTextField(
-                                    value = uiState.squidWtfCaptchaCookie,
-                                    onValueChange = onSquidWtfCaptchaCookieChanged,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("captcha_verified_at value") },
-                                    singleLine = true,
-                                    placeholder = { Text("e.g. 1777687404951") },
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                TextButton(
-                                    onClick = onResetLosslessRateLimiter,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(
-                                        text = "Reset lossless attempts",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(start = 8.dp),
                                     )
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // v0.9.13: heart-defaults Library & Likes section removed — heart is
-        // now Stash-only toggle (standard like-button UX), so there are no
-        // per-destination defaults to configure. Spotify auto-save lives
-        // inside the Spotify connect card above as `extraContent`.
+                SettingsSubScreen.DIAGNOSTICS_ABOUT -> {
+                    val diagnosticsContext = LocalContext.current
+                    LaunchedEffect(Unit) { onDiagnosticsRefresh() }
 
-        // -- Downloads section ------------------------------------------------
-        // Governs when background workers (Stash Discover, tag enrichment)
-        // are allowed to run. Default is WiFi + charging (safest); power
-        // users can loosen this to WiFi-any-time or any-network.
-        SectionHeader(title = "Downloads")
-
-        GlassCard {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectableGroup(),
-            ) {
-                Text(
-                    text = "Run recommendations when",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                DownloadNetworkMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = uiState.downloadNetworkMode == mode,
-                                onClick = { onDownloadNetworkModeChanged(mode) },
-                                role = Role.RadioButton,
-                            )
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = uiState.downloadNetworkMode == mode,
-                            onClick = null, // handled by Row's selectable
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = mode.label,
+                                text = "Share latest crash report",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = mode.description,
+                                text = if (uiState.hasCrashReport) {
+                                    "Attach the most recent crash log to email or chat. Stays on device until you share."
+                                } else {
+                                    "No recent crashes."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        }
-                    }
-                }
-
-            }
-        }
-
-        // -- Stash Mixes (beta) toggle ----------------------------------------
-        // Lets the user opt out of the auto-generated mix surfaces (Daily
-        // Discover, Deep Cuts, First Listen) so the background discovery +
-        // download workers stop running and the playlists hide from
-        // Home/Library. See GitHub issues #56 and #57.
-        GlassCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Stash Mixes (beta)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (uiState.stashMixesEnabled) {
-                            "Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background."
-                        } else {
-                            "Auto-generated mix playlists are hidden. Background discovery downloads are off."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = uiState.stashMixesEnabled,
-                    onCheckedChange = onStashMixesEnabledChanged,
-                    modifier = Modifier.semantics { role = Role.Switch },
-                )
-            }
-        }
-
-        // -- Appearance section -----------------------------------------------
-        SectionHeader(title = "Appearance")
-
-        GlassCard {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectableGroup(),
-            ) {
-                Text(
-                    text = "Theme",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val themeOptions = listOf(
-                    ThemeMode.LIGHT to "Light",
-                    ThemeMode.DARK to "Dark",
-                    ThemeMode.SYSTEM to "Follow system",
-                )
-                themeOptions.forEach { (mode, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = uiState.themeMode == mode,
-                                onClick = { onThemeChanged(mode) },
-                                role = Role.RadioButton,
-                            )
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = uiState.themeMode == mode,
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        // -- Audio Effects section --------------------------------------------
-        // The full EQ UI lives on a dedicated EqualizerScreen. This row
-        // navigates to it.
-        SectionHeader(title = "Audio Effects")
-
-        GlassCard(
-            modifier = Modifier.clickable(onClick = onNavigateToEqualizer),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Equalizer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Equalizer",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Open Equalizer",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // -- Library Health row -----------------------------------------------
-        // Drilldown into the format/bitrate breakdown of every downloaded
-        // track. Used to verify what the sync is actually pulling and to
-        // measure MAX-tier (format 141) yield empirically.
-        GlassCard(
-            modifier = Modifier.clickable(onClick = onNavigateToLibraryHealth),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.GraphicEq,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Library Health",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Open Library Health",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // -- Storage section --------------------------------------------------
-        SectionHeader(title = "Storage")
-
-        val storageContext = LocalContext.current
-        val contentResolver = storageContext.contentResolver
-        // Tracks what action the user intended when they tapped the folder
-        // picker. "SetOnly" = just pick a destination for new downloads.
-        // "SetAndMove" = pick destination AND auto-start the library move
-        // once the URI is saved (single tap flow for users with existing
-        // libraries who want to migrate).
-        var pendingPickerIntent by remember { mutableStateOf(PickerIntent.SetOnly) }
-        val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            if (uri != null) {
-                // Take a persistable permission BEFORE handing the URI to the
-                // VM — without this, the permission is revoked when the app
-                // is backgrounded and the persisted URI becomes useless.
-                runCatching {
-                    contentResolver.takePersistableUriPermission(
-                        uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                    )
-                }
-                onSetExternalStorage(uri)
-                if (pendingPickerIntent == PickerIntent.SetAndMove) {
-                    onStartMoveLibrary(uri)
-                }
-            }
-            pendingPickerIntent = PickerIntent.SetOnly
-        }
-
-        val externalTree = uiState.externalTreeUri
-        // Derive a human-readable folder name from the tree URI without
-        // pulling the documentfile dep into this module. Tree URIs look like
-        // `content://com.android.externalstorage.documents/tree/primary%3AMusic%2FStash`
-        // — after decoding, the last path segment after the colon is the
-        // visible folder.
-        val externalFolderName = remember(externalTree) {
-            externalTree?.lastPathSegment
-                ?.substringAfterLast(':', "")
-                ?.substringAfterLast('/', "")
-                ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
-                ?.takeIf { it.isNotBlank() }
-                ?: externalTree?.let { "External folder" }
-                ?: ""
-        }
-        val internalPath = remember(storageContext) {
-            java.io.File(storageContext.filesDir, "music").absolutePath
-        }
-
-        // Database backup -----------------------------------------------------
-        val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
-        ) { uri ->
-            if (uri != null) onExportDatabase(uri)
-        }
-        val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-        ) { uri ->
-            if (uri != null) onImportDatabase(uri)
-        }
-
-        if (uiState.databaseBackupState !is DatabaseBackupState.Idle) {
-            AlertDialog(
-                onDismissRequest = {
-                    if (uiState.databaseBackupState !is DatabaseBackupState.Exporting &&
-                        uiState.databaseBackupState !is DatabaseBackupState.Importing) {
-                        onDismissDatabaseBackupStatus()
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.large,
-                title = {
-                    Text(
-                        text = when (uiState.databaseBackupState) {
-                            DatabaseBackupState.Exporting -> "Exporting Database"
-                            DatabaseBackupState.Importing -> "Importing Database"
-                            is DatabaseBackupState.Success -> "Success"
-                            is DatabaseBackupState.Error -> "Error"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        when (val state = uiState.databaseBackupState) {
-                            DatabaseBackupState.Exporting, DatabaseBackupState.Importing -> {
-                                androidx.compose.material3.LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                Text(
-                                    text = "Processing...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            is DatabaseBackupState.Success -> {
-                                Text(
-                                    text = state.message,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            is DatabaseBackupState.Error -> {
-                                Text(
-                                    text = state.message,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                enabled = uiState.hasCrashReport,
+                                onClick = {
+                                    val target = onShareLatestCrashReport()
+                                    if (target == null) {
+                                        Toast.makeText(
+                                            diagnosticsContext,
+                                            "No crash report to share.",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        return@OutlinedButton
+                                    }
+                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
+                                        putExtra(
+                                            android.content.Intent.EXTRA_SUBJECT,
+                                            "Stash crash report",
+                                        )
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    val chooser = android.content.Intent.createChooser(send, "Share crash report")
+                                        .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                                    runCatching { diagnosticsContext.startActivity(chooser) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                diagnosticsContext,
+                                                "No app available to share the report.",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary,
+                                ),
+                            ) {
+                                Text("Share latest crash report")
                             }
                         }
                     }
-                },
-                confirmButton = {
-                    if (uiState.databaseBackupState is DatabaseBackupState.Success ||
-                        uiState.databaseBackupState is DatabaseBackupState.Error) {
-                        TextButton(onClick = onDismissDatabaseBackupStatus) {
-                            Text("OK")
-                        }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val aboutContext = LocalContext.current
+                    val installedVersion = remember(aboutContext) {
+                        runCatching {
+                            aboutContext.packageManager
+                                .getPackageInfo(aboutContext.packageName, 0)
+                                .versionName
+                        }.getOrNull() ?: "0.3.5-beta.1"
                     }
-                },
-            )
-        }
 
-        if (uiState.showImportConfirmation) {
-            AlertDialog(
-                onDismissRequest = onCancelImportDatabase,
-                containerColor = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.large,
-                title = {
-                    Text(
-                        text = "Overwrite Library & Settings?",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                },
-                text = {
-                    Text(
-                        text = "This will completely replace your existing library metadata, playlists, settings, and account connections. This action cannot be undone.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = onConfirmImportDatabase,
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        Text("Overwrite")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = onCancelImportDatabase) {
-                        Text("Cancel")
-                    }
-                },
-            )
-        }
-
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Database Backup -----------------------------------------
-                Text(
-                    text = "Backup",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Export settings and database or import from a previous backup.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { exportLauncher.launch("stash-backup.zip") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text("Export Backup")
-                    }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text("Import Backup")
-                    }
-                }
-            }
-        }
-
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                StorageRow(label = "Total tracks", value = "${uiState.totalTracks}")
-                Spacer(modifier = Modifier.height(8.dp))
-                StorageRow(label = "Storage used", value = formatBytes(uiState.totalStorageBytes))
-                Spacer(modifier = Modifier.height(12.dp))
-                androidx.compose.material3.HorizontalDivider(
-                    color = extendedColors.glassBorder,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Current location ----------------------------------------
-                Text(
-                    text = "Download location",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = when {
-                        externalTree == null -> "Internal (app-private)"
-                        externalFolderName.isBlank() -> "External folder (SD card / USB)"
-                        else -> externalFolderName
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (externalTree != null) {
-                        "Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB."
-                    } else {
-                        internalPath
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Actions -------------------------------------------------
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            onSetPickerIntent(PickerIntent.SetOnly)
-                            treePicker.launch(null)
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text(
-                            text = if (externalTree != null) "Change folder" else "Pick SD / folder",
-                        )
-                    }
-                    if (externalTree != null) {
-                        OutlinedButton(
-                            onClick = { onSetExternalStorage(null) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        ) {
-                            Text("Use internal")
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "New downloads go to the selected location.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                // Move library — rendered only when there's work to do. We
-                // refresh the count reactively after each move (state
-                // transition to Idle) and when the user picks a new folder.
-                // If everything is already in the external target the
-                // section simply disappears so the button isn't a dead-end.
-                var movableCount by remember { mutableStateOf<Int?>(null) }
-                LaunchedEffect(uiState.moveLibraryState, externalTree) {
-                    if (uiState.moveLibraryState !is com.stash.data.download.files.MoveLibraryState.Running) {
-                        movableCount = runCatching { countMovableTracks() }.getOrNull()
-                    }
-                }
-
-                val showMoveSection = when (uiState.moveLibraryState) {
-                    com.stash.data.download.files.MoveLibraryState.Idle ->
-                        (movableCount ?: 0) > 0
-                    else -> true  // show progress/done/error regardless of count
-                }
-
-                if (showMoveSection) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    androidx.compose.material3.HorizontalDivider(
-                        color = extendedColors.glassBorder,
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    MoveLibrarySection(
-                        state = uiState.moveLibraryState,
-                        hasExternalFolder = externalTree != null,
-                        movableCount = movableCount ?: 0,
-                        onStart = {
-                            if (externalTree != null) {
-                                onStartMoveLibrary(externalTree)
-                            } else {
-                                onSetPickerIntent(PickerIntent.SetAndMove)
-                                treePicker.launch(null)
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            StorageRow(label = "Version", value = installedVersion)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            StorageRow(label = "License", value = "GPL-3.0")
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    UpdateCheckWorker.enqueueOneTimeCheck(aboutContext)
+                                    Toast.makeText(
+                                        aboutContext,
+                                        "Checking for updates\u2026",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary,
+                                ),
+                            ) {
+                                Text("Check for updates")
                             }
-                        },
-                        onCancel = onCancelMoveLibrary,
-                        onDismiss = onDismissMoveLibrary,
-                    )
-                }
-            }
-        }
-
-        // Phase 8: Library maintenance (Blocked Songs + Fix wrong-version
-        // downloads) relocated to the Sync tab. Settings no longer carries
-        // a Library section.
-
-        // -- Diagnostics section ----------------------------------------------
-        // Crash-to-file: writes uncaught exceptions to cacheDir/crashes/ so
-        // the user can attach the latest one to an email / Discord / GitHub
-        // issue. Zero network, zero auto-upload. Disabled when no files
-        // exist; LaunchedEffect refreshes liveness on every entry so a
-        // share that resolves the issue immediately flips the button off
-        // on the next screen visit.
-        val diagnosticsContext = LocalContext.current
-        LaunchedEffect(Unit) { onDiagnosticsRefresh() }
-
-        SectionHeader(title = "Diagnostics")
-
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Share latest crash report",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (uiState.hasCrashReport) {
-                        "Attach the most recent crash log to email or chat. Stays on device until you share."
-                    } else {
-                        "No recent crashes."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    enabled = uiState.hasCrashReport,
-                    onClick = {
-                        val target = onShareLatestCrashReport()
-                        if (target == null) {
-                            Toast.makeText(
-                                diagnosticsContext,
-                                "No crash report to share.",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            return@OutlinedButton
                         }
-                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
-                            putExtra(
-                                android.content.Intent.EXTRA_SUBJECT,
-                                "Stash crash report",
-                            )
-                            // FLAG_GRANT_READ is required so the recipient
-                            // app can actually read the file:// URI behind
-                            // the content:// shim.
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        val chooser = android.content.Intent.createChooser(send, "Share crash report")
-                            .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
-                        runCatching { diagnosticsContext.startActivity(chooser) }
-                            .onFailure {
-                                Toast.makeText(
-                                    diagnosticsContext,
-                                    "No app available to share the report.",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text("Share latest crash report")
+                    }
                 }
+                SettingsSubScreen.MAIN -> {}
             }
+
+            Spacer(modifier = Modifier.height(80.dp))
         }
-
-        // -- About section ----------------------------------------------------
-        SectionHeader(title = "About")
-
-        val aboutContext = LocalContext.current
-        val installedVersion = remember(aboutContext) {
-            runCatching {
-                aboutContext.packageManager
-                    .getPackageInfo(aboutContext.packageName, 0)
-                    .versionName
-            }.getOrNull() ?: "0.3.5-beta.1"
-        }
-
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                StorageRow(label = "Version", value = installedVersion)
-                Spacer(modifier = Modifier.height(8.dp))
-                StorageRow(label = "License", value = "GPL-3.0")
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = {
-                        UpdateCheckWorker.enqueueOneTimeCheck(aboutContext)
-                        Toast.makeText(
-                            aboutContext,
-                            "Checking for updates\u2026",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text("Check for updates")
-                }
-            }
-        }
-
-        // Bottom padding for navigation bar clearance
-        Spacer(modifier = Modifier.height(80.dp))
     }
 }
 

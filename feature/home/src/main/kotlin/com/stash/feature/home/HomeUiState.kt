@@ -36,6 +36,12 @@ data class HomeUiState(
     /** Recently downloaded tracks across all sources. */
     val recentlyAdded: List<Track> = emptyList(),
 
+    /** Local (downloaded) tracks. */
+    val localSongs: List<Track> = emptyList(),
+
+    /** Liked tracks across all sources. */
+    val likedSongs: List<Track> = emptyList(),
+
     /** Spotify liked-songs playlists (usually one — "Liked Songs"). */
     val spotifyLikedPlaylists: List<Playlist> = emptyList(),
 

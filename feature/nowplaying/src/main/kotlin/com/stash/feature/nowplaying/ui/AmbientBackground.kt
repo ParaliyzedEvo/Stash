@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import kotlin.math.cos
 import kotlin.math.min
@@ -40,6 +41,7 @@ fun AmbientBackground(
     vibrantColor: Color,
     mutedColor: Color,
     modifier: Modifier = Modifier,
+    isAmoled: Boolean = false,
 ) {
     // Animate colors so track changes produce a smooth 800 ms crossfade.
     val animDominant by animateColorAsState(
@@ -90,12 +92,16 @@ fun AmbientBackground(
     )
 
     Canvas(modifier = modifier) {
+        if (isAmoled) {
+            drawRect(color = Color.Black)
+            return@Canvas
+        }
         val w = size.width
         val h = size.height
         val cx = w / 2f
         val cy = h / 2f
-        val orbitRadius = min(w, h) * 0.18f
-        val gradientRadius = min(w, h) * 0.65f
+        val orbitRadius = min(w, h) * 0.20f
+        val gradientRadius = min(w, h) * 1.25f // Greatly expanded for a deep, ultra-soft blur glow
 
         // Dark base fill.
         drawRect(color = BaseDark)
@@ -112,24 +118,56 @@ fun AmbientBackground(
         // Gradient 1 — dominant, highest presence.
         val center1 = orbitalCenter(angle1)
         drawCircle(
-            color = animDominant.copy(alpha = 0.35f),
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to animDominant.copy(alpha = 0.50f),
+                    0.3f to animDominant.copy(alpha = 0.35f),
+                    0.6f to animDominant.copy(alpha = 0.15f),
+                    0.85f to animDominant.copy(alpha = 0.05f),
+                    1.0f to Color.Transparent
+                ),
+                center = center1,
+                radius = gradientRadius,
+            ),
             radius = gradientRadius,
             center = center1,
         )
 
         // Gradient 2 — vibrant, medium presence.
         val center2 = orbitalCenter(angle2)
+        val r2 = gradientRadius * 0.90f
         drawCircle(
-            color = animVibrant.copy(alpha = 0.25f),
-            radius = gradientRadius * 0.85f,
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to animVibrant.copy(alpha = 0.40f),
+                    0.3f to animVibrant.copy(alpha = 0.25f),
+                    0.6f to animVibrant.copy(alpha = 0.10f),
+                    0.85f to animVibrant.copy(alpha = 0.03f),
+                    1.0f to Color.Transparent
+                ),
+                center = center2,
+                radius = r2,
+            ),
+            radius = r2,
             center = center2,
         )
 
         // Gradient 3 — muted, subtle presence.
         val center3 = orbitalCenter(angle3)
+        val r3 = gradientRadius * 0.80f
         drawCircle(
-            color = animMuted.copy(alpha = 0.20f),
-            radius = gradientRadius * 0.70f,
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to animMuted.copy(alpha = 0.35f),
+                    0.3f to animMuted.copy(alpha = 0.20f),
+                    0.6f to animMuted.copy(alpha = 0.08f),
+                    0.85f to animMuted.copy(alpha = 0.02f),
+                    1.0f to Color.Transparent
+                ),
+                center = center3,
+                radius = r3,
+            ),
+            radius = r3,
             center = center3,
         )
     }

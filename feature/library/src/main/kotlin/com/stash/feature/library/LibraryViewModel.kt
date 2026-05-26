@@ -58,6 +58,11 @@ class LibraryViewModel @Inject constructor(
         localImportCoordinator.start(uris)
     }
 
+    /** Kick off a recursive folder import via the SAF directory picker. */
+    fun startFolderImport(treeUri: Uri) {
+        localImportCoordinator.startFolderImport(treeUri)
+    }
+
     /** Cancel an in-progress import. Files imported so far stay put. */
     fun cancelLocalImport() {
         localImportCoordinator.cancel()
@@ -124,6 +129,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply source filter --
         val sourceFiltered = when (controls.sourceFilter) {
             SourceFilter.ALL -> allTracks
+            SourceFilter.LOCAL -> allTracks.filter { it.source == MusicSource.LOCAL }
             SourceFilter.YOUTUBE -> allTracks.filter { it.source == MusicSource.YOUTUBE }
             SourceFilter.SPOTIFY -> allTracks.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
             // Codec set kept in sync with com.stash.core.ui.components.FlacBadge

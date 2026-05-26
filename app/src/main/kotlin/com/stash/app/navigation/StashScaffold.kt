@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -41,6 +44,7 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var isWebLoginOpen by remember { mutableStateOf(false) }
 
     // Android 13+ runtime permission for notifications. One-shot per install.
     RequestNotificationPermissionOnce()
@@ -82,31 +86,37 @@ fun StashScaffold(
         // 15+ where edge-to-edge is enforced. Reported via Twitter
         // (https://x.com/tekno_deha1/status/...).
         bottomBar = {
-            Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                MiniPlayer(
-                    onExpand = {
-                        navController.navigate(NowPlayingRoute) {
-                            launchSingleTop = true
-                        }
-                    },
-                )
-
-                StashBottomBar(
-                    currentRoute = currentRoute,
-                    onNavigate = { dest ->
-                        navController.navigate(dest.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                inclusive = false
+            val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
+                                currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
+                                isWebLoginOpen
+            if (!hideBottomBar) {
+                Column {
+                    MiniPlayer(
+                        onExpand = {
+                            navController.navigate(NowPlayingRoute) {
+                                launchSingleTop = true
                             }
-                            launchSingleTop = true
-                        }
-                    },
-                )
+                        },
+                    )
+
+                    StashBottomBar(
+                        currentRoute = currentRoute,
+                        onNavigate = { dest ->
+                            navController.navigate(dest.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
             }
         },
     ) { innerPadding ->
         StashNavHost(
             navController = navController,
+            onWebLoginChanged = { isWebLoginOpen = it },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -126,7 +136,7 @@ private fun StashBottomBar(
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
-        windowInsets = WindowInsets(0.dp),
+
     ) {
         TopLevelDestination.entries.forEach { dest ->
             val isSelected = currentRoute == dest.route::class.qualifiedName

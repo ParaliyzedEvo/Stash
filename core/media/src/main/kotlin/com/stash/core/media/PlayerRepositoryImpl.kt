@@ -877,7 +877,10 @@ class PlayerRepositoryImpl @Inject constructor(
                             .setArtist(track.artist)
                             .setAlbumTitle(track.album)
                             .setArtworkUri(
-                                (track.albumArtPath ?: track.albumArtUrl)?.let { Uri.parse(it) }
+                                (track.albumArtPath ?: track.albumArtUrl)?.let { path ->
+                                    val uriStr = if (path.startsWith("/")) "file://$path" else path
+                                    Uri.parse(uriStr)
+                                }
                             )
                             .setExtras(Bundle().apply {
                                 putLong(EXTRA_TRACK_ID, track.id)
@@ -1305,7 +1308,10 @@ class PlayerRepositoryImpl @Inject constructor(
             .setArtist(artist)
             .setAlbumTitle(album)
             .setArtworkUri(
-                (albumArtPath ?: albumArtUrl)?.toUri()
+                (albumArtPath ?: albumArtUrl)?.let { path ->
+                    val uriStr = if (path.startsWith("/")) "file://$path" else path
+                    Uri.parse(uriStr)
+                }
             )
             .setExtras(Bundle().apply {
                 putLong(EXTRA_TRACK_ID, id)
@@ -1359,7 +1365,8 @@ class PlayerRepositoryImpl @Inject constructor(
             title = meta.title?.toString() ?: "",
             artist = meta.artist?.toString() ?: "",
             album = meta.albumTitle?.toString() ?: "",
-            albumArtUrl = meta.artworkUri?.toString(),
+            albumArtUrl = meta.artworkUri?.toString()?.let { if (it.startsWith("file:") || it.startsWith("/")) null else it },
+            albumArtPath = meta.artworkUri?.toString()?.let { if (it.startsWith("file:") || it.startsWith("/")) it.removePrefix("file://").removePrefix("file:") else null },
             durationMs = extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L) ?: 0L,
             // For non-library tracks (id=0L), the mediaId is the YouTube
             // videoId. For streaming-engine tracks (synthetic non-zero id),

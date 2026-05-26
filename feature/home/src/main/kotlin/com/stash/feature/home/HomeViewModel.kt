@@ -200,8 +200,9 @@ class HomeViewModel @Inject constructor(
     private val musicDataFlow = combine(
         musicRepository.getAllPlaylists(),
         musicRepository.getRecentlyAdded(20),
-    ) { playlists, recentlyAdded ->
-        MusicData(playlists, recentlyAdded)
+        musicRepository.getAllTracks(),
+    ) { playlists, recentlyAdded, allTracks ->
+        MusicData(playlists, recentlyAdded, allTracks)
     }
 
     /**
@@ -394,11 +395,23 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
+        val localSongs = musicData.allTracks.filter { it.isDownloaded }
+            .sortedByDescending { it.dateAdded }
+            .take(20)
+
+        val likedSongs = musicData.allTracks.filter {
+            it.spotifySavedAt != null || it.ytMusicSavedAt != null || it.stashLikedAt != null
+        }.sortedByDescending {
+            maxOf(it.spotifySavedAt ?: 0L, it.ytMusicSavedAt ?: 0L, it.stashLikedAt ?: 0L)
+        }.take(20)
+
         HomeUiState(
             stashMixes = stashMixes,
             spotifyMixes = spotifyMixes,
             youtubeMixes = youtubeMixes,
             recentlyAdded = musicData.recentlyAdded,
+            localSongs = localSongs,
+            likedSongs = likedSongs,
             spotifyLikedPlaylists = spotifyLikedPlaylists,
             youtubeLikedPlaylists = youtubeLikedPlaylists,
             spotifyLikedCount = spotifyLikedCount,
@@ -906,6 +919,7 @@ class HomeViewModel @Inject constructor(
 private data class MusicData(
     val playlists: List<Playlist>,
     val recentlyAdded: List<Track>,
+    val allTracks: List<Track>,
 )
 
 /**

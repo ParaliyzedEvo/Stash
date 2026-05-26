@@ -87,6 +87,51 @@ class LocalImportCoordinator @Inject constructor(
         activeJob = scope.launch { runImport(uris) }
     }
 
+    /**
+     * Start recursively importing all audio files under the directory [treeUri].
+     * No-op if already [LocalImportState.Running].
+     */
+    fun startFolderImport(treeUri: Uri) {
+        if (_state.value is LocalImportState.Running) return
+        activeJob = scope.launch {
+            _state.value = LocalImportState.Running(current = 0, total = 0)
+            val uris = mutableListOf<Uri>()
+            runCatching {
+                val rootDir = DocumentFile.fromTreeUri(context, treeUri)
+                if (rootDir != null && rootDir.isDirectory) {
+                    collectAudioUris(rootDir, uris)
+                }
+            }
+            if (uris.isEmpty()) {
+                _state.value = LocalImportState.Done(imported = 0, failed = 0)
+            } else {
+                runImport(uris)
+            }
+        }
+    }
+
+    private fun collectAudioUris(dir: DocumentFile, outList: MutableList<Uri>) {
+        val files = dir.listFiles()
+        for (file in files) {
+            if (file.isDirectory) {
+                collectAudioUris(file, outList)
+            } else if (file.isFile) {
+                val name = file.name?.lowercase() ?: ""
+                val type = file.type?.lowercase() ?: ""
+                val isAudio = type.startsWith("audio/") ||
+                        name.endsWith(".mp3") ||
+                        name.endsWith(".m4a") ||
+                        name.endsWith(".flac") ||
+                        name.endsWith(".wav") ||
+                        name.endsWith(".ogg") ||
+                        name.endsWith(".aac")
+                if (isAudio) {
+                    outList.add(file.uri)
+                }
+            }
+        }
+    }
+
     /** Cancel a running import. Files imported so far remain in the library. */
     fun cancel() {
         activeJob?.cancel()
