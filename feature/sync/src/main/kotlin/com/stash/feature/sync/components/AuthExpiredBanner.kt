@@ -64,9 +64,8 @@ fun AuthExpiredBanner(
         modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.large)
             .background(amber.copy(alpha = 0.18f))
-            .border(1.dp, amber.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
             .padding(14.dp),
     ) {
         Text(

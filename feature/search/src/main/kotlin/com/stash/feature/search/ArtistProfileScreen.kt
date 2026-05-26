@@ -72,7 +72,7 @@ fun ArtistProfileScreen(
             contentPadding = PaddingValues(bottom = 96.dp),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(inner),
+                .padding(bottom = inner.calculateBottomPadding()),
         ) {
             item {
                 ArtistHero(

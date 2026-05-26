@@ -81,7 +81,7 @@ fun MiniPlayer(
                         .fillMaxWidth()
                         .height(2.dp),
                     color = uiState.vibrantColor,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    trackColor = uiState.vibrantColor.copy(alpha = 0.15f),
                 )
 
                 Row(

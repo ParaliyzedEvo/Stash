@@ -90,7 +90,7 @@ fun YouTubeLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Sign in to YouTube Music") },
+            title = { Text("Sign in to YT Music") },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
                     Text("Cancel")

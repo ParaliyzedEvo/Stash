@@ -99,9 +99,8 @@ fun FailedDownloadsGroupCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(extendedColors.glassBackground)
-            .border(0.5.dp, extendedColors.glassBorder, RoundedCornerShape(14.dp)),
+            .clip(MaterialTheme.shapes.large)
+            .background(extendedColors.glassBackground),
     ) {
         // -- Header (always visible) --
         Row(

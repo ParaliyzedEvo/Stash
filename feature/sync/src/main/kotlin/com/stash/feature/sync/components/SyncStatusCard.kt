@@ -85,15 +85,6 @@ fun SyncStatusCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                // Decoupled gating: show each FLAC sub-line whenever its
-                // own value is > 0. The previous AND-coupling
-                // (`flacTracks > 0 && flacStorageBytes > 0`) hid the
-                // sub-text for any user whose DB had FLAC rows but
-                // file_size_bytes still at 0 — turning the "defensive"
-                // check into a permanent display blocker. Per-stat
-                // gating is the design that v0.9.0 originally shipped
-                // with; the coupling was a regression introduced in
-                // c3c6529 and is now reverted.
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -106,7 +97,6 @@ fun SyncStatusCard(
                             StatItem(
                                 label = "Tracks",
                                 value = syncStatus.totalTracks.toString(),
-                                subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
                             )
                         }
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -130,7 +120,6 @@ fun SyncStatusCard(
                             StatItem(
                                 label = "Storage",
                                 value = formatBytes(syncStatus.storageUsedBytes),
-                                subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
                             )
                         }
                     }
@@ -199,11 +188,12 @@ private fun syncStatusDotColor(
 }
 
 @Composable
-private fun StatItem(label: String, value: String, subValue: String? = null) {
+private fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
@@ -211,13 +201,6 @@ private fun StatItem(label: String, value: String, subValue: String? = null) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (subValue != null) {
-            Text(
-                text = subValue,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }
 

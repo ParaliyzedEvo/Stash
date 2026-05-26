@@ -237,84 +237,95 @@ private fun ArtistDetailHeader(
     val extendedColors = StashTheme.extendedColors
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // ── Back button row ─────────────────────────────────────────────
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 8.dp, top = 8.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(300.dp)
+                .background(MaterialTheme.colorScheme.background)
         ) {
+            // Full-bleed background image using the first track's art
+            val firstTrackWithArt = state.tracks.firstOrNull { it.albumArtPath != null || it.albumArtUrl != null }
+            val artUrl = firstTrackWithArt?.albumArtPath ?: firstTrackWithArt?.albumArtUrl
+            
+            if (artUrl != null) {
+                coil3.compose.AsyncImage(
+                    model = artUrl,
+                    contentDescription = state.artistName,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                // Fallback gradient if no art is available
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
+                                ),
+                            )
+                        )
+                )
+            }
+
+            // Vertical gradient wash to blend into text
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f),
+                                androidx.compose.ui.graphics.Color.Transparent,
+                                androidx.compose.ui.graphics.Color.Transparent,
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
+                                MaterialTheme.colorScheme.background
+                            ),
+                            startY = 0f,
+                        )
+                    )
+            )
+
+            // Back button
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(top = 12.dp, start = 8.dp),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ── Artist icon + name ──────────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Circular artist icon placeholder
-            Box(
+            // Artist info at the bottom
+            Column(
                 modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                            ),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                Text(
+                    text = state.artistName,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val trackCount = state.tracks.size
+                Text(
+                    text = "$trackCount track${if (trackCount != 1) "s" else ""}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Artist name
-            Text(
-                text = state.artistName,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Track count
-            val trackCount = state.tracks.size
-            Text(
-                text = "$trackCount track${if (trackCount != 1) "s" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

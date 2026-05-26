@@ -77,7 +77,7 @@ class YouTubeStreamResolver @Inject constructor(
             ?: return null
 
         val url = withTimeoutOrNull(YT_RESOLVE_TIMEOUT_MS) {
-            runCatching { urlExtractor.extractStreamUrl(videoId) }
+            runCatching { urlExtractor.extractStreamUrl(videoId, bypassYtDlp = true) }
                 .onFailure { t ->
                     // CancellationException MUST propagate — swallowing it would
                     // surface as StreamRoutingResult.NotAvailable upstream, firing
