@@ -151,16 +151,33 @@ class LocalImportCoordinator @Inject constructor(
             val total = uris.size
             var imported = 0
             var failed = 0
+            var skipped = 0
             _state.value = LocalImportState.Running(current = 0, total = total)
+
+            // Snapshot existing LOCAL tracks once for the whole batch so we
+            // can detect duplicates without a per-file DB round-trip.
+            val existingLocal = musicRepository.getAllDownloadedTracks()
+                .filter { it.source == MusicSource.LOCAL }
+            // Key: "title_lowercase|artist_lowercase|duration_bucket_seconds"
+            // Duration bucketed to nearest 2 s so minor tag discrepancies
+            // don't create false negatives.
+            val existingKeys = existingLocal.mapTo(mutableSetOf()) { track ->
+                "${track.title.trim().lowercase()}|${track.artist.trim().lowercase()}|${track.durationMs / 2000}"
+            }
 
             for ((index, uri) in uris.withIndex()) {
                 _state.value = LocalImportState.Running(current = index, total = total)
-                val ok = runCatching { importOne(uri) }
-                if (ok.isSuccess) {
-                    imported++
-                } else {
-                    failed++
-                    Log.w(TAG, "Import failed for $uri", ok.exceptionOrNull())
+                val ok = runCatching { importOne(uri, existingKeys) }
+                when {
+                    ok.isSuccess && ok.getOrNull() == ImportResult.INSERTED -> imported++
+                    ok.isSuccess && ok.getOrNull() == ImportResult.SKIPPED_DUPLICATE -> {
+                        skipped++
+                        Log.d(TAG, "Skipped duplicate for $uri")
+                    }
+                    else -> {
+                        failed++
+                        Log.w(TAG, "Import failed for $uri", ok.exceptionOrNull())
+                    }
                 }
             }
 
@@ -174,7 +191,9 @@ class LocalImportCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun importOne(uri: Uri) {
+    private enum class ImportResult { INSERTED, SKIPPED_DUPLICATE }
+
+    private suspend fun importOne(uri: Uri, existingKeys: MutableSet<String>): ImportResult {
         val displayName = runCatching {
             DocumentFile.fromSingleUri(context, uri)?.name
         }.getOrNull()
@@ -197,6 +216,14 @@ class LocalImportCoordinator @Inject constructor(
         } ?: error("Could not open input stream for $uri")
 
         val metadata = extractMetadata(tempFile, displayName)
+
+        // Duplicate check — compare against the pre-built key set.
+        // Do this BEFORE committing to storage so we don't waste disk IO.
+        val candidateKey = "${metadata.title.trim().lowercase()}|${metadata.artist.trim().lowercase()}|${metadata.durationMs / 2000}"
+        if (candidateKey in existingKeys) {
+            tempFile.delete()
+            return ImportResult.SKIPPED_DUPLICATE
+        }
 
         val committed = fileOrganizer.commitDownload(
             tempFile = tempFile,
@@ -232,6 +259,13 @@ class LocalImportCoordinator @Inject constructor(
                 metadataEmbeddedAt = System.currentTimeMillis(),
             ),
         )
+
+        // Add to the in-memory key set so subsequent files in the same
+        // batch don't re-import the same track if the user picked duplicates.
+        val newKey = "${metadata.title.trim().lowercase()}|${metadata.artist.trim().lowercase()}|${metadata.durationMs / 2000}"
+        existingKeys.add(newKey)
+
+        return ImportResult.INSERTED
     }
 
     private data class LocalMetadata(
