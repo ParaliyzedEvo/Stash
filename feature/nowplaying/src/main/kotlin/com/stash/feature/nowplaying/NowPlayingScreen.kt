@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +91,7 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 @Composable
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
+    onNavigateToArtist: (String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -335,7 +337,14 @@ fun NowPlayingScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        track?.artist?.let { onNavigateToArtist(it) }
+                    },
             )
 
             // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
