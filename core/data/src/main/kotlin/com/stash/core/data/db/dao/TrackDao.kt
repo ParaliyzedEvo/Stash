@@ -1185,12 +1185,12 @@ interface TrackDao {
     )
     fun getFlacStorageBytes(): Flow<Long>
 
-    /** Count of downloaded tracks from Spotify. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
+    /** Count of downloaded tracks from Spotify (includes cross-source BOTH tracks). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND (source = 'SPOTIFY' OR source = 'BOTH')")
     fun getSpotifyDownloadedCount(): Flow<Int>
 
-    /** Count of downloaded tracks from YouTube. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'YOUTUBE'")
+    /** Count of downloaded tracks from YouTube (includes cross-source BOTH tracks). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND (source = 'YOUTUBE' OR source = 'BOTH')")
     fun getYouTubeDownloadedCount(): Flow<Int>
 
     // ── Aggregate queries ───────────────────────────────────────────────
