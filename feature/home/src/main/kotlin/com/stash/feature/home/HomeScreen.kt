@@ -57,7 +57,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -102,15 +102,18 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.CreatePlaylistDialog
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
+import com.stash.core.ui.components.TrackListItem
+import com.stash.core.ui.util.formatDuration
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.feature.home.streaming.StreamingModeChip
 import com.stash.feature.home.streaming.StreamingModeSheet
-import androidx.compose.ui.layout.ContentScale
-import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -158,6 +161,8 @@ fun HomeScreen(
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Controls the "New Playlist" naming dialog launched from the Playlists section.
     var showCreateDialog by remember { mutableStateOf(false) }
+    // Controls whether Local Songs shows all items or just the first 10.
+    var localSongsExpanded by remember { mutableStateOf(false) }
 
     val toastContext = LocalContext.current
     LaunchedEffect(Unit) {
@@ -220,8 +225,6 @@ fun HomeScreen(
 
         // ── Supporter pill (full row) ─────────────────────────────────
         // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
-        // Commented out to hide the Ko-fi supporter tip jar card
-        /*
         item {
             val tipJar = uiState.tipJar
             val pillSupporters = remember(tipJar) {
@@ -237,7 +240,6 @@ fun HomeScreen(
                     .padding(bottom = 12.dp),
             )
         }
-        */
 
         // ── Last.fm connect nudge ────────────────────────────────────
         // Shown only when we have creds wired AND the user has local
@@ -433,70 +435,53 @@ fun HomeScreen(
                 SectionHeader(title = "Recently Added")
             }
             item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = MaterialTheme.shapes.medium,
                 ) {
-                    itemsIndexed(
-                        uiState.recentlyAdded,
-                        key = { _, track -> track.id },
-                    ) { index, track ->
-                        CompactTrackCard(
-                            track = track,
-                            onClick = {
-                                viewModel.playTrack(uiState.recentlyAdded, index)
-                            },
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        uiState.recentlyAdded.forEachIndexed { index, track ->
+                            HomeTrackRow(
+                                track = track,
+                                onClick = { viewModel.playTrack(uiState.recentlyAdded, index) },
+                            )
+                            if (index < uiState.recentlyAdded.lastIndex) {
+                                HorizontalDivider(
+                                    color = StashTheme.extendedColors.glassBorder,
+                                    modifier = Modifier.padding(start = 64.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // ── Liked Songs Carousel ─────────────────────────────────────
+        // ── Liked Songs List ─────────────────────────────────────────
         if (uiState.likedSongs.isNotEmpty()) {
             item {
                 SectionHeader(title = "Liked Songs")
             }
             item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = MaterialTheme.shapes.medium,
                 ) {
-                    itemsIndexed(
-                        uiState.likedSongs,
-                        key = { _, track -> "liked-${track.id}" },
-                    ) { index, track ->
-                        CompactTrackCard(
-                            track = track,
-                            onClick = {
-                                viewModel.playTrack(uiState.likedSongs, index)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Local Songs Carousel ─────────────────────────────────────
-        if (uiState.localSongs.isNotEmpty()) {
-            item {
-                SectionHeader(title = "Local Songs")
-            }
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    itemsIndexed(
-                        uiState.localSongs,
-                        key = { _, track -> "local-${track.id}" },
-                    ) { index, track ->
-                        CompactTrackCard(
-                            track = track,
-                            onClick = {
-                                viewModel.playTrack(uiState.localSongs, index)
-                            },
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        uiState.likedSongs.forEachIndexed { index, track ->
+                            HomeTrackRow(
+                                track = track,
+                                onClick = { viewModel.playTrack(uiState.likedSongs, index) },
+                            )
+                            if (index < uiState.likedSongs.lastIndex) {
+                                HorizontalDivider(
+                                    color = StashTheme.extendedColors.glassBorder,
+                                    modifier = Modifier.padding(start = 64.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -529,29 +514,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Trending Playlists ───────────────────────────────────────
-        item {
-            SectionHeader(title = "Trending Playlists")
-        }
-        item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(MOCK_TRENDING_PLAYLISTS, key = { it.id }) { playlist ->
-                    DailyMixCard(
-                        playlist = playlist,
-                        onClick = {
-                            if (uiState.localSongs.isNotEmpty()) {
-                                viewModel.playTrack(uiState.localSongs.shuffled(), 0)
-                            }
-                        },
-                        onLongPress = {},
-                    )
-                }
-            }
-        }
-
         // ── Your Playlists ───────────────────────────────────────────
         item {
             SectionHeader(title = "Your Playlists")
@@ -576,7 +538,47 @@ fun HomeScreen(
                 }
             }
         }
-    }
+
+        // ── Local Songs List (vertical, max 10 + show more) ──────────
+        if (uiState.localSongs.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                SectionHeader(title = "Local Songs")
+            }
+            val visibleLocalSongs = if (localSongsExpanded) uiState.localSongs
+                                    else uiState.localSongs.take(10)
+            itemsIndexed(
+                visibleLocalSongs,
+                key = { _, track -> "local-${track.id}" },
+            ) { index, track ->
+                DetailTrackRow(
+                    track = track,
+                    trackNumber = index + 1,
+                    isPlaying = false,
+                    onClick = { viewModel.playTrack(uiState.localSongs, index) },
+                    onLongPress = { },
+                )
+            }
+            if (uiState.localSongs.size > 10) {
+                item {
+                    androidx.compose.material3.TextButton(
+                        onClick = { localSongsExpanded = !localSongsExpanded },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = if (localSongsExpanded) "Show less"
+                                   else "Show ${uiState.localSongs.size - 10} more",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+    } // end LazyColumn
 
     // ── Create playlist naming dialog ────────────────────────────────────
     if (showCreateDialog) {
@@ -667,7 +669,7 @@ fun HomeScreen(
                 },
             )
             HomeBottomSheetActionRow(
-                icon = Icons.Default.PlaylistAdd,
+                icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                 label = "Add to Queue",
                 onClick = {
                     viewModel.addPlaylistToQueue(playlist)
@@ -1185,8 +1187,9 @@ private fun LikedSongsCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 80.dp)
                     .clickable(onClick = onClick)
-                    .padding(24.dp),
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -1458,12 +1461,86 @@ private sealed interface PlaylistTile {
     data class Item(val playlist: Playlist) : PlaylistTile
 }
 
+// ── Home track row (Settings-style card row) ────────────────────────────
+
+/**
+ * A single track row styled like the Settings category rows — album art
+ * thumbnail on the left, title + artist stacked in the middle, duration
+ * on the right. Used inside a grouped GlassCard surface for Recently Added
+ * and Liked Songs sections on the Home screen.
+ */
+@Composable
+private fun HomeTrackRow(
+    track: com.stash.core.model.Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Album art / fallback icon
+        val artUrl = track.albumArtPath ?: track.albumArtUrl
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(StashTheme.extendedColors.elevatedSurface),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (artUrl != null) {
+                AsyncImage(
+                    model = artUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = StashTheme.extendedColors.textTertiary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        // Title + artist
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (track.artist.isNotBlank()) {
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        // Duration
+        Text(
+            text = formatDuration(track.durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = StashTheme.extendedColors.textTertiary,
+        )
+    }
+}
+
 // ── Create playlist card ────────────────────────────────────────────────
 
 /**
- * First tile in the Playlists grid. Tapping it opens the naming dialog to
- * create a new empty custom playlist. Styled to match [PlaylistGridCard]
- * so the grid reads consistently.
+ * First tile in the Playlists row. Height is locked to 100 dp to match
+ * the LikedSongsCard main row so the two sit flush in the same LazyRow.
  */
 @Composable
 private fun CreatePlaylistCard(
@@ -1471,35 +1548,47 @@ private fun CreatePlaylistCard(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val accent = MaterialTheme.colorScheme.primary
 
     Surface(
         modifier = modifier
-            .height(100.dp)
-            .clickable(onClick = onClick),
+            .height(100.dp),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(20.dp),
-
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            accent.copy(alpha = 0.10f),
+                            Color.Transparent,
+                        )
+                    )
+                )
+                .clickable(onClick = onClick)
                 .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = "Create Playlist",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    text = "Create\nPlaylist",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

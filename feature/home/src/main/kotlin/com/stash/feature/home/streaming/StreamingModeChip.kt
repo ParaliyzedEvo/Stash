@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,30 +53,15 @@ fun StreamingModeChip(
     val extendedColors = StashTheme.extendedColors
     val accent = MaterialTheme.colorScheme.primary
 
-    Row(
+    IconButton(
+        onClick = onClick,
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(accent.copy(alpha = 0.12f))
-            .border(
-                width = 1.dp,
-                color = accent.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(20.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Icon(
             imageVector = if (streamingEnabled) Icons.Default.CloudQueue else Icons.Default.OfflinePin,
-            contentDescription = null,
+            contentDescription = if (streamingEnabled) "Online Mode" else "Offline Mode",
             tint = accent,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            text = if (streamingEnabled) "Online" else "Offline",
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(24.dp),
         )
     }
 }

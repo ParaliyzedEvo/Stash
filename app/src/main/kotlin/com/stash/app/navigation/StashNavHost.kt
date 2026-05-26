@@ -71,7 +71,12 @@ fun StashNavHost(
         enterTransition = {
             val initialRoute = initialState.destination.route
             val targetRoute = targetState.destination.route
-            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+            if (targetRoute == NowPlayingRoute::class.qualifiedName) {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(500)
+                )
+            } else if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
                 fadeIn(
                     animationSpec = spring(
                         stiffness = Spring.StiffnessMediumLow,
@@ -102,7 +107,9 @@ fun StashNavHost(
         exitTransition = {
             val initialRoute = initialState.destination.route
             val targetRoute = targetState.destination.route
-            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+            if (targetRoute == NowPlayingRoute::class.qualifiedName) {
+                fadeOut(animationSpec = tween(500))
+            } else if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
                 fadeOut(
                     animationSpec = spring(
                         stiffness = Spring.StiffnessMediumLow,
@@ -133,7 +140,9 @@ fun StashNavHost(
         popEnterTransition = {
             val initialRoute = initialState.destination.route
             val targetRoute = targetState.destination.route
-            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+            if (initialRoute == NowPlayingRoute::class.qualifiedName) {
+                fadeIn(animationSpec = tween(500))
+            } else if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
                 fadeIn(
                     animationSpec = spring(
                         stiffness = Spring.StiffnessMediumLow,
@@ -164,7 +173,12 @@ fun StashNavHost(
         popExitTransition = {
             val initialRoute = initialState.destination.route
             val targetRoute = targetState.destination.route
-            if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
+            if (initialRoute == NowPlayingRoute::class.qualifiedName) {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(500)
+                )
+            } else if (isTopLevel(initialRoute) && isTopLevel(targetRoute)) {
                 fadeOut(
                     animationSpec = spring(
                         stiffness = Spring.StiffnessMediumLow,
@@ -431,6 +445,9 @@ fun StashNavHost(
         ) {
             NowPlayingScreen(
                 onDismiss = { navController.popBackStack() },
+                onNavigateToArtist = { artistName ->
+                    navController.navigate(ArtistDetailRoute(artistName))
+                }
             )
         }
     }
