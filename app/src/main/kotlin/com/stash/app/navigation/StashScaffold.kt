@@ -99,19 +99,23 @@ fun StashScaffold(
         // 15+ where edge-to-edge is enforced. Reported via Twitter
         // (https://x.com/tekno_deha1/status/...).
         bottomBar = {
-            // While a screen is selecting, render no bottom chrome at all — the
-            // screen's own selection action bar (which handles its own nav insets)
-            // takes the bottom edge. This drops innerPadding.bottom to 0 so the
-            // content extends full-height behind that action bar.
-            if (!selectionActive) {
-                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                    MiniPlayer(
-                        onExpand = {
-                            navController.navigate(NowPlayingRoute) {
-                                launchSingleTop = true
-                            }
-                        },
-                    )
+            val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
+                                currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
+                                isWebLoginOpen
+            val hideMiniPlayer = hideBottomBar ||
+                                 currentRoute == SettingsRoute::class.qualifiedName ||
+                                 currentRoute == AccountRoute::class.qualifiedName
+            if (!hideBottomBar) {
+                Column {
+                    if (!hideMiniPlayer) {
+                        MiniPlayer(
+                            onExpand = {
+                                navController.navigate(NowPlayingRoute) {
+                                    launchSingleTop = true
+                                }
+                            },
+                        )
+                    }
 
                     StashBottomBar(
                         currentRoute = currentRoute,

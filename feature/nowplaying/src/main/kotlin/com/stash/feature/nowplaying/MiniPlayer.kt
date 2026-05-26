@@ -38,7 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.toBitmap
 
 /**
  * Compact mini player bar that sits above the bottom navigation.
@@ -100,9 +103,21 @@ fun MiniPlayer(
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(artModel)
+                                .allowHardware(false) // Required for Palette bitmap extraction
                                 .build(),
                             contentDescription = "Album art",
                             contentScale = ContentScale.Crop,
+                            onState = { state ->
+                                if (state is AsyncImagePainter.State.Success) {
+                                    try {
+                                        val bitmap = state.result.image.toBitmap()
+                                        viewModel.onAlbumArtLoaded(bitmap)
+                                    } catch (_: Exception) {
+                                        // Bitmap extraction failed; palette will use defaults
+                                        viewModel.onAlbumArtLoaded(null)
+                                    }
+                                }
+                            },
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(RoundedCornerShape(8.dp)),

@@ -166,8 +166,6 @@ fun HomeScreen(
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Controls the "New Playlist" naming dialog launched from the Playlists section.
     var showCreateDialog by remember { mutableStateOf(false) }
-    // Controls whether Local Songs shows all items or just the first 10.
-    var localSongsExpanded by remember { mutableStateOf(false) }
 
     val toastContext = LocalContext.current
     LaunchedEffect(Unit) {
@@ -396,6 +394,7 @@ fun HomeScreen(
                         onPlayAll = { viewModel.playAllMixes(MusicSource.SPOTIFY) },
                     )
                 }
+                item { Spacer(Modifier.height(12.dp)) }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -414,6 +413,7 @@ fun HomeScreen(
 
             // YouTube mixes row — sub-header with Play All always present
             if (uiState.youtubeMixes.isNotEmpty()) {
+                item { Spacer(Modifier.height(20.dp)) }
                 item {
                     SourceSubHeader(
                         label = "YouTube Music",
@@ -421,6 +421,7 @@ fun HomeScreen(
                         onPlayAll = { viewModel.playAllMixes(MusicSource.YOUTUBE) },
                     )
                 }
+                item { Spacer(Modifier.height(12.dp)) }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -436,8 +437,14 @@ fun HomeScreen(
                     }
                 }
             }
+            // Gap between Spotify/YouTube mixes and Stash Mixes
+            item { Spacer(Modifier.height(20.dp)) }
         }
 
+        // ── Stash Mixes (recipe-driven, generated locally) ───────────
+        // v0.4.1: sits BELOW the sync-sourced Daily Mixes while the
+        // feature is in beta. Once it graduates, this block can move
+        // back up so user-generated mixes feel primary.
         // ── Stash Mixes (recipe-driven, generated locally) ───────────
         // v0.4.1: sits BELOW the sync-sourced Daily Mixes while the
         // feature is in beta. Once it graduates, this block can move
@@ -544,7 +551,7 @@ fun HomeScreen(
         // ── Liked Songs card (with source split + smart collapse) ────
         if (uiState.hasAnyLikedSongs) {
             item {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(20.dp))
                 LikedSongsCard(
                     totalCount = uiState.totalLikedCount,
                     spotifyCount = uiState.spotifyLikedCount,
@@ -570,6 +577,7 @@ fun HomeScreen(
 
         // ── Your Playlists ───────────────────────────────────────────
         item {
+            Spacer(Modifier.height(20.dp))
             SectionHeader(title = "Your Playlists")
         }
         item {
@@ -592,44 +600,67 @@ fun HomeScreen(
             }
         }
 
-        // ── Local Songs List (vertical, max 10 + show more) ──────────
-        if (uiState.localSongs.isNotEmpty()) {
+        // ── Recently Added (5 tracks, glass card) ────────────────────
+        if (uiState.recentlyAdded.isNotEmpty()) {
             item {
-                Spacer(Modifier.height(8.dp))
-                SectionHeader(title = "Local Songs")
+                Spacer(Modifier.height(20.dp))
+                SectionHeader(title = "Recently Added")
             }
-            val visibleLocalSongs = if (localSongsExpanded) uiState.localSongs
-                                    else uiState.localSongs.take(10)
-            itemsIndexed(
-                visibleLocalSongs,
-                key = { _, track -> "local-${track.id}" },
-            ) { index, track ->
-                DetailTrackRow(
-                    track = track,
-                    trackNumber = index + 1,
-                    isPlaying = false,
-                    onClick = { viewModel.playTrack(uiState.localSongs, index) },
-                    onLongPress = { },
-                )
-            }
-            if (uiState.localSongs.size > 10) {
-                item {
-                    androidx.compose.material3.TextButton(
-                        onClick = { localSongsExpanded = !localSongsExpanded },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = if (localSongsExpanded) "Show less"
-                                   else "Show ${uiState.localSongs.size - 10} more",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+            item {
+                val visible = uiState.recentlyAdded.take(5)
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        visible.forEachIndexed { index, track ->
+                            HomeTrackRow(
+                                track = track,
+                                onClick = { viewModel.playTrack(uiState.recentlyAdded, index) },
+                            )
+                            if (index < visible.lastIndex) {
+                                HorizontalDivider(
+                                    color = StashTheme.extendedColors.glassBorder,
+                                    modifier = Modifier.padding(start = 64.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
-            item { Spacer(Modifier.height(8.dp)) }
+        }
+
+        // ── Local Songs (5 tracks, glass card) ───────────────────────
+        if (uiState.localSongs.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(20.dp))
+                SectionHeader(title = "Local Songs")
+            }
+            item {
+                val visible = uiState.localSongs.take(5)
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = StashTheme.extendedColors.glassBackground,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        visible.forEachIndexed { index, track ->
+                            HomeTrackRow(
+                                track = track,
+                                onClick = { viewModel.playTrack(uiState.localSongs, index) },
+                            )
+                            if (index < visible.lastIndex) {
+                                HorizontalDivider(
+                                    color = StashTheme.extendedColors.glassBorder,
+                                    modifier = Modifier.padding(start = 64.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     } // end LazyColumn
 
@@ -1150,8 +1181,9 @@ private fun SourceSubHeader(
         SourceIndicator(source = source, size = 8.dp)
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.weight(1f))
         if (onPlayAll != null) {

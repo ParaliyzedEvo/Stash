@@ -5,11 +5,13 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 
@@ -17,7 +19,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
     HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
     SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
     LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
-    ACCOUNT(Icons.Filled.Person, Icons.Outlined.Person, "Account", AccountRoute),
+    SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
     SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
 }
 

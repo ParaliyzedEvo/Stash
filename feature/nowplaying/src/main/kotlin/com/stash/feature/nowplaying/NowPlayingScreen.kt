@@ -338,14 +338,7 @@ fun NowPlayingScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        track?.artist?.let { onNavigateToArtist(it) }
-                    },
+                modifier = Modifier.fillMaxWidth(),
             )
 
             // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
@@ -452,6 +445,7 @@ private fun TopBar(
                 isLiked = isLiked,
                 onTap = onLikeTap,
                 unlikedTint = Color.White,
+                size = 20.dp,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
         }

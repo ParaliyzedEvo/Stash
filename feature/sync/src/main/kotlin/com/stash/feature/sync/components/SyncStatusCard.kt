@@ -87,7 +87,7 @@ fun SyncStatusCard(
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -96,13 +96,13 @@ fun SyncStatusCard(
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             StatItem(
                                 label = "Tracks",
-                                value = syncStatus.totalTracks.toString(),
+                                value = "%,d".format(syncStatus.totalTracks),
                             )
                         }
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             StatItem(
                                 label = "Spotify",
-                                value = syncStatus.spotifyTracks.toString(),
+                                value = "%,d".format(syncStatus.spotifyTracks),
                             )
                         }
                     }
@@ -113,7 +113,7 @@ fun SyncStatusCard(
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             StatItem(
                                 label = "YouTube",
-                                value = syncStatus.youTubeTracks.toString(),
+                                value = "%,d".format(syncStatus.youTubeTracks),
                             )
                         }
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -192,7 +192,7 @@ private fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.displayMedium,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )

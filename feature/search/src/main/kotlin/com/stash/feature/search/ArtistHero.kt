@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -123,49 +121,12 @@ fun ArtistHero(
             }
             Spacer(Modifier.height(16.dp))
 
-            // Action row: Subscribed/Radio on the left, Play FAB on the right
+            // Action row: Play FAB on the right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.End
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Subscribed button capsule
-                    Surface(
-                        shape = RoundedCornerShape(100.dp),
-                        color = Color.White.copy(alpha = 0.15f),
-                        modifier = Modifier.clickable { /* mock subscription toggle */ }
-                    ) {
-                        Text(
-                            text = "Subscribed",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-
-                    // Radio Mix button
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.15f),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clickable { /* mock radio play */ }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Wifi,
-                                contentDescription = "Radio",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
                 // Play FAB
                 Surface(
                     shape = CircleShape,
