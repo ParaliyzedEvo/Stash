@@ -65,6 +65,15 @@ class TrackDownloadWorker @AssistedInject constructor(
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_DOWNLOADED = "downloaded"
         const val KEY_FAILED = "failed"
+
+        /**
+         * Optional input-data key. When present and non-`-1L`, the worker
+         * runs in single-track mode against exactly this `download_queue`
+         * row instead of the full sync-chain pass. Used by
+         * `SingleTrackDownloadEnqueuer` (Task 9.5) to power one-tap retries
+         * from the Failed Downloads viewer.
+         */
+        const val KEY_QUEUE_ID = "queue_id"
         private const val TAG = "TrackDownloadWorker"
     }
 
@@ -88,6 +97,15 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Single-track retry path (Task 9). When the enqueuer hands us a
+        // specific download_queue row, skip the full sync-chain bookkeeping
+        // (orphan sweeps, requeue, parallel fan-out) and just drive that
+        // one row through the downloader.
+        val singleQueueId = inputData.getLong(KEY_QUEUE_ID, -1L)
+        if (singleQueueId != -1L) {
+            return runSingleTrackMode(singleQueueId)
+        }
+
         val startedAtMs = System.currentTimeMillis()
         val syncId = inputData.getLong(DiffWorker.KEY_SYNC_ID, -1L)
         if (syncId == -1L) {
@@ -515,6 +533,89 @@ class TrackDownloadWorker @AssistedInject constructor(
             syncStateManager.onError("Download failed: ${e.message}", e)
             return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
         }
+    }
+
+    /**
+     * Single-track retry path. Reads exactly one `download_queue` row and
+     * drives it through the same [TrackDownloader] the chain uses, then
+     * translates the [TrackDownloadOutcome] into a queue update. Used by
+     * `SingleTrackDownloadEnqueuer` (Task 9.5) — one OneTimeWorkRequest per
+     * row, so concurrency for "Retry all" comes from WorkManager fanning
+     * out N independent instances rather than the chain's supervisorScope
+     * fan-out.
+     *
+     * This path deliberately omits the chain-mode bookkeeping (sync history
+     * tally, orphan sweep, requeue, foreground-progress fraction over
+     * `total`), since the retry is a single sequential invocation and the
+     * Failed Downloads viewer drives its own UI off the queue Flow.
+     */
+    private suspend fun runSingleTrackMode(queueId: Long): Result {
+        val entry = downloadQueueDao.getById(queueId)
+        if (entry == null) {
+            Log.w(TAG, "Single-track mode: queue row $queueId not found")
+            return Result.success()
+        }
+        val trackEntity = trackDao.getById(entry.trackId)
+        if (trackEntity == null) {
+            Log.w(TAG, "Single-track mode: track ${entry.trackId} not found for queue $queueId")
+            return Result.failure()
+        }
+
+        syncStateManager.onDownloading(downloaded = 0, total = 1)
+
+        val track = trackEntity.toDomain()
+        val outcome = trackDownloader.downloadTrack(
+            track = track,
+            preResolvedUrl = entry.youtubeUrl,
+        )
+
+        when (outcome) {
+            is TrackDownloadOutcome.Success -> {
+                downloadQueueDao.updateStatus(
+                    id = entry.id,
+                    status = DownloadStatus.COMPLETED,
+                    errorMessage = null,
+                    completedAt = System.currentTimeMillis(),
+                    failureType = DownloadFailureType.NONE,
+                    rejectedVideoId = null,
+                )
+                syncStateManager.onDownloading(downloaded = 1, total = 1)
+            }
+            is TrackDownloadOutcome.Failed -> {
+                val truncated = outcome.error.take(1000)
+                val type = classifier.classify(
+                    FailureContext(
+                        phase = DownloadPhase.DOWNLOADING,
+                        errorText = outcome.error,
+                        httpStatus = null,
+                        causeChain = emptyList(),
+                    ),
+                )
+                downloadQueueDao.markFailed(
+                    queueId = entry.id,
+                    errorMessage = truncated,
+                    failureType = type,
+                )
+            }
+            is TrackDownloadOutcome.Unmatched -> {
+                downloadQueueDao.updateStatus(
+                    id = entry.id,
+                    status = DownloadStatus.FAILED,
+                    errorMessage = null,
+                    completedAt = System.currentTimeMillis(),
+                    failureType = DownloadFailureType.NO_MATCH,
+                    rejectedVideoId = outcome.rejectedVideoId,
+                )
+            }
+            is TrackDownloadOutcome.Deferred -> {
+                // v0.9.17 strict-FLAC: lossless source unavailable and
+                // yt-dlp fallback off. The DAO row was already moved to
+                // WAITING_FOR_LOSSLESS by TrackDownloaderImpl — leave it
+                // alone and return success so WorkManager doesn't reschedule.
+                Log.i(TAG, "Single-track mode: Deferred (waiting for lossless) for queue $queueId")
+            }
+        }
+        return Result.success()
     }
 
     /**
