@@ -66,4 +66,53 @@ class FlacPictureBlockTest {
         assertArrayEquals(jpeg, payload)
         assertTrue(input.available() == 0)
     }
+
+    @Test fun `truncated input returns dimensions zero zero`() {
+        // SOI + start of SOF0 marker, then cut off
+        val truncated = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(),  // SOI
+            0xFF.toByte(), 0xC0.toByte(),  // SOF0
+            0x00, 0x05,                    // segment length (5 — but bytes don't exist)
+            // truncated — no precision/height/width
+        )
+        val block = FlacPictureBlock.build(truncated)
+        val input = DataInputStream(ByteArrayInputStream(block))
+        input.readInt()  // pictureType
+        val mimeLen = input.readInt(); input.readFully(ByteArray(mimeLen))
+        val descLen = input.readInt(); input.readFully(ByteArray(descLen))
+        val width = input.readInt()
+        val height = input.readInt()
+        assertEquals(0, width)
+        assertEquals(0, height)
+    }
+
+    @Test fun `malformed segLen does not infinite loop`() {
+        // SOI + APP0 with segLen=0 (malformed). Must terminate, not loop.
+        val malformed = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(),                  // SOI
+            0xFF.toByte(), 0xE0.toByte(), 0x00, 0x00,      // APP0 with segLen=0
+            0xFF.toByte(), 0xC0.toByte(),                  // SOF0
+            0x00, 0x0B, 0x08, 0x00, 0x04, 0x00, 0x04, 0x03, 0x01, 0x22, 0x00,
+        )
+        // If guard misses, this hangs. Just ensuring build() returns.
+        val block = FlacPictureBlock.build(malformed)
+        assertTrue(block.isNotEmpty())
+    }
+
+    @Test fun `progressive JPEG SOF2 marker is recognised`() {
+        val sof2Jpeg = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(),                  // SOI
+            0xFF.toByte(), 0xC2.toByte(),                  // SOF2 (progressive)
+            0x00, 0x0B, 0x08, 0x00, 0x07, 0x00, 0x09, 0x03, 0x01, 0x22, 0x00,
+        )
+        val block = FlacPictureBlock.build(sof2Jpeg)
+        val input = DataInputStream(ByteArrayInputStream(block))
+        input.readInt()  // pictureType
+        val mimeLen = input.readInt(); input.readFully(ByteArray(mimeLen))
+        val descLen = input.readInt(); input.readFully(ByteArray(descLen))
+        val width = input.readInt()
+        val height = input.readInt()
+        assertEquals(9, width)
+        assertEquals(7, height)
+    }
 }

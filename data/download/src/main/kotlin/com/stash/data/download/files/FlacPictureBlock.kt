@@ -20,12 +20,15 @@ object FlacPictureBlock {
             val marker = jpeg[i + 1].toInt() and 0xFF
             // SOF0 (0xC0), SOF1 (0xC1), SOF2 (0xC2) — baseline / extended / progressive
             if (marker in 0xC0..0xC2) {
+                if (i + 8 >= jpeg.size) return 0 to 0  // truncated SOF segment
                 val height = ((jpeg[i + 5].toInt() and 0xFF) shl 8) or (jpeg[i + 6].toInt() and 0xFF)
                 val width  = ((jpeg[i + 7].toInt() and 0xFF) shl 8) or (jpeg[i + 8].toInt() and 0xFF)
                 return width to height
             }
             // Skip segment
+            if (i + 3 >= jpeg.size) return 0 to 0  // truncated segment header
             val segLen = ((jpeg[i + 2].toInt() and 0xFF) shl 8) or (jpeg[i + 3].toInt() and 0xFF)
+            if (segLen < 2) return 0 to 0  // malformed segment length
             i += 2 + segLen
         }
         return 0 to 0  // unknown — most readers tolerate this
