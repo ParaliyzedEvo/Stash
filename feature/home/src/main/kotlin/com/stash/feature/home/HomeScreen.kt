@@ -487,18 +487,19 @@ fun HomeScreen(
                 SectionHeader(title = "Recently Added")
             }
             item {
+                val visible = uiState.recentlyAdded.take(5)
                 androidx.compose.material3.Surface(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     color = StashTheme.extendedColors.glassBackground,
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        uiState.recentlyAdded.forEachIndexed { index, track ->
+                        visible.forEachIndexed { index, track ->
                             HomeTrackRow(
                                 track = track,
                                 onClick = { viewModel.playTrack(uiState.recentlyAdded, index) },
                             )
-                            if (index < uiState.recentlyAdded.lastIndex) {
+                            if (index < visible.lastIndex) {
                                 HorizontalDivider(
                                     color = StashTheme.extendedColors.glassBorder,
                                     modifier = Modifier.padding(start = 64.dp),
@@ -516,18 +517,19 @@ fun HomeScreen(
                 SectionHeader(title = "Liked Songs")
             }
             item {
+                val visible = uiState.likedSongs.take(5)
                 androidx.compose.material3.Surface(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     color = StashTheme.extendedColors.glassBackground,
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        uiState.likedSongs.forEachIndexed { index, track ->
+                        visible.forEachIndexed { index, track ->
                             HomeTrackRow(
                                 track = track,
                                 onClick = { viewModel.playTrack(uiState.likedSongs, index) },
                             )
-                            if (index < uiState.likedSongs.lastIndex) {
+                            if (index < visible.lastIndex) {
                                 HorizontalDivider(
                                     color = StashTheme.extendedColors.glassBorder,
                                     modifier = Modifier.padding(start = 64.dp),
@@ -578,7 +580,6 @@ fun HomeScreen(
                 item {
                     CreatePlaylistCard(
                         onClick = { showCreateDialog = true },
-                        modifier = Modifier.width(160.dp)
                     )
                 }
                 items(uiState.playlists, key = { it.id }) { playlist ->
@@ -1641,8 +1642,9 @@ private fun HomeTrackRow(
 // ── Create playlist card ────────────────────────────────────────────────
 
 /**
- * First tile in the Playlists row. Height is locked to 100 dp to match
- * the LikedSongsCard main row so the two sit flush in the same LazyRow.
+ * First tile in the Playlists LazyRow. Dimensions and shape match [DailyMixCard]
+ * exactly — width 180 dp, height 120 dp, 24 dp rounded corners — so it sits
+ * flush with the playlist cards beside it.
  */
 @Composable
 private fun CreatePlaylistCard(
@@ -1654,42 +1656,67 @@ private fun CreatePlaylistCard(
 
     Surface(
         modifier = modifier
-            .height(100.dp),
+            .width(180.dp)
+            .height(120.dp)
+            .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            accent.copy(alpha = 0.10f),
-                            Color.Transparent,
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Subtle gradient tint matching the DailyMixCard overlay style
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                accent.copy(alpha = 0.18f),
+                                Color.Transparent,
+                            )
                         )
                     )
-                )
-                .clickable(onClick = onClick)
-                .padding(14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)),
+                        )
+                    ),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(24.dp),
-                )
-                Text(
-                    text = "Create\nPlaylist",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // Top: plus icon in a small circle
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                // Bottom: label matching DailyMixCard text style
+                Column {
+                    Text(
+                        text = "Create Playlist",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "New empty playlist",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.75f),
+                    )
+                }
             }
         }
     }
