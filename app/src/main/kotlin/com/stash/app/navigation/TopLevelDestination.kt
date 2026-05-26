@@ -19,7 +19,6 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
     HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
     SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
     LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
-    SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
     SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
 }
 

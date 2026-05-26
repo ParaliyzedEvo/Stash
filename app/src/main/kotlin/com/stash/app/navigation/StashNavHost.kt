@@ -230,10 +230,13 @@ fun StashNavHost(
                 onNavigateToMixBuilder = { recipeId ->
                     navController.navigate(MixBuilderRoute(recipeId))
                 },
+                onNavigateToRecentlyAdded = {
+                    navController.navigate(RecentlyAddedRoute)
+                },
+                onNavigateToLocalSongs = {
+                    navController.navigate(LocalSongsRoute)
+                },
             )
-        }
-        composable<MixBuilderRoute> {
-            MixBuilderScreen(onBack = { navController.popBackStack() })
         }
         composable<LibraryRoute> {
             LibraryScreen(
@@ -452,6 +455,18 @@ fun StashNavHost(
 
         composable<FailedDownloadsRoute> {
             FailedDownloadsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable<RecentlyAddedRoute> {
+            com.stash.feature.home.RecentlyAddedScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<LocalSongsRoute> {
+            com.stash.feature.home.LocalSongsScreen(
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable<SearchArtistRoute> {

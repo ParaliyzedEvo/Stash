@@ -90,6 +90,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Info
@@ -466,6 +467,13 @@ private fun SettingsContent(
 
             GlassCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    SettingsCategoryRow(
+                        icon = Icons.Default.AccountCircle,
+                        title = "Account",
+                        subtitle = "Spotify, YouTube Music, Last.fm connections",
+                        onClick = onNavigateToAccount,
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
                     SettingsCategoryRow(
                         icon = Icons.Default.PlayArrow,
                         title = "Playback",

@@ -592,12 +592,39 @@ private fun PlaylistHeader(
         ) {
             // Album art or gradient placeholder
             if (playlist.artUrl != null) {
-                AsyncImage(
-                    model = playlist.artUrl,
-                    contentDescription = "${playlist.name} artwork",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
+                var imageLoadFailed by remember(playlist.artUrl) { mutableStateOf(false) }
+                if (!imageLoadFailed) {
+                    AsyncImage(
+                        model = playlist.artUrl,
+                        contentDescription = "${playlist.name} artwork",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        onError = { imageLoadFailed = true },
+                    )
+                }
+                // Show gradient placeholder if image failed to load
+                if (imageLoadFailed) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
+                                    ),
+                                ),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                        )
+                    }
+                }
             } else {
                 // Gradient placeholder with music icon
                 Box(

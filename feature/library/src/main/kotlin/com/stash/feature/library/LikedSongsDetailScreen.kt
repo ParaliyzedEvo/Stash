@@ -475,10 +475,10 @@ private fun LikedSongsHeader(
                 .fillMaxWidth()
                 .aspectRatio(1.6f)
                 .background(
-                    Brush.linearGradient(
+                    Brush.verticalGradient(
                         colors = listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            extendedColors.purpleDark.copy(alpha = 0.4f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            extendedColors.purpleDark.copy(alpha = 0.6f),
                             MaterialTheme.colorScheme.background,
                         ),
                     ),
