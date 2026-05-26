@@ -1,6 +1,7 @@
 package com.stash.data.download.files
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.stash.core.common.AppVersionProvider
 import com.stash.core.model.Track
@@ -142,14 +143,16 @@ class MetadataEmbedder @Inject constructor(
             add("-i"); add(audioFile.absolutePath)
 
             // Opus / Ogg containers don't accept attached_pic in current ffmpeg
-            // (mux fails with exit 234). Skip the picture stream for those
-            // codecs — TITLE/ARTIST/ALBUMARTIST/ALBUM/ISRC/ENCODER tags still
-            // get written. Tracked as rawnaldclark/Stash#95 for METADATA_BLOCK_PICTURE
-            // base64 support to reach Opus cover-art parity.
+            // (mux fails with exit 234). For those containers the standard
+            // Vorbis-comment way to carry cover art is METADATA_BLOCK_PICTURE:
+            // a base64-encoded FLAC Picture block, passed via -metadata. All
+            // other containers (M4A, MP3, FLAC) keep using the attached_pic
+            // stream mapping. Fixes rawnaldclark/Stash#95.
             val outputExt = outputFile.extension.lowercase()
             val supportsAttachedPic = outputExt !in OPUS_OGG_EXTENSIONS
+            val hasArt = albumArtFile != null && albumArtFile.exists() && albumArtFile.length() > 0
 
-            if (supportsAttachedPic && albumArtFile != null && albumArtFile.exists()) {
+            if (supportsAttachedPic && hasArt) {
                 add("-i"); add(albumArtFile.absolutePath)
                 add("-map"); add("0:a")
                 add("-map"); add("1:0")
@@ -174,6 +177,23 @@ class MetadataEmbedder @Inject constructor(
             }
 
             add("-metadata"); add("ENCODER=Stash ${appVersion.versionName}")
+
+            // Opus / Ogg cover art: build a FLAC Picture block from the JPEG
+            // bytes, base64-encode it (NO_WRAP — ffmpeg's metadata value parser
+            // doesn't tolerate newlines), and ship it as the standard
+            // METADATA_BLOCK_PICTURE Vorbis comment. Plex / Foobar2000 /
+            // Symfonium / car stereos all read this per the Vorbis-comment
+            // spec. Avoids the attached_pic mux path that fails with exit 234
+            // on Ogg containers.
+            if (!supportsAttachedPic && hasArt) {
+                try {
+                    val pictureBlock = FlacPictureBlock.build(albumArtFile.readBytes())
+                    val base64Block = Base64.encodeToString(pictureBlock, Base64.NO_WRAP)
+                    add("-metadata"); add("METADATA_BLOCK_PICTURE=$base64Block")
+                } catch (e: Exception) {
+                    Log.w(TAG, "FlacPictureBlock build failed for ${audioFile.absolutePath}: ${e.message}")
+                }
+            }
 
             add("-c"); add("copy")
             add("-y")

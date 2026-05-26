@@ -11,7 +11,6 @@ import com.yausername.ffmpeg.FFmpeg
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -45,28 +44,12 @@ class MetadataEmbeddingIntegrationTest {
         artFile = copyAssetToCache("sample_art.jpg")
     }
 
-    @Test fun embedsTagsButNotArtIntoOpus() = runBlocking {
-        val source = copyAssetToCache("sample_opus.opus")
-        val track = Track(
-            id = 1, title = "Test Title", artist = "Test Artist",
-            albumArtist = "Test AlbumArtist", album = "Test Album",
-            isrc = "USTEST0000001",
-        )
-
-        val result = embedder.embedMetadata(source, track, artFile)
-
-        MediaMetadataRetriever().apply {
-            setDataSource(result.absolutePath)
-            assertEquals("Test Title", extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))
-            assertEquals("Test Artist", extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))
-            assertEquals("Test Album", extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))
-            assertEquals("Test AlbumArtist", extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST))
-            // Opus skips attached_pic (spec open question — see MetadataEmbedder
-            // OPUS_OGG_EXTENSIONS guard). embeddedPicture is expected to be null.
-            assertNull("Opus should NOT carry an embedded picture in v0.9.35", embeddedPicture)
-            release()
-        }
-        Unit
+    @Test fun embedsTagsAndArtIntoOpus() = runBlocking {
+        // v0.9.38 (#95): Opus art is now embedded via METADATA_BLOCK_PICTURE
+        // (base64-encoded FLAC picture block in the Vorbis comment), replacing
+        // the prior attached_pic path that ffmpeg rejects for Ogg streams.
+        // MediaMetadataRetriever.embeddedPicture should now return non-null.
+        verifyRoundTrip("sample_opus.opus")
     }
 
     @Test fun embedsTagsAndArtIntoM4a() = runBlocking {

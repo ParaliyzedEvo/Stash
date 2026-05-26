@@ -110,6 +110,81 @@ class MetadataEmbedderArgsTest {
         art.delete()
     }
 
+    /**
+     * Locks in the Opus cover-art strategy from rawnaldclark/Stash#95:
+     * the argv MUST carry a `METADATA_BLOCK_PICTURE=` Vorbis comment and
+     * MUST NOT use the `attached_pic` mux path (which fails Ogg with
+     * exit 234), and MUST NOT add a second `-i artFile` input. Companion
+     * test below confirms the M4A branch was not regressed.
+     */
+    @Test fun `opus argv embeds METADATA_BLOCK_PICTURE and skips attached_pic + second input`() {
+        val art = File.createTempFile("art", ".jpg").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte()))
+        }
+        val args = MetadataEmbedder.buildFfmpegArgs(
+            audioFile = File("/tmp/in.opus"),
+            outputFile = File("/tmp/out.opus"),
+            track = Track(id = 1, title = "T", artist = "A"),
+            albumArtFile = art,
+            appVersion = versionProvider,
+        )
+
+        // Positive: METADATA_BLOCK_PICTURE Vorbis comment is present.
+        assertTrue(
+            "Opus argv must carry a METADATA_BLOCK_PICTURE Vorbis comment",
+            args.zipMetadataValues().any { it.startsWith("METADATA_BLOCK_PICTURE=") },
+        )
+
+        // Negative: no attached_pic disposition (would fail Ogg mux exit 234).
+        assertFalse(
+            "Opus argv must NOT use attached_pic disposition",
+            args.contains("attached_pic"),
+        )
+        assertFalse(
+            "Opus argv must NOT use -disposition:v:0",
+            args.contains("-disposition:v:0"),
+        )
+
+        // Negative: no second `-i artFile` input added.
+        assertFalse(
+            "Opus argv must NOT add the artFile as a second -i input",
+            args.contains(art.absolutePath),
+        )
+        // Exactly one `-i` (the audio input).
+        assertTrue(
+            "Opus argv must have exactly one -i flag (audio input only)",
+            args.count { it == "-i" } == 1,
+        )
+
+        art.delete()
+    }
+
+    @Test fun `m4a argv still uses attached_pic and skips METADATA_BLOCK_PICTURE`() {
+        val art = File.createTempFile("art", ".jpg").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte()))
+        }
+        val args = MetadataEmbedder.buildFfmpegArgs(
+            audioFile = File("/tmp/in.m4a"),
+            outputFile = File("/tmp/out.m4a"),
+            track = Track(id = 1, title = "T", artist = "A"),
+            albumArtFile = art,
+            appVersion = versionProvider,
+        )
+
+        // M4A keeps the attached_pic stream-mapping path.
+        assertTrue("M4A must still use attached_pic", args.contains("attached_pic"))
+        assertTrue("M4A must still set -disposition:v:0", args.contains("-disposition:v:0"))
+        assertTrue("M4A must still pass the artFile via a second -i", args.contains(art.absolutePath))
+
+        // M4A must NOT also emit METADATA_BLOCK_PICTURE (Vorbis-only).
+        assertFalse(
+            "M4A must NOT emit METADATA_BLOCK_PICTURE",
+            args.zipMetadataValues().any { it.startsWith("METADATA_BLOCK_PICTURE=") },
+        )
+
+        art.delete()
+    }
+
     @Test fun `skips attached_pic for ogg output`() {
         val art = File.createTempFile("art", ".jpg").apply { writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) }
         val args = MetadataEmbedder.buildFfmpegArgs(
