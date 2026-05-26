@@ -7,6 +7,7 @@ import com.stash.core.data.sync.AuthExpiryState
 import com.stash.core.data.sync.auth.SpotifyAuthHealthProbe
 import com.stash.core.data.sync.auth.YoutubeAuthHealthProbe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,7 +65,9 @@ class PlaylistFetchWorkerAuthProbeTest {
         // Spotify is NOT connected. Even if the probe would (counterfactually)
         // report expired, we must skip it — otherwise a user who never linked
         // Spotify would see a "Spotify expired" banner. The probe should never
-        // be called; assertion below confirms by leaving spotifyExpired = false.
+        // be called; coVerify(exactly = 0) below confirms the mechanism, not
+        // just the outcome (a future refactor that calls the probe and
+        // defaults to false when disconnected would otherwise silently pass).
         val (tokenManager, spotify, youtube) = mocks(
             spotifyConnected = false, youtubeConnected = true,
             spotifyExpired = true, // would-say-expired, but probe should be skipped
@@ -74,6 +77,8 @@ class PlaylistFetchWorkerAuthProbeTest {
         assertFalse(result.shortCircuit)
         assertFalse(result.state.spotifyExpired) // false because probe was skipped
         assertFalse(result.state.youtubeExpired)
+        coVerify(exactly = 0) { spotify.isExpired() }
+        coVerify(exactly = 1) { youtube.isExpired() }
     }
 
     @Test fun `does not probe youtube when not connected`() = runTest {
@@ -86,6 +91,25 @@ class PlaylistFetchWorkerAuthProbeTest {
         assertFalse(result.shortCircuit)
         assertFalse(result.state.spotifyExpired)
         assertFalse(result.state.youtubeExpired) // false because probe was skipped
+        coVerify(exactly = 1) { spotify.isExpired() }
+        coVerify(exactly = 0) { youtube.isExpired() }
+    }
+
+    @Test fun `short-circuits when only youtube is connected and youtube is expired`() = runTest {
+        // User only linked YouTube and its credentials are bad — the chain
+        // must still abort even though Spotify is absent. Guards against a
+        // regression where the short-circuit logic only fires when spotify
+        // is also present.
+        val (tokenManager, spotify, youtube) = mocks(
+            spotifyConnected = false, youtubeConnected = true,
+            spotifyExpired = false, youtubeExpired = true,
+        )
+        val result = runAuthProbes(tokenManager, spotify, youtube)
+        assertTrue(result.shortCircuit)
+        assertFalse(result.state.spotifyExpired)
+        assertTrue(result.state.youtubeExpired)
+        coVerify(exactly = 0) { spotify.isExpired() }
+        coVerify(exactly = 1) { youtube.isExpired() }
     }
 
     private fun mocks(

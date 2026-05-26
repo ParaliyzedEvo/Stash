@@ -85,6 +85,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // so a sync doesn't spend minutes walking radio. User playlists +
         // Liked Songs use the full MAX_PAGES default in YTMusicApiClient.
         private const val HOME_MIX_MAX_PAGES = 1
+
+        // Shared reason string for auth-expiry short-circuit so the
+        // sync_history FAILED row and the SyncStateManager onError call
+        // can't drift out of sync.
+        private const val AUTH_EXPIRED_REASON = "Credentials expired — re-authenticate to resume sync"
     }
 
     /**
@@ -164,9 +169,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     id = syncId,
                     status = SyncState.FAILED,
                     completedAt = System.currentTimeMillis(),
-                    errorMessage = "Credentials expired — re-authenticate to resume sync",
+                    errorMessage = AUTH_EXPIRED_REASON,
                 )
-                syncStateManager.onError("Credentials expired — re-authenticate to resume sync")
+                syncStateManager.onError(AUTH_EXPIRED_REASON)
                 return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
