@@ -89,15 +89,20 @@ fun StashScaffold(
             val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
                                 currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
                                 isWebLoginOpen
+            val hideMiniPlayer = hideBottomBar ||
+                                 currentRoute == SettingsRoute::class.qualifiedName ||
+                                 currentRoute == AccountRoute::class.qualifiedName
             if (!hideBottomBar) {
                 Column {
-                    MiniPlayer(
-                        onExpand = {
-                            navController.navigate(NowPlayingRoute) {
-                                launchSingleTop = true
-                            }
-                        },
-                    )
+                    if (!hideMiniPlayer) {
+                        MiniPlayer(
+                            onExpand = {
+                                navController.navigate(NowPlayingRoute) {
+                                    launchSingleTop = true
+                                }
+                            },
+                        )
+                    }
 
                     StashBottomBar(
                         currentRoute = currentRoute,

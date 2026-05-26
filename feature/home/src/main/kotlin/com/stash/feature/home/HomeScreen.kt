@@ -127,6 +127,7 @@ fun HomeScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLikedSongs: (String?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -161,8 +162,6 @@ fun HomeScreen(
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Controls the "New Playlist" naming dialog launched from the Playlists section.
     var showCreateDialog by remember { mutableStateOf(false) }
-    // Controls whether Local Songs shows all items or just the first 10.
-    var localSongsExpanded by remember { mutableStateOf(false) }
 
     val toastContext = LocalContext.current
     LaunchedEffect(Unit) {
@@ -363,6 +362,7 @@ fun HomeScreen(
                         onPlayAll = { viewModel.playAllMixes(MusicSource.SPOTIFY) },
                     )
                 }
+                item { Spacer(Modifier.height(12.dp)) }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -381,6 +381,7 @@ fun HomeScreen(
 
             // YouTube mixes row — sub-header with Play All always present
             if (uiState.youtubeMixes.isNotEmpty()) {
+                item { Spacer(Modifier.height(20.dp)) }
                 item {
                     SourceSubHeader(
                         label = "YouTube Music",
@@ -388,6 +389,7 @@ fun HomeScreen(
                         onPlayAll = { viewModel.playAllMixes(MusicSource.YOUTUBE) },
                     )
                 }
+                item { Spacer(Modifier.height(12.dp)) }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -403,6 +405,8 @@ fun HomeScreen(
                     }
                 }
             }
+            // Gap between Spotify/YouTube mixes and Stash Mixes
+            item { Spacer(Modifier.height(20.dp)) }
         }
 
         // ── Stash Mixes (recipe-driven, generated locally) ───────────
@@ -427,11 +431,65 @@ fun HomeScreen(
                     }
                 }
             }
+            item { Spacer(Modifier.height(20.dp)) }
         }
 
-        // ── Recently Added ───────────────────────────────────────────
+        // ── Liked Songs card (with source split + smart collapse) ────
+        if (uiState.hasAnyLikedSongs) {
+            item {
+                Spacer(Modifier.height(20.dp))
+                LikedSongsCard(
+                    totalCount = uiState.totalLikedCount,
+                    spotifyCount = uiState.spotifyLikedCount,
+                    youtubeCount = uiState.youtubeLikedCount,
+                    showSourceChips = uiState.hasBothLikedSources,
+                    singleSource = uiState.singleLikedSource,
+                    onPlayAll = { viewModel.playLikedSongs(source = null) },
+                    onPlaySpotify = { viewModel.playLikedSongs(source = MusicSource.SPOTIFY) },
+                    onPlayYouTube = { viewModel.playLikedSongs(source = MusicSource.YOUTUBE) },
+                    onClick = { onNavigateToLikedSongs(null) },
+                    onClickSpotify = {
+                        val spotifyPlaylistId = uiState.spotifyLikedPlaylists.firstOrNull()?.id
+                        if (spotifyPlaylistId != null) onNavigateToPlaylist(spotifyPlaylistId)
+                    },
+                    onClickYouTube = {
+                        val youtubePlaylistId = uiState.youtubeLikedPlaylists.firstOrNull()?.id
+                        if (youtubePlaylistId != null) onNavigateToPlaylist(youtubePlaylistId)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
+        // ── Your Playlists ───────────────────────────────────────────
+        item {
+            Spacer(Modifier.height(20.dp))
+            SectionHeader(title = "Your Playlists")
+        }
+        item {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    CreatePlaylistCard(
+                        onClick = { showCreateDialog = true },
+                    )
+                }
+                items(uiState.playlists, key = { it.id }) { playlist ->
+                    DailyMixCard(
+                        playlist = playlist,
+                        onClick = { onNavigateToPlaylist(playlist.id) },
+                        onLongPress = { selectedPlaylist = playlist },
+                    )
+                }
+            }
+        }
+
+        // ── Recently Added (5 tracks, glass card) ────────────────────
         if (uiState.recentlyAdded.isNotEmpty()) {
             item {
+                Spacer(Modifier.height(20.dp))
                 SectionHeader(title = "Recently Added")
             }
             item {
@@ -459,13 +517,14 @@ fun HomeScreen(
             }
         }
 
-        // ── Liked Songs List ─────────────────────────────────────────
-        if (uiState.likedSongs.isNotEmpty()) {
+        // ── Local Songs (5 tracks, glass card) ───────────────────────
+        if (uiState.localSongs.isNotEmpty()) {
             item {
-                SectionHeader(title = "Liked Songs")
+                Spacer(Modifier.height(20.dp))
+                SectionHeader(title = "Local Songs")
             }
             item {
-                val visible = uiState.likedSongs.take(5)
+                val visible = uiState.localSongs.take(5)
                 androidx.compose.material3.Surface(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     color = StashTheme.extendedColors.glassBackground,
@@ -475,7 +534,7 @@ fun HomeScreen(
                         visible.forEachIndexed { index, track ->
                             HomeTrackRow(
                                 track = track,
-                                onClick = { viewModel.playTrack(uiState.likedSongs, index) },
+                                onClick = { viewModel.playTrack(uiState.localSongs, index) },
                             )
                             if (index < visible.lastIndex) {
                                 HorizontalDivider(
@@ -487,97 +546,7 @@ fun HomeScreen(
                     }
                 }
             }
-        }
-
-        // ── Liked Songs card (with source split + smart collapse) ────
-        if (uiState.hasAnyLikedSongs) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                LikedSongsCard(
-                    totalCount = uiState.totalLikedCount,
-                    spotifyCount = uiState.spotifyLikedCount,
-                    youtubeCount = uiState.youtubeLikedCount,
-                    showSourceChips = uiState.hasBothLikedSources,
-                    singleSource = uiState.singleLikedSource,
-                    onPlayAll = { viewModel.playLikedSongs(source = null) },
-                    onPlaySpotify = { viewModel.playLikedSongs(source = MusicSource.SPOTIFY) },
-                    onPlayYouTube = { viewModel.playLikedSongs(source = MusicSource.YOUTUBE) },
-                    onClick = { onNavigateToLikedSongs(null) },
-                    onClickSpotify = {
-                        val spotifyPlaylistId = uiState.spotifyLikedPlaylists.firstOrNull()?.id
-                        if (spotifyPlaylistId != null) onNavigateToPlaylist(spotifyPlaylistId)
-                    },
-                    onClickYouTube = {
-                        val youtubePlaylistId = uiState.youtubeLikedPlaylists.firstOrNull()?.id
-                        if (youtubePlaylistId != null) onNavigateToPlaylist(youtubePlaylistId)
-                    },
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Your Playlists ───────────────────────────────────────────
-        item {
-            SectionHeader(title = "Your Playlists")
-        }
-        item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item {
-                    CreatePlaylistCard(
-                        onClick = { showCreateDialog = true },
-                    )
-                }
-                items(uiState.playlists, key = { it.id }) { playlist ->
-                    DailyMixCard(
-                        playlist = playlist,
-                        onClick = { onNavigateToPlaylist(playlist.id) },
-                        onLongPress = { selectedPlaylist = playlist },
-                    )
-                }
-            }
-        }
-
-        // ── Local Songs List (vertical, max 10 + show more) ──────────
-        if (uiState.localSongs.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionHeader(title = "Local Songs")
-            }
-            val visibleLocalSongs = if (localSongsExpanded) uiState.localSongs
-                                    else uiState.localSongs.take(10)
-            itemsIndexed(
-                visibleLocalSongs,
-                key = { _, track -> "local-${track.id}" },
-            ) { index, track ->
-                DetailTrackRow(
-                    track = track,
-                    trackNumber = index + 1,
-                    isPlaying = false,
-                    onClick = { viewModel.playTrack(uiState.localSongs, index) },
-                    onLongPress = { },
-                )
-            }
-            if (uiState.localSongs.size > 10) {
-                item {
-                    androidx.compose.material3.TextButton(
-                        onClick = { localSongsExpanded = !localSongsExpanded },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = if (localSongsExpanded) "Show less"
-                                   else "Show ${uiState.localSongs.size - 10} more",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(8.dp)) }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     } // end LazyColumn
 
@@ -1048,8 +1017,9 @@ private fun SourceSubHeader(
         SourceIndicator(source = source, size = 8.dp)
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.weight(1f))
         if (onPlayAll != null) {

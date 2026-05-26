@@ -222,10 +222,8 @@ private fun SearchBar(
         ),
     )
 
-    // Auto-focus the search field when the screen opens
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
+    // Do NOT auto-focus on open — forcing the keyboard up without a tap is bad UX.
+    // The field is still focusable; the user taps it to start typing.
 }
 
 // ---------------------------------------------------------------------------
