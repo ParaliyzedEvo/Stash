@@ -190,32 +190,28 @@ class PreviewUrlExtractor @Inject constructor(
             ytDlpExtract: suspend (String) -> String,
             itSem: Semaphore,
             ytSem: Semaphore,
-        ): String = coroutineScope {
-            val inner = async {
-                itSem.acquire()
-                try {
-                    // Treat any non-cancellation failure as null so the
-                    // race falls back to yt-dlp. CancellationException MUST
-                    // propagate to preserve structured concurrency.
-                    runCatching { innerTubeExtract(videoId) }
-                        .getOrElse { t ->
-                            if (t is CancellationException) throw t
-                            null
-                        }
-                } finally {
-                    itSem.release()
-                }
+        ): String {
+            itSem.acquire()
+            val itResult = try {
+                // Treat any non-cancellation failure as null so the
+                // race falls back to yt-dlp. CancellationException MUST
+                // propagate to preserve structured concurrency.
+                runCatching { innerTubeExtract(videoId) }
+                    .getOrElse { t ->
+                        if (t is CancellationException) throw t
+                        null
+                    }
+            } finally {
+                itSem.release()
             }
-            val yt = async {
-                ytSem.acquire()
-                try { ytDlpExtract(videoId) } finally { ytSem.release() }
-            }
-            val itResult = inner.await()
             if (itResult != null) {
-                yt.cancel(CancellationException("InnerTube won the race"))
-                itResult
-            } else {
-                yt.await()
+                return itResult
+            }
+            ytSem.acquire()
+            return try {
+                ytDlpExtract(videoId)
+            } finally {
+                ytSem.release()
             }
         }
     }
@@ -292,6 +288,7 @@ class PreviewUrlExtractor @Inject constructor(
         key: String,
         doRace: suspend () -> String,
     ): String {
+        val mapKey = if (bypassYtDlp) videoId else "$videoId-fallback"
         // Fast path — share an in-flight extract if one exists.
         inFlightExtracts[key]?.let { return it.await() }
 
@@ -328,7 +325,7 @@ class PreviewUrlExtractor @Inject constructor(
         }
 
         val t0 = System.currentTimeMillis()
-        Log.d("LATDIAG", "extract-start videoId=$videoId")
+        Log.d("LATDIAG", "extract-start videoId=$videoId bypassYtDlp=$bypassYtDlp")
         return try {
             val url = race(
                 videoId = videoId,
@@ -344,6 +341,9 @@ class PreviewUrlExtractor @Inject constructor(
                     result.getOrThrow()
                 },
                 ytDlpExtract = { id ->
+                    if (bypassYtDlp) {
+                        throw NoSuchElementException("No unciphered stream URL available (yt-dlp bypassed)")
+                    }
                     val yt0 = System.currentTimeMillis()
                     val result = runCatching { extractViaYtDlp(id) }
                     val dt = System.currentTimeMillis() - yt0

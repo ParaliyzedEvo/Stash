@@ -488,7 +488,6 @@ private fun FailedDownloadsCard(
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
     ) {
         Row(
             modifier = Modifier
