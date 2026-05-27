@@ -225,7 +225,11 @@ fun SettingsScreen(
                     // We can now safely restart the app.
                     android.os.Process.killProcess(android.os.Process.myPid())
                 }
-                else -> Unit
+                PickerIntent.SetOnly -> {
+                    // Auto-scan the newly selected folder so local songs
+                    // appear in the library immediately without a manual import.
+                    viewModel.scanFolderForAudio(uri)
+                }
             }
         }
         pendingPickerIntent = PickerIntent.SetOnly
@@ -286,6 +290,8 @@ fun SettingsScreen(
         onStreamingToggle = viewModel::onStreamingToggle,
         streamOnCellular = viewModel.streamOnCellular.collectAsStateWithLifecycle().value,
         onStreamOnCellularToggle = viewModel::onStreamOnCellularToggle,
+        showBlurLayerInAmoled = viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle().value,
+        onShowBlurLayerInAmoledChanged = viewModel::onShowBlurLayerInAmoledChanged,
         treePicker = treePicker,
         onSetPickerIntent = { pendingPickerIntent = it },
         modifier = modifier,
@@ -421,6 +427,10 @@ private fun SettingsContent(
     streamOnCellular: Boolean,
     /** Routed to [SettingsViewModel.onStreamOnCellularToggle] in the host. */
     onStreamOnCellularToggle: (Boolean) -> Unit,
+    /** Live blur layer visibility for AMOLED mode. */
+    showBlurLayerInAmoled: Boolean,
+    /** Routed to [SettingsViewModel.onShowBlurLayerInAmoledChanged] in the host. */
+    onShowBlurLayerInAmoledChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -1179,6 +1189,44 @@ private fun SettingsContent(
                                 }
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Blur layer toggle for AMOLED mode
+                    if (uiState.themeMode == ThemeMode.AMOLED) {
+                        GlassCard {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Show blur layer in music player",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Animated gradient background in Now Playing screen",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                androidx.compose.material3.Switch(
+                                    checked = showBlurLayerInAmoled,
+                                    onCheckedChange = onShowBlurLayerInAmoledChanged,
+                                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                    ),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
 

@@ -34,6 +34,8 @@ private const val CROSSFADE_MS = 800
  * @param vibrantColor  Secondary palette color.
  * @param mutedColor    Tertiary palette color (lowest alpha gradient).
  * @param modifier      Standard Compose [Modifier].
+ * @param isAmoled      Whether AMOLED mode is active (pure black background).
+ * @param showBlurLayer Whether to show the blur layer in AMOLED mode.
  */
 @Composable
 fun AmbientBackground(
@@ -42,6 +44,7 @@ fun AmbientBackground(
     mutedColor: Color,
     modifier: Modifier = Modifier,
     isAmoled: Boolean = false,
+    showBlurLayer: Boolean = true,
 ) {
     // Animate colors so track changes produce a smooth 800 ms crossfade.
     val animDominant by animateColorAsState(
@@ -92,7 +95,8 @@ fun AmbientBackground(
     )
 
     Canvas(modifier = modifier) {
-        if (isAmoled) {
+        // In AMOLED mode, show pure black if blur layer is disabled
+        if (isAmoled && !showBlurLayer) {
             drawRect(color = Color.Black)
             return@Canvas
         }
