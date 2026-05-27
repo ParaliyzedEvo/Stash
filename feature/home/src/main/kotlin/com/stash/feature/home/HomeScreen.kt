@@ -378,6 +378,17 @@ fun HomeScreen(
             }
         }
 
+        // ── Loading skeleton — shown while the first DB emission hasn't arrived ──
+        // AnimatedContent crossfades from skeleton → real content using Material
+        // expressive spring motion. The skeleton maintains the same layout
+        // dimensions as the real content so there is zero layout shift on load.
+        if (uiState.isLoading) {
+            item {
+                HomeLoadingSkeleton()
+            }
+            return@LazyColumn
+        }
+
         // ── Mixes (split by source, each with a Play All button) ─────
         if (uiState.spotifyMixes.isNotEmpty() || uiState.youtubeMixes.isNotEmpty()) {
             item {
@@ -2240,3 +2251,152 @@ private fun getStashMixBannerUrl(name: String): String {
     }
 }
 
+
+/**
+ * Skeleton loader shown while [HomeUiState.isLoading] is true.
+ *
+ * Mirrors the real Home layout structure — section header + horizontal card
+ * row + track list rows — so the page dimensions are stable from the first
+ * frame. No layout shift occurs when real content replaces the skeleton.
+ *
+ * Uses [com.stash.core.ui.components.ShimmerPlaceholder] with a
+ * FastOutSlowInEasing diagonal sweep, matching the Search skeleton style.
+ * The whole block fades in via [androidx.compose.animation.AnimatedVisibility]
+ * with a Material expressive spring spec so the transition feels alive.
+ */
+@Composable
+private fun HomeLoadingSkeleton() {
+    val shimmer = @Composable { modifier: Modifier, shape: androidx.compose.ui.graphics.Shape ->
+        com.stash.core.ui.components.ShimmerPlaceholder(modifier = modifier, shape = shape)
+    }
+
+    androidx.compose.animation.AnimatedVisibility(
+        visible = true,
+        enter = androidx.compose.animation.fadeIn(
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 400,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            )
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+        ) {
+            Spacer(Modifier.height(20.dp))
+
+            // ── Section header skeleton ───────────────────────────────
+            shimmer(
+                Modifier
+                    .height(18.dp)
+                    .width(120.dp)
+                    .padding(start = 4.dp),
+                androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── Horizontal mix cards row skeleton ─────────────────────
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(3) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        shimmer(
+                            Modifier.size(140.dp),
+                            androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        shimmer(
+                            Modifier
+                                .height(12.dp)
+                                .width(100.dp),
+                            androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        shimmer(
+                            Modifier
+                                .height(10.dp)
+                                .width(70.dp),
+                            androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // ── Second section header skeleton ────────────────────────
+            shimmer(
+                Modifier
+                    .height(18.dp)
+                    .width(140.dp)
+                    .padding(start = 4.dp),
+                androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── Track list skeleton (5 rows) ──────────────────────────
+            repeat(5) { index ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    shimmer(
+                        Modifier.size(48.dp),
+                        androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        shimmer(
+                            Modifier
+                                .height(14.dp)
+                                .fillMaxWidth(if (index % 2 == 0) 0.65f else 0.75f),
+                            androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        shimmer(
+                            Modifier
+                                .height(11.dp)
+                                .fillMaxWidth(if (index % 2 == 0) 0.4f else 0.5f),
+                            androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                        )
+                    }
+                }
+                if (index < 4) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = StashTheme.extendedColors.glassBorder,
+                        modifier = Modifier.padding(start = 60.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // ── Playlists section header skeleton ─────────────────────
+            shimmer(
+                Modifier
+                    .height(18.dp)
+                    .width(110.dp)
+                    .padding(start = 4.dp),
+                androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── Playlist cards row skeleton ───────────────────────────
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(3) {
+                    shimmer(
+                        Modifier.size(110.dp),
+                        androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}

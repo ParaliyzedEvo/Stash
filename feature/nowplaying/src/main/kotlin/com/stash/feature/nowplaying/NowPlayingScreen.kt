@@ -102,7 +102,8 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isAmoled = MaterialTheme.colorScheme.background == Color.Black
-    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle()
+    // Safe collection with default value to prevent crashes
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
     
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
@@ -410,26 +411,58 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    // Chromecast / Google Cast Route Button
+                    // Chromecast / Google Cast Route Button.
+                    //
+                    // Root cause of crash (IllegalArgumentException: "background can not be
+                    // translucent: #0"): MediaRouteButton calls ColorUtils.calculateContrast()
+                    // during construction. That method throws when the background color has
+                    // alpha = 0, which happens because the Compose AndroidView context
+                    // inherits the AMOLED / glassmorphism surface whose colorBackground is
+                    // fully transparent.
+                    //
+                    // Fix: wrap the context in a ContextThemeWrapper that overrides
+                    // android.R.attr.colorBackground to solid opaque black before the
+                    // MediaRouteButton constructor runs. We do this by applying
+                    // android.R.style.Theme_Black (guaranteed opaque black background,
+                    // part of the platform since API 1) as a base, which gives
+                    // MediaRouterThemeHelper a valid non-translucent color to work with.
+                    // The icon is re-tinted to white afterwards to match the action row.
                     androidx.compose.ui.viewinterop.AndroidView(
                         factory = { ctx ->
-                            androidx.mediarouter.app.MediaRouteButton(ctx).apply {
-                                com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(ctx, this)
-                                // Standard premium look: match white tint of other icons
-                                try {
-                                    val castIconColor = android.graphics.Color.WHITE
-                                    val drawable = androidx.core.content.ContextCompat.getDrawable(
-                                        ctx,
-                                        androidx.mediarouter.R.drawable.mr_button_light
-                                    )
-                                    if (drawable != null) {
-                                        androidx.core.graphics.drawable.DrawableCompat.setTint(drawable, castIconColor)
-                                        setRemoteIndicatorDrawable(drawable)
+                            // android.R.style.Theme_Black has colorBackground = #FF000000
+                            // (fully opaque). Applying it as the wrapper theme ensures
+                            // MediaRouterThemeHelper.getControllerColor() never receives
+                            // a translucent value.
+                            val themedCtx = android.view.ContextThemeWrapper(
+                                ctx,
+                                android.R.style.Theme_Black,
+                            )
+                            runCatching {
+                                androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
+                                    com.google.android.gms.cast.framework.CastButtonFactory
+                                        .setUpMediaRouteButton(ctx, this)
+                                    // Re-tint to white to match Lyrics / Queue icons.
+                                    runCatching {
+                                        val drawable = androidx.core.content.ContextCompat.getDrawable(
+                                            ctx,
+                                            androidx.mediarouter.R.drawable.mr_button_light,
+                                        )
+                                        if (drawable != null) {
+                                            androidx.core.graphics.drawable.DrawableCompat.setTint(
+                                                drawable,
+                                                android.graphics.Color.WHITE,
+                                            )
+                                            setRemoteIndicatorDrawable(drawable)
+                                        }
                                     }
-                                } catch (_: Exception) {}
+                                }
+                            }.getOrElse {
+                                // Safety net: if MediaRouteButton still throws on a future
+                                // SDK, return an invisible placeholder so the layout holds.
+                                android.view.View(ctx)
                             }
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp),
                     )
 
                     IconButton(onClick = { showQueue = true }) {
@@ -896,6 +929,13 @@ private fun NowPlayingOptionsSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Cast to device — MediaRouteButton row.
+            // Wrapped in Theme_Black to prevent the "background can not be translucent"
+            // crash from ColorUtils.calculateContrast() inside MediaRouteButton.<init>.
+            CastOptionRow()
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Flag as Wrong Match
             SheetOptionRow(
                 icon = Icons.Default.Flag,
@@ -906,5 +946,61 @@ private fun NowPlayingOptionsSheet(
                 }
             )
         }
+    }
+}
+
+/**
+ * A sheet option row that embeds a [MediaRouteButton] for Chromecast / Google Cast.
+ *
+ * We can't use [SheetOptionRow] here because [MediaRouteButton] is a View, not a
+ * Compose icon. Instead we replicate the same Row layout and embed the button via
+ * [AndroidView]. The Theme_Black wrapper prevents the translucent-background crash.
+ */
+@Composable
+private fun CastOptionRow() {
+    val ctx = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(com.stash.core.ui.theme.StashTheme.extendedColors.glassBackground)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Cast icon via MediaRouteButton — must be a View, not a Compose icon.
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { factoryCtx ->
+                val themedCtx = android.view.ContextThemeWrapper(
+                    factoryCtx,
+                    android.R.style.Theme_Black,
+                )
+                runCatching {
+                    androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
+                        com.google.android.gms.cast.framework.CastButtonFactory
+                            .setUpMediaRouteButton(factoryCtx, this)
+                        runCatching {
+                            val drawable = androidx.core.content.ContextCompat.getDrawable(
+                                factoryCtx,
+                                androidx.mediarouter.R.drawable.mr_button_light,
+                            )
+                            if (drawable != null) {
+                                androidx.core.graphics.drawable.DrawableCompat.setTint(
+                                    drawable,
+                                    android.graphics.Color.WHITE,
+                                )
+                                setRemoteIndicatorDrawable(drawable)
+                            }
+                        }
+                    }
+                }.getOrElse { android.view.View(factoryCtx) }
+            },
+            modifier = Modifier.size(24.dp),
+        )
+        Text(
+            text = "Cast to device",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

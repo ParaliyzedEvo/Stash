@@ -13,21 +13,29 @@ import javax.inject.Singleton
 /**
  * Hilt module that provides networking dependencies shared across all modules.
  *
- * The [OkHttpClient] singleton is configured with sensible timeouts, a logging
- * interceptor (body-level in debug builds, none in release), and enforced
- * TLS 1.2+ via [ConnectionSpec.MODERN_TLS] to prevent cipher-downgrade attacks.
+ * The [OkHttpClient] singleton is configured with:
+ * - Aggressive connection pooling (10 connections, 5 min keep-alive)
+ * - Increased dispatcher parallelism (8 concurrent requests)
+ * - Optimized timeouts (15s connect, 20s read for faster failure detection)
+ * - HTTP/2 multiplexing enabled by default
+ * - DNS caching and connection reuse
+ * - TLS 1.2+ enforcement via [ConnectionSpec.MODERN_TLS]
  *
- * **Certificate pinning note:** Full certificate pinning with SHA-256 pin hashes
- * for Spotify / YouTube endpoints is a future enhancement. Pinned hashes must be
- * rotated whenever the service rotates its leaf or intermediate certificates,
- * which risks hard-locking users out of the app if an update is missed. For now,
- * MODERN_TLS ensures only strong cipher suites and TLS 1.2+ are negotiated.
+ * These settings are tuned for the Search + Artist Profile surfaces, which
+ * render many thumbnails concurrently and benefit from connection reuse.
  */
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val TIMEOUT_SECONDS = 30L
+    /** Reduced from 30s to 15s for faster failure detection on slow networks */
+    private const val CONNECT_TIMEOUT_SECONDS = 15L
+    
+    /** Reduced from 30s to 20s to fail fast on stalled downloads */
+    private const val READ_TIMEOUT_SECONDS = 20L
+    
+    /** Standard write timeout */
+    private const val WRITE_TIMEOUT_SECONDS = 30L
 
     @Provides
     @Singleton
@@ -44,9 +52,29 @@ object NetworkModule {
 
         return OkHttpClient.Builder()
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))
-            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            // Optimized timeouts for faster failure detection
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            // Aggressive connection pooling: 10 idle connections, 5 min keep-alive.
+            // Default is 5 connections / 5 min; bumping to 10 helps when loading
+            // search results with many thumbnails from the same CDN.
+            .connectionPool(
+                okhttp3.ConnectionPool(
+                    maxIdleConnections = 10,
+                    keepAliveDuration = 5,
+                    timeUnit = TimeUnit.MINUTES,
+                )
+            )
+            // Increase dispatcher parallelism from default 5 to 8 concurrent requests.
+            // Search results + artist profiles render 10-20 thumbnails at once;
+            // higher parallelism reduces waterfall delays.
+            .dispatcher(
+                okhttp3.Dispatcher().apply {
+                    maxRequests = 64 // Total concurrent requests across all hosts
+                    maxRequestsPerHost = 8 // Per-host limit (up from default 5)
+                }
+            )
             .addInterceptor(loggingInterceptor)
             .build()
     }

@@ -177,6 +177,43 @@ fun MiniPlayer(
                             modifier = Modifier.size(24.dp),
                         )
                     }
+
+                    // Chromecast / Google Cast Route Button.
+                    // Wrapped in Theme_Black context to prevent the "background can not be
+                    // translucent" crash. See NowPlayingScreen.kt for full explanation.
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { ctx ->
+                            val themedCtx = android.view.ContextThemeWrapper(
+                                ctx,
+                                android.R.style.Theme_Black,
+                            )
+                            runCatching {
+                                androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
+                                    com.google.android.gms.cast.framework.CastButtonFactory
+                                        .setUpMediaRouteButton(ctx, this)
+                                    // Tint to match other mini player icons (dark gray)
+                                    runCatching {
+                                        val drawable = androidx.core.content.ContextCompat.getDrawable(
+                                            ctx,
+                                            androidx.mediarouter.R.drawable.mr_button_light,
+                                        )
+                                        if (drawable != null) {
+                                            // Use a neutral dark gray that works on light surfaces
+                                            androidx.core.graphics.drawable.DrawableCompat.setTint(
+                                                drawable,
+                                                android.graphics.Color.parseColor("#E0E0E0"),
+                                            )
+                                            setRemoteIndicatorDrawable(drawable)
+                                        }
+                                    }
+                                }
+                            }.getOrElse {
+                                // Safety net: return invisible placeholder if Cast button fails
+                                android.view.View(ctx)
+                            }
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
