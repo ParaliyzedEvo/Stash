@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.joinAll
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -253,7 +254,51 @@ class TrackDownloadWorker @AssistedInject constructor(
             val playlistsChecked = inputData.getInt(DiffWorker.KEY_PLAYLISTS_CHECKED, 0)
 
             supervisorScope {
-                for (queueItem in pendingItems) {
+                val trackNames = java.util.concurrent.ConcurrentHashMap<Long, String>()
+                val activeProgress = java.util.concurrent.ConcurrentHashMap<Long, Float>()
+                val activeTracks = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+                val progressJob = launch {
+                    trackDownloader.progressFlow.collect { event ->
+                        val trackName = trackNames[event.trackId] ?: return@collect
+                        if (event.status == "COMPLETED" || event.status == "FAILED" || 
+                            event.status == "UNMATCHED" || event.status == "Deferred") {
+                            activeProgress.remove(event.trackId)
+                            activeTracks.remove(event.trackId)
+                        } else {
+                            activeProgress[event.trackId] = event.progress
+                            activeTracks[event.trackId] = trackName
+                        }
+
+                        val completed = downloadedCount.get() + failedCount.get()
+                        val sumActiveProgress = activeProgress.values.sum()
+                        val overallProgress = if (total > 0) {
+                            val base = 0.25f
+                            val span = 0.70f
+                            base + span * ((completed.toFloat() + sumActiveProgress) / total)
+                        } else {
+                            -1f
+                        }
+
+                        val currentTrackName = activeTracks[event.trackId]
+                        val currentProgress = event.progress
+                        val currentProgressPercent = (currentProgress * 100).toInt()
+
+                        val notificationText = if (currentTrackName != null) {
+                            "Downloading: $currentTrackName ($currentProgressPercent%)"
+                        } else {
+                            "Downloaded $completed of $total"
+                        }
+
+                        syncNotificationManager.updateProgress(
+                            title = "Syncing playlists",
+                            text = notificationText,
+                            progress = overallProgress.coerceIn(0f, 0.99f),
+                        )
+                    }
+                }
+
+                val downloadJobs = pendingItems.map { queueItem ->
                     launch {
                         try {
                             downloadQueueDao.updateStatus(
@@ -281,6 +326,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 failedCount.incrementAndGet()
                                 return@launch
                             }
+
+                            trackNames[queueItem.trackId] = "${trackEntity.title} - ${trackEntity.artist}"
 
                             // v0.9.15: Last-line defense. The DAO feeders
                             // (getAllPendingBySources etc.) already exclude
@@ -395,6 +442,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         status = DownloadStatus.COMPLETED,
                                         completedAt = System.currentTimeMillis(),
                                     )
+                                    syncNotificationManager.showDownloadCompleteNotification(track.title, track.artist)
                                     totalBytesDownloaded.addAndGet(fileSize)
                                     downloadedCount.incrementAndGet()
                                 }
@@ -545,6 +593,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                         }
                     }
                 }
+                downloadJobs.joinAll()
+                progressJob.cancel()
             }
             // supervisorScope waits for all launched coroutines to complete.
 
@@ -730,6 +780,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                     failureType = DownloadFailureType.NONE,
                     rejectedVideoId = null,
                 )
+                syncNotificationManager.showDownloadCompleteNotification(track.title, track.artist)
                 Log.i(TAG, "Single-track mode: Success for queue ${entry.id}")
             }
             is TrackDownloadOutcome.Failed -> {

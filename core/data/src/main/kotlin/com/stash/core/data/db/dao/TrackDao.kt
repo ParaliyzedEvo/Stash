@@ -258,7 +258,7 @@ interface TrackDao {
         WHERE pt.playlist_id = :playlistId
           AND pt.removed_at IS NULL
           AND bl.canonical_key IS NULL
-          AND (t.is_downloaded = 1 OR :includeStreamable)
+          AND (t.is_downloaded = 1 OR (:includeStreamable AND t.is_streamable = 1))
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
             pt.position ASC

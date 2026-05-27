@@ -213,6 +213,27 @@ class SyncNotificationManager @Inject constructor(
     }
 
     /**
+     * Show a notification when a track successfully completes downloading.
+     *
+     * @param title  The song title.
+     * @param artist The artist name.
+     */
+    fun showDownloadCompleteNotification(title: String, artist: String) {
+        val text = "Download completed: $title by $artist"
+        val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_SUMMARY)
+            .setContentTitle("Download Completed")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setAutoCancel(true)
+            .build()
+
+        // Use a unique notification ID based on track title and artist hash code to prevent collisions
+        val notificationId = (title + artist).hashCode()
+        notificationManager.notify(notificationId, notification)
+    }
+
+    /**
      * Cancel the ongoing progress notification.
      *
      * Should be called when the sync foreground service stops.

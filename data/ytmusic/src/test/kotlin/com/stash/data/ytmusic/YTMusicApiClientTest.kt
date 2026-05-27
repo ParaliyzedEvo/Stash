@@ -27,6 +27,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
@@ -55,7 +56,7 @@ class YTMusicApiClientTest {
     private fun fakeClient(responseJson: String): YTMusicApiClient {
         val inner = mock<InnerTubeClient>()
         val parsed = Json.parseToJsonElement(responseJson).jsonObject
-        runBlocking { whenever(inner.search(any())).thenReturn(parsed) }
+        runBlocking { whenever(inner.search(any(), anyOrNull())).thenReturn(parsed) }
         return YTMusicApiClient(inner)
     }
 
@@ -166,15 +167,15 @@ class YTMusicApiClientTest {
         )
         // Lock in "largest thumbnail wins" for the avatar: the fixture ships
         // both a 48×48 and a 544×544 variant. ArtUrlUpgrader additionally
-        // normalizes lh3 URLs to `=w544-h544`, so "544" must appear regardless
+        // normalizes lh3 URLs to `=w1024-h1024`, so "1024" must appear regardless
         // of which variant was picked — but the picker must NOT have chosen
         // the 48 variant and then had its size token stripped (which would
-        // still contain "544" via the upgrader). We assert on the original
-        // `artist-avatar-large` path token to pin the picker to the 544 src.
+        // still contain "1024" via the upgrader). We assert on the original
+        // `artist-avatar-large` path token to pin the picker to the 1024 src.
         assertTrue(
-            "avatar should be the 544 variant, was ${profile.avatarUrl}",
+            "avatar should be the 1024 variant, was ${profile.avatarUrl}",
             profile.avatarUrl!!.contains("artist-avatar-large") &&
-                profile.avatarUrl!!.contains("544"),
+                profile.avatarUrl!!.contains("1024"),
         )
         assertTrue(
             "popular.size should be in 5..10, was ${profile.popular.size}",

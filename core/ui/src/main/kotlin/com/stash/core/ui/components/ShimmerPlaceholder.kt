@@ -16,22 +16,33 @@ import androidx.compose.ui.graphics.RectangleShape
 fun ShimmerPlaceholder(
     modifier: Modifier = Modifier,
     shape: Shape = RectangleShape,
-    baseAlpha: Float = 0.06f,
-    highlightAlpha: Float = 0.12f,
+    baseColor: Color = Color.White.copy(alpha = 0.05f),
+    highlightColor: Color = Color.White.copy(alpha = 0.16f),
 ) {
     val transition = rememberInfiniteTransition(label = "shimmer")
-    val alpha by transition.animateFloat(
-        initialValue = baseAlpha,
-        targetValue = highlightAlpha,
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1_200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "alpha",
+        label = "translation",
     )
+
+    val shimmerBrush = Brush.linearGradient(
+        colors = listOf(
+            baseColor,
+            highlightColor,
+            baseColor,
+        ),
+        start = androidx.compose.ui.geometry.Offset(translateAnim - 250f, 0f),
+        end = androidx.compose.ui.geometry.Offset(translateAnim, 250f)
+    )
+
     Box(
-        modifier
+        modifier = modifier
             .clip(shape)
-            .background(Color.White.copy(alpha = alpha)),
+            .background(shimmerBrush),
     )
 }

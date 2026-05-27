@@ -34,7 +34,7 @@ data class LikedSongsDetailUiState(
     val showSearch: Boolean = false,
 )
 
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LikedSongsDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -61,6 +61,12 @@ class LikedSongsDetailViewModel @Inject constructor(
         _showSearch.value = !_showSearch.value
         if (!_showSearch.value) _searchQuery.value = ""
     }
+    private fun normalize(s: String): String {
+        return s.lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
 
     private val tracksFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
         .map { playlists ->
@@ -72,7 +78,14 @@ class LikedSongsDetailViewModel @Inject constructor(
                 flowOf(emptyList())
             } else {
                 combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                    arrays.flatMap { it.toList() }.distinctBy { it.id }
+                    arrays.flatMap { it.toList() }
+                        .sortedWith(
+                            compareByDescending<Track> { it.isDownloaded }
+                                .thenByDescending { it.filePath != null }
+                                .thenByDescending { it.isStreamable }
+                                .thenBy { it.source == MusicSource.SPOTIFY }
+                        )
+                        .distinctBy { "${normalize(it.title)}|${normalize(it.artist)}" }
                 }
             }
         }

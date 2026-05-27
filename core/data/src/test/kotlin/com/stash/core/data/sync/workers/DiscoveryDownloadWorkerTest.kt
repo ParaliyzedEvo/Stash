@@ -32,7 +32,9 @@ class DiscoveryDownloadWorkerTest {
     private val workerParams: WorkerParameters = mockk(relaxed = true)
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
-    private val trackDownloader: TrackDownloader = mockk()
+    private val trackDownloader: TrackDownloader = mockk {
+        coEvery { progressFlow } returns kotlinx.coroutines.flow.emptyFlow()
+    }
     private val audioDurationExtractor: AudioDurationExtractor = mockk(relaxed = true)
     private val blocklistGuard: BlocklistGuard = mockk {
         coEvery { isBlocked(any(), any(), any(), any()) } returns false

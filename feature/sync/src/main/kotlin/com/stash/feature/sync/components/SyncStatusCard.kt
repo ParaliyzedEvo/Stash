@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,19 +58,28 @@ fun SyncStatusCard(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // -- Connection + sync status header --
+            // -- Connection + sync status header + last sync time --
             // Uses SyncDisplayStatus so "Completed with some failures" and
             // "Interrupted mid-run" don't both read as a generic failure.
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PulseDot(color = syncStatusDotColor(syncStatus, anyServiceConnected, hasEverSynced))
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = syncStatusLabel(syncStatus, anyServiceConnected, hasEverSynced),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+                if (hasEverSynced && syncStatus.lastSyncTime != null) {
+                    Text(
+                        text = formatRelativeTimeForCard(syncStatus.lastSyncTime),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             // -- Prompt or stats depending on sync state --
@@ -106,6 +117,9 @@ fun SyncStatusCard(
                             )
                         }
                     }
+                    androidx.compose.foundation.layout.Spacer(
+                        modifier = Modifier.height(4.dp),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceAround,
@@ -123,13 +137,6 @@ fun SyncStatusCard(
                             )
                         }
                     }
-                }
-                if (syncStatus.lastSyncTime != null) {
-                    Text(
-                        text = "Last sync ${formatRelativeTimeForCard(syncStatus.lastSyncTime)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }

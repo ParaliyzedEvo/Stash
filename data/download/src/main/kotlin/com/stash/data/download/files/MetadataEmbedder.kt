@@ -119,9 +119,9 @@ class MetadataEmbedder @Inject constructor(
     companion object {
         private const val TAG = "MetadataEmbedder"
 
-        // Containers that don't support ffmpeg's `-disposition:v:0 attached_pic`
+        // Containers that don't support or have issues with ffmpeg's `-disposition:v:0 attached_pic`
         // mapping (mux fails with exit 234). Tag writing still works for these.
-        private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg")
+        private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg", "flac")
 
         private fun sanitize(value: String): String =
             value.replace(Regex("[\\x00-\\x1f]"), "")
