@@ -43,6 +43,9 @@ dependencies {
     implementation(libs.media3.session)
     implementation(libs.media3.datasource)
     implementation(libs.media3.database)
+    implementation(libs.media3.cast)
+    implementation(libs.play.services.cast.framework)
+    implementation(libs.androidx.mediarouter)
 
     // Hilt
     implementation(libs.hilt.android)

@@ -9,6 +9,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.TrackItem
 import com.stash.data.download.DownloadExecutor
@@ -88,6 +89,7 @@ class SearchDownloadCoordinator @Inject constructor(
      * [LyricsFetchTrigger] for the cyclic-dep rationale.
      */
     private val lyricsFetchTrigger: LyricsFetchTrigger,
+    private val syncNotificationManager: SyncNotificationManager,
 ) {
     // App-lifetime scope. Class is @Singleton.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -296,6 +298,7 @@ class SearchDownloadCoordinator @Inject constructor(
             // If the stamp lookup failed (returned null), skip lyrics too —
             // we have no stable id to key the worker on.
             stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
+            syncNotificationManager.showDownloadCompleteNotification(track.title, track.artist)
         }
 
         // Free preview-cache space now that bytes are on permanent storage.
@@ -353,6 +356,7 @@ class SearchDownloadCoordinator @Inject constructor(
             }
             // v0.9.36 lyrics integration: parity with the lossless branch.
             stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
+            syncNotificationManager.showDownloadCompleteNotification(track.title, track.artist)
         }
         return finalized
     }

@@ -586,41 +586,85 @@ class PlaylistFetchWorker @AssistedInject constructor(
             coroutineScope {
                 launch { sem.withPermit { fetchAndSnapshotLikedSongs(syncId, diagnostics) } }
 
-                // Fetch user-library playlists (user-created + user-saved from
-                // Library → Playlists). These come with `PlaylistType.CUSTOM`
-                // and land in the "Other Playlists" toggle group on the Sync
-                // screen, alongside Home Mixes / Liked Songs. Built-ins
-                // (Liked Music, Episodes for Later) are filtered out by
-                // parseUserPlaylists, so no duplicate snapshot rows.
-                when (val result = ytMusicApiClient.getUserPlaylists()) {
-                    is SyncResult.Success -> {
-                        val paged = result.data
-                        val userPlaylists = paged.playlists
-                        val partialMsg = if (paged.partial) "partial library list: ${paged.partialReason}" else null
-                        diagnostics.add(
-                            SyncStepResult(
-                                "YOUTUBE",
-                                "getUserPlaylists",
-                                StepStatus.SUCCESS,
-                                userPlaylists.size,
-                                errorMessage = partialMsg,
+                launch {
+                    // Fetch user-library playlists (user-created + user-saved from
+                    // Library → Playlists). These come with `PlaylistType.CUSTOM`
+                    // and land in the "Other Playlists" toggle group on the Sync
+                    // screen, alongside Home Mixes / Liked Songs. Built-ins
+                    // (Liked Music, Episodes for Later) are filtered out by
+                    // parseUserPlaylists, so no duplicate snapshot rows.
+                    when (val result = ytMusicApiClient.getUserPlaylists()) {
+                        is SyncResult.Success -> {
+                            val paged = result.data
+                            val userPlaylists = paged.playlists
+                            val partialMsg = if (paged.partial) "partial library list: ${paged.partialReason}" else null
+                            diagnostics.add(
+                                SyncStepResult(
+                                    "YOUTUBE",
+                                    "getUserPlaylists",
+                                    StepStatus.SUCCESS,
+                                    userPlaylists.size,
+                                    errorMessage = partialMsg,
+                                )
                             )
-                        )
-                        if (paged.partial) {
-                            Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
+                            if (paged.partial) {
+                                Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
+                            }
+                            Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
+                            coroutineScope {
+                                userPlaylists.map { playlist ->
+                                    async { sem.withPermit { fetchAndSnapshotUserPlaylist(playlist, syncId, diagnostics) } }
+                                }.awaitAll()
+                            }
                         }
-                        Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
-                        userPlaylists.map { playlist ->
-                            async { sem.withPermit { fetchAndSnapshotUserPlaylist(playlist, syncId, diagnostics) } }
-                        }.awaitAll()
+                        is SyncResult.Empty -> {
+                            diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
+                            Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
+                        }
+                        is SyncResult.Error -> {
+                            diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
+                            Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                        }
                     }
-                    is SyncResult.Empty -> {
-                        diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
-                        Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
-                    }
-                    is SyncResult.Error -> {
-                        diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
-                        Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                }
+
+                launch {
+                    // Fetch user-library albums (user-saved albums from
+                    // Library → Albums). These come with `PlaylistType.CUSTOM`
+                    // and land in the "Other Playlists" toggle group on the Sync
+                    // screen exactly like custom playlists.
+                    when (val result = ytMusicApiClient.getUserAlbums()) {
+                        is SyncResult.Success -> {
+                            val paged = result.data
+                            val userAlbums = paged.playlists
+                            val partialMsg = if (paged.partial) "partial albums list: ${paged.partialReason}" else null
+                            diagnostics.add(
+                                SyncStepResult(
+                                    "YOUTUBE",
+                                    "getUserAlbums",
+                                    StepStatus.SUCCESS,
+                                    userAlbums.size,
+                                    errorMessage = partialMsg,
+                                )
+                            )
+                            if (paged.partial) {
+                                Log.w(TAG, "fetchYouTubePlaylists: user albums list partial — ${paged.partialReason}")
+                            }
+                            Log.d(TAG, "fetchYouTubePlaylists: found ${userAlbums.size} user albums")
+                            coroutineScope {
+                                userAlbums.map { album ->
+                                    async { sem.withPermit { fetchAndSnapshotUserPlaylist(album, syncId, diagnostics) } }
+                                }.awaitAll()
+                            }
+                        }
+                        is SyncResult.Empty -> {
+                            diagnostics.add(SyncStepResult("YOUTUBE", "getUserAlbums", StepStatus.EMPTY, errorMessage = result.reason))
+                            Log.d(TAG, "fetchYouTubePlaylists: user albums empty: ${result.reason}")
+                        }
+                        is SyncResult.Error -> {
+                            diagnostics.add(SyncStepResult("YOUTUBE", "getUserAlbums", StepStatus.ERROR, errorMessage = result.message))
+                            Log.e(TAG, "fetchYouTubePlaylists: user albums error: ${result.message}")
+                        }
                     }
                 }
             }

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.stash.feature.search
 
 import androidx.compose.animation.AnimatedVisibility
@@ -36,15 +38,20 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -108,6 +115,9 @@ fun SearchScreen(
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var trackToRemove by remember { mutableStateOf<SearchResultItem?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+
     LaunchedEffect(viewModel) {
         merge(
             viewModel.userMessages,
@@ -150,12 +160,26 @@ fun SearchScreen(
                     onPreview = { track -> viewModel.onResultTap(track) },
                     onStopPreview = viewModel.delegate::stopPreview,
                     onDownload = { t -> viewModel.delegate.downloadTrack(t.toTrackItem()) },
+                    onRemoveDownload = { item -> trackToRemove = item },
                     onVisibleSongIdsChanged = viewModel::prefetchVisible,
                 )
                 SearchStatus.Empty -> NoResultsMessage()
                 is SearchStatus.Error -> ErrorMessage(status.message)
             }
         }
+    }
+
+    if (trackToRemove != null) {
+        RemoveDownloadSheet(
+            trackTitle = trackToRemove!!.title,
+            trackArtist = trackToRemove!!.artist,
+            onConfirm = {
+                viewModel.delegate.removeDownload(trackToRemove!!.videoId)
+                trackToRemove = null
+            },
+            onDismiss = { trackToRemove = null },
+            sheetState = sheetState,
+        )
     }
 }
 
@@ -253,6 +277,7 @@ private fun SectionedResultsList(
     onPreview: (TrackItem) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (TrackSummary) -> Unit,
+    onRemoveDownload: (SearchResultItem) -> Unit,
     onVisibleSongIdsChanged: (List<String>) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
@@ -306,6 +331,7 @@ private fun SectionedResultsList(
                             onPreview = { onPreview(top.track.toTrackItem()) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(top.track) },
+                            onRemoveDownload = { onRemoveDownload(top.track.toSearchResultItem()) },
                         )
                     } else {
                         TopResultCard(
@@ -337,6 +363,7 @@ private fun SectionedResultsList(
                             onPreview = { onPreview(t.toTrackItem()) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(t) },
+                            onRemoveDownload = { onRemoveDownload(item) },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
@@ -408,6 +435,7 @@ private fun TopResultCard(
     onPreview: () -> Unit = {},
     onStopPreview: () -> Unit = {},
     onDownload: () -> Unit = {},
+    onRemoveDownload: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val clickMod = when (item) {
@@ -528,12 +556,23 @@ private fun TopResultCard(
             ) {
                 when {
                     isDownloaded -> {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Downloaded",
-                            modifier = Modifier.size(24.dp),
-                            tint = extendedColors.success,
-                        )
+                        if (onRemoveDownload != null) {
+                            IconButton(onClick = onRemoveDownload) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Downloaded. Tap to remove.",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = extendedColors.success,
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Downloaded",
+                                modifier = Modifier.size(24.dp),
+                                tint = extendedColors.success,
+                            )
+                        }
                     }
                     isDownloading -> {
                         CircularProgressIndicator(
@@ -563,8 +602,9 @@ private fun TopResultCard(
 // ---------------------------------------------------------------------------
 
 /**
- * Six stacked shimmer placeholders standing in for song rows while a
- * `searchAll` call is in flight.
+ * Contextual shimmer skeletons that mimic the real sectioned search results
+ * layout — a section header placeholder, 4 song-row skeletons (thumbnail +
+ * two text lines + action icon), and a horizontal artist-avatar row.
  */
 @Composable
 private fun LoadingSkeletons() {
@@ -572,15 +612,94 @@ private fun LoadingSkeletons() {
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        repeat(6) {
-            ShimmerPlaceholder(
+        // -- "Top Result" section header skeleton --
+        ShimmerPlaceholder(
+            modifier = Modifier
+                .padding(start = 4.dp, top = 8.dp, bottom = 12.dp)
+                .height(18.dp)
+                .width(100.dp),
+            shape = RoundedCornerShape(4.dp),
+        )
+
+        // -- Song row skeletons (4 rows) --
+        repeat(4) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(12.dp),
-            )
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Thumbnail square
+                ShimmerPlaceholder(
+                    modifier = Modifier.size(48.dp),
+                    shape = RoundedCornerShape(8.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                // Title + artist text lines
+                Column(modifier = Modifier.weight(1f)) {
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .height(14.dp)
+                            .fillMaxWidth(0.7f),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .height(12.dp)
+                            .fillMaxWidth(0.4f),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                // Duration placeholder
+                ShimmerPlaceholder(
+                    modifier = Modifier
+                        .height(12.dp)
+                        .width(32.dp),
+                    shape = RoundedCornerShape(4.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // Action button placeholder
+                ShimmerPlaceholder(
+                    modifier = Modifier.size(24.dp),
+                    shape = RoundedCornerShape(12.dp),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // -- "Artists" section header skeleton --
+        ShimmerPlaceholder(
+            modifier = Modifier
+                .padding(start = 4.dp, top = 8.dp, bottom = 12.dp)
+                .height(18.dp)
+                .width(80.dp),
+            shape = RoundedCornerShape(4.dp),
+        )
+
+        // -- Horizontal artist avatars row --
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(4) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    ShimmerPlaceholder(
+                        modifier = Modifier.size(64.dp),
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .height(10.dp)
+                            .width(56.dp),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                }
+            }
         }
     }
 }

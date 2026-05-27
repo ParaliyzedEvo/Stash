@@ -1,6 +1,20 @@
 package com.stash.core.data.sync
 
 import com.stash.core.model.Track
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Real-time progress update for an in-flight track download.
+ *
+ * @property trackId   database ID of the track being downloaded.
+ * @property progress  download progress as a fraction in [0.0, 1.0].
+ * @property status    name of the current phase of the download pipeline (e.g. DOWNLOADING, PROCESSING).
+ */
+data class TrackDownloadProgress(
+    val trackId: Long,
+    val progress: Float,
+    val status: String,
+)
 
 /**
  * Result of downloading a single track through the pipeline.
@@ -39,6 +53,11 @@ sealed class TrackDownloadOutcome {
 interface TrackDownloader {
 
     /**
+     * Flow of real-time progress events for in-flight downloads.
+     */
+    val progressFlow: Flow<TrackDownloadProgress>
+
+    /**
      * Downloads a single track through the full pipeline (search, download,
      * metadata embed, file organization).
      *
@@ -48,3 +67,4 @@ interface TrackDownloader {
      */
     suspend fun downloadTrack(track: Track, preResolvedUrl: String? = null): TrackDownloadOutcome
 }
+

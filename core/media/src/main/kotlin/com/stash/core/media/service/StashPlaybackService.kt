@@ -18,6 +18,10 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import androidx.media3.common.MediaMetadata
+import androidx.media3.cast.CastPlayer
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -159,6 +163,9 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     private var mediaSession: MediaLibrarySession? = null
+    private var localExoPlayer: ExoPlayer? = null
+    private var castPlayer: CastPlayer? = null
+    private var sessionManagerListener: SessionManagerListener<CastSession>? = null
 
     // Service-scoped CoroutineScope for the like-state observer + toggle
     // suspending calls. Cancelled in onDestroy so the observer doesn't leak
@@ -249,6 +256,40 @@ class StashPlaybackService : MediaLibraryService() {
 
         // Set the pre-generated session ID on the player
         player.audioSessionId = audioSessionId
+        localExoPlayer = player
+
+        // Initialize Cast integration
+        val castContext = try {
+            CastContext.getSharedInstance(this)
+        } catch (e: Exception) {
+            android.util.Log.w("StashPlayback", "Failed to get CastContext shared instance", e)
+            null
+        }
+
+        if (castContext != null) {
+            castPlayer = CastPlayer(castContext)
+            sessionManagerListener = object : SessionManagerListener<CastSession> {
+                override fun onSessionStarting(session: CastSession) {}
+                override fun onSessionStarted(session: CastSession, sessionId: String) {
+                    switchToCastPlayer()
+                }
+                override fun onSessionStartFailed(session: CastSession, error: Int) {}
+                override fun onSessionEnding(session: CastSession) {}
+                override fun onSessionEnded(session: CastSession, error: Int) {
+                    switchToExoPlayer()
+                }
+                override fun onSessionSuspended(session: CastSession, reason: Int) {}
+                override fun onSessionResuming(session: CastSession, sessionId: String) {}
+                override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+                    switchToCastPlayer()
+                }
+                override fun onSessionResumeFailed(session: CastSession, error: Int) {}
+            }
+            castContext.sessionManager.addSessionManagerListener(
+                sessionManagerListener as SessionManagerListener<CastSession>,
+                CastSession::class.java
+            )
+        }
 
         // Set session activity so tapping the media notification opens the app.
         // The intent targets the app's launcher activity via the package's launch intent.
@@ -276,9 +317,8 @@ class StashPlaybackService : MediaLibraryService() {
         //      (Now Playing, Library, etc.) while audio is playing.
         //   2. Loudness normalisation: pull the new track's measured LUFS /
         //      true-peak from the DB and push the computed per-track gain
-        //      to [LoudnessController]. The DSP layer reads the controller
-        //      state and ramps to the new target via LoudnessGainProcessor.
-        player.addListener(object : Player.Listener {
+        //      to [LoudnessController]. The DSP layer ramps to the new target.
+        val playerListener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updateCustomLayout()
                 onTrackTransitionForLoudness(mediaItem)
@@ -289,15 +329,32 @@ class StashPlaybackService : MediaLibraryService() {
                 // REPEAT_ONE loops, manual skip-back).
                 prefetchOrchestrator.resetSession()
                 // Restart the poll against the new current item.
-                if (player.isPlaying) startPrefetchPoll(player)
+                val activePlayer = mediaSession?.player
+                if (activePlayer != null && activePlayer.isPlaying) startPrefetchPoll(activePlayer)
+                broadcastSpotifyMetadata(mediaItem)
+                val active = mediaSession?.player
+                if (active != null) broadcastSpotifyPlaybackState(active)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    startPrefetchPoll(player)
+                val activePlayer = mediaSession?.player
+                if (isPlaying && activePlayer != null) {
+                    startPrefetchPoll(activePlayer)
                 } else {
                     prefetchPollJob?.cancel()
                     prefetchPollJob = null
+                }
+                if (activePlayer != null) broadcastSpotifyPlaybackState(activePlayer)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    val activePlayer = mediaSession?.player
+                    if (activePlayer != null) broadcastSpotifyPlaybackState(activePlayer)
                 }
             }
 
@@ -329,7 +386,11 @@ class StashPlaybackService : MediaLibraryService() {
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 updateCustomLayout()
             }
-        })
+        }
+
+        player.addListener(playerListener)
+        castPlayer?.addListener(playerListener)
+
         updateCustomLayout()
     }
 
@@ -432,6 +493,40 @@ class StashPlaybackService : MediaLibraryService() {
             val gainDb = computeGain(track.loudnessLufs, track.truePeakDbfs)
             loudnessController.setCurrentTrackGain(gainDb)
         }
+    }
+
+    private fun broadcastSpotifyMetadata(mediaItem: MediaItem?) {
+        if (mediaItem == null) return
+        val metadata = mediaItem.mediaMetadata
+        val trackId = mediaItem.mediaId ?: ""
+        val artist = metadata.artist?.toString() ?: ""
+        val title = metadata.title?.toString() ?: ""
+        val album = metadata.albumTitle?.toString() ?: ""
+        // Get length in seconds
+        val durationMs = mediaItem.mediaMetadata.extras?.getLong(EXTRA_TRACK_DURATION_MS)
+            ?: (mediaSession?.player?.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
+        val lengthSeconds = (durationMs / 1000).toInt()
+
+        val intent = Intent("com.spotify.music.metadatachanged").apply {
+            putExtra("id", "spotify:track:$trackId")
+            putExtra("artist", artist)
+            putExtra("track", title)
+            putExtra("album", album)
+            putExtra("length", lengthSeconds)
+            putExtra("timeSent", System.currentTimeMillis())
+        }
+        sendBroadcast(intent)
+        android.util.Log.d("StashPlayback", "Broadcasted metadatachanged for: $title by $artist (id=$trackId)")
+    }
+
+    private fun broadcastSpotifyPlaybackState(player: Player) {
+        val intent = Intent("com.spotify.music.playbackstatechanged").apply {
+            putExtra("playing", player.isPlaying)
+            putExtra("playbackPosition", player.currentPosition.toInt())
+            putExtra("timeSent", System.currentTimeMillis())
+        }
+        sendBroadcast(intent)
+        android.util.Log.d("StashPlayback", "Broadcasted playbackstatechanged: playing=${player.isPlaying}, position=${player.currentPosition}")
     }
 
     private var lastTrackId: Long? = null
@@ -561,12 +656,70 @@ class StashPlaybackService : MediaLibraryService() {
         likeObserverJob?.cancel()
         prefetchPollJob?.cancel()
         serviceScope.cancel()
+        sessionManagerListener?.let { listener ->
+            try {
+                CastContext.getSharedInstance(this)?.sessionManager
+                    ?.removeSessionManagerListener(listener, CastSession::class.java)
+            } catch (_: Exception) {}
+        }
+        castPlayer?.release()
+        castPlayer = null
         mediaSession?.run {
             player.release()
             release()
         }
         mediaSession = null
         super.onDestroy()
+    }
+
+    @OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun switchToCastPlayer() {
+        val currentCastPlayer = castPlayer ?: return
+        val localPlayer = localExoPlayer ?: return
+        val activePlayer = mediaSession?.player ?: return
+        if (activePlayer === currentCastPlayer) return
+
+        val currentMediaItems = mutableListOf<MediaItem>()
+        for (i in 0 until localPlayer.mediaItemCount) {
+            currentMediaItems.add(localPlayer.getMediaItemAt(i))
+        }
+        val currentIndex = localPlayer.currentMediaItemIndex
+        val currentPosition = localPlayer.currentPosition
+        val playWhenReady = localPlayer.playWhenReady
+
+        localPlayer.pause()
+
+        currentCastPlayer.setMediaItems(currentMediaItems, currentIndex, currentPosition)
+        currentCastPlayer.playWhenReady = playWhenReady
+        currentCastPlayer.prepare()
+
+        mediaSession?.player = currentCastPlayer
+        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer")
+    }
+
+    @OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun switchToExoPlayer() {
+        val currentCastPlayer = castPlayer ?: return
+        val exoPlayer = localExoPlayer ?: return
+        val activePlayer = mediaSession?.player ?: return
+        if (activePlayer === exoPlayer) return
+
+        val currentMediaItems = mutableListOf<MediaItem>()
+        for (i in 0 until currentCastPlayer.mediaItemCount) {
+            currentMediaItems.add(currentCastPlayer.getMediaItemAt(i))
+        }
+        val currentIndex = currentCastPlayer.currentMediaItemIndex
+        val currentPosition = currentCastPlayer.currentPosition
+        val playWhenReady = currentCastPlayer.playWhenReady
+
+        currentCastPlayer.pause()
+
+        exoPlayer.setMediaItems(currentMediaItems, currentIndex, currentPosition)
+        exoPlayer.playWhenReady = playWhenReady
+        exoPlayer.prepare()
+
+        mediaSession?.player = exoPlayer
+        android.util.Log.i("StashPlayback", "Switched active player back to ExoPlayer")
     }
 
     /**

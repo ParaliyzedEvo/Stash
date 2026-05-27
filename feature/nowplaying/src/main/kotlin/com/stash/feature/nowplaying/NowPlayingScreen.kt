@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.stash.feature.nowplaying
 
 import androidx.compose.foundation.background
@@ -43,7 +45,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.stash.core.ui.components.SheetOptionRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,6 +107,8 @@ fun NowPlayingScreen(
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
+    var showOptionsSheet by remember { mutableStateOf(false) }
+    val optionsSheetState = rememberModalBottomSheetState()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -269,19 +276,13 @@ fun NowPlayingScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // -- Top bar: dismiss, label, flag, like, download, save, lyrics, queue --
+            // -- Top bar: dismiss, like, options sheet trigger --
             TopBar(
                 onDismiss = onDismiss,
-                onFlagWrongMatch = { showWrongMatchDialog = true },
-                onSaveClick = { showSaveSheet = true },
-                onLyricsClick = viewModel::onShowLyrics,
-                onQueueClick = { showQueue = true },
+                onMoreClick = { showOptionsSheet = true },
                 hasTrack = uiState.hasTrack,
-                queueSize = uiState.queueSize,
                 onLikeTap = viewModel::onLikeTap,
                 isLiked = uiState.currentTrack?.stashLikedAt != null,
-                onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
-                isDownloaded = uiState.currentTrack?.isDownloaded == true,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -389,8 +390,72 @@ fun NowPlayingScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Bottom actions: Lyrics (left), Cast (center), and Queue (right)
+            if (track != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = viewModel::onShowLyrics) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lyrics,
+                            contentDescription = "Lyrics",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+
+                    // Chromecast / Google Cast Route Button
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { ctx ->
+                            androidx.mediarouter.app.MediaRouteButton(ctx).apply {
+                                com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                // Standard premium look: match white tint of other icons
+                                try {
+                                    val castIconColor = android.graphics.Color.WHITE
+                                    val drawable = androidx.core.content.ContextCompat.getDrawable(
+                                        ctx,
+                                        androidx.mediarouter.R.drawable.mr_button_light
+                                    )
+                                    if (drawable != null) {
+                                        androidx.core.graphics.drawable.DrawableCompat.setTint(drawable, castIconColor)
+                                        setRemoteIndicatorDrawable(drawable)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    )
+
+                    IconButton(onClick = { showQueue = true }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = "Queue (${uiState.queueSize} tracks)",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(48.dp))
         }
+    }
+
+    if (showOptionsSheet && track != null) {
+        NowPlayingOptionsSheet(
+            isDownloaded = track.isDownloaded,
+            onSaveClick = { showSaveSheet = true },
+            onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
+            onFlagWrongMatch = { showWrongMatchDialog = true },
+            onDismiss = { showOptionsSheet = false },
+            sheetState = optionsSheetState,
+        )
     }
 }
 
@@ -408,19 +473,22 @@ fun NowPlayingScreen(
  * @param hasTrack     Whether a track is currently loaded (save button is hidden otherwise).
  * @param queueSize    Number of tracks in the queue, shown as a badge hint.
  */
+/**
+ * Top bar with dismiss button, heart like button, and options sheet trigger.
+ *
+ * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onMoreClick  Callback when the options menu trigger is tapped.
+ * @param hasTrack     Whether a track is currently loaded.
+ * @param onLikeTap    Callback when the heart icon is tapped.
+ * @param isLiked      Whether the current track is liked.
+ */
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
-    onFlagWrongMatch: () -> Unit,
-    onSaveClick: () -> Unit,
-    onLyricsClick: () -> Unit,
-    onQueueClick: () -> Unit,
+    onMoreClick: () -> Unit,
     hasTrack: Boolean,
-    queueSize: Int,
     onLikeTap: () -> Unit,
     isLiked: Boolean,
-    onDownloadTap: () -> Unit,
-    isDownloaded: Boolean,
 ) {
     Row(
         modifier = Modifier
@@ -440,9 +508,7 @@ private fun TopBar(
         Spacer(modifier = Modifier.weight(1f))
 
         // v0.9.13: Like button — Stash-only toggle. Tap on empty saves to
-        // Stash Liked Songs; tap on filled removes. Long-press is a no-op
-        // by design; the override sheet was deprecated in favor of the
-        // simpler standard like-button UX.
+        // Stash Liked Songs; tap on filled removes.
         if (hasTrack) {
             com.stash.core.ui.components.LikeButton(
                 isLiked = isLiked,
@@ -453,87 +519,14 @@ private fun TopBar(
             )
         }
 
-        IconButton(onClick = onQueueClick) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = "Queue ($queueSize tracks)",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-
         if (hasTrack) {
-            var menuExpanded by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More actions",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Save to Playlist") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.BookmarkBorder,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onSaveClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (isDownloaded) "Remove download" else "Download") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onDownloadTap()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Lyrics") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Lyrics,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onLyricsClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Flag as Wrong Match") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Flag,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onFlagWrongMatch()
-                        }
-                    )
-                }
+            IconButton(onClick = onMoreClick) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More actions",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }
@@ -840,5 +833,78 @@ private fun PreviewQualityLineLocal() {
             qualityText = "FLAC \u00B7 24-bit/96.0 kHz \u00B7 4233 kbps",
             isStreaming = false,
         )
+    }
+}
+
+/**
+ * Premium track options bottom sheet that replaces the legacy dropdown menu on Now Playing.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NowPlayingOptionsSheet(
+    isDownloaded: Boolean,
+    onSaveClick: () -> Unit,
+    onDownloadTap: () -> Unit,
+    onFlagWrongMatch: () -> Unit,
+    onDismiss: () -> Unit,
+    sheetState: androidx.compose.material3.SheetState,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = extendedColors.elevatedSurface,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Text(
+                text = "Track Options",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(bottom = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            // Save to Playlist
+            SheetOptionRow(
+                icon = Icons.Default.BookmarkBorder,
+                label = "Save to Playlist",
+                onClick = {
+                    onSaveClick()
+                    onDismiss()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Download / Remove download
+            SheetOptionRow(
+                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                label = if (isDownloaded) "Remove download" else "Download",
+                onClick = {
+                    onDownloadTap()
+                    onDismiss()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Flag as Wrong Match
+            SheetOptionRow(
+                icon = Icons.Default.Flag,
+                label = "Flag as Wrong Match",
+                onClick = {
+                    onFlagWrongMatch()
+                    onDismiss()
+                }
+            )
+        }
     }
 }

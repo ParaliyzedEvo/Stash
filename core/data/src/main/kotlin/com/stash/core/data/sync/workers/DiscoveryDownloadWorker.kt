@@ -28,6 +28,7 @@ import com.stash.core.model.Track
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
+import kotlinx.coroutines.launch
 
 /**
  * Drains `download_queue` rows produced by [StashDiscoveryWorker]
@@ -163,6 +164,22 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 continue
             }
 
+            val trackName = "${trackEntity.title} - ${trackEntity.artist}"
+            val progressScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+            val progressJob = progressScope.launch {
+                trackDownloader.progressFlow.collect { event ->
+                    if (event.trackId == queueItem.trackId && event.status == "DOWNLOADING") {
+                        val currentProgressPercent = (event.progress * 100).toInt()
+                        val overallProgress = (index.toFloat() + event.progress) / pending.size
+                        safeUpdateForeground(
+                            title = "Downloading discoveries",
+                            text = "Downloading: $trackName ($currentProgressPercent%)",
+                            progress = overallProgress.coerceIn(0f, 0.99f),
+                        )
+                    }
+                }
+            }
+
             val track = trackEntity.toDomain()
             val outcome = runCatching {
                 trackDownloader.downloadTrack(track = track, preResolvedUrl = queueItem.youtubeUrl)
@@ -170,6 +187,8 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", it)
                 TrackDownloadOutcome.Failed(error = it.message.orEmpty())
             }
+
+            progressJob.cancel()
 
             when (outcome) {
                 is TrackDownloadOutcome.Success -> {
@@ -241,6 +260,8 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             status = DownloadStatus.COMPLETED,
             completedAt = System.currentTimeMillis(),
         )
+
+        syncNotificationManager.showDownloadCompleteNotification(trackEntity.title, trackEntity.artist)
     }
 
     private suspend fun handleUnmatched(

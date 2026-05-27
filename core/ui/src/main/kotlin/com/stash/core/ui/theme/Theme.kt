@@ -122,7 +122,7 @@ fun StashTheme(
         else -> StashLightColorScheme
     }
     val extendedColors = StashExtendedColors(
-        elevatedSurface = colorScheme.surfaceVariant,
+        elevatedSurface = colorScheme.surface,
         glassBackground = colorScheme.surfaceVariant.copy(alpha = 0.5f),
         glassBackgroundHover = colorScheme.surfaceVariant.copy(alpha = 0.7f),
         glassBorder = colorScheme.outline.copy(alpha = 0.12f),

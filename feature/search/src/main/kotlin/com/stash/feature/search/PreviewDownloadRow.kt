@@ -77,6 +77,11 @@ fun PreviewDownloadRow(
      * don't thread the resolving state yet.
      */
     isResolving: Boolean = false,
+    /**
+     * Optional callback to trigger download removal when tapping the green
+     * checkmark.
+     */
+    onRemoveDownload: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -180,12 +185,23 @@ fun PreviewDownloadRow(
         ) {
             when {
                 isDownloaded -> {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Downloaded",
-                        modifier = Modifier.size(24.dp),
-                        tint = extendedColors.success,
-                    )
+                    if (onRemoveDownload != null) {
+                        IconButton(onClick = onRemoveDownload) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Downloaded. Tap to remove.",
+                                modifier = Modifier.size(24.dp),
+                                tint = extendedColors.success,
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Downloaded",
+                            modifier = Modifier.size(24.dp),
+                            tint = extendedColors.success,
+                        )
+                    }
                 }
                 isDownloading -> {
                     CircularProgressIndicator(

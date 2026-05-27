@@ -135,9 +135,10 @@ fun StashScaffold(
                         onNavigate = { dest ->
                             navController.navigate(dest.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
-                                    inclusive = false
+                                    saveState = true
                                 }
                                 launchSingleTop = true
+                                restoreState = true
                             }
                         },
                     )

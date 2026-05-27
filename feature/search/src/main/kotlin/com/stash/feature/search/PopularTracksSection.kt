@@ -45,6 +45,7 @@ fun PopularTracksSection(
     onPreview: (TrackItem) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
+    onRemoveDownload: ((SearchResultItem) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -69,6 +70,7 @@ fun PopularTracksSection(
                 onPreview = { onPreview(trackItem) },
                 onStopPreview = onStopPreview,
                 onDownload = { onDownload(item) },
+                onRemoveDownload = if (onRemoveDownload != null) { { onRemoveDownload(item) } } else null,
             )
         }
     }

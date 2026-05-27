@@ -59,6 +59,11 @@ class YTMusicApiClient @Inject constructor(
          */
         private const val BROWSE_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 
+        /**
+         * Library Albums tab — user-saved albums.
+         */
+        private const val BROWSE_LIBRARY_ALBUMS = "FEmusic_liked_albums"
+
         /** Safety cap on continuation depth. ~10K items @ 100/page. */
         internal const val MAX_PAGES = 100
 
@@ -144,6 +149,27 @@ class YTMusicApiClient @Inject constructor(
         )
     }
 
+    suspend fun getUserAlbums(): SyncResult<PagedPlaylists> {
+        val response = innerTubeClient.browse(BROWSE_LIBRARY_ALBUMS)
+            ?: return SyncResult.Error("InnerTube browse($BROWSE_LIBRARY_ALBUMS) returned null")
+
+        val paginated = paginateBrowse(response) { page ->
+            val isContinuation = page["continuationContents"] != null || page["onResponseReceivedActions"] != null
+            if (isContinuation) parseUserAlbumsContinuationPage(page) else parseUserAlbums(page)
+        }
+
+        if (paginated.items.isEmpty()) {
+            return SyncResult.Empty("Library returned no albums")
+        }
+        return SyncResult.Success(
+            PagedPlaylists(
+                playlists = paginated.items,
+                partial = paginated.partial,
+                partialReason = paginated.partialReason,
+            )
+        )
+    }
+
     /**
      * Fetches all tracks in a specific YouTube Music playlist, walking all
      * continuation pages and returning a [PagedTracks] result.
@@ -161,6 +187,32 @@ class YTMusicApiClient @Inject constructor(
         playlistId: String,
         maxPages: Int = MAX_PAGES,
     ): SyncResult<PagedTracks> {
+        if (playlistId.startsWith("MPRE")) {
+            val albumDetail = getAlbum(playlistId)
+            if (albumDetail.tracks.isEmpty()) {
+                return SyncResult.Empty("Album $playlistId returned no tracks")
+            }
+            val ytTracks = albumDetail.tracks.map { track ->
+                YTMusicTrack(
+                    videoId = track.videoId,
+                    title = track.title,
+                    artists = track.artist,
+                    album = albumDetail.title, // Use the album title!
+                    durationMs = (track.durationSeconds * 1000).toLong(),
+                    thumbnailUrl = track.thumbnailUrl ?: albumDetail.thumbnailUrl,
+                    musicVideoType = null,
+                )
+            }
+            return SyncResult.Success(
+                PagedTracks(
+                    tracks = ytTracks,
+                    expectedCount = ytTracks.size,
+                    partial = false,
+                    partialReason = null,
+                )
+            )
+        }
+
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
         // Radio IDs (RD*, including VLRD*) are infinite continuation chains.
         // Auto-cap at 1 page regardless of caller — getUserPlaylists() can also
@@ -275,13 +327,45 @@ class YTMusicApiClient @Inject constructor(
             ?.let { parseTopResultCard(it) }
             ?.let { sections.add(SearchResultSection.Top(it)) }
 
-        // 2..4. Named musicShelfRenderer shelves, dispatched by their title text.
+        // 2..4. Named musicShelfRenderer shelves, dispatched by their title text or structural fallback.
         for (shelf in shelves) {
             val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
             val title = renderer.navigatePath("title", "runs")?.firstArray()
-                ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: continue
+                ?.firstOrNull()?.asObject()?.get("text")?.asString()
+
+            val shelfType = when (title) {
+                "Songs" -> "Songs"
+                "Artists" -> "Artists"
+                "Albums" -> "Albums"
+                else -> {
+                    // Structural fallback check
+                    val contentsArray = renderer["contents"]?.asArray()
+                    val firstItemObj = contentsArray?.firstOrNull()?.asObject()
+                    if (firstItemObj?.containsKey("musicTwoRowItemRenderer") == true) {
+                        "Albums"
+                    } else {
+                        val itemRenderer = firstItemObj?.get("musicResponsiveListItemRenderer")?.asObject()
+                        if (itemRenderer != null) {
+                            val isSong = parseTrackSummaryFromListItem(itemRenderer) != null
+                            if (isSong) {
+                                "Songs"
+                            } else {
+                                val browseId = itemRenderer.navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString()
+                                if (browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC"))) {
+                                    "Artists"
+                                } else {
+                                    null
+                                }
+                            }
+                        } else {
+                            null
+                        }
+                    }
+                }
+            }
+
             // Parsers live in SearchResponseParser.kt as top-level internal funcs.
-            when (title) {
+            when (shelfType) {
                 "Songs" -> parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
                     ?.let { sections.add(SearchResultSection.Songs(it.take(4))) }
                 "Artists" -> parseArtistsShelf(renderer).takeIf { it.isNotEmpty() }
@@ -920,6 +1004,113 @@ class YTMusicApiClient @Inject constructor(
 
         return YTMusicPlaylist(
             playlistId = playlistId,
+            title = title,
+            thumbnailUrl = thumbnailUrl,
+            trackCount = trackCount,
+        )
+    }
+
+    private fun parseUserAlbums(response: JsonObject): List<YTMusicPlaylist> {
+        val playlists = mutableListOf<YTMusicPlaylist>()
+        val seenIds = mutableSetOf<String>()
+
+        val tabs = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.asArray() ?: return emptyList()
+
+        for (tab in tabs) {
+            val sections = tab.asObject()
+                ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+                ?.asArray()
+                ?: continue
+
+            for (section in sections) {
+                val sectionObj = section.asObject() ?: continue
+
+                // Collect candidate item arrays from either shape.
+                val gridItems = sectionObj
+                    .get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+                val itemSectionGridItems = sectionObj
+                    .get("itemSectionRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+                    ?.firstOrNull()?.asObject()
+                    ?.get("gridRenderer")?.asObject()
+                    ?.get("items")?.asArray()
+                val musicShelfItems = sectionObj
+                    .get("musicShelfRenderer")?.asObject()
+                    ?.get("contents")?.asArray()
+
+                val items = gridItems ?: itemSectionGridItems ?: musicShelfItems ?: continue
+
+                for (item in items) {
+                    val renderer = item.asObject()
+                        ?.get("musicTwoRowItemRenderer")?.asObject()
+                        ?: item.asObject()
+                            ?.get("musicResponsiveListItemRenderer")?.asObject()
+                        ?: continue
+
+                    val playlist = parseSingleAlbumFromTwoRowRenderer(renderer) ?: continue
+                    if (!seenIds.add(playlist.playlistId)) continue
+                    playlists.add(playlist)
+                }
+            }
+        }
+
+        Log.d(TAG, "parseUserAlbums: found ${playlists.size} library albums")
+        return playlists
+    }
+
+    private fun parseUserAlbumsContinuationPage(response: JsonObject): List<YTMusicPlaylist> {
+        val items = response.navigatePath(
+            "continuationContents", "musicShelfContinuation", "contents",
+        )?.asArray() ?: return emptyList()
+        val out = mutableListOf<YTMusicPlaylist>()
+        for (item in items) {
+            val renderer = item.asObject()?.get("musicTwoRowItemRenderer")?.asObject() ?: continue
+            parseSingleAlbumFromTwoRowRenderer(renderer)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    private fun parseSingleAlbumFromTwoRowRenderer(renderer: JsonObject): YTMusicPlaylist? {
+        val browseId = renderer.navigatePath(
+            "navigationEndpoint", "browseEndpoint", "browseId",
+        )?.asString() ?: return null
+
+        // Accept only album browseIds (MPRE-prefixed).
+        if (!browseId.startsWith("MPRE")) return null
+
+        val title = renderer["title"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.firstOrNull()?.asObject()
+            ?.get("text")?.asString()
+            ?: renderer["flexColumns"]?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.navigatePath(
+                    "musicResponsiveListItemFlexColumnRenderer",
+                    "text",
+                    "runs",
+                )?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.get("text")?.asString()
+            ?: return null
+
+        val thumbnailUrl = renderer.navigatePath(
+            "thumbnailRenderer", "musicThumbnailRenderer",
+            "thumbnail", "thumbnails",
+        )?.firstArray()?.lastOrNull()
+            ?.asObject()?.get("url")?.asString()
+
+        val subtitleText = renderer["subtitle"]?.asObject()
+            ?.get("runs")?.asArray()
+            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+            ?.joinToString("")
+        val trackCount = subtitleText?.let { TRACK_COUNT_REGEX.find(it) }
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+        return YTMusicPlaylist(
+            playlistId = browseId, // Keep MPREb_ prefix as the playlistId!
             title = title,
             thumbnailUrl = thumbnailUrl,
             trackCount = trackCount,
