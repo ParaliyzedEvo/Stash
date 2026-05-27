@@ -78,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     private val storagePreference: StoragePreference,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
+    private val localImportCoordinator: com.stash.data.download.files.LocalImportCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
@@ -319,6 +320,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             storagePreference.setExternalTreeUri(uri)
         }
+    }
+
+    /**
+     * Scans the newly-selected folder for audio files and imports any that
+     * aren't already in the library. Called automatically when the user
+     * picks a new default music folder so the Library reflects the folder
+     * contents immediately without a manual import step.
+     */
+    fun scanFolderForAudio(uri: Uri) {
+        localImportCoordinator.startFolderImport(uri)
     }
 
     /**
@@ -810,6 +821,21 @@ class SettingsViewModel @Inject constructor(
     fun onThemeChanged(mode: ThemeMode) {
         viewModelScope.launch {
             themePreference.setThemeMode(mode)
+        }
+    }
+
+    /** Exposes the blur layer visibility preference for AMOLED mode. */
+    val showBlurLayerInAmoled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        themePreference.showBlurLayerInAmoled.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = true,
+        )
+
+    /** Persists the blur layer visibility preference for AMOLED mode. */
+    fun onShowBlurLayerInAmoledChanged(show: Boolean) {
+        viewModelScope.launch {
+            themePreference.setShowBlurLayerInAmoled(show)
         }
     }
 

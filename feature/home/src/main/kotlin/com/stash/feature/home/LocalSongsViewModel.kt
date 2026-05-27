@@ -6,6 +6,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,7 +28,10 @@ class LocalSongsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val uiState: StateFlow<LocalSongsUiState> = combine(
-        musicRepository.getAllTracks().map { tracks -> tracks.filter { it.isDownloaded } },
+        musicRepository.getAllTracks().map { tracks ->
+            tracks.filter { it.isDownloaded }
+                .sortedByDescending { it.dateAdded }
+        },
         playerRepository.playerState,
     ) { tracks, playerState ->
         LocalSongsUiState(
@@ -43,10 +47,10 @@ class LocalSongsViewModel @Inject constructor(
 
     fun playTrack(index: Int) {
         viewModelScope.launch {
-            val tracks = uiState.value.tracks.filter { it.filePath != null }
+            val tracks = uiState.value.tracks
             if (tracks.isEmpty()) return@launch
-            val safeIndex = index.coerceIn(0, tracks.lastIndex)
-            playerRepository.setQueue(tracks, safeIndex)
+            val adjustedIndex = index.coerceIn(0, tracks.lastIndex)
+            playerRepository.setQueue(tracks, adjustedIndex)
         }
     }
 

@@ -360,6 +360,14 @@ private fun PlaylistHeader(
     val playlist = state.playlist ?: return
     val extendedColors = StashTheme.extendedColors
 
+    // Get Stash Mix banner URL if applicable
+    val stashMixBanner = if (playlist.type == PlaylistType.STASH_MIX || playlist.type == PlaylistType.DOWNLOADS_MIX) {
+        getStashMixBannerUrl(playlist.name)
+    } else {
+        null
+    }
+    val artworkUrl = stashMixBanner ?: playlist.artUrl
+
     Column(modifier = Modifier.fillMaxWidth()) {
         // -- Artwork with back button and gradient scrim --
         Box(
@@ -368,18 +376,21 @@ private fun PlaylistHeader(
                 .aspectRatio(1f),
         ) {
             // Album art or gradient placeholder
-            if (playlist.artUrl != null) {
-                var imageLoadFailed by remember(playlist.artUrl) { mutableStateOf(false) }
-                if (!imageLoadFailed) {
-                    AsyncImage(
-                        model = playlist.artUrl,
-                        contentDescription = "${playlist.name} artwork",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        onError = { imageLoadFailed = true },
-                    )
-                }
-                // Show gradient placeholder if image failed to load
+            if (!artworkUrl.isNullOrBlank()) {
+                var imageLoadFailed by remember(artworkUrl) { mutableStateOf(false) }
+                
+                AsyncImage(
+                    model = artworkUrl,
+                    contentDescription = "${playlist.name} artwork",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    onSuccess = { imageLoadFailed = false },
+                    onError = { 
+                        imageLoadFailed = true
+                    },
+                )
+                
+                // Show gradient placeholder overlay if image failed to load
                 if (imageLoadFailed) {
                     Box(
                         modifier = Modifier
@@ -403,12 +414,12 @@ private fun PlaylistHeader(
                     }
                 }
             } else {
-                // Gradient placeholder with music icon
+                // Gradient placeholder with music icon when no artUrl
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
-                            Brush.linearGradient(
+                            Brush.verticalGradient(
                                 colors = listOf(
                                     MaterialTheme.colorScheme.primaryContainer,
                                     MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
@@ -604,3 +615,16 @@ private fun PlaylistHeader(
     }
 }
 
+
+/**
+ * Returns the banner URL for Stash Mix playlists based on their name.
+ * Matches the same logic used in HomeScreen for consistency.
+ */
+private fun getStashMixBannerUrl(name: String): String {
+    return when (name) {
+        "Daily Discover" -> "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=400"
+        "Deep Cuts" -> "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400"
+        "First Listen" -> "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400"
+        else -> "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400"
+    }
+}

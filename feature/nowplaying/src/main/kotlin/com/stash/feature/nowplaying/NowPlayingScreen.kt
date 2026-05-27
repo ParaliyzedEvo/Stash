@@ -96,6 +96,8 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isAmoled = MaterialTheme.colorScheme.background == Color.Black
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle()
+    
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -254,6 +256,7 @@ fun NowPlayingScreen(
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
             isAmoled = isAmoled,
+            showBlurLayer = showBlurLayer,
             modifier = Modifier.fillMaxSize(),
         )
 

@@ -70,11 +70,19 @@ class NowPlayingViewModel @Inject constructor(
     // codebase (see LyricsBackfillScheduler for the same shape — it's
     // not Hilt-injectable in this project).
     private val lyricsRepository: LyricsRepository,
+    private val themePreference: com.stash.core.data.prefs.ThemePreference,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
     val uiState: StateFlow<NowPlayingUiState> = _uiState.asStateFlow()
+
+    /** Blur layer visibility for AMOLED mode. */
+    val showBlurLayerInAmoled: StateFlow<Boolean> = themePreference.showBlurLayerInAmoled.stateIn(
+        scope = viewModelScope,
+        started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+        initialValue = true,
+    )
 
     private val _userMessages = MutableSharedFlow<String>(
         // v0.9.18: bumped from 1 → 8. The Find-in-FLAC action emits TWO
