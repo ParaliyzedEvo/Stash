@@ -134,6 +134,7 @@ fun SyncScreen(
                 healthColor = uiState.lastSyncHealthColor,
                 isSyncing = uiState.isSyncing,
                 streamingMode = streamingMode,
+                onStreamingModeChange = viewModel::setStreamingEnabled,
                 onSyncNow = viewModel::onSyncNow,
                 progressContent = {
                     SyncActionProgress(

@@ -1,0 +1,83 @@
+<h2>Mode-aware Sync Now button — three copy treatments</h2>
+<p class="subtitle">Each card shows both modes back-to-back so you can see what the user reads when they bounce between them. Card chrome matches the real SyncHeroCard (purple→cyan gradient, 18dp radius, purple border, full-width button).</p>
+
+<style>
+  .hero { background: linear-gradient(135deg, rgba(155,109,255,.18), rgba(78,205,196,.08)); border:1px solid rgba(155,109,255,.35); border-radius:18px; padding:18px; margin-bottom:14px }
+  .hero .meta-label { font-size:11px; font-weight:600; color:#c4a8ff; letter-spacing:.5px; text-transform:uppercase }
+  .hero .meta-body { font-size:13px; color:#e9e9ec; margin-top:2px }
+  .hero .health { font-size:11px; color:#7dd6a3; float:right }
+  .btn { background:#9b6dff; color:#000; padding:14px; border-radius:12px; margin-top:14px; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:15px }
+  .btn .sub { font-size:11px; font-weight:500; opacity:.75; display:block; margin-top:2px }
+  .mode-label { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(255,170,0,.18); border:1px solid rgba(255,170,0,.4); color:#ffaa00; margin-bottom:6px; letter-spacing:.5px }
+  .mode-label.off { background:rgba(78,205,196,.15); border-color:rgba(78,205,196,.45); color:#5fd9d0 }
+</style>
+
+<h3>A — Direct verb (terse)</h3>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <div class="mode-label">☁️ ONLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Surface Library</div>
+      </div>
+      <div class="mode-label off">📱 OFFLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Download</div>
+      </div>
+      <p style="opacity:.8; font-size:12px; margin:8px 4px">Shortest. Two verbs that describe what the button does. Risk: "Surface Library" may be unfamiliar terminology to a brand-new user.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <div class="mode-label">☁️ ONLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Surface Library for Streaming</div>
+      </div>
+      <div class="mode-label off">📱 OFFLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Download Tracks to Device</div>
+      </div>
+      <p style="opacity:.8; font-size:12px; margin:8px 4px">More descriptive. Spells out the outcome ("for streaming" vs "to device") so the user can't miss the difference. Risk: longer text takes more visual real estate.</p>
+      <p class="label">RECOMMENDED</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <div class="mode-label">☁️ ONLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Sync Now<span class="sub">Surface library for streaming</span></div>
+      </div>
+      <div class="mode-label off">📱 OFFLINE MODE</div>
+      <div class="hero">
+        <span class="health">✓ healthy</span>
+        <div class="meta-label">LAST SYNC</div>
+        <div class="meta-body">2 hours ago · 2,547 tracks</div>
+        <div class="btn">▶ Sync Now<span class="sub">Download tracks to device</span></div>
+      </div>
+      <p style="opacity:.8; font-size:12px; margin:8px 4px">Two-line button. Keeps the familiar "Sync Now" primary verb, the second line tells the user what's actually going to happen. Risk: heavier button visually + a two-line button breaks the current SyncHeroCard rhythm.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:18px">Click your preferred treatment.</p>

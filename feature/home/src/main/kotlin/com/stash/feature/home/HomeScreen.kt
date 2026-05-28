@@ -50,7 +50,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -224,7 +223,9 @@ fun HomeScreen(
                     modifier = Modifier.size(40.dp),
                 ) {
                     androidx.compose.material3.Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Chat,
+                        painter = androidx.compose.ui.res.painterResource(
+                            id = R.drawable.ic_discord,
+                        ),
                         contentDescription = "Join the Stash Discord",
                         tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
                         modifier = Modifier.size(20.dp),

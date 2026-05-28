@@ -239,6 +239,17 @@ class SyncViewModel @Inject constructor(
                 initialValue = false,
             )
 
+    /**
+     * Persist the user's choice between Online (streaming) and Offline
+     * (download) mode. Hoisted from the Sync-tab segmented toggle so the
+     * user can flip modes without leaving the Sync screen.
+     */
+    fun setStreamingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            streamingPreference.setEnabled(enabled)
+        }
+    }
+
     private val _uiState = MutableStateFlow(SyncUiState())
     val uiState: StateFlow<SyncUiState> = _uiState.asStateFlow()
 

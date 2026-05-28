@@ -9,13 +9,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,9 +51,12 @@ import com.stash.core.ui.theme.StashTheme
  * @param streamingMode         When true, the app is in Online (streaming) mode — the
  *                              button label switches to "Surface Library for Streaming"
  *                              so users understand this mode does NOT download tracks.
+ * @param onStreamingModeChange Invoked with true for Online, false for Offline when the
+ *                              user taps the Online/Offline segmented toggle.
  * @param onSyncNow             Invoked when the Sync Now button is tapped.
  * @param progressContent       Slot shown when [isSyncing] is true, in place of the button.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SyncHeroCard(
     lastSyncRelativeTime: String,
@@ -54,6 +65,7 @@ fun SyncHeroCard(
     healthColor: Color,
     isSyncing: Boolean,
     streamingMode: Boolean,
+    onStreamingModeChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
     progressContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
@@ -110,6 +122,35 @@ fun SyncHeroCard(
                 }
             }
             Spacer(Modifier.height(14.dp))
+
+            // Online / Offline mode toggle. Lives right above the action
+            // button so users can flip modes without leaving the Sync tab.
+            // The button label below changes accordingly.
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = streamingMode,
+                    onClick = { if (!streamingMode) onStreamingModeChange(true) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    enabled = !isSyncing,
+                ) {
+                    Icon(Icons.Filled.CloudQueue, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Online")
+                }
+                SegmentedButton(
+                    selected = !streamingMode,
+                    onClick = { if (streamingMode) onStreamingModeChange(false) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    enabled = !isSyncing,
+                ) {
+                    Icon(Icons.Filled.OfflinePin, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Offline")
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             if (isSyncing) {
                 progressContent()
             } else {
