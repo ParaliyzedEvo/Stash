@@ -64,7 +64,7 @@ On refresh of any TAG_GRAPH mix (custom or rebuilt built-in):
 2. **Fetch live candidates** — call Last.fm `tag.getTopTracks` per tag and pool the results.
 3. **Combine by tag overlap** — Last.fm queries one tag at a time, so to honor "Jazz **+** Chill" we **rank a track by how many of the chosen tags it appears under**. A track in both "jazz" and "chill" outranks one in only "jazz." This produces intersection behavior from single-tag queries.
 4. **Filter** — drop blocklisted, skip-banned, and recently-served tracks (rotation, so refresh yields new tracks).
-5. **Personalize** — rank the pool with the existing affinity scoring (`MixGenerator` weights: loved/top-artist similarity, tag cosine, completion, loved boost, skip penalty). The user's taste surfaces first *within* the chosen space.
+5. **Personalize** — rank the pool with the existing affinity scoring (`MixGenerator` weights: a **decayed listening-history affinity** with `affinityBias` lean, plus tag cosine, completion, loved boost, skip penalty). Note this is *listening-history* affinity, **not** artist-similarity — there is no artist-similarity scoring term to build against. The user's taste surfaces first *within* the chosen space.
 6. **Split fresh vs owned** — `discoveryRatio` decides how many slots are brand-new stream-only tracks vs the user's matching library tracks; materialize into the STASH_MIX playlist via the existing path.
 
 **Why this fixes Deep Cuts:** the candidate pool comes from **tags**, not "tracks similar to your library." The library-anchored seed fallback and the canonical "link existing download" bias no longer dominate, because we deliberately pull tag-top-tracks the user likely does not own.
@@ -88,6 +88,7 @@ The built-ins become tuned presets of the same engine:
 
 - **Daily Discover** — unchanged (`ARTIST_SIMILAR`); it already surfaces fresh tracks well.
 - **Deep Cuts** — re-pointed from `TRACK_SIMILAR` to the **tag-seeded engine**, seeded from the user's **top genres** (derived from their listening/library tags) with a **deep-cut lean**: sample from *deeper* in each tag's top-tracks ranking (skip the top ~N, draw from positions N…M) rather than the most popular hits. Preserves the "deeper cuts" identity and fixes the staleness by construction.
+  - **Note for planning:** this deep-cut lean is a *new tag-ranking-window* sampling on the Last.fm discovery pool — distinct from the recipe's existing `affinityBias` field (which biases toward/away from high-play *library* tracks). Planning must define how the two interact for TAG_GRAPH mixes (likely: the ranking-window governs discovery depth; `affinityBias` keeps its existing meaning only for the library slice). This same ranking-window is the mechanism §7's "rotation exhaustion → pull deeper" reuses — unify them in planning.
 - **First Listen** — unchanged (already `TAG_GRAPH`, discovery 1.0).
 
 Delivered via a `STASH_MIX_RECIPE_TUNING_VERSION` bump (existing mechanism, `StashApplication.maybeRetuneStashMixes`) that re-points Deep Cuts on upgrade. No data loss; existing downloaded tracks remain in the library and simply stop dominating the mix.
@@ -95,7 +96,7 @@ Delivered via a `STASH_MIX_RECIPE_TUNING_VERSION` bump (existing mechanism, `Sta
 ### 6. Refresh model
 
 - **Built-in mixes** — keep the existing **daily** auto-refresh cycle.
-- **Custom mixes** — refresh **on-demand**: a custom mix pulls fresh tracks when the user opens it or taps Refresh. This scales to unlimited custom mixes without starving the shared discovery drain (the v0.9.38 round-robin splits each batch across *active* recipes; on-demand seeding means a mix only consumes the queue when the user engages with it). Built-ins stay pre-warmed; custom mixes you don't open don't churn the queue.
+- **Custom mixes** — refresh **on-demand**. Opening a mix shows its current materialized tracks **instantly** (no wait). A queue-consuming refresh fires only (a) when the user taps **Refresh**, or (b) automatically *on open* **if the mix is stale** (e.g. not refreshed within ~24h). Merely opening an already-fresh mix does **not** re-seed the discovery queue. This scales to unlimited custom mixes without starving the shared discovery drain (the v0.9.38 round-robin splits each batch across *active* recipes; on-demand seeding means a mix only consumes the queue when the user engages with a stale one). Built-ins stay pre-warmed; custom mixes you don't open don't churn the queue. (Exact staleness threshold → planning.)
 
 ### 7. Edge cases & error handling
 
