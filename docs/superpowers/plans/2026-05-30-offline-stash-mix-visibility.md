@@ -52,6 +52,7 @@
 | `core/data/.../repository/MusicRepositoryImpl.kt` | comment | **Modify** (clarify) |
 | `feature/library/.../PlaylistDetailViewModel.kt` | detail playback | **Modify** (add `playableTracks()` delegating to helper) |
 | `feature/home/.../HomeViewModel.kt` | home playback | **Modify** (inject `ConnectivityMonitor`; use helper) |
+| `feature/home/build.gradle.kts` | module test deps | **Modify** (add Mockito/coroutines-test/Truth — module has only JUnit today) |
 | `core/media/.../streaming/QueuePlayabilityTest.kt` | — | **Create** |
 | `core/data/.../db/dao/TrackDaoStreamableTest.kt` | — | **Modify** (+3 from stash) |
 | `feature/library/.../MixOfflineTapGuardTest.kt` | — | **Modify** (+3 from stash) |
@@ -214,27 +215,42 @@ git commit -m "fix(mix): play Offline Stash Mix tracks from detail when connecte
 
 ## Task 4: Home-screen playback (close the gap)
 
-**Files:** Modify `feature/home/.../HomeViewModel.kt`; create
-`feature/home/src/test/kotlin/com/stash/feature/home/HomeViewModelPlaybackTest.kt`.
+**Files:** Modify `feature/home/build.gradle.kts` and `feature/home/.../HomeViewModel.kt`;
+create `feature/home/src/test/kotlin/com/stash/feature/home/HomeViewModelPlaybackTest.kt`.
 
-- [ ] **Step 1: Write the failing test.** No `HomeViewModel` test harness exists, so build a
-  minimal one: construct `HomeViewModel` with mocks for its ctor deps (use `mockk(relaxed = true)`
-  for everything not under test; stub `musicRepository.getTracksByPlaylist(id)` to return a flow
-  of `[downloaded, streamOnly]`, `streamingPreference.current()` to `false`,
-  `connectivityMonitor.isConnected()` to the case value, and capture `playerRepository.setQueue`).
-  Verify the rule wiring (Home computes `isMix` + `connected` and calls the helper):
+- [ ] **Step 0: Add the test stack to `:feature:home` (it currently has only JUnit).** The
+  module's `build.gradle.kts` declares just `testImplementation("junit:junit:4.13.2")` and its
+  existing tests are pure-function (no mocking) — so MockK/Mockito/coroutines-test/Truth are all
+  absent and the test below won't compile without them. Copy the four lines `feature/library`
+  uses (the project-wide ViewModel-test convention is **Mockito-Kotlin**, matching the
+  `MixOfflineTapGuardTest` you just worked in — do NOT introduce MockK here). Add to
+  `feature/home/build.gradle.kts` dependencies:
 ```kotlin
-// offline + connected + STASH_MIX playlist -> queue includes the stream-only track
-// offline + disconnected + STASH_MIX        -> queue is downloaded-only
-// offline + connected + CUSTOM (control)    -> queue is downloaded-only
+testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+testImplementation("com.google.truth:truth:1.4.4")
+testImplementation("org.mockito:mockito-core:5.14.2")
+testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 ```
-Write at least these three for `playPlaylist`, plus one for `addPlaylistToQueue`
-(offline+connected+mix appends both). Match the module's test convention (check whether
-`feature/home` tests use MockK or Mockito-Kotlin and follow it). Mark the test
-`@OptIn(ExperimentalCoroutinesApi::class)` and drive with `runTest`/`runCurrent`.
-**If constructing `HomeViewModel` proves impractical** (its ctor is large), STOP and report —
-do not weaken the test; we'll decide whether to extract the two methods' logic or accept the
-helper's own exhaustive tests + on-device as coverage.
+(Confirm these versions against `feature/library/build.gradle.kts` and use whatever it has, in case they've moved.) Verify it resolves: `./gradlew :feature:home:compileDebugUnitTestKotlin` should at least get past dependency resolution (it'll fail later on the missing test file — that's fine).
+
+- [ ] **Step 1: Write the failing test** (Mockito-Kotlin, mirroring `MixOfflineTapGuardTest`'s
+  harness style). Construct `HomeViewModel` with `mock()` for every ctor dependency, stubbing
+  only the four the play path touches: `musicRepository.getTracksByPlaylist(id)` →
+  `flowOf(listOf(downloaded, streamOnly))`, `streamingPreference.current()` (onBlocking) →
+  `false`, `connectivityMonitor.isConnected()` → the case value, and `playerRepository` with an
+  `argumentCaptor<List<Track>>()` on `setQueue`. The ctor has ~20 params — pass `mock()` for all
+  the irrelevant ones (mechanical; the `playerState` flow may need `doReturn MutableStateFlow(...)`
+  like `MixOfflineTapGuardTest` does). Verify the rule wiring (Home computes `isMix` + `connected`
+  and calls the helper). Write these `playPlaylist` cases plus one `addPlaylistToQueue`:
+```kotlin
+// playPlaylist, offline + connected + STASH_MIX -> setQueue receives [downloaded, streamOnly]
+// playPlaylist, offline + disconnected + STASH_MIX -> setQueue receives [downloaded] only
+// playPlaylist, offline + connected + CUSTOM (control) -> setQueue receives [downloaded] only
+// addPlaylistToQueue, offline + connected + STASH_MIX -> addToQueue called for both tracks
+```
+Mark `@OptIn(ExperimentalCoroutinesApi::class)`, drive with `runTest`/`runCurrent`. **If the
+~20-param ctor proves genuinely impractical to construct, STOP and report** — do not weaken the
+test; we'll decide between proceeding and relying on the Task 1 helper tests + on-device.
 - [ ] **Step 2: Run — expect FAIL** (Home still filters downloaded-only offline):
 `./gradlew :feature:home:testDebugUnitTest --tests "com.stash.feature.home.HomeViewModelPlaybackTest"`
 Expected: FAIL — offline+connected+mix queue expected `[1,42]` but got `[1]`.
@@ -257,7 +273,7 @@ Import `com.stash.core.media.streaming.queuePlayableTracks` and `PlaylistType`.
 `./gradlew :app:compileDebugKotlin` → BUILD SUCCESSFUL.
 - [ ] **Step 6: Commit.**
 ```bash
-git add feature/home/src/main/kotlin/com/stash/feature/home/HomeViewModel.kt feature/home/src/test/kotlin/com/stash/feature/home/HomeViewModelPlaybackTest.kt
+git add feature/home/build.gradle.kts feature/home/src/main/kotlin/com/stash/feature/home/HomeViewModel.kt feature/home/src/test/kotlin/com/stash/feature/home/HomeViewModelPlaybackTest.kt
 git commit -m "fix(mix): play Offline Stash Mixes from Home when connected (close the gap)"
 ```
 
@@ -272,8 +288,13 @@ git commit -m "fix(mix): play Offline Stash Mixes from Home when connected (clos
 Expected: BUILD SUCCESSFUL. If a pre-existing `:core:data` DAO test is red, confirm it fails on a clean `master` checkout before attributing it here (the spec flags this); do NOT fix out-of-scope failures — note them.
 - [ ] **Step 2: Compile the app.** `./gradlew :app:compileDebugKotlin` → BUILD SUCCESSFUL.
 - [ ] **Step 3: Drop the now-applied stash.** The stash content is now committed across Tasks 2-3.
-  `git stash drop stash@{0}` (verify with `git stash list` first that `stash@{0}` is the
-  offline-mixes one). If anything in the stash was NOT reproduced by the tasks, surface it before dropping.
+  Before dropping, diff the stash against the work to confirm all **four** artifacts were
+  reproduced (the `MusicRepositoryImpl` comment from Task 3 Step 4 is the easiest to forget):
+  (1) the `TrackDao.getByPlaylist` STASH_MIX hunk, (2) the `MusicRepositoryImpl.getTracksByPlaylist`
+  comment, (3) the `PlaylistDetailViewModel` play-path changes, (4) all 6 tests. Run
+  `git stash show -p stash@{0}` and eyeball each against the committed code. Only then:
+  `git stash list` (confirm `stash@{0}` is the offline-mixes one) → `git stash drop stash@{0}`.
+  If anything was NOT reproduced, add it before dropping.
 - [ ] **Step 4: On-device (manual, the real acceptance):** with the app installed, toggle
   **Offline mode** ON, open a Stash Mix → it shows its **full** track list (not "0 tracks"); with
   a live connection, tapping a track plays (streams); from the **Home** screen, playing the mix
