@@ -350,7 +350,11 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // (create, manual "Refresh this mix", periodic). Guarded + REPLACE:
         // a test-JVM WorkManager throws, and rapid double-fills coalesce.
         runCatching {
-            StashDiscoveryWorker.enqueueOneTime(applicationContext, downloadNetworkPreference.current())
+            StashDiscoveryWorker.enqueueOneTime(
+                applicationContext,
+                downloadNetworkPreference.current(),
+                expedited = true,
+            )
         }.onFailure { Log.w(TAG, "discovery drain enqueue failed; refresh still succeeded", it) }
 
         return Result.success()

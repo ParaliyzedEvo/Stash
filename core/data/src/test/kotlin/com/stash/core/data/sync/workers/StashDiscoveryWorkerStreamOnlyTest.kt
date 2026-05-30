@@ -10,6 +10,7 @@ import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.DownloadNetworkMode
 import io.mockk.coEvery
@@ -65,6 +66,7 @@ class StashDiscoveryWorkerStreamOnlyTest {
     private val downloadNetworkPreference: DownloadNetworkPreference = mockk {
         coEvery { current() } returns DownloadNetworkMode.WIFI_AND_CHARGING
     }
+    private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
 
     @Before fun setUp() {
         // `doWork()` chains DiscoveryDownloadWorker.enqueueOneTime → WorkManager
@@ -83,7 +85,7 @@ class StashDiscoveryWorkerStreamOnlyTest {
         return StashDiscoveryWorker(
             appContext, params,
             discoveryQueueDao, trackDao, recipeDao,
-            trackMatcher, blocklistGuard, downloadNetworkPreference,
+            trackMatcher, blocklistGuard, downloadNetworkPreference, syncNotificationManager,
         )
     }
 
