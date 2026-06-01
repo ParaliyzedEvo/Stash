@@ -100,12 +100,29 @@ open class CrashFileStore @Inject constructor(
      * Synchronous + side-effect-free. Exposed for tests.
      */
     internal fun formatReport(thread: Thread, throwable: Throwable): String {
-        val versionInfo = appVersionInfo()
         val sw = StringWriter()
         throwable.printStackTrace(PrintWriter(sw))
         return buildString {
             appendLine("Stash crash report")
             appendLine("==================")
+            append(deviceMetadataBlock())
+            appendLine("Thread:         ${thread.name}")
+            appendLine()
+            appendLine("Stack trace")
+            appendLine("-----------")
+            append(sw.toString())
+        }
+    }
+
+    /**
+     * Single source for the device/app metadata header (Time → Build).
+     * Reused by the crash report and by the diagnostics bundle so both
+     * render an IDENTICAL block. Excludes crash-specific lines (e.g.
+     * `Thread:`), which callers append themselves.
+     */
+    internal fun deviceMetadataBlock(): String {
+        val versionInfo = appVersionInfo()
+        return buildString {
             appendLine("Time:           ${TIMESTAMP_FORMAT.format(Date())} UTC")
             appendLine("App version:    ${versionInfo.versionName} (versionCode ${versionInfo.versionCode})")
             appendLine("Device:         ${Build.MANUFACTURER} ${Build.MODEL}")
@@ -115,11 +132,6 @@ open class CrashFileStore @Inject constructor(
             // build display already encodes the OEM build ID, which is enough
             // to spot Samsung-specific behaviour when triaging.
             appendLine("Build:          ${Build.DISPLAY}")
-            appendLine("Thread:         ${thread.name}")
-            appendLine()
-            appendLine("Stack trace")
-            appendLine("-----------")
-            append(sw.toString())
         }
     }
 
