@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,8 +65,13 @@ fun SelectionTopBar(
     val extendedColors = StashTheme.extendedColors
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = extendedColors.glassBackground,
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+        // Mostly-opaque dark base (cohesive with the nav bar this replaces) keeps the
+        // labels readable over busy track art / headers, while ~8% translucency
+        // preserves the glass feel. The faint white glass tint sits on top for depth.
+        color = MaterialTheme.colorScheme.surface
+            .copy(alpha = 0.92f)
+            .compositeOver(extendedColors.glassBackground),
+        border = BorderStroke(1.dp, extendedColors.glassBorderBright),
     ) {
         Row(
             modifier = Modifier
@@ -126,8 +132,13 @@ fun SelectionBottomBar(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = extendedColors.glassBackground,
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+        // Mostly-opaque dark base (cohesive with the nav bar this replaces) keeps the
+        // labels readable over busy track art / headers, while ~8% translucency
+        // preserves the glass feel. The faint white glass tint sits on top for depth.
+        color = MaterialTheme.colorScheme.surface
+            .copy(alpha = 0.92f)
+            .compositeOver(extendedColors.glassBackground),
+        border = BorderStroke(1.dp, extendedColors.glassBorderBright),
     ) {
         Row(
             modifier = Modifier
