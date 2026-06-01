@@ -47,7 +47,8 @@ debug remotely.
    existing `android.util.Log.*` call sites with **zero code churn**, and the file
    survives crashes/restarts so we get the failure lead-up. (Alternative considered:
    snapshot logcat only at export time — rejected because the relevant logs are already
-   gone after a crash/restart, which is exactly when these bugs bite.)
+   gone after a crash/restart, which is exactly when these bugs bite.) Captures every
+   existing `android.util.Log.*` call site (hundreds across the modules) with zero churn.
 2. **Transparency = preview screen before sharing.** Tap → a scrollable screen shows the
    exact redacted bundle text with Share / Copy / Cancel. Chosen for user trust (they see
    no passwords/cookies are included) and store-policy friendliness for sending data
@@ -101,7 +102,9 @@ debug remotely.
 - `suspend fun build(): DiagnosticsBundle` — assembles the sections below (each in its own
   `runCatching`; failure → `[section unavailable: <reason>]`), runs the whole thing through
   `DiagnosticsRedactor`, writes `cacheDir/diagnostics/stash-diagnostics-<ts>.txt`, returns
-  `DiagnosticsBundle(text: String, file: File, contentUri: Uri)`.
+  `DiagnosticsBundle(text: String, file: File, contentUri: Uri)`. Derive `contentUri` by
+  reusing `CrashFileStore.shareUriFor(file)` (or the same authority constant) so there is a
+  single source of truth for the FileProvider authority.
 - Sections, in order:
   1. **Header** — `deviceMetadataBlock()` (time, app version+code, device, manufacturer,
      Android release+SDK, build).
