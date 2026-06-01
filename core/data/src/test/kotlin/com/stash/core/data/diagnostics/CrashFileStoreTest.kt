@@ -73,6 +73,14 @@ class CrashFileStoreTest {
         assertTrue("expected RuntimeException in trace", report.contains("RuntimeException"))
     }
 
+    @Test fun `deviceMetadataBlock contains version and android lines but not crash-specific lines`() {
+        val block = store.deviceMetadataBlock()
+        assertTrue(block.contains("App version:"))
+        assertTrue(block.contains("Android:"))
+        assertFalse(block.contains("Thread:"))
+        assertFalse(block.contains("Stack trace"))
+    }
+
     @Test fun `caused-by chain is preserved in the dump`() {
         val root = IllegalStateException("root-cause-msg")
         val wrapped = RuntimeException("wrapper-msg", root)

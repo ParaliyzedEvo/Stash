@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    FileProvider path configuration. Only the crashes subdirectory of
-    cacheDir is exposed — the share Intent in Settings hands out a
-    content:// URI scoped to a single crash report. No other paths are
-    reachable through this provider.
+    FileProvider path configuration. Two cacheDir subdirectories are
+    exposed: crashes/ (individual crash reports) and diagnostics/ (the
+    shared diagnostics bundle + log tail). The share Intents in Settings
+    hand out content:// URIs scoped to files within these dirs. No other
+    paths are reachable through this provider.
 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="crashes" path="crashes/" />
+    <cache-path name="diagnostics" path="diagnostics/" />
 </paths>

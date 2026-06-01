@@ -156,6 +156,15 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var crashReporter: CrashReporter
 
     /**
+     * Captures a rolling tail of logcat to `cacheDir/diagnostics/` so the
+     * user can attach recent logs alongside a crash report when sharing
+     * from Settings → Diagnostics. Started immediately after the crash
+     * reporter so the tail begins as early as possible.
+     */
+    @Inject
+    lateinit var logcatCapture: com.stash.core.data.diagnostics.LogcatCapture
+
+    /**
      * v0.9.35: once-per-version auto-enqueue gate for [MetadataBackfillWorker].
      * Idempotent — re-installing the same binary doesn't re-fire the worker.
      */
@@ -192,6 +201,9 @@ class StashApplication : Application(), Configuration.Provider {
         // chains through to the platform default so the OS still records
         // the crash and the process exits cleanly.
         crashReporter.install()
+        // Begin capturing the logcat tail as early as possible so the most
+        // recent logs are available to attach when the user shares a report.
+        logcatCapture.start()
         // Install the app-wide Coil ImageLoader synchronously so it is ready
         // for the first Compose frame (and any AsyncImage composed before any
         // async startup work completes).

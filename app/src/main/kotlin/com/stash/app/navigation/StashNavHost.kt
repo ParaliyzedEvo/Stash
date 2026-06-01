@@ -134,6 +134,7 @@ fun StashNavHost(
                 onNavigateToSquidWtfCaptcha = {
                     navController.navigate(SquidWtfCaptchaRoute)
                 },
+                onNavigateToDiagnosticsPreview = { navController.navigate(DiagnosticsPreviewRoute) },
             )
         }
 
@@ -162,6 +163,12 @@ fun StashNavHost(
 
         composable<LibraryHealthRoute> {
             LibraryHealthScreen(
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<DiagnosticsPreviewRoute> {
+            com.stash.feature.settings.diagnostics.DiagnosticsPreviewScreen(
                 onNavigateBack = { navController.popBackStack() },
             )
         }

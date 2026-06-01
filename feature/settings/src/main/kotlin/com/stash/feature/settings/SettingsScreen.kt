@@ -98,6 +98,7 @@ fun SettingsScreen(
     onNavigateToEqualizer: () -> Unit = {},
     onNavigateToLibraryHealth: () -> Unit = {},
     onNavigateToSquidWtfCaptcha: () -> Unit = {},
+    onNavigateToDiagnosticsPreview: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -257,6 +258,7 @@ fun SettingsScreen(
         onNavigateToEqualizer = onNavigateToEqualizer,
         onNavigateToLibraryHealth = onNavigateToLibraryHealth,
         onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
+        onNavigateToDiagnosticsPreview = onNavigateToDiagnosticsPreview,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
         streamingEnabled = viewModel.streamingEnabled.collectAsStateWithLifecycle().value,
@@ -317,6 +319,7 @@ private fun SettingsContent(
     onNavigateToEqualizer: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
+    onNavigateToDiagnosticsPreview: () -> Unit,
     /**
      * Returns the latest crash file + its FileProvider URI, or null if
      * none exists. Called only when the user taps the share button —
@@ -1464,6 +1467,27 @@ private fun SettingsContent(
                     ),
                 ) {
                     Text("Share latest crash report")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Share diagnostics",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Bundle recent logs, sync history, and connection status (no passwords) so a dev can debug your issue.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToDiagnosticsPreview,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Text("Share diagnostics")
                 }
             }
         }
