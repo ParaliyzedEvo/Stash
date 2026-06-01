@@ -37,6 +37,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
@@ -46,6 +48,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
@@ -89,50 +92,211 @@ import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
+import com.stash.core.ui.selection.SelectionAction
+import com.stash.core.ui.selection.SelectionScaffoldOverlay
+import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
 
 /**
  * Library screen entry point. Injects the [LibraryViewModel] via Hilt
  * and delegates rendering to the stateless [LibraryContent] composable.
+ *
+ * Multi-select (Task 11) applies ONLY to the Tracks tab. The [selection]
+ * state is hoisted here so the contextual chrome ([SelectionScaffoldOverlay])
+ * and the batch Save/Delete surfaces can sit in this screen's root Box. The
+ * selection is cleared whenever the active tab changes so it can never strand
+ * across tabs (or hide the nav bar while a non-Tracks tab is showing).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
     onNavigateToAlbum: (String, String) -> Unit = { _, _ -> },
+    onSelectionModeChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val importState by viewModel.localImportState.collectAsStateWithLifecycle()
-    LibraryContent(
-        state = state,
-        importState = importState,
-        onShuffleLibrary = viewModel::shuffleLibrary,
-        onTabSelected = viewModel::selectTab,
-        onSearchQueryChanged = viewModel::setSearchQuery,
-        onSortOrderChanged = viewModel::setSortOrder,
-        onSourceFilterChanged = viewModel::setSourceFilter,
-        onTrackClick = { track -> viewModel.playTrack(track, state.tracks) },
-        onPlayNext = viewModel::playNext,
-        onAddToQueue = viewModel::addToQueue,
-        onDeleteTrack = viewModel::deleteTrack,
-        onPlayPlaylist = { playlist -> onNavigateToPlaylist(playlist.id) },
-        onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
-        onRemovePlaylist = viewModel::removePlaylist,
-        onDeletePlaylist = viewModel::deletePlaylist,
-        onSetPlaylistImage = viewModel::setPlaylistImage,
-        onRemovePlaylistImage = viewModel::removePlaylistImage,
-        onPlayArtist = onNavigateToArtist,
-        onAddArtistToQueue = viewModel::addArtistToQueue,
-        onDeleteArtist = viewModel::deleteArtist,
-        onPlayAlbum = onNavigateToAlbum,
-        onAddAlbumToQueue = viewModel::addAlbumToQueue,
-        onStartImport = viewModel::startLocalImport,
-        onCancelImport = viewModel::cancelLocalImport,
-        onDismissImport = viewModel::dismissLocalImport,
-        modifier = modifier,
-    )
+    val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Multi-select state — Tracks tab only. `isActive` signals out so the host
+    // can hide the mini-player (Task 7), and the selection is force-cleared on
+    // every tab change so it can't leak onto Playlists/Artists/Albums.
+    val selection = com.stash.core.ui.selection.rememberSelectionState()
+    androidx.compose.runtime.LaunchedEffect(selection.isActive) { onSelectionModeChanged(selection.isActive) }
+    androidx.compose.runtime.LaunchedEffect(state.activeTab) { selection.clear() }
+    androidx.activity.compose.BackHandler(enabled = selection.isActive) { selection.clear() }
+
+    // Batch-flow flags for the Save / Delete surfaces.
+    var showBatchSave by remember { mutableStateOf(false) }
+    var showBatchDelete by remember { mutableStateOf(false) }
+
+    // Snackbar for the batch roll-up summaries.
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        LibraryContent(
+            state = state,
+            importState = importState,
+            onShuffleLibrary = viewModel::shuffleLibrary,
+            onTabSelected = viewModel::selectTab,
+            onSearchQueryChanged = viewModel::setSearchQuery,
+            onSortOrderChanged = viewModel::setSortOrder,
+            onSourceFilterChanged = viewModel::setSourceFilter,
+            onTrackClick = { track -> viewModel.playTrack(track, state.tracks) },
+            onPlayNext = viewModel::playNext,
+            onAddToQueue = viewModel::addToQueue,
+            onDeleteTrack = viewModel::deleteTrack,
+            onPlayPlaylist = { playlist -> onNavigateToPlaylist(playlist.id) },
+            onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
+            onRemovePlaylist = viewModel::removePlaylist,
+            onDeletePlaylist = viewModel::deletePlaylist,
+            onSetPlaylistImage = viewModel::setPlaylistImage,
+            onRemovePlaylistImage = viewModel::removePlaylistImage,
+            onPlayArtist = onNavigateToArtist,
+            onAddArtistToQueue = viewModel::addArtistToQueue,
+            onDeleteArtist = viewModel::deleteArtist,
+            onPlayAlbum = onNavigateToAlbum,
+            onAddAlbumToQueue = viewModel::addAlbumToQueue,
+            onStartImport = viewModel::startLocalImport,
+            onCancelImport = viewModel::cancelLocalImport,
+            onDismissImport = viewModel::dismissLocalImport,
+            selection = selection,
+        )
+
+        // ── Selection chrome — only meaningful on the Tracks tab. Selection
+        // can only be entered from a TrackListItem (Tracks tab), and we clear
+        // on tab change, so guarding the overlay on activeTab is belt-and-braces.
+        val selectedTracks = state.tracks.filter { it.id in selection.selectedIds }
+        val selectedIds = selection.selectedIds.toList()
+        val allDownloaded = selectedTracks.isNotEmpty() && selectedTracks.all { it.isDownloaded }
+
+        val selectionActions = listOf(
+            SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
+                viewModel.addSelectedToQueue(selectedTracks); selection.clear()
+            },
+            SelectionAction("add_playlist", "Add to playlist", Icons.Default.PlaylistAddCheck) {
+                showBatchSave = true
+            },
+            if (allDownloaded) {
+                SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
+                    viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
+                }
+            } else {
+                SelectionAction("download", "Download", Icons.Default.Download) {
+                    viewModel.downloadSelected(selectedIds); selection.clear()
+                }
+            },
+            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+                showBatchDelete = true
+            },
+            SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
+                viewModel.playSelectedNext(selectedTracks); selection.clear()
+            },
+        )
+
+        if (state.activeTab == LibraryTab.TRACKS) {
+            SelectionScaffoldOverlay(
+                selection = selection,
+                allIds = state.tracks.map { it.id },
+                actions = selectionActions,
+            )
+        }
+
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+        ) { data -> androidx.compose.material3.Snackbar(snackbarData = data) }
+    }
+
+    // ── Batch Save to Playlist sheet (its own ModalBottomSheet) ────────────
+    if (showBatchSave) {
+        val batchIds = selection.selectedIds.toList()
+        com.stash.core.ui.components.SaveToPlaylistSheet(
+            playlists = userPlaylists.map {
+                com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
+            },
+            onSaveToPlaylist = { playlistId ->
+                viewModel.saveSelectedToPlaylist(batchIds, playlistId)
+                showBatchSave = false
+                selection.clear()
+            },
+            onCreatePlaylist = { name ->
+                viewModel.createPlaylistAndAddTracks(name, batchIds)
+                showBatchSave = false
+                selection.clear()
+            },
+            onDismiss = { showBatchSave = false },
+        )
+    }
+
+    // ── Batch delete confirmation dialog ──────────────────────────────────
+    // Mirrors the single-track Library delete dialog (same "also block" toggle
+    // and "Delete & Block" wording), pluralised across the current selection.
+    if (showBatchDelete) {
+        val batchTracks = state.tracks.filter { it.id in selection.selectedIds }
+        val n = batchTracks.size
+        var alsoBlacklist by remember(showBatchDelete) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showBatchDelete = false },
+            title = { Text("Delete $n song${if (n != 1) "s" else ""}?") },
+            text = {
+                Column {
+                    Text(
+                        "${n} song${if (n != 1) "s" else ""} will be removed from your " +
+                            "library and deleted from disk.",
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block these songs from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSelected(batchTracks, alsoBlacklist)
+                        showBatchDelete = false
+                        selection.clear()
+                    },
+                ) {
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 // ── Stateless content composable ─────────────────────────────────────────────
@@ -164,6 +328,7 @@ private fun LibraryContent(
     onStartImport: (List<Uri>) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
+    selection: SelectionState,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -305,6 +470,7 @@ private fun LibraryContent(
                     onAddToQueue = onAddToQueue,
                     onDeleteTrack = onDeleteTrack,
                     anyServiceConnected = anyServiceConnected,
+                    selection = selection,
                 )
                 LibraryTab.ARTISTS -> ArtistsGrid(
                     artists = state.artists,
@@ -973,6 +1139,7 @@ private fun TracksTab(
     onAddToQueue: (Track) -> Unit,
     onDeleteTrack: (Track, Boolean) -> Unit,
     anyServiceConnected: Boolean,
+    selection: SelectionState,
 ) {
     if (tracks.isEmpty()) {
         EmptyTabMessage(
@@ -982,18 +1149,30 @@ private fun TracksTab(
         return
     }
 
-    // Track selected for the context-menu bottom sheet.
+    // Track selected for the context-menu bottom sheet (opened via the ⋮ now;
+    // long-press enters multi-select instead).
     var selectedTrack by remember { mutableStateOf<Track?>(null) }
     // Track pending delete confirmation.
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
-    LazyColumn {
+    LazyColumn(
+        // While selecting, the mini-player hides (Task 7) but the bottom
+        // selection bar takes its place — pad enough that the last row clears
+        // it in either state.
+        contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+    ) {
         items(tracks, key = { it.id }) { track ->
             TrackListItem(
                 track = track,
-                onClick = { onTrackClick(track) },
+                onClick = {
+                    if (selection.isActive) selection.toggle(track.id)
+                    else onTrackClick(track)
+                },
                 isPlaying = track.id == currentlyPlayingTrackId,
-                onLongPress = { selectedTrack = track },
+                onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                selectionActive = selection.isActive,
+                selected = selection.isSelected(track.id),
+                onMoreClick = { selectedTrack = track },
             )
         }
     }

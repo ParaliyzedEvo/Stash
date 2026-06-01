@@ -1,16 +1,14 @@
 package com.stash.feature.library
 
 import androidx.lifecycle.SavedStateHandle
-import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
-import com.stash.core.model.MusicSource
+import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlayerState
-import com.stash.core.model.Playlist
-import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,80 +25,28 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
-import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 /**
- * Pins the contract introduced in Task 9 of the extract-coalescing redesign:
- * [LikedSongsDetailViewModel.tappedTrackId] emits the tapped track ID before
- * [PlayerRepository.setQueue] is awaited, and clears back to `null` after
- * it returns. The screen layer reads this StateFlow to render an instant
- * spinner without waiting for the YouTube-stream resolver to finish.
+ * Pins the batch-action contract added in Task 5 of the multi-select redesign:
+ * each batch method wraps the existing single-track path — Queue uses the batch
+ * [PlayerRepository.addToQueue] overload (single call), Play Next loops
+ * [PlayerRepository.addNext], and download/remove/save/delete loop the
+ * per-id [MusicRepository] calls.
  *
- * Uses mockito-kotlin to match the in-repo pattern from
- * `feature/search/.../SearchViewModelTest` — same harness, same idioms.
+ * Mirrors the harness in [LikedSongsDetailViewModelTest]: StandardTestDispatcher
+ * + Dispatchers.setMain/resetMain, runTest{}, mockito-kotlin, runCurrent().
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class LikedSongsDetailViewModelTest {
+class PlaylistDetailViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
-
-
-    @Test
-    fun `tappedTrackId emits on playTrack and clears after setQueue returns`() = runTest {
-        val gate = CompletableDeferred<Unit>()
-        // A single track in a single playlist so that the VM's tracksFlow ->
-        // uiState pipeline ends up with a non-empty `tracks` list. Without
-        // this, `playTrack`'s `playable.isEmpty()` early-return short-circuits
-        // before setQueue is invoked, and the suspend-on-gate part of the
-        // spinner contract never gets exercised.
-        val track = Track(id = 42L, title = "Hit", artist = "Artist")
-        val playlist = Playlist(
-            id = 1L, name = "Liked", source = MusicSource.SPOTIFY, type = PlaylistType.LIKED_SONGS,
-        )
-        val musicRepo = mock<MusicRepository> {
-            on { getPlaylistsByType(any()) } doReturn flowOf(listOf(playlist))
-            on { getTracksByPlaylist(playlist.id) } doReturn flowOf(listOf(track))
-            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
-        }
-        val playerRepo = mock<PlayerRepository> {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
-            onBlocking { setQueue(any(), any()) } doSuspendableAnswer { gate.await() }
-        }
-        val vm = buildVm(playerRepository = playerRepo, musicRepository = musicRepo)
-
-        val emissions = mutableListOf<Long?>()
-        val collectJob = backgroundScope.launch {
-            vm.tappedTrackId.collect { emissions.add(it) }
-        }
-        // Drive uiState's `stateIn` so `uiState.value.tracks` becomes
-        // populated before playTrack reads it. Without this, WhileSubscribed
-        // would never have kicked off the collector and the snapshot stays
-        // at the initial empty value.
-        val uiSub = backgroundScope.launch { vm.uiState.collect {} }
-        runCurrent()
-
-        vm.playTrack(trackId = 42L)
-        runCurrent()
-        assertThat(emissions).contains(42L)
-
-        gate.complete(Unit)
-        runCurrent()
-        assertThat(emissions.last()).isNull()
-
-        collectJob.cancel()
-        uiSub.cancel()
-    }
-
-    // ------------------------------------------------------------------
-    // Batch (multi-select) actions — mirror PlaylistDetailViewModelTest
-    // ------------------------------------------------------------------
 
     @Test
     fun playSelectedNext_loops_addNext_per_track() = runTest {
@@ -128,7 +74,7 @@ class LikedSongsDetailViewModelTest {
     }
 
     @Test
-    fun downloadSelected_queues_each_id_and_emits_rollup() = runTest {
+    fun downloadSelected_queues_each_id() = runTest {
         val musicRepo = musicRepoMock()
         val vm = buildVm(musicRepository = musicRepo)
         val ids = listOf(1L, 2L, 3L)
@@ -142,7 +88,7 @@ class LikedSongsDetailViewModelTest {
     }
 
     @Test
-    fun removeDownloadsForSelected_removes_each_id_and_emits_rollup() = runTest {
+    fun removeDownloadsForSelected_removes_each_id() = runTest {
         val musicRepo = musicRepoMock()
         val vm = buildVm(musicRepository = musicRepo)
         val ids = listOf(1L, 2L)
@@ -179,22 +125,58 @@ class LikedSongsDetailViewModelTest {
         vm.createPlaylistAndAddTracks("My Mix", ids)
         runCurrent()
 
+        // The playlist is created exactly once with the given name…
         verify(musicRepo).createPlaylist("My Mix")
+        // …and every selected track is added to the freshly-created playlist id.
         ids.forEach { id -> verify(musicRepo).addTrackToPlaylist(id, newPlaylistId) }
     }
 
     @Test
-    fun deleteSelected_unlikes_each_track_and_emits_rollup() = runTest {
+    fun deleteSelected_removes_each_from_playlist_and_emits_rollup() = runTest {
         val musicRepo = musicRepoMock()
         val vm = buildVm(musicRepository = musicRepo)
         val tracks = listOf(track(1L), track(2L), track(3L))
 
         val messages = collectMessages(vm)
-        vm.deleteSelected(tracks)
+        vm.deleteSelected(tracks, alsoBlacklist = false)
         runCurrent()
 
-        tracks.forEach { t -> verify(musicRepo).deleteTrack(t) }
-        assertEquals(listOf("Removed 3 songs from Liked Songs."), messages)
+        tracks.forEach { t ->
+            verify(musicRepo).removeTrackFromPlaylistAndMaybeDelete(
+                trackId = eq(t.id),
+                fromPlaylistId = any(),
+                alsoBlacklist = eq(false),
+            )
+        }
+        assertEquals(listOf("Removed 3 songs."), messages)
+    }
+
+    @Test
+    fun deleteSelected_with_blacklist_emits_blocked_rollup() = runTest {
+        val musicRepo = musicRepoMock()
+        // Every cascade reports a blacklisted destroy.
+        whenever(
+            musicRepo.removeTrackFromPlaylistAndMaybeDelete(any(), any(), eq(true)),
+        ).thenReturn(
+            MusicRepository.CascadeRemovalSummary(
+                deleted = 1, keptProtected = 0, keptElsewhere = 0, blacklisted = 1,
+            ),
+        )
+        val vm = buildVm(musicRepository = musicRepo)
+        val tracks = listOf(track(1L), track(2L))
+
+        val messages = collectMessages(vm)
+        vm.deleteSelected(tracks, alsoBlacklist = true)
+        runCurrent()
+
+        tracks.forEach { t ->
+            verify(musicRepo).removeTrackFromPlaylistAndMaybeDelete(
+                trackId = eq(t.id),
+                fromPlaylistId = any(),
+                alsoBlacklist = eq(true),
+            )
+        }
+        assertEquals(listOf("Removed 2 songs. Blocked from future syncs."), messages)
     }
 
     @Test
@@ -218,15 +200,45 @@ class LikedSongsDetailViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun downloadSelected_rethrows_cancellation_and_aborts_batch() = runTest {
+        val musicRepo = musicRepoMock()
+        // The FIRST item's repo call is cancelled. The batch methods re-throw
+        // CancellationException (instead of swallowing it as a per-item failure),
+        // so the loop must abort: later items are never attempted and no roll-up
+        // is emitted. A swallowed cancellation would continue the loop and emit
+        // "Queued N songs for download." — this test pins the re-throw branch.
+        whenever(musicRepo.queueDownload(eq(1L)))
+            .thenThrow(kotlinx.coroutines.CancellationException("cancelled"))
+        val vm = buildVm(musicRepository = musicRepo)
+        val ids = listOf(1L, 2L, 3L)
+
+        val messages = collectMessages(vm)
+        vm.downloadSelected(ids)
+        runCurrent()
+
+        // First item was attempted (and cancelled); the later items were NOT,
+        // proving cancellation propagated rather than being absorbed.
+        verify(musicRepo).queueDownload(1L)
+        verify(musicRepo, org.mockito.kotlin.never()).queueDownload(2L)
+        verify(musicRepo, org.mockito.kotlin.never()).queueDownload(3L)
+        // No roll-up message: the batch aborted before any emit.
+        assertEquals(emptyList<String>(), messages)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
     private fun track(id: Long) = Track(id = id, title = "Track $id", artist = "Artist")
 
-    /** Collects [LikedSongsDetailViewModel.userMessages] into a list for the test. */
+    /**
+     * Collects [PlaylistDetailViewModel.userMessages] into a list for the life
+     * of the test. Mirrors the flow-collection harness in
+     * [LikedSongsDetailViewModelTest] / [MixOfflineTapGuardTest].
+     */
     private fun kotlinx.coroutines.test.TestScope.collectMessages(
-        vm: LikedSongsDetailViewModel,
+        vm: PlaylistDetailViewModel,
     ): List<String> {
         val messages = mutableListOf<String>()
         backgroundScope.launch { vm.userMessages.collect { messages.add(it) } }
@@ -239,35 +251,46 @@ class LikedSongsDetailViewModelTest {
     }
 
     private fun musicRepoMock(): MusicRepository = mock {
-        on { getPlaylistsByType(any()) } doReturn flowOf(emptyList())
+        on { getTracksByPlaylist(any()) } doReturn flowOf(emptyList())
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true
-        onBlocking { deleteTrack(any()) } doReturn true
+        onBlocking {
+            removeTrackFromPlaylistAndMaybeDelete(any(), any(), any())
+        } doReturn MusicRepository.CascadeRemovalSummary(
+            deleted = 0, keptProtected = 0, keptElsewhere = 0, blacklisted = 0,
+        )
     }
 
     /**
-     * Builds a [LikedSongsDetailViewModel] for tests. All collaborators
-     * default to plain mocks with the minimum stubs needed for the VM's
-     * `init`/`stateIn` flows to start up without NPEs. Tests that care
-     * about a specific collaborator (here: [PlayerRepository]) pass in
-     * their own configured mock.
+     * Builds a [PlaylistDetailViewModel] for tests. Collaborators default to
+     * plain mocks with the minimum stubs needed for the VM's eager
+     * `userPlaylists` field and `init`/`stateIn` flows to start up without
+     * NPEs. Tests pass in their own configured repo mock when they verify
+     * against it.
      */
     private fun buildVm(
-        playerRepository: PlayerRepository = mock {
-            on { playerState } doReturn MutableStateFlow(PlayerState())
-        },
-        musicRepository: MusicRepository = mock {
-            on { getPlaylistsByType(any()) } doReturn flowOf(emptyList())
-            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
-        },
+        playerRepository: PlayerRepository = playerRepoMock(),
+        musicRepository: MusicRepository = musicRepoMock(),
+        playlistImageHelper: PlaylistImageHelper = mock(),
         streamingPreference: StreamingPreference = mock {
             onBlocking { current() } doReturn true
         },
-        savedStateHandle: SavedStateHandle = SavedStateHandle(),
-    ): LikedSongsDetailViewModel = LikedSongsDetailViewModel(
+        connectivityMonitor: ConnectivityMonitor = mock(),
+        recipeDao: StashMixRecipeDao = mock {
+            on { observeAll() } doReturn flowOf(emptyList())
+        },
+        discoveryQueueDao: DiscoveryQueueDao = mock {
+            on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
+        },
+        savedStateHandle: SavedStateHandle = SavedStateHandle(mapOf("playlistId" to 1L)),
+    ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,
+        playlistImageHelper = playlistImageHelper,
         streamingPreference = streamingPreference,
+        connectivityMonitor = connectivityMonitor,
+        recipeDao = recipeDao,
+        discoveryQueueDao = discoveryQueueDao,
     )
 }

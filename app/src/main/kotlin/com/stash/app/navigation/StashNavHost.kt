@@ -40,6 +40,11 @@ private const val SLIDE_DURATION_MS = 350
 fun StashNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
+    // Forwarded to detail screens that support multi-select so the host can hide
+    // the mini-player while a screen is in selection mode. General by design:
+    // the same lambda will be wired to Liked/Album/Artist/Library detail screens
+    // in later tasks — only the Playlist destination consumes it today.
+    onSelectionModeChanged: (Boolean) -> Unit = {},
 ) {
     NavHost(
         navController = navController,
@@ -79,6 +84,7 @@ fun StashNavHost(
                 onNavigateToAlbum = { albumName, artistName ->
                     navController.navigate(AlbumDetailRoute(albumName, artistName))
                 },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
         composable<SearchRoute> {
@@ -169,24 +175,28 @@ fun StashNavHost(
         composable<PlaylistDetailRoute> {
             PlaylistDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<AlbumDetailRoute> {
             AlbumDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<LikedSongsDetailRoute> {
             LikedSongsDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 

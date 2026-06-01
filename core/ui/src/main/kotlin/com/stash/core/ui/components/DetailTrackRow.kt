@@ -1,5 +1,6 @@
 package com.stash.core.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -15,9 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +54,11 @@ import com.stash.core.ui.util.formatDuration
  *                          Set to false to suppress the subtitle entirely (e.g. AlbumDetailScreen).
  * @param subtitleOverride  When non-null, replaces the artist name with this string.
  *                          A blank override is treated as absent — no subtitle is rendered.
+ * @param selectionActive   When true, a leading checkbox is shown; the row's [onClick]
+ *                          toggles selection (handled by the caller).
+ * @param selected          Whether this row is currently selected (drives the checkbox).
+ * @param onMoreClick       Optional callback for a trailing overflow (three-dot) button,
+ *                          shown only when selection is inactive.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,6 +71,9 @@ fun DetailTrackRow(
     showArtist: Boolean = true,
     subtitleOverride: String? = null,
     isResolving: Boolean = false,
+    selectionActive: Boolean = false,
+    selected: Boolean = false,
+    onMoreClick: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -91,6 +103,17 @@ fun DetailTrackRow(
             color = if (isPlaying) primaryColor else extendedColors.textTertiary,
             modifier = Modifier.width(28.dp),
         )
+
+        // -- Leading selection checkbox (only while selecting) --
+        AnimatedVisibility(visible = selectionActive) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = null,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+        }
 
         // -- Album art thumbnail (48dp, 8dp rounded corners) --
         val artUrl = track.albumArtPath ?: track.albumArtUrl
@@ -170,6 +193,18 @@ fun DetailTrackRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = extendedColors.textTertiary,
             )
+        }
+
+        // -- Overflow menu (only when not selecting) --
+        if (!selectionActive && onMoreClick != null) {
+            IconButton(onClick = onMoreClick, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = extendedColors.textTertiary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

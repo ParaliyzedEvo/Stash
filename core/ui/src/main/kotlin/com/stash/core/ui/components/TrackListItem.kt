@@ -1,5 +1,6 @@
 package com.stash.core.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +53,9 @@ import com.stash.core.ui.theme.StashTheme
  *                    and the row background gets a subtle primary highlight.
  * @param onMoreClick Optional callback for the overflow (three-dot) button.
  * @param onLongPress Optional callback invoked when the row is long-pressed.
+ * @param selectionActive When true, a leading checkbox is shown; the row's [onClick]
+ *                    toggles selection (handled by the caller).
+ * @param selected    Whether this row is currently selected (drives the checkbox).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,6 +67,8 @@ fun TrackListItem(
     onMoreClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
     isResolving: Boolean = false,
+    selectionActive: Boolean = false,
+    selected: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -84,6 +91,17 @@ fun TrackListItem(
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // -- Leading selection checkbox (only while selecting) --
+        AnimatedVisibility(visible = selectionActive) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = null,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+        }
+
         // -- Album art (48 dp square, rounded corners) --
         val artUrl = track.albumArtPath ?: track.albumArtUrl
         Box(
@@ -171,8 +189,8 @@ fun TrackListItem(
         // -- Source indicator dot + label --
         SourceIndicator(source = track.source, showLabel = true)
 
-        // -- Overflow menu --
-        if (onMoreClick != null) {
+        // -- Overflow menu (only when not selecting) --
+        if (!selectionActive && onMoreClick != null) {
             IconButton(onClick = onMoreClick, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
