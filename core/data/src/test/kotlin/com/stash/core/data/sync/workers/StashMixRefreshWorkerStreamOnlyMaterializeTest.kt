@@ -147,6 +147,78 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         }
     }
 
+    // ── v0.9.42 idempotency backstop ──────────────────────────────────────
+    // materializeMix must skip the destructive clear + reinsert when the
+    // playlist's CURRENT ordered membership already equals what it would
+    // write — this prevents the visible "tracks vanish then repopulate"
+    // flash on no-op refreshes (the backstop to the worker-loop gate).
+
+    @Test fun `materializeMix skips clear and reinsert when membership is unchanged`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+
+        // Library section empty → final membership is exactly the discovery
+        // survivors, in order.
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L,
+            name = "Daily Discover",
+            source = MusicSource.BOTH,
+            sourceId = "stash_mix_1",
+            type = PlaylistType.STASH_MIX,
+            trackCount = 2,
+            syncEnabled = true,
+            isActive = true,
+        )
+        coEvery {
+            playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L)
+        } returns listOf(555L, 777L)
+        // Current ordered membership EQUALS what we'd write (same ids, same order).
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns listOf(555L, 777L)
+
+        newWorker(recipeId = 1L).doWork()
+
+        // No destructive churn: neither the clear nor any cross-ref insert runs.
+        coVerify(exactly = 0) { playlistDao.clearPlaylistTracks(100L) }
+        coVerify(exactly = 0) { playlistDao.insertCrossRef(any()) }
+    }
+
+    @Test fun `materializeMix re-materializes when membership order differs`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L,
+            name = "Daily Discover",
+            source = MusicSource.BOTH,
+            sourceId = "stash_mix_1",
+            type = PlaylistType.STASH_MIX,
+            trackCount = 2,
+            syncEnabled = true,
+            isActive = true,
+        )
+        coEvery {
+            playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L)
+        } returns listOf(555L, 777L)
+        // Same ids but DIFFERENT order → not equal → must re-materialize.
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns listOf(777L, 555L)
+
+        val insertedCrossRefs = mutableListOf<PlaylistTrackCrossRef>()
+        coEvery { playlistDao.insertCrossRef(capture(insertedCrossRefs)) } returns Unit
+
+        newWorker(recipeId = 1L).doWork()
+
+        coVerify(exactly = 1) { playlistDao.clearPlaylistTracks(100L) }
+        assertEquals(
+            "differing order must trigger a full re-materialize in the new order",
+            listOf(555L, 777L),
+            insertedCrossRefs.filter { it.playlistId == 100L }.map { it.trackId },
+        )
+    }
+
     private fun recipe(id: Long, name: String, playlistId: Long?) = StashMixRecipeEntity(
         id = id,
         name = name,

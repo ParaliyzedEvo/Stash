@@ -411,38 +411,20 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // deleted by the user). If gone, fall through to re-create.
         val existing = recipe.playlistId?.let { playlistDao.getById(it) }
 
-        val playlistId = if (existing != null) {
-            playlistDao.clearPlaylistTracks(existing.id)
-            playlistDao.updateName(existing.id, recipe.name)
-            existing.id
-        } else {
-            val firstArt = tracks.firstNotNullOfOrNull { it.albumArtUrl }
-            val newPlaylist = PlaylistEntity(
-                name = recipe.name,
-                source = MusicSource.BOTH,
-                sourceId = "stash_mix_${recipe.id}",
-                type = PlaylistType.STASH_MIX,
-                trackCount = tracks.size,
-                artUrl = firstArt,
-                syncEnabled = true,
-                isActive = true,
-            )
-            playlistDao.insert(newPlaylist)
-        }
-
-        // Rebuild track membership in generator order.
-        val nowInstant = Instant.ofEpochMilli(now)
-        tracks.forEachIndexed { position, track ->
-            playlistDao.insertCrossRef(
-                PlaylistTrackCrossRef(
-                    playlistId = playlistId,
-                    trackId = track.id,
-                    position = position,
-                    addedAt = nowInstant,
-                )
-            )
-        }
-
+        // ── v0.9.42 idempotency backstop ──────────────────────────────────
+        // Compute the discovery survivors (and therefore the FULL ordered
+        // trackId list that WOULD be written) BEFORE touching the playlist.
+        // This lets us short-circuit a no-op refresh: if the set we're about
+        // to write equals what's already there (same ids, same order), we
+        // skip the destructive clear + reinsert that causes the visible
+        // "tracks vanish then repopulate" flash. This is a backstop for any
+        // refresh that re-runs with an identical result (the primary fix is
+        // gating the worker loop in DiscoveryDownloadWorker).
+        //
+        // The discovery computation below depends only on `librarySet` and
+        // the recipe (the candidate query is keyed by recipe.id, not by the
+        // playlist's current cross-refs), so it is safe to run before the
+        // membership is rebuilt.
         // Re-link any Discovery-sourced tracks that this recipe has
         // already accepted on previous refreshes. Without this, every
         // weekly refresh wiped the Discovery slots when the playlist was
@@ -533,6 +515,62 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 "shared=${sharedIds.size} cap=$discoveryCap linked=${discoveryTrackIds.size} " +
                 "excludeIds.size=${excludeIds.size}",
         )
+        // The full ordered membership we are about to write: library slice
+        // (generator order) followed by discovery survivors.
+        val finalOrderedIds = tracks.map { it.id } + discoveryTrackIds
+        val totalCount = finalOrderedIds.size
+
+        // v0.9.42: idempotency short-circuit. If the playlist already exists
+        // and its current ordered membership is identical to what we'd write,
+        // skip the clear + reinsert entirely — no visible flash, no orphan
+        // churn. We still leave the existing art/count alone in this branch
+        // because membership (hence cover + count) is unchanged.
+        if (existing != null) {
+            val current = playlistDao.getOrderedTrackIdsForPlaylist(existing.id)
+            if (current == finalOrderedIds) {
+                Log.i(
+                    TAG,
+                    "'${recipe.name}' (id=${existing.id}) unchanged — skipping re-materialize",
+                )
+                // Name can still drift (e.g. a recipe rename) even when the
+                // track set matches; keep that cheap, non-destructive update.
+                playlistDao.updateName(existing.id, recipe.name)
+                return MaterializeResult(existing.id, discoveryTrackIds)
+            }
+        }
+
+        // Find-or-create the backing playlist row.
+        val playlistId = if (existing != null) {
+            playlistDao.clearPlaylistTracks(existing.id)
+            playlistDao.updateName(existing.id, recipe.name)
+            existing.id
+        } else {
+            val firstArt = tracks.firstNotNullOfOrNull { it.albumArtUrl }
+            val newPlaylist = PlaylistEntity(
+                name = recipe.name,
+                source = MusicSource.BOTH,
+                sourceId = "stash_mix_${recipe.id}",
+                type = PlaylistType.STASH_MIX,
+                trackCount = tracks.size,
+                artUrl = firstArt,
+                syncEnabled = true,
+                isActive = true,
+            )
+            playlistDao.insert(newPlaylist)
+        }
+
+        // Rebuild track membership in generator order (library slice first).
+        val nowInstant = Instant.ofEpochMilli(now)
+        tracks.forEachIndexed { position, track ->
+            playlistDao.insertCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = track.id,
+                    position = position,
+                    addedAt = nowInstant,
+                )
+            )
+        }
         discoveryTrackIds.forEachIndexed { offset, trackId ->
             playlistDao.insertCrossRef(
                 PlaylistTrackCrossRef(
@@ -543,7 +581,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 )
             )
         }
-        val totalCount = tracks.size + discoveryTrackIds.size
 
         // v0.9.40: build an album mosaic from the FULL linked track set
         // (library slice + stream-only discovery survivors), not just the

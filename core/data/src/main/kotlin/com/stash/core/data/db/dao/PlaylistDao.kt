@@ -516,6 +516,22 @@ interface PlaylistDao {
     suspend fun getTrackIdsForPlaylists(playlistIds: List<Long>): List<Long>
 
     /**
+     * The CURRENT ordered (by position) track ids of a single playlist,
+     * excluding soft-removed rows. Used by
+     * [com.stash.core.data.sync.workers.StashMixRefreshWorker.materializeMix]
+     * to detect a no-op refresh: if the ordered list it is about to write
+     * equals this, the destructive clear + reinsert (and the visible track
+     * flash it causes) is skipped. Order matters — the comparison is
+     * element-wise.
+     */
+    @Query(
+        "SELECT track_id FROM playlist_tracks " +
+            "WHERE playlist_id = :playlistId AND removed_at IS NULL " +
+            "ORDER BY position ASC",
+    )
+    suspend fun getOrderedTrackIdsForPlaylist(playlistId: Long): List<Long>
+
+    /**
      * Like [DiscoveryQueueDao.getDoneTrackIdsForRecipe] but also returns
      * ids whose track row is stream-only (`is_streamable = 1`, no
      * `is_downloaded`). The Stash Mix streaming-first rollout (v0.9.37)
