@@ -458,9 +458,12 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Eager-resolve `currentQueueTracks[currentIndex + 1]` and refresh the
-     * controller's MediaItem at that timeline position so the URI is fresh
-     * when ExoPlayer's pre-buffer kicks in.
+     * Eager-resolve the next-up track (the successor of the currently-playing
+     * track in `currentQueueTracks`, matched by identity — see the body) and
+     * either refresh its existing timeline slot's URI, or — when it was dropped
+     * from the timeline by the `allowYouTube=false` background fill (the
+     * YouTube-fallback case) — insert it right after the current item so
+     * ExoPlayer can auto-advance and the Next button works.
      *
      * Skips when:
      *  - There is no next track (current is last).
@@ -486,7 +489,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // keeps "next" correct no matter where in the playlist the user started
         // (and fixes the same latent aliasing in the URI-swap path below).
         val currentId = controller.currentMediaItem
-            ?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID) ?: return
+            ?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        if (currentId <= 0L) return // missing/invalid id — can't locate the next-up
         val currentPos = tracks.indexOfFirst { it.id == currentId }
         val nextIndex = currentPos + 1
         if (currentPos < 0 || nextIndex >= tracks.size) return
