@@ -14,21 +14,21 @@ import okhttp3.Interceptor
 import okhttp3.Response
 
 /**
- * Attaches antra's auth cookies (`session` + `cf_clearance`) and the
- * browser-style fingerprint headers to every `antra.hoshi.cfd` request,
- * when the user has connected an antra account. Other hosts pass through
- * untouched, so installing this on the antra OkHttp client is a no-op for
- * anything that isn't antra.
+ * Attaches antra's auth cookie (`antra_session`, plus `cf_clearance` when
+ * one exists) and the browser-style fingerprint headers to every
+ * `antra.hoshi.cfd` request, when the user has connected an antra account.
+ * Other hosts pass through untouched, so installing this on the antra
+ * OkHttp client is a no-op for anything that isn't antra.
  *
- * **Why both cookies and a browser fingerprint?** antra's API is gated by
- * Cloudflare. `session` proves the login; `cf_clearance` proves a passed
- * Cloudflare JS challenge. Cloudflare binds `cf_clearance` to the
- * requesting browser's fingerprint (User-Agent + sec-ch-ua* client hints),
- * so the OkHttp replay must send the *same* headers the in-app WebView used
- * when the clearance was minted ([USER_AGENT] is shared with
- * `AntraConnectScreen`). Mismatched headers → Cloudflare `403`. Whether
- * cookie-replay holds at all is the empirical question Task 10 answers
- * (Approach A); if it 403s, Approach B (WebView request-proxy) takes over.
+ * **Auth model (verified on-device 2026-06-09, Task 10):** the HttpOnly
+ * `antra_session` cookie alone authenticates. `cf_clearance` only exists
+ * while Cloudflare is actively challenging — it's replayed when present but
+ * never required. The browser fingerprint (User-Agent + sec-ch-ua* client
+ * hints, shared with `AntraConnectScreen` via [AntraFingerprint]) keeps the
+ * replay consistent with the WebView that harvested the session. This
+ * cookie-replay (Approach A) passed the full lifecycle including the
+ * `/download` binary fetch with zero Cloudflare 403s, so no WebView
+ * request-proxy (Approach B) is needed.
  *
  * Cookie values are held in-memory (volatile) and refreshed reactively from
  * [LosslessSourcePreferences]'s flows — reading DataStore inside an OkHttp
@@ -67,7 +67,8 @@ class AntraCookieInterceptor @Inject constructor(
         prefs.antraCfClearance.onEach { cfClearance = it }.launchIn(scope)
     }
 
-    private fun isConnected() = !session.isNullOrBlank() && !cfClearance.isNullOrBlank()
+    // antra_session alone authenticates; cf_clearance is optional (see kdoc).
+    private fun isConnected() = !session.isNullOrBlank()
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()

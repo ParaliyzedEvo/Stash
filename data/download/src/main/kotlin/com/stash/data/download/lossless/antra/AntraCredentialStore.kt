@@ -8,20 +8,19 @@ import javax.inject.Singleton
  * Holds the credentials Stash uses to authenticate against
  * antra.hoshi.cfd's lossless download endpoint.
  *
- * antra gates downloads behind two cookies the user obtains in a browser:
+ * antra authenticates on cookies harvested by the in-app connect WebView
+ * (verified on-device 2026-06-09):
  *
- *  - `session`      — issued after logging in to the antra site.
- *  - `cf_clearance` — issued after passing Cloudflare's challenge.
+ *  - `antra_session` — HttpOnly login cookie; alone sufficient, required.
+ *  - `cf_clearance`  — only exists while Cloudflare is actively
+ *                      challenging; replayed when present, never required.
  *
- * Both must be present for a request to authenticate, so [isConnected]
- * is true only when each cookie is non-blank. The persistence itself
- * lives on [LosslessSourcePreferences] (the shared DataStore-backed prefs
- * the squid captcha cookie also uses), so credentials survive process
- * restarts; this class is the thin domain wrapper that derives the
- * "connected?" state and the ready-to-send Cookie header from them.
- *
- * Nothing calls this yet — the antra source/auth flow lands in later
- * tasks. This is the credential store only.
+ * [isConnected] is therefore true when the session cookie is non-blank.
+ * The persistence itself lives on [LosslessSourcePreferences] (the shared
+ * DataStore-backed prefs the squid captcha cookie also uses), so
+ * credentials survive process restarts; this class is the thin domain
+ * wrapper that derives the "connected?" state and the ready-to-send Cookie
+ * header from them.
  */
 @Singleton
 class AntraCredentialStore @Inject constructor(
