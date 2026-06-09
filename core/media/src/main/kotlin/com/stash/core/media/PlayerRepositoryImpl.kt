@@ -1426,6 +1426,17 @@ class PlayerRepositoryImpl @Inject constructor(
         controllerBuffering ||
             (tapResolveEpoch != -1L && tapResolveEpoch == setQueueEpoch)
 
+    /**
+     * `true` when the active track is being streamed rather than read from
+     * local storage — drives the Now Playing wifi/streaming indicator. An
+     * http(s) [scheme] is the obvious case (kennyy/squid/youtube), but a
+     * non-null [streamOrigin] also counts: antra plays its FLAC from a
+     * `file://` cache file yet is a stream. Downloaded rows play `file://`
+     * with NO stream origin, so they correctly read as not-streaming.
+     */
+    internal fun computeIsStreaming(scheme: String?, streamOrigin: String?): Boolean =
+        scheme == "http" || scheme == "https" || streamOrigin != null
+
     private fun updateState(controller: MediaController) {
         val currentItem = controller.currentMediaItem
         val track = currentItem?.toTrack()
@@ -1435,14 +1446,17 @@ class PlayerRepositoryImpl @Inject constructor(
             }
         }
 
-        // Streaming detection: derive purely from the active MediaItem's
-        // URI scheme so the routing decision (Kennyy http(s) URL vs local
-        // file://) is reflected automatically — no parallel flag to keep
-        // in sync. localConfiguration is the resolved playback URI; falls
-        // back to RequestMetadata for items built without a direct uri.
+        // Streaming detection: a track is "streaming" when it came from a
+        // stream resolver, not purely when its URI is http(s). Kennyy/squid/
+        // youtube serve http(s) URLs; antra fetches its lossless FLAC to a
+        // LOCAL cache file and plays file://, but is every bit a stream — the
+        // EXTRA_STREAM_ORIGIN it carries (set only on stream-resolved items,
+        // never on downloaded rows) is the reliable signal. Without it antra
+        // rendered like a downloaded track (no wifi/streaming indicator).
         val scheme = currentItem?.localConfiguration?.uri?.scheme
             ?: currentItem?.requestMetadata?.mediaUri?.scheme
-        val isStreaming = scheme == "http" || scheme == "https"
+        val streamOrigin = currentItem?.mediaMetadata?.extras?.getString(EXTRA_STREAM_ORIGIN)
+        val isStreaming = computeIsStreaming(scheme, streamOrigin)
 
         val newState = PlayerState(
             currentTrack = track,

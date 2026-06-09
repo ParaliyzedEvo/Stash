@@ -238,6 +238,31 @@ class PlayerRepositoryStreamingTest {
         assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
     }
 
+    // ── isStreaming: drives the Now Playing wifi/streaming indicator ──
+    // A track counts as "streaming" when it came from a stream resolver,
+    // NOT purely when its URI is http(s). antra plays its lossless FLAC
+    // from a LOCAL cache file (file://) but is every bit a stream — without
+    // this it rendered like a downloaded track (no wifi glyph).
+
+    @Test
+    fun computeIsStreaming_true_for_http_url() {
+        assertThat(repo.computeIsStreaming(scheme = "https", streamOrigin = null)).isTrue()
+        assertThat(repo.computeIsStreaming(scheme = "http", streamOrigin = null)).isTrue()
+    }
+
+    @Test
+    fun computeIsStreaming_true_for_antra_file_uri_with_stream_origin() {
+        // antra: file:// URI but resolved by a stream resolver.
+        assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = "antra")).isTrue()
+    }
+
+    @Test
+    fun computeIsStreaming_false_for_downloaded_local_file() {
+        // Downloaded track: file:// and NO stream origin → not streaming.
+        assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = null)).isFalse()
+        assertThat(repo.computeIsStreaming(scheme = null, streamOrigin = null)).isFalse()
+    }
+
     @Test
     fun buildMediaItem_forwards_allowAntra_false_to_resolver() = runTest {
         // The background-fill / prefetch paths pass allowAntra = false so a
