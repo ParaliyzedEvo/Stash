@@ -113,3 +113,14 @@ This is the only viable path to a fast deep queue: yt-dlp **cannot** be parallel
 
 - **YouTube changes the iOS client/PO-token policy** (the recurring cat-and-mouse). Mitigation: yt-dlp backstop keeps playback working (slower); iOS version is a one-line bump when it drifts.
 - **Host/plumbing regression to search/library** — mitigated by keeping WEB_REMIX + music.youtube.com untouched for non-player endpoints and unit-testing the mapping.
+
+## Verification Results (on-device, 2026-06-08; recorded retroactively 2026-06-09)
+
+Three device-test rounds on the Pixel 6 Pro; the original design was partially **refuted** on-device and pivoted. Final state committed as `334f2ff6` and merged to master (via the antra branch lineage) on 2026-06-09.
+
+1. **Round 1 — extraction fixed, playback regressed:** the resurrected IOS fast lane worked exactly as specced (`won with variant=IOS`, extract 154–314 ms vs ~11 s, Opus-preferred 129–156 k, queue filled 39 deep in order) — but every IOS googlevideo URL is **PO-token-gated to ~1.1 MB** (deterministically reproduced off-device: every offset past ~1.1 MB 403s via Range, `&range=`, sequential, `&rn/&rbuf`, `&ratebypass`). The old code only "worked" because its broken fast lane always lost to yt-dlp, whose URLs stream fully.
+2. **Pivot (user-confirmed):** keep the queue-depth + Opus wins; playback goes **yt-dlp-direct** when `allowYtDlp=true` (semaphore-guarded at the hard JNI cap-1, coalesced); IOS retained only for fill placeholders and ~30 s search previews where 1 MB suffices.
+3. **Round 2 — found `StreamingMediaSourceFactory`/`RefreshingDataSource` were dead code** (never wired into ExoPlayer), so 403'd placeholders skip-stormed to Halt. Fixed with new `StashMediaSourceFactory` routing only youtube-origin items through the Cache→Refreshing→Http chain, wired via `setMediaSourceFactory` in `StashPlaybackService`.
+4. **Round 3 — PASSED:** placeholders recover transparently (`yt-dlp: SUCCESS`), prefetch pre-swaps next-up, auto-advance smooth. Manual tap/skip costs ~11 s (yt-dlp, cap-1 — the confirmed hard ceiling for free YouTube full-track streaming); a buffering spinner (optimistic `isBuffering` in `PlayerState` → Now Playing + MiniPlayer) covers the wait. User verdict on-device: "functioning a lot better now."
+
+Deferred (recorded in memory): instant-start hybrid (IOS 1 MB preview + bounded-range chunk source + yt-dlp tail swap) if YT tap latency ever needs to be fast.
