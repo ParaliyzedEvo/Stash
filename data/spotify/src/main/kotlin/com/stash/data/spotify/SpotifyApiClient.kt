@@ -194,17 +194,29 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
-     * Fetches the current user's playlists via the GraphQL `libraryV3` operation.
+     * Fetches one page of the user's library via the GraphQL `libraryV3`
+     * operation — playlists AND folder URIs (see [SpotifyLibraryPage]).
      *
      * Uses sp_dc-derived access token + client token (Prong 2).
      * The previous Web API endpoint (/v1/users/{id}/playlists) was removed
      * by Spotify in February 2026.
+     *
+     * @param folderUri When non-null, lists the CONTENTS of that folder
+     *   instead of the library root — the same persisted query the web
+     *   client uses when a sidebar folder is opened. Required because
+     *   libraryV3 is hierarchical: folder-filed playlists never appear at
+     *   the root (issues #48/#26/#80/#136).
      */
     suspend fun getUserPlaylists(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
-    ): List<SpotifyPlaylistItem> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getUserPlaylists: limit=$limit, offset=$offset (via GraphQL libraryV3)")
+        folderUri: String? = null,
+    ): SpotifyLibraryPage = withContext(Dispatchers.IO) {
+        Log.d(
+            TAG,
+            "getUserPlaylists: limit=$limit, offset=$offset, " +
+                "folderUri=${folderUri ?: "<root>"} (via GraphQL libraryV3)",
+        )
 
         try {
             val variables = buildJsonObject {
@@ -214,6 +226,7 @@ class SpotifyApiClient @Inject constructor(
                 putJsonArray("features") { add("LIKED_SONGS"); add("YOUR_EPISODES") }
                 put("limit", limit)
                 put("offset", offset)
+                if (folderUri != null) put("folderUri", folderUri)
             }.toString()
 
             val responseJson = executeGraphQL(
@@ -223,16 +236,20 @@ class SpotifyApiClient @Inject constructor(
             )
 
             if (responseJson != null) {
-                val playlists = parseLibraryResponse(responseJson)
-                Log.d(TAG, "getUserPlaylists: parsed ${playlists.size} playlists from libraryV3")
-                playlists
+                val page = parseLibraryPage(responseJson)
+                Log.d(
+                    TAG,
+                    "getUserPlaylists: parsed ${page.playlists.size} playlists, " +
+                        "${page.folderUris.size} folders from libraryV3",
+                )
+                page
             } else {
                 Log.w(TAG, "getUserPlaylists: GraphQL returned null")
-                emptyList()
+                SpotifyLibraryPage.EMPTY
             }
         } catch (e: Exception) {
             Log.e(TAG, "getUserPlaylists: GraphQL libraryV3 failed", e)
-            emptyList()
+            SpotifyLibraryPage.EMPTY
         }
     }
 
@@ -1009,92 +1026,6 @@ class SpotifyApiClient @Inject constructor(
     }
 
     // ── Response parsing (GraphQL) ──────────────────────────────────────
-
-    /**
-     * Parses the `libraryV3` GraphQL response into [SpotifyPlaylistItem] objects.
-     */
-    private fun parseLibraryResponse(responseJson: JsonObject): List<SpotifyPlaylistItem> {
-        return try {
-            val items = responseJson["data"]
-                ?.jsonObject?.get("me")
-                ?.jsonObject?.get("libraryV3")
-                ?.jsonObject?.get("items")
-                ?.jsonArray
-
-            if (items == null) {
-                Log.w(TAG, "parseLibraryResponse: could not find data.me.libraryV3.items")
-                Log.d(TAG, "parseLibraryResponse: top-level keys: ${responseJson.keys}")
-                val dataKeys = responseJson["data"]?.jsonObject?.keys
-                Log.d(TAG, "parseLibraryResponse: data keys: $dataKeys")
-                return emptyList()
-            }
-
-            Log.d(TAG, "parseLibraryResponse: found ${items.size} library items")
-
-            items.mapNotNull { element ->
-                try {
-                    val wrapper = element.jsonObject
-                    val item = wrapper["item"]?.jsonObject ?: return@mapNotNull null
-                    val typeName = item["__typename"]?.jsonPrimitive?.contentOrNull
-                    val data = item["data"]?.jsonObject ?: return@mapNotNull null
-
-                    val dataTypeName = data["__typename"]?.jsonPrimitive?.contentOrNull
-                    if (dataTypeName != "Playlist") {
-                        Log.d(TAG, "parseLibraryResponse: skipping item type: $typeName/$dataTypeName")
-                        return@mapNotNull null
-                    }
-
-                    val uri = data["uri"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    if (!uri.startsWith("spotify:playlist:")) return@mapNotNull null
-
-                    val playlistId = uri.removePrefix("spotify:playlist:")
-                    val name = data["name"]?.jsonPrimitive?.contentOrNull ?: "Untitled"
-
-                    val ownerUsername = data["ownerV2"]
-                        ?.jsonObject?.get("data")
-                        ?.jsonObject?.get("username")
-                        ?.jsonPrimitive?.contentOrNull ?: ""
-
-                    val imageUrl = data["images"]
-                        ?.jsonObject?.get("items")
-                        ?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("sources")
-                        ?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("url")
-                        ?.jsonPrimitive?.contentOrNull
-
-                    val images = if (imageUrl != null) {
-                        listOf(SpotifyImage(url = imageUrl))
-                    } else {
-                        null
-                    }
-
-                    val totalCount = data["content"]
-                        ?.jsonObject?.get("totalCount")
-                        ?.jsonPrimitive?.intOrNull ?: 0
-
-                    SpotifyPlaylistItem(
-                        id = playlistId,
-                        name = name,
-                        owner = SpotifyOwner(id = ownerUsername),
-                        images = images,
-                        tracks = SpotifyTracksRef(total = totalCount),
-                    ).also {
-                        Log.d(TAG, "parseLibraryResponse: playlist '${it.name}' " +
-                            "(id=${it.id}, owner=${it.owner.id}, tracks=$totalCount)")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "parseLibraryResponse: failed to parse item", e)
-                    null
-                }
-            }.also { playlists ->
-                Log.d(TAG, "parseLibraryResponse: parsed ${playlists.size} playlists total")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "parseLibraryResponse: failed to parse response", e)
-            emptyList()
-        }
-    }
 
     /**
      * Parses the `fetchPlaylist` GraphQL response into [SpotifyTrackItem]s.

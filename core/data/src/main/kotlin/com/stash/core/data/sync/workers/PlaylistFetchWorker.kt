@@ -419,25 +419,63 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // page 1). Issue #49: user with hundreds of playlists saw only
             // 46. Loop bound is a 2000-playlist safety cap — at that scale
             // the user likely has bigger problems than missing playlists.
+            //
+            // Issues #48/#26/#80/#136: libraryV3 is HIERARCHICAL — playlists
+            // filed inside folders never appear at the root listing. Each
+            // page now also yields folderUris; after the root walk we
+            // descend into every folder breadth-first (folders nest, so
+            // each folder page can queue more folders). Page-end is
+            // detected on rawItemCount, NOT parsed size: a 50-item page
+            // dense with folder/pseudo rows parses to few playlists, and
+            // the old post-filter "short page" check ended the whole walk
+            // right there — losing every playlist after it too.
             val userPlaylists = mutableListOf<com.stash.data.spotify.model.SpotifyPlaylistItem>()
             val pageSize = 50
             val pageCap = 40
-            var offset = 0
+            val maxFolderDepth = 5
             var pagesFetched = 0
-            while (pagesFetched < pageCap) {
-                val page = spotifyApiClient.getUserPlaylists(limit = pageSize, offset = offset)
-                pagesFetched++
-                if (page.isEmpty()) break
-                userPlaylists += page
-                if (page.size < pageSize) break // last page short of limit
-                offset += pageSize
+            var foldersWalked = 0
+            val folderQueue = ArrayDeque<Pair<String, Int>>() // folder uri to depth
+            val visitedFolders = mutableSetOf<String>()
+
+            suspend fun pageThrough(folderUri: String?, depth: Int) {
+                var offset = 0
+                while (pagesFetched < pageCap) {
+                    val page = spotifyApiClient.getUserPlaylists(
+                        limit = pageSize,
+                        offset = offset,
+                        folderUri = folderUri,
+                    )
+                    pagesFetched++
+                    userPlaylists += page.playlists
+                    for (uri in page.folderUris) {
+                        if (visitedFolders.add(uri)) folderQueue.addLast(uri to depth + 1)
+                    }
+                    if (page.rawItemCount < pageSize) break // true last page
+                    offset += pageSize
+                }
             }
+
+            pageThrough(folderUri = null, depth = 0)
+            while (folderQueue.isNotEmpty() && pagesFetched < pageCap) {
+                val (uri, depth) = folderQueue.removeFirst()
+                if (depth > maxFolderDepth) {
+                    Log.w(TAG, "fetchSpotifyPlaylists: folder '$uri' beyond depth $maxFolderDepth, skipping")
+                    continue
+                }
+                foldersWalked++
+                pageThrough(folderUri = uri, depth = depth)
+            }
+
             Log.i(
                 TAG,
-                "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across $pagesFetched page(s)",
+                "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across " +
+                    "$pagesFetched page(s), $foldersWalked folder(s) descended",
             )
-            // Filter out daily mixes (already handled above) and any Spotify-owned playlists
-            val customPlaylists = userPlaylists.filter { playlist ->
+            // Filter out daily mixes (already handled above) and any Spotify-owned playlists.
+            // distinctBy: defensive — a playlist must not snapshot twice even if
+            // Spotify ever lists it both at the root and inside a folder.
+            val customPlaylists = userPlaylists.distinctBy { it.id }.filter { playlist ->
                 !playlist.owner.id.equals("spotify", ignoreCase = true) &&
                     !playlist.name.matches(Regex("""Daily Mix \d+"""))
             }
