@@ -29,12 +29,14 @@ class PrefetchOrchestratorTest {
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val trackDao: TrackDao = mockk()
+    private val playbackStateStore: com.stash.core.media.PlaybackStateStore = mockk(relaxed = true)
 
     private fun orchestrator() = PrefetchOrchestrator(
         streamingPreference = streamingPreference,
         streamResolver = streamResolver,
         streamUrlCache = streamUrlCache,
         trackDao = trackDao,
+        playbackStateStore = playbackStateStore,
     )
 
     @Test
