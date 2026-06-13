@@ -14,6 +14,12 @@ class StashCastOptionsProvider : OptionsProvider {
     override fun getCastOptions(context: Context): CastOptions {
         return CastOptions.Builder()
             .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+            // Stop the Cast receiver when the session ends so the device
+            // doesn't keep playing after the app disconnects or is killed.
+            .setStopReceiverApplicationWhenEndingSession(true)
+            // Don't auto-resume old sessions — the app kills stale sessions
+            // on startup and the user taps Cast to start a fresh one.
+            .setResumeSavedSession(false)
             .build()
     }
 
