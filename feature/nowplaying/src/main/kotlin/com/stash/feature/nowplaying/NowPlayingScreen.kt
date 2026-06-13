@@ -583,6 +583,7 @@ private fun AlbumArtSection(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(artModel)
+                .size(coil3.size.Size.ORIGINAL) // Full resolution for big player
                 .allowHardware(false) // Required for Palette bitmap extraction.
                 .build(),
             contentDescription = "Album art",
