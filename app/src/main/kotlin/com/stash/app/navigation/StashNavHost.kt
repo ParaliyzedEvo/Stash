@@ -30,6 +30,7 @@ import com.stash.feature.settings.SettingsScreen
 import com.stash.feature.settings.equalizer.EqualizerScreen
 import com.stash.feature.settings.libraryhealth.LibraryHealthScreen
 import com.stash.feature.sync.FailedDownloadsScreen
+import com.stash.feature.sync.ActiveDownloadsScreen
 import com.stash.feature.sync.FailedMatchesScreen
 import com.stash.feature.sync.SyncScreen
 
@@ -250,6 +251,9 @@ fun StashNavHost(
                     navController.navigate(AntraConnectRoute)
                 },
                 onNavigateToDiagnosticsPreview = { navController.navigate(DiagnosticsPreviewRoute) },
+                onNavigateToDownloads = {
+                    navController.navigate(ActiveDownloadsRoute)
+                },
             )
         }
         composable<AccountRoute> {
@@ -352,6 +356,10 @@ fun StashNavHost(
 
         composable<FailedDownloadsRoute> {
             FailedDownloadsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable<ActiveDownloadsRoute> {
+            ActiveDownloadsScreen(onBack = { navController.popBackStack() })
         }
 
         composable<RecentlyAddedRoute> {
