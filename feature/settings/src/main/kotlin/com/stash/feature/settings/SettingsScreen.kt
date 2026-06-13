@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -115,6 +116,9 @@ fun SettingsScreen(
     onNavigateToSync: () -> Unit = {},
     onNavigateToAccount: () -> Unit = {},
     onWebLoginChanged: (Boolean) -> Unit = {},
+    onNavigateToAntraConnect: () -> Unit = {},
+    onNavigateToDiagnosticsPreview: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -285,6 +289,9 @@ fun SettingsScreen(
         onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
         onNavigateToSync = onNavigateToSync,
         onNavigateToAccount = onNavigateToAccount,
+        onNavigateToAntraConnect = onNavigateToAntraConnect,
+        onNavigateToDiagnosticsPreview = onNavigateToDiagnosticsPreview,
+        onNavigateToDownloads = onNavigateToDownloads,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
         onTestYtDlp = viewModel::testYtDlp,
@@ -412,6 +419,9 @@ private fun SettingsContent(
     onNavigateToSquidWtfCaptcha: () -> Unit,
     onNavigateToSync: () -> Unit,
     onNavigateToAccount: () -> Unit,
+    onNavigateToAntraConnect: () -> Unit,
+    onNavigateToDiagnosticsPreview: () -> Unit,
+    onNavigateToDownloads: () -> Unit,
     /**
      * Returns the latest crash file + its FileProvider URI, or null if
      * none exists. Called only when the user taps the share button —
@@ -595,6 +605,13 @@ private fun SettingsContent(
                         title = "Sync Settings",
                         subtitle = "Auto-sync, download blacklist, failed matches",
                         onClick = onNavigateToSync,
+                    )
+                    HorizontalDivider(color = extendedColors.glassBorder)
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Download,
+                        title = "Downloads",
+                        subtitle = "Active and queued download progress",
+                        onClick = onNavigateToDownloads,
                     )
                     HorizontalDivider(color = extendedColors.glassBorder)
                     SettingsCategoryRow(
