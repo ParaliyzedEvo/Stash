@@ -15,6 +15,7 @@ import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.DownloadNetworkMode
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.slot
@@ -73,7 +74,7 @@ class StashDiscoveryWorkerStreamOnlyTest {
         // .getInstance. Stubbing the companion object here keeps the test pure
         // (no Robolectric WorkManager bring-up needed).
         mockkObject(DiscoveryDownloadWorker.Companion)
-        coEvery { DiscoveryDownloadWorker.enqueueOneTime(any(), any()) } returns Unit
+        every { DiscoveryDownloadWorker.enqueueOneTime(any(), any()) } returns Unit
     }
 
     @After fun tearDown() {
@@ -112,7 +113,8 @@ class StashDiscoveryWorkerStreamOnlyTest {
         coEvery {
             discoveryQueueDao.findRecipesAtWeeklyCap(any(), any())
         } returns emptyList()
-        coEvery { discoveryQueueDao.getPending(any()) } returns listOf(pending)
+        coEvery { discoveryQueueDao.getRecipesWithPending(any()) } returns listOf(1L)
+        coEvery { discoveryQueueDao.getPendingForRecipe(eq(1L), any()) } returns listOf(pending)
         coEvery {
             discoveryQueueDao.countRecentCompletedForRecipe(1L, any())
         } returns 0
@@ -187,7 +189,8 @@ class StashDiscoveryWorkerStreamOnlyTest {
         coEvery {
             discoveryQueueDao.findRecipesAtWeeklyCap(any(), any())
         } returns emptyList()
-        coEvery { discoveryQueueDao.getPending(any()) } returns listOf(pending)
+        coEvery { discoveryQueueDao.getRecipesWithPending(any()) } returns listOf(1L)
+        coEvery { discoveryQueueDao.getPendingForRecipe(eq(1L), any()) } returns listOf(pending)
         coEvery {
             discoveryQueueDao.countRecentCompletedForRecipe(1L, any())
         } returns 0

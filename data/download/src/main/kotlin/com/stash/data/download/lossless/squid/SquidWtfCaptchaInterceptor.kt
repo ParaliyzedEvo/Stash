@@ -71,7 +71,7 @@ class SquidWtfCaptchaInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        if (request.url.host != SQUID_WTF_HOST) return chain.proceed(request)
+        if (!request.url.host.endsWith("qobuz.squid.wtf")) return chain.proceed(request)
 
         val cookie = cookieValue
         if (cookie.isNullOrEmpty()) {

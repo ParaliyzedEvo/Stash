@@ -2,6 +2,7 @@
 
 package com.stash.feature.nowplaying
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -24,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lyrics
@@ -60,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -101,6 +107,7 @@ fun NowPlayingScreen(
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val hasNext = (uiState.currentIndex < uiState.queueSize - 1) || uiState.repeatMode == RepeatMode.ALL
     val isAmoled = MaterialTheme.colorScheme.background == Color.Black
     // Safe collection with default value to prevent crashes
     val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
@@ -258,6 +265,9 @@ fun NowPlayingScreen(
         )
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Ambient animated background behind everything.
         AmbientBackground(
@@ -269,214 +279,180 @@ fun NowPlayingScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // -- Top bar: dismiss, like, options sheet trigger --
-            TopBar(
-                onDismiss = onDismiss,
-                onMoreClick = { showOptionsSheet = true },
-                hasTrack = uiState.hasTrack,
-                onLikeTap = viewModel::onLikeTap,
-                isLiked = uiState.currentTrack?.stashLikedAt != null,
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // -- Album art --
-            AlbumArtSection(
-                albumArtUrl = track?.albumArtUrl,
-                albumArtPath = track?.albumArtPath,
-                accentColor = uiState.vibrantColor,
-                onBitmapLoaded = viewModel::onAlbumArtLoaded,
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // -- Track info --
+        if (isLandscape) {
+            // ── LANDSCAPE LAYOUT ──────────────────────────────────────
+            // Left half: album art. Right half: controls + info.
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = track?.title ?: "Not Playing",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (track != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    com.stash.core.ui.components.FlacBadge(
-                        fileFormat = track.fileFormat,
-                        bitsPerSample = track.bitsPerSample,
-                        sampleRateHz = track.sampleRateHz,
-                        size = 18.dp,
-                        tint = Color.White,
+                // Left: Album art (takes ~45% width)
+                Box(
+                    modifier = Modifier
+                        .weight(0.45f)
+                        .fillMaxHeight()
+                        .padding(end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AlbumArtSection(
+                        albumArtUrl = track?.albumArtUrl,
+                        albumArtPath = track?.albumArtPath,
+                        accentColor = uiState.vibrantColor,
+                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(4.dp))
+                // Right: controls + track info
+                Column(
+                    modifier = Modifier
+                        .weight(0.55f)
+                        .fillMaxHeight()
+                        .verticalScroll(scrollState)
+                        .padding(start = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    // Top bar (dismiss + like + more)
+                    TopBar(
+                        onDismiss = onDismiss,
+                        onMoreClick = { showOptionsSheet = true },
+                        hasTrack = uiState.hasTrack,
+                        onLikeTap = viewModel::onLikeTap,
+                        isLiked = uiState.currentTrack?.stashLikedAt != null,
+                    )
 
-            Text(
-                text = buildString {
-                    if (track != null) {
-                        append(track.artist)
-                        if (track.album.isNotBlank()) {
-                            append(" \u2022 ")
-                            append(track.album)
-                        }
-                    }
-                },
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
-            // Sized smaller than the artist/album line; degrades gracefully when
-            // some fields are missing (returns a partial line, not nothing).
-            // When the active MediaItem is sourced from an http(s) URI (Kennyy
-            // stream rather than a local file), a small wifi glyph prefixes
-            // the line so the user knows playback is using their connection.
-            if (track != null) {
-                val qualityText = trackQualityText(track)
-                if (qualityText != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    QualityLine(
-                        qualityText = qualityText,
+                    // Track info
+                    TrackInfoSection(
+                        track = track,
                         isStreaming = uiState.isStreaming,
                     )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-            // -- Playback controls --
-            PlaybackControls(
-                isPlaying = uiState.isPlaying,
-                isBuffering = uiState.isBuffering,
-                shuffleEnabled = uiState.shuffleEnabled,
-                repeatMode = uiState.repeatMode,
-                accentColor = uiState.vibrantColor,
-                onPlayPauseClick = viewModel::onPlayPauseClick,
-                onSkipNext = viewModel::onSkipNext,
-                onSkipPrevious = viewModel::onSkipPrevious,
-                onToggleShuffle = viewModel::onToggleShuffle,
-                onCycleRepeatMode = viewModel::onCycleRepeatMode,
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // -- Progress bar --
-            GlowingProgressBar(
-                progress = uiState.progressFraction,
-                accentColor = uiState.vibrantColor,
-                elapsedMs = uiState.currentPositionMs,
-                totalMs = uiState.durationMs,
-                onSeek = viewModel::onSeekTo,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Bottom actions: Lyrics (left), Cast (center), and Queue (right)
-            if (track != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = viewModel::onShowLyrics) {
-                        Icon(
-                            imageVector = Icons.Outlined.Lyrics,
-                            contentDescription = "Lyrics",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-
-                    // Chromecast / Google Cast Route Button.
-                    //
-                    // Root cause of crash (IllegalArgumentException: "background can not be
-                    // translucent: #0"): MediaRouteButton calls ColorUtils.calculateContrast()
-                    // during construction. That method throws when the background color has
-                    // alpha = 0, which happens because the Compose AndroidView context
-                    // inherits the AMOLED / glassmorphism surface whose colorBackground is
-                    // fully transparent.
-                    //
-                    // Fix: wrap the context in a ContextThemeWrapper that overrides
-                    // android.R.attr.colorBackground to solid opaque black before the
-                    // MediaRouteButton constructor runs. We do this by applying
-                    // android.R.style.Theme_Black (guaranteed opaque black background,
-                    // part of the platform since API 1) as a base, which gives
-                    // MediaRouterThemeHelper a valid non-translucent color to work with.
-                    // The icon is re-tinted to white afterwards to match the action row.
-                    androidx.compose.ui.viewinterop.AndroidView(
-                        factory = { ctx ->
-                            // android.R.style.Theme_Black has colorBackground = #FF000000
-                            // (fully opaque). Applying it as the wrapper theme ensures
-                            // MediaRouterThemeHelper.getControllerColor() never receives
-                            // a translucent value.
-                            val themedCtx = android.view.ContextThemeWrapper(
-                                ctx,
-                                android.R.style.Theme_Black,
-                            )
-                            runCatching {
-                                androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
-                                    com.google.android.gms.cast.framework.CastButtonFactory
-                                        .setUpMediaRouteButton(ctx, this)
-                                    // Re-tint to white to match Lyrics / Queue icons.
-                                    runCatching {
-                                        val drawable = androidx.core.content.ContextCompat.getDrawable(
-                                            ctx,
-                                            androidx.mediarouter.R.drawable.mr_button_light,
-                                        )
-                                        if (drawable != null) {
-                                            androidx.core.graphics.drawable.DrawableCompat.setTint(
-                                                drawable,
-                                                android.graphics.Color.WHITE,
-                                            )
-                                            setRemoteIndicatorDrawable(drawable)
-                                        }
-                                    }
-                                }
-                            }.getOrElse {
-                                // Safety net: if MediaRouteButton still throws on a future
-                                // SDK, return an invisible placeholder so the layout holds.
-                                android.view.View(ctx)
-                            }
-                        },
-                        modifier = Modifier.size(32.dp),
+                    // Playback controls
+                    PlaybackControls(
+                        isPlaying = uiState.isPlaying,
+                        isBuffering = uiState.isBuffering,
+                        shuffleEnabled = uiState.shuffleEnabled,
+                        repeatMode = uiState.repeatMode,
+                        accentColor = uiState.vibrantColor,
+                        hasNext = hasNext,
+                        onPlayPauseClick = viewModel::onPlayPauseClick,
+                        onSkipNext = viewModel::onSkipNext,
+                        onSkipPrevious = viewModel::onSkipPrevious,
+                        onToggleShuffle = viewModel::onToggleShuffle,
+                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
                     )
 
-                    IconButton(onClick = { showQueue = true }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "Queue (${uiState.queueSize} tracks)",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(24.dp),
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Progress bar
+                    GlowingProgressBar(
+                        progress = uiState.progressFraction,
+                        accentColor = uiState.vibrantColor,
+                        elapsedMs = uiState.currentPositionMs,
+                        totalMs = uiState.durationMs,
+                        onSeek = viewModel::onSeekTo,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Bottom actions
+                    if (track != null) {
+                        BottomActionsRow(
+                            onShowLyrics = viewModel::onShowLyrics,
+                            onShowQueue = { showQueue = true },
+                            queueSize = uiState.queueSize,
                         )
                     }
                 }
             }
+        } else {
+            // ── PORTRAIT LAYOUT (original) ────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // -- Top bar: dismiss, like, options sheet trigger --
+                TopBar(
+                    onDismiss = onDismiss,
+                    onMoreClick = { showOptionsSheet = true },
+                    hasTrack = uiState.hasTrack,
+                    onLikeTap = viewModel::onLikeTap,
+                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                )
 
-            Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // -- Album art --
+                AlbumArtSection(
+                    albumArtUrl = track?.albumArtUrl,
+                    albumArtPath = track?.albumArtPath,
+                    accentColor = uiState.vibrantColor,
+                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // -- Track info --
+                TrackInfoSection(
+                    track = track,
+                    isStreaming = uiState.isStreaming,
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                // -- Playback controls --
+                PlaybackControls(
+                    isPlaying = uiState.isPlaying,
+                    isBuffering = uiState.isBuffering,
+                    shuffleEnabled = uiState.shuffleEnabled,
+                    repeatMode = uiState.repeatMode,
+                    accentColor = uiState.vibrantColor,
+                    hasNext = hasNext,
+                    onPlayPauseClick = viewModel::onPlayPauseClick,
+                    onSkipNext = viewModel::onSkipNext,
+                    onSkipPrevious = viewModel::onSkipPrevious,
+                    onToggleShuffle = viewModel::onToggleShuffle,
+                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // -- Progress bar --
+                GlowingProgressBar(
+                    progress = uiState.progressFraction,
+                    accentColor = uiState.vibrantColor,
+                    elapsedMs = uiState.currentPositionMs,
+                    totalMs = uiState.durationMs,
+                    onSeek = viewModel::onSeekTo,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Bottom actions: Lyrics (left), Cast (center), and Queue (right)
+                if (track != null) {
+                    BottomActionsRow(
+                        onShowLyrics = viewModel::onShowLyrics,
+                        onShowQueue = { showQueue = true },
+                        queueSize = uiState.queueSize,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(48.dp))
+            }
         }
     }
 
@@ -627,6 +603,169 @@ private fun AlbumArtSection(
 }
 
 /**
+ * Track title, artist · album, FLAC badge, and quality line.
+ * Extracted so both portrait and landscape layouts reuse the same block.
+ */
+@Composable
+private fun TrackInfoSection(
+    track: com.stash.core.model.Track?,
+    isStreaming: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = track?.title ?: "Not Playing",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (track != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            com.stash.core.ui.components.FlacBadge(
+                fileFormat = track.fileFormat,
+                bitsPerSample = track.bitsPerSample,
+                sampleRateHz = track.sampleRateHz,
+                size = 18.dp,
+                tint = Color.White,
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(4.dp))
+
+    Text(
+        text = buildString {
+            if (track != null) {
+                append(track.artist)
+                if (track.album.isNotBlank()) {
+                    append(" \u2022 ")
+                    append(track.album)
+                }
+            }
+        },
+        fontSize = 14.sp,
+        color = Color.White.copy(alpha = 0.7f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (track != null) {
+        val qualityText = trackQualityText(track)
+        if (qualityText != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            QualityLine(
+                qualityText = qualityText,
+                isStreaming = isStreaming,
+            )
+        }
+    }
+}
+
+/**
+ * Bottom action row: Lyrics (left), Cast (center), Queue (right).
+ *
+ * The cast button uses a Compose [Icon] with [Icons.Filled.Cast] and
+ * launches the [CastContext] route chooser dialog on tap.
+ */
+@Composable
+private fun BottomActionsRow(
+    onShowLyrics: () -> Unit,
+    onShowQueue: () -> Unit,
+    queueSize: Int,
+) {
+    val ctx = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onShowLyrics) {
+            Icon(
+                imageVector = Icons.Outlined.Lyrics,
+                contentDescription = "Lyrics",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        // Cast button — launches the MediaRouter chooser dialog via CastContext.
+        // Uses MediaRouteChooserDialog (plain Dialog) instead of the Fragment
+        // variant because MainActivity extends ComponentActivity, NOT
+        // FragmentActivity — the Fragment path always NPE'd on the FM lookup.
+        // Uses the async getSharedInstance(context, executor) overload because
+        // the deprecated synchronous overload can throw on devices where the
+        // Cast dynamic module hasn't finished loading yet (Samsung Galaxy S23
+        // on Android 16, observed 2026-06-13).
+        IconButton(
+            onClick = {
+                try {
+                    com.google.android.gms.cast.framework.CastContext
+                        .getSharedInstance(ctx, java.util.concurrent.Executors.newSingleThreadExecutor())
+                        .addOnSuccessListener { castCtx ->
+                            try {
+                                val selector = castCtx.mergedSelector
+                                    ?: androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                        .addControlCategory(
+                                            com.google.android.gms.cast.CastMediaControlIntent.categoryForCast(
+                                                com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
+                                            )
+                                        )
+                                        .build()
+
+                                val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(
+                                    androidx.appcompat.view.ContextThemeWrapper(
+                                        ctx,
+                                        androidx.appcompat.R.style.Theme_AppCompat
+                                    )
+                                )
+                                dialog.routeSelector = selector
+                                dialog.show()
+                            } catch (e: Exception) {
+                                android.util.Log.w("NowPlaying", "Cast dialog failed", e)
+                                android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .addOnFailureListener { e ->
+                            android.util.Log.w("NowPlaying", "CastContext init failed", e)
+                            android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                } catch (e: Exception) {
+                    android.util.Log.w("NowPlaying", "Cast button failed", e)
+                    android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Cast,
+                contentDescription = "Cast to device",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        IconButton(onClick = onShowQueue) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Queue ($queueSize tracks)",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+/**
  * Playback controls row: shuffle, previous, play/pause, next, repeat.
  */
 @Composable
@@ -636,6 +775,7 @@ private fun PlaybackControls(
     shuffleEnabled: Boolean,
     repeatMode: RepeatMode,
     accentColor: Color,
+    hasNext: Boolean,
     onPlayPauseClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -715,8 +855,8 @@ private fun PlaybackControls(
         // Next
         IconButton(onClick = onSkipNext) {
             Icon(
-                imageVector = Icons.Default.SkipNext,
-                contentDescription = "Next",
+                imageVector = if (hasNext) Icons.Default.SkipNext else Icons.Default.Replay,
+                contentDescription = if (hasNext) "Next" else "Restart",
                 tint = Color.White,
                 modifier = Modifier.size(36.dp),
             )
@@ -929,13 +1069,6 @@ private fun NowPlayingOptionsSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Cast to device — MediaRouteButton row.
-            // Wrapped in Theme_Black to prevent the "background can not be translucent"
-            // crash from ColorUtils.calculateContrast() inside MediaRouteButton.<init>.
-            CastOptionRow()
-
-            Spacer(modifier = Modifier.height(8.dp))
-
             // Flag as Wrong Match
             SheetOptionRow(
                 icon = Icons.Default.Flag,
@@ -949,58 +1082,3 @@ private fun NowPlayingOptionsSheet(
     }
 }
 
-/**
- * A sheet option row that embeds a [MediaRouteButton] for Chromecast / Google Cast.
- *
- * We can't use [SheetOptionRow] here because [MediaRouteButton] is a View, not a
- * Compose icon. Instead we replicate the same Row layout and embed the button via
- * [AndroidView]. The Theme_Black wrapper prevents the translucent-background crash.
- */
-@Composable
-private fun CastOptionRow() {
-    val ctx = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .background(com.stash.core.ui.theme.StashTheme.extendedColors.glassBackground)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // Cast icon via MediaRouteButton — must be a View, not a Compose icon.
-        androidx.compose.ui.viewinterop.AndroidView(
-            factory = { factoryCtx ->
-                val themedCtx = android.view.ContextThemeWrapper(
-                    factoryCtx,
-                    android.R.style.Theme_Black,
-                )
-                runCatching {
-                    androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
-                        com.google.android.gms.cast.framework.CastButtonFactory
-                            .setUpMediaRouteButton(factoryCtx, this)
-                        runCatching {
-                            val drawable = androidx.core.content.ContextCompat.getDrawable(
-                                factoryCtx,
-                                androidx.mediarouter.R.drawable.mr_button_light,
-                            )
-                            if (drawable != null) {
-                                androidx.core.graphics.drawable.DrawableCompat.setTint(
-                                    drawable,
-                                    android.graphics.Color.WHITE,
-                                )
-                                setRemoteIndicatorDrawable(drawable)
-                            }
-                        }
-                    }
-                }.getOrElse { android.view.View(factoryCtx) }
-            },
-            modifier = Modifier.size(24.dp),
-        )
-        Text(
-            text = "Cast to device",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}

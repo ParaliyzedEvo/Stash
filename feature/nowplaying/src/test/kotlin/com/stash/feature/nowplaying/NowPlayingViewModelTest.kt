@@ -196,6 +196,9 @@ class NowPlayingViewModelFindInFlacTest {
     // These tests don't exercise either surface, so a relaxed mock for
     // both is enough to satisfy the constructor.
     private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true) {
+        every { showBlurLayerInAmoled } returns flowOf(true)
+    }
     private val appContext: Context = mockk(relaxed = true)
 
     private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
@@ -204,6 +207,7 @@ class NowPlayingViewModelFindInFlacTest {
         likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
+        themePreference = themePreference,
         appContext = appContext,
     )
 
@@ -320,6 +324,9 @@ class NowPlayingViewModelLikeRoutingTest {
     }
     private val upgrader: LosslessUpgrader = mockk(relaxed = true)
     private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true) {
+        every { showBlurLayerInAmoled } returns flowOf(true)
+    }
     private val appContext: Context = mockk(relaxed = true)
 
     private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
@@ -328,6 +335,7 @@ class NowPlayingViewModelLikeRoutingTest {
         likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
+        themePreference = themePreference,
         appContext = appContext,
     )
 
@@ -359,3 +367,95 @@ class NowPlayingViewModelLikeRoutingTest {
         coVerify { likeCoordinator.setLiked(42L, false) }
     }
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelSkipNextTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+    private val positionFlow = MutableStateFlow(0L)
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns positionFlow
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { getUserCreatedPlaylists() } returns flowOf(emptyList())
+    }
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
+    private val upgrader: LosslessUpgrader = mockk(relaxed = true)
+    private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true) {
+        every { showBlurLayerInAmoled } returns flowOf(true)
+    }
+    private val appContext: Context = mockk(relaxed = true)
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = likeCoordinator,
+        losslessUpgrader = upgrader,
+        lyricsRepository = lyricsRepository,
+        themePreference = themePreference,
+        appContext = appContext,
+    )
+
+    private val track1 = Track(id = 1L, title = "song 1", artist = "artist 1")
+    private val track2 = Track(id = 2L, title = "song 2", artist = "artist 2")
+
+    @Test fun `onSkipNext when hasNext is true calls skipNext`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(
+            queue = listOf(track1, track2),
+            currentIndex = 0,
+            repeatMode = com.stash.core.model.RepeatMode.OFF
+        )
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onSkipNext()
+        advanceUntilIdle()
+
+        coVerify { playerRepository.skipNext() }
+        coVerify(exactly = 0) { playerRepository.skipToQueueIndex(any()) }
+    }
+
+    @Test fun `onSkipNext when hasNext is false and repeatMode is ALL calls skipNext`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(
+            queue = listOf(track1, track2),
+            currentIndex = 1,
+            repeatMode = com.stash.core.model.RepeatMode.ALL
+        )
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onSkipNext()
+        advanceUntilIdle()
+
+        coVerify { playerRepository.skipNext() }
+        coVerify(exactly = 0) { playerRepository.skipToQueueIndex(any()) }
+    }
+
+    @Test fun `onSkipNext when hasNext is false and repeatMode is OFF calls skipToQueueIndex 0`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(
+            queue = listOf(track1, track2),
+            currentIndex = 1,
+            repeatMode = com.stash.core.model.RepeatMode.OFF
+        )
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onSkipNext()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { playerRepository.skipNext() }
+        coVerify { playerRepository.skipToQueueIndex(0) }
+    }
+}
+

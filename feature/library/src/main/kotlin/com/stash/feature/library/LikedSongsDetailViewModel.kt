@@ -63,10 +63,13 @@ class LikedSongsDetailViewModel @Inject constructor(
         _showSearch.value = !_showSearch.value
         if (!_showSearch.value) _searchQuery.value = ""
     }
+    private val nonAlphanumericRegex = Regex("[^\\p{L}\\p{N}\\s]")
+    private val multiSpaceRegex = Regex("\\s+")
+
     private fun normalize(s: String): String {
         return s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
+            .replace(nonAlphanumericRegex, " ")
+            .replace(multiSpaceRegex, " ")
             .trim()
     }
 
@@ -131,7 +134,8 @@ class LikedSongsDetailViewModel @Inject constructor(
                     uiState.value.tracks.filter { it.filePath != null }
                 }
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId }
+                if (index < 0) return@launch // tapped track not in playable list
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null

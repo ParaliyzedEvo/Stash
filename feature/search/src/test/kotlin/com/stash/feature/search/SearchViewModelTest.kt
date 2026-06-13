@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import app.cash.turbine.test
+import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
@@ -33,6 +34,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -67,7 +69,7 @@ class SearchViewModelTest {
     @After fun tearDown() { Dispatchers.resetMain() }
 
     @Test
-    fun `blank or short query emits Idle without calling searchAll`() = runTest {
+    fun `blank or short query emits Idle without calling searchAll`() = runTest(dispatcher) {
         val api = mock<YTMusicApiClient>()
         val vm = newVm(api = api)
 
@@ -83,10 +85,12 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onQueryChanged triggers searchAll after debounce`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(eq("abc"))).doReturn(SearchAllResults(emptyList()))
+    fun `onQueryChanged triggers searchAll after debounce`() = runTest(dispatcher) {
+        val api = mock<YTMusicApiClient> {
+            onBlocking { searchAll(eq("abc")) } doReturn SearchAllResults(emptyList())
+        }
         val vm = newVm(api = api)
+        runCurrent()
 
         vm.onQueryChanged("abc")
         // Before the debounce, no call should have gone out yet.
@@ -98,16 +102,17 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `flatMapLatest cancels prior query on new keystroke`() = runTest {
-        val api = mock<YTMusicApiClient>()
+    fun `flatMapLatest cancels prior query on new keystroke`() = runTest(dispatcher) {
         val neverCompletes = CompletableDeferred<SearchAllResults>()
-        // First query: suspend forever so flatMapLatest has something to cancel.
-        whenever(api.searchAll(eq("foo"))).doSuspendableAnswer {
-            neverCompletes.await()
+        val api = mock<YTMusicApiClient> {
+            onBlocking { searchAll(eq("foo")) } doSuspendableAnswer {
+                neverCompletes.await()
+            }
+            onBlocking { searchAll(eq("foobar")) } doReturn SearchAllResults(emptyList())
         }
-        whenever(api.searchAll(eq("foobar"))).doReturn(SearchAllResults(emptyList()))
 
         val vm = newVm(api = api)
+        runCurrent()
 
         vm.onQueryChanged("foo")
         // Drive past the 300 ms debounce so the first search actually launches,
@@ -121,12 +126,12 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `error surfaces userMessages snackbar`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(any())).doSuspendableAnswer {
-            throw RuntimeException("boom")
+    fun `error surfaces userMessages snackbar`() = runTest(dispatcher) {
+        val api = mock<YTMusicApiClient> {
+            onBlocking { searchAll(any()) } doThrow RuntimeException("boom")
         }
         val vm = newVm(api = api)
+        runCurrent()
         vm.userMessages.test {
             vm.onQueryChanged("abc")
             advanceUntilIdle()
@@ -141,7 +146,7 @@ class SearchViewModelTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `onResultTap streaming off calls preview not playFromStream`() = runTest {
+    fun `onResultTap streaming off calls preview not playFromStream`() = runTest(dispatcher) {
         val delegate = stubDelegate()
         val playerRepository = mock<PlayerRepository>()
         val streamingPreference = mock<StreamingPreference> {
@@ -161,7 +166,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onResultTap streaming on calls playFromStream not preview`() = runTest {
+    fun `onResultTap streaming on calls playFromStream not preview`() = runTest(dispatcher) {
         val delegate = stubDelegate()
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
@@ -185,7 +190,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onResultTap streaming on but no connectivity emits snackbar`() = runTest {
+    fun `onResultTap streaming on but no connectivity emits snackbar`() = runTest(dispatcher) {
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.NoConnectivity
         }
@@ -206,7 +211,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onResultTap streaming on but cellular refused emits snackbar`() = runTest {
+    fun `onResultTap streaming on but cellular refused emits snackbar`() = runTest(dispatcher) {
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.CellularRefused
         }
@@ -227,7 +232,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `onResultTap streaming on but not available emits snackbar`() = runTest {
+    fun `onResultTap streaming on but not available emits snackbar`() = runTest(dispatcher) {
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.NotAvailable
         }
@@ -248,7 +253,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `tappedTrackId emits on tap and clears after playFromStream returns`() = runTest {
+    fun `tappedTrackId emits on tap and clears after playFromStream returns`() = runTest(dispatcher) {
         val gate = CompletableDeferred<StreamRoutingResult>()
         val playerRepo = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doSuspendableAnswer { gate.await() }
@@ -292,6 +297,7 @@ class SearchViewModelTest {
         streamingPreference: StreamingPreference = mock {
             onBlocking { current() } doReturn false
         },
+        artistCache: ArtistCache = mock(),
     ): SearchViewModel = SearchViewModel(
         api = api,
         prefetcher = prefetcher,
@@ -299,7 +305,10 @@ class SearchViewModelTest {
         losslessPrefetcher = mock(),
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
-    )
+        artistCache = artistCache,
+    ).apply {
+        ioDispatcher = dispatcher
+    }
 
     private fun sampleTrack(): TrackItem = TrackItem(
         videoId = "vid123",

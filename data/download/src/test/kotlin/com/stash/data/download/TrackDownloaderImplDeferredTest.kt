@@ -28,7 +28,9 @@ import java.io.File
  */
 class TrackDownloaderImplDeferredTest {
 
-    private val downloadManager: DownloadManager = mockk()
+    private val downloadManager: DownloadManager = mockk(relaxed = true) {
+        io.mockk.every { progress } returns kotlinx.coroutines.flow.MutableSharedFlow()
+    }
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     // Real LocalFileOps over a mock Context — the plain-path branch (used by
     // these tests' temp files) never touches the Context.

@@ -74,6 +74,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -176,24 +177,36 @@ fun HomeScreen(
         }
     }
 
-    // Pre-computed 2-column chunking for the Playlists grid. Hoisted out
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    // Pre-computed responsive column chunking for the Playlists grid. Hoisted out
     // of the LazyColumn's item{} so the chunked() + buildList{} only runs
     // when the playlists list actually changes — not on every recomposition
     // triggered by unrelated state (sync status, liked songs count, etc.).
-    val playlistGridRows = remember(uiState.playlists) {
+    val playlistGridRows = remember(uiState.playlists, orientation) {
         val tiles: List<PlaylistTile> = buildList {
             add(PlaylistTile.Create)
             uiState.playlists.forEach { add(PlaylistTile.Item(it)) }
         }
-        tiles.chunked(2)
+        val chunkSize = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+        tiles.chunked(chunkSize)
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 120.dp),
+    PullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = viewModel::onRefresh,
+        modifier = modifier.fillMaxSize(),
     ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = 800.dp)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+                contentPadding = PaddingValues(bottom = 120.dp),
+            ) {
         // ── App title row: wordmark + social icons ────────────────────
         // v0.9.13: empty space to the right of the wordmark holds quick
         // links to the project (GitHub, X). Supporter pill moves back
@@ -535,24 +548,40 @@ fun HomeScreen(
             Spacer(Modifier.height(20.dp))
             SectionHeader(title = "Your Playlists")
         }
-        item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+        items(playlistGridRows) { rowItems ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
-                    CreatePlaylistCard(
-                        onClick = { showCreateDialog = true },
-                    )
+                rowItems.forEach { tile ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        when (tile) {
+                            PlaylistTile.Create -> {
+                                CreatePlaylistCard(
+                                    onClick = { showCreateDialog = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            is PlaylistTile.Item -> {
+                                DailyMixCard(
+                                    playlist = tile.playlist,
+                                    onClick = { onNavigateToPlaylist(tile.playlist.id) },
+                                    onLongPress = { selectedPlaylist = tile.playlist },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
                 }
-                items(uiState.playlists, key = { it.id }) { playlist ->
-                    DailyMixCard(
-                        playlist = playlist,
-                        onClick = { onNavigateToPlaylist(playlist.id) },
-                        onLongPress = { selectedPlaylist = playlist },
-                    )
+                val chunkSize = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+                val emptySlots = chunkSize - rowItems.size
+                repeat(emptySlots) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
         // ── Recently Added (5 tracks, glass card) ────────────────────
@@ -626,6 +655,8 @@ fun HomeScreen(
             item { Spacer(Modifier.height(16.dp)) }
         }
     } // end LazyColumn
+    } // end Box
+    } // end PullToRefreshBox
 
     // ── Create playlist naming dialog ────────────────────────────────────
     if (showCreateDialog) {
@@ -867,7 +898,7 @@ private fun DailyMixCard(
     playlist: Playlist,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.width(180.dp),
     buildState: MixBuildState = MixBuildState.READY,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -886,7 +917,6 @@ private fun DailyMixCard(
 
     Surface(
         modifier = modifier
-            .width(180.dp)
             .height(120.dp)
             .combinedClickable(
                 onClick = onClick,
@@ -1639,14 +1669,13 @@ private fun HomeTrackRow(
 @Composable
 private fun CreatePlaylistCard(
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.width(180.dp),
 ) {
     val extendedColors = StashTheme.extendedColors
     val accent = MaterialTheme.colorScheme.primary
 
     Surface(
         modifier = modifier
-            .width(180.dp)
             .height(120.dp)
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,

@@ -34,6 +34,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.size.Size
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.core.ui.theme.StashTheme
@@ -112,8 +116,13 @@ fun TrackListItem(
             contentAlignment = Alignment.Center,
         ) {
             if (artUrl != null) {
+                val density = LocalDensity.current
+                val sizePx = with(density) { 48.dp.roundToPx() }
                 AsyncImage(
-                    model = artUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(artUrl)
+                        .size(Size(sizePx, sizePx))
+                        .build(),
                     contentDescription = "${track.title} album art",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

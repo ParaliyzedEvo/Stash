@@ -91,7 +91,7 @@ class KennyyHealthProbe(
         const val TAG = "KennyyHealthProbe"
         const val PROBE_INTERVAL_MS = 45_000L
         const val RAMP_INTERVAL_MS = 2_000L
-        const val PROBE_TIMEOUT_MS = 3_000L
+        const val PROBE_TIMEOUT_MS = 8_000L
         // Hardcoded always-in-catalog track — any null result is a proxy anomaly.
         val PROBE_QUERY = TrackQuery(
             artist = "Daft Punk",

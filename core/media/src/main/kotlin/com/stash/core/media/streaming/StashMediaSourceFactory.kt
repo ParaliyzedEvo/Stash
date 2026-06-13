@@ -61,7 +61,20 @@ class StashMediaSourceFactory(
         return if (trackId != null) {
             streamingFactory.create(trackId).createMediaSource(mediaItem)
         } else {
-            localFactory.createMediaSource(mediaItem)
+            // Guard: DefaultMediaSourceFactory throws NPE when
+            // mediaItem.localConfiguration is null (no URI set). This can
+            // happen during session resumption when MediaItems lose their URIs.
+            // Instead of throwing or crashing, supply a dummy data URI so ExoPlayer
+            // can load the timeline without crashing, and the prefetcher will
+            // swap in the real streaming URI when it finishes resolving.
+            val itemToUse = if (mediaItem.localConfiguration == null) {
+                mediaItem.buildUpon()
+                    .setUri(android.net.Uri.parse("data:audio/mp3;base64,"))
+                    .build()
+            } else {
+                mediaItem
+            }
+            localFactory.createMediaSource(itemToUse)
         }
     }
 }

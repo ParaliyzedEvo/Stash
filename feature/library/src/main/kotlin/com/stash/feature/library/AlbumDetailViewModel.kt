@@ -137,7 +137,8 @@ class AlbumDetailViewModel @Inject constructor(
             try {
                 val downloaded = uiState.value.tracks.filter { it.filePath != null }
                 if (downloaded.isEmpty()) return@launch
-                val index = downloaded.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = downloaded.indexOfFirst { it.id == trackId }
+                if (index < 0) return@launch // tapped track not in downloaded list
                 playerRepository.setQueue(downloaded, index)
             } finally {
                 _tappedTrackId.value = null

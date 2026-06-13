@@ -95,6 +95,7 @@ class KennyyStreamResolver @Inject constructor(
             Log.d(TAG, "skip id=${track.id} (kennyy content-degraded)")
             return null
         }
+        healthMonitor.checkRecovery()
         if (!healthMonitor.isHealthy.value) {
             Log.d(TAG, "skip id=${track.id} (kennyy unhealthy)")
             return null
@@ -161,7 +162,7 @@ class KennyyStreamResolver @Inject constructor(
     private companion object {
         const val TAG = "KennyyStreamResolver"
         const val ORIGIN = "kennyy"
-        const val STREAM_RESOLVE_TIMEOUT_MS = 3_000L
+        const val STREAM_RESOLVE_TIMEOUT_MS = 6_000L
         val ETSP_REGEX = Regex("""[?&]etsp=(\d+)""")
     }
 }

@@ -169,6 +169,18 @@ class SpotifyApiClient @Inject constructor(
     @Volatile
     private var cachedClientToken: String? = null
 
+    // ── Web API Rate Limit Circuit Breaker ──────────────────────────────
+
+    /**
+     * When the public Web API returns HTTP 429, we record the timestamp.
+     * Subsequent [getPlaylistTracks] calls skip the Web API prong entirely
+     * until [WEB_API_BACKOFF_MS] elapses — avoiding N × ~120ms wasted
+     * requests when syncing dozens of playlists.
+     */
+    @Volatile
+    private var webApiRateLimitedAt: Long = 0L
+    private val WEB_API_BACKOFF_MS = 5 * 60 * 1000L // 5 minutes
+
     // ── Public API ──────────────────────────────────────────────────────
 
     /**
@@ -270,11 +282,17 @@ class SpotifyApiClient @Inject constructor(
         Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId")
 
         try {
-            // Prong 1: Try client credentials + Web API first
-            val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
-            if (webApiTracks != null) {
-                Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
-                return SyncResult.Success(webApiTracks)
+            // Prong 1: Try client credentials + Web API first — but skip if rate-limited.
+            val now = System.currentTimeMillis()
+            val webApiBackedOff = (now - webApiRateLimitedAt) < WEB_API_BACKOFF_MS
+            if (!webApiBackedOff) {
+                val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
+                if (webApiTracks != null) {
+                    Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
+                    return SyncResult.Success(webApiTracks)
+                }
+            } else {
+                Log.d(TAG, "getPlaylistTracks: skipping Web API (rate-limited, backoff active)")
             }
 
             // Prong 2: Fall back to sp_dc GraphQL
@@ -749,7 +767,11 @@ class SpotifyApiClient @Inject constructor(
                     continue
                 }
 
-                // For 429 or other errors, return null to try fallback
+                // For 429: record the timestamp so subsequent playlists skip Web API
+                if (responseCode == 429) {
+                    webApiRateLimitedAt = System.currentTimeMillis()
+                    Log.d(TAG, "tryGetPlaylistTracksViaWebApi: 429 — circuit breaker activated for ${WEB_API_BACKOFF_MS / 1000}s")
+                }
                 return null
             }
 

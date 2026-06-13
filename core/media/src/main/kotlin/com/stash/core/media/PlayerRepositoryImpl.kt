@@ -439,15 +439,84 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         if (startItem == null) {
-            Log.w(
+            // When the player IS idle (nothing playing), forward-probe up to
+            // FORWARD_PROBE_LIMIT tracks to find *something* playable. During
+            // server outages (kennyy+squid both 502), some tracks resolve via
+            // YouTube and some don't — probing finds the first one that does
+            // so the user hears music instead of staring at a dead spinner.
+            //
+            // When the player IS ALREADY playing, we do NOT probe: the old
+            // track keeps playing and a snackbar tells the user why the tapped
+            // track didn't start. Probing in this case would surprise-restart
+            // audio (see #75 follow-up rationale above).
+            if (controller.currentMediaItem != null) {
+                Log.w(
+                    TAG,
+                    "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
+                        "resolve — preserving current playback",
+                )
+                _userMessages.tryEmit("Couldn't play this track right now.")
+                tapResolveEpoch = -1L
+                _playerState.value = _playerState.value.copy(isBuffering = false)
+                return
+            }
+
+            // Idle player: probe forward to find something playable.
+            var probeItem: MediaItem? = null
+            var probeTrack: Track? = null
+            var probeIndex = safeStart
+            for (offset in 1..FORWARD_PROBE_LIMIT) {
+                val candidate = safeStart + offset
+                if (candidate >= tracks.size) break
+                if (myEpoch != setQueueEpoch) return // superseded
+                val t = tracks[candidate]
+                Log.d(TAG, "setQueue[epoch=$myEpoch]: probing track[$candidate] '${t.title}'")
+                val item = resolveTrackToMediaItem(t, semaphore, streamingOn, allowYouTube = true, allowYtDlp = true)
+                if (item != null) {
+                    probeItem = item
+                    probeTrack = t
+                    probeIndex = candidate
+                    break
+                }
+            }
+            if (probeItem == null || probeTrack == null) {
+                Log.w(
+                    TAG,
+                    "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' and " +
+                        "$FORWARD_PROBE_LIMIT forward probes all failed — giving up",
+                )
+                _userMessages.tryEmit("Couldn't play this track right now.")
+                tapResolveEpoch = -1L
+                _playerState.value = _playerState.value.copy(isBuffering = false)
+                return
+            }
+            // Forward probe hit — update the display to show the track we're
+            // actually starting with, then fall through to the normal play path.
+            Log.i(
                 TAG,
-                "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
-                    "resolve — preserving current playback",
+                "setQueue[epoch=$myEpoch]: tapped track failed, forward-probed to " +
+                    "track[$probeIndex] '${probeTrack.title}'",
             )
-            _userMessages.tryEmit("Couldn't play this track right now.")
-            // Clear the optimistic spinner — nothing is going to play.
+            _userMessages.tryEmit("'${tappedTrack.title}' unavailable — playing '${probeTrack.title}'")
+            // Reassign so the rest of the method uses the probe result.
+            // startItem/safeStart are val — use a new local scope to continue.
+            if (myEpoch != setQueueEpoch) return
             tapResolveEpoch = -1L
-            _playerState.value = _playerState.value.copy(isBuffering = false)
+            controller.setMediaItems(listOf(probeItem), 0, 0L)
+            controller.prepare()
+            controller.play()
+            scope.launch { prefetchNextTrack(0) }
+            val forward = tracks.subList(probeIndex + 1, tracks.size)
+            val backward = tracks.subList(0, probeIndex)
+            queueBuildJob = scope.launch {
+                try {
+                    fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+                    fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+                    Log.i(TAG, "setQueue: background fill complete (${tracks.size} tracks)")
+                    prefetchNextTrack(controller.currentMediaItemIndex)
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { Log.w(TAG, "setQueue: background fill failed", e) }
+            }
             return
         }
 
@@ -1238,11 +1307,13 @@ class PlayerRepositoryImpl @Inject constructor(
                 MediaItem.Builder()
                     .setMediaId(track.id.toString())
                     .setUri(uri)
+                    .setMimeType(getMimeTypeFromCodec(track.fileFormat))
                     .setMediaMetadata(
                         MediaMetadata.Builder()
                             .setTitle(track.title)
                             .setArtist(track.artist)
                             .setAlbumTitle(track.album)
+                            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                             .setArtworkUri(
                                 (track.albumArtPath ?: track.albumArtUrl)?.let { path ->
                                     val uriStr = if (path.startsWith("/")) "file://$path" else path
@@ -1318,11 +1389,13 @@ class PlayerRepositoryImpl @Inject constructor(
             MediaItem.Builder()
                 .setMediaId(track.id.toString())
                 .setUri(Uri.parse(stream.url))
+                .setMimeType(getMimeTypeFromCodec(stream.codec))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(track.title)
                         .setArtist(track.artist)
                         .setAlbumTitle(track.album)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                         .setArtworkUri(
                             displayArtUrl?.let { Uri.parse(it) }
                         )
@@ -1768,6 +1841,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Refresh prefetch if cached URL has less than this margin remaining. */
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
+
+        /**
+         * Max number of tracks to probe forward when the tapped track fails
+         * to resolve and no other track is currently playing. Low to keep
+         * the latency acceptable (~7s per probe in the worst-case yt-dlp
+         * path). Only applies to the idle-player path; when music IS
+         * playing, the tapped-track failure is surfaced as a snackbar and
+         * current playback continues undisturbed.
+         */
+        private const val FORWARD_PROBE_LIMIT = 3
     }
 
     /**
@@ -1780,6 +1863,7 @@ class PlayerRepositoryImpl @Inject constructor(
             .setTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setArtworkUri(
                 (albumArtPath ?: albumArtUrl)?.let { path ->
                     val uriStr = if (path.startsWith("/")) "file://$path" else path
@@ -1806,9 +1890,22 @@ class PlayerRepositoryImpl @Inject constructor(
         return MediaItem.Builder()
             .setMediaId(id.toString())
             .setUri(fileUri)
+            .setMimeType(getMimeTypeFromCodec(fileFormat))
             .setMediaMetadata(metadata)
             .setRequestMetadata(requestMetadata)
             .build()
+    }
+
+    private fun getMimeTypeFromCodec(codec: String?): String {
+        return when (codec?.lowercase()) {
+            "flac" -> "audio/flac"
+            "aac" -> "audio/aac"
+            "mp3" -> "audio/mpeg"
+            "ogg" -> "audio/ogg"
+            "opus" -> "audio/opus"
+            "wav" -> "audio/wav"
+            else -> "audio/*"
+        }
     }
 
     /**

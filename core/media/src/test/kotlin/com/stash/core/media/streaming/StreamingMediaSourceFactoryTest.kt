@@ -33,12 +33,14 @@ class StreamingMediaSourceFactoryTest {
     private val resolver: StreamSourceRegistry = mockk(relaxed = true)
     private val urlCache: StreamUrlCache = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
+    private val okHttpClient: okhttp3.OkHttpClient = okhttp3.OkHttpClient()
 
     private fun newFactory(): StreamingMediaSourceFactory = StreamingMediaSourceFactory(
         streamCache = streamCache,
         resolver = resolver,
         urlCache = urlCache,
         trackDao = trackDao,
+        okHttpClient = okHttpClient,
     )
 
     @Test

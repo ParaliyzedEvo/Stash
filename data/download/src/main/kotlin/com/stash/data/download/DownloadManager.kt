@@ -320,6 +320,7 @@ class DownloadManager @Inject constructor(
         // non-fatal: the file remains playable and yt-dlp's fallback tags
         // stay in place.
         val art = runCatching { albumArtCache.resolveArt(effectiveTrack) }.getOrNull()
+        Log.d(TAG, "embedMetadata: trackId=${track.id} artUrl=${effectiveTrack.albumArtUrl?.take(80)} artFile=${art?.absolutePath} artSize=${art?.length() ?: 0}")
         runCatching { metadataEmbedder.embedMetadata(downloadedFile, effectiveTrack, art) }
             .onFailure { Log.w(TAG, "metadata embed failed for ${track.id}: ${it.message}") }
 
@@ -466,10 +467,36 @@ class DownloadManager @Inject constructor(
 
         emitProgress(track.id, 0.85f, DownloadStatus.PROCESSING)
 
+        // Persist album art surfaced by the source's catalog API BEFORE
+        // finalization so TrackFinalizer's albumArtCache.resolveArt() can
+        // read the URL from the re-fetched track and embed art into the
+        // audio file. Previously this write happened post-finalize, which
+        // meant the art URL was null at embed time and downloaded files
+        // had no cover art.
+        // We OVERWRITE when the stored URL is blank OR is a YouTube
+        // *video* thumbnail (`i.ytimg.com/vi/...`) — both YOUTUBE-
+        // sourced rows AND Spotify rows that got deduped against a
+        // YT-Music match can carry these. We leave other URLs alone
+        // (proper YT Music catalog art on lh3.googleusercontent.com,
+        // Spotify scdn art) since those are generally fine.
+        match.coverArtUrl?.let { url ->
+            runCatching {
+                val existingArt = trackDao.getById(track.id)?.albumArtUrl
+                val needsUpgrade = existingArt.isNullOrBlank() ||
+                    com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(existingArt)
+                if (needsUpgrade) {
+                    trackDao.updateAlbumArtUrl(track.id, url)
+                }
+            }.onFailure { e ->
+                Log.w(TAG, "lossless: album-art update failed for ${track.id}: ${e.message}")
+            }
+        }
+
         // Re-fetch the track so any canonicalizer-driven refresh of
         // album_artist (or other tag-bearing fields) that landed between
         // sync and download is picked up before TrackFinalizer embeds
-        // tags. Mirrors the pattern in executeDownload (line ~199).
+        // tags — AND the freshly-persisted coverArtUrl above is available
+        // for albumArtCache.resolveArt() during embedding.
         // Fallback to the in-memory copy if the row was deleted mid-flight.
         val effectiveTrack = trackDao.getById(track.id)?.toDomain() ?: track
 
@@ -489,29 +516,6 @@ class DownloadManager @Inject constructor(
                     "Lossless downloaded (${match.sourceId}): ${effectiveTrack.artist} - ${effectiveTrack.title}" +
                         " → ${finalized.committed.filePath}",
                 )
-
-                // Persist album art surfaced by the source's catalog API.
-                // We OVERWRITE when the stored URL is blank OR is a YouTube
-                // *video* thumbnail (`i.ytimg.com/vi/...`) — both YOUTUBE-
-                // sourced rows AND Spotify rows that got deduped against a
-                // YT-Music match can carry these. We leave other URLs alone
-                // (proper YT Music catalog art on lh3.googleusercontent.com,
-                // Spotify scdn art) since those are generally fine.
-                // Mirrors PlayerRepositoryImpl's on-stream art swap (A1) for
-                // the download path. Failure here is non-fatal — file is on
-                // disk and playable; only the visual is degraded.
-                match.coverArtUrl?.let { url ->
-                    runCatching {
-                        val existingArt = trackDao.getById(effectiveTrack.id)?.albumArtUrl
-                        val needsUpgrade = existingArt.isNullOrBlank() ||
-                            com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(existingArt)
-                        if (needsUpgrade) {
-                            trackDao.updateAlbumArtUrl(effectiveTrack.id, url)
-                        }
-                    }.onFailure { e ->
-                        Log.w(TAG, "lossless: album-art update failed for ${effectiveTrack.id}: ${e.message}")
-                    }
-                }
 
                 // Trigger loudness measurement off the download thread. The
                 // measurement (~25–50 s of ffmpeg ebur128) used to run

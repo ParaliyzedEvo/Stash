@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -296,16 +297,15 @@ fun SettingsScreen(
         onNavigateToDiagnosticsPreview = onNavigateToDiagnosticsPreview,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
+        onTestYtDlp = viewModel::testYtDlp,
+        onUpdateYtDlp = viewModel::updateYtDlp,
         streamingEnabled = viewModel.streamingEnabled.collectAsStateWithLifecycle().value,
         onStreamingToggle = viewModel::onStreamingToggle,
         streamOnCellular = viewModel.streamOnCellular.collectAsStateWithLifecycle().value,
         onStreamOnCellularToggle = viewModel::onStreamOnCellularToggle,
         showBlurLayerInAmoled = viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle().value,
         onShowBlurLayerInAmoledChanged = viewModel::onShowBlurLayerInAmoledChanged,
-        forceYouTubeFallback = viewModel.forceYouTubeFallback.collectAsStateWithLifecycle().value,
-        onToggleForceYouTubeFallback = viewModel::setForceYouTubeFallback,
-        forceAntraOnly = viewModel.forceAntraOnly.collectAsStateWithLifecycle().value,
-        onToggleForceAntraOnly = viewModel::setForceAntraOnly,
+
         treePicker = treePicker,
         onSetPickerIntent = { pendingPickerIntent = it },
         modifier = modifier,
@@ -436,6 +436,8 @@ private fun SettingsContent(
      * when the user navigates away and comes back.
      */
     onDiagnosticsRefresh: () -> Unit,
+    onTestYtDlp: () -> Unit,
+    onUpdateYtDlp: () -> Unit,
     treePicker: androidx.activity.result.ActivityResultLauncher<android.net.Uri?>?,
     onSetPickerIntent: (PickerIntent) -> Unit,
     /** Live streaming-mode (Online vs Offline) — see [SettingsViewModel.streamingEnabled]. */
@@ -450,14 +452,7 @@ private fun SettingsContent(
     showBlurLayerInAmoled: Boolean,
     /** Routed to [SettingsViewModel.onShowBlurLayerInAmoledChanged] in the host. */
     onShowBlurLayerInAmoledChanged: (Boolean) -> Unit,
-    /** Live "force YouTube fallback" test pref — see [SettingsViewModel.forceYouTubeFallback]. */
-    forceYouTubeFallback: Boolean,
-    /** Routed to [SettingsViewModel.setForceYouTubeFallback] in the host. */
-    onToggleForceYouTubeFallback: (Boolean) -> Unit,
-    /** Live "force antra only" test pref — see [SettingsViewModel.forceAntraOnly]. */
-    forceAntraOnly: Boolean,
-    /** Routed to [SettingsViewModel.setForceAntraOnly] in the host. */
-    onToggleForceAntraOnly: (Boolean) -> Unit,
+
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -487,13 +482,18 @@ private fun SettingsContent(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 600.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
         if (uiState.showImportConfirmation) {
             AlertDialog(
                 onDismissRequest = onCancelImportDatabase,
@@ -767,6 +767,8 @@ private fun SettingsContent(
                                         onCheckedChange = onStreamOnCellularToggle,
                                     )
                                 }
+
+
                             }
                         }
                     }
@@ -852,6 +854,8 @@ private fun SettingsContent(
                                     LosslessRoutingStatus(
                                         squidStatus = uiState.squidCaptchaStatus,
                                         onSolveCaptcha = onNavigateToSquidWtfCaptcha,
+                                        antraUsername = uiState.antraUsername,
+                                        onConnectAntra = onNavigateToAntraConnect,
                                     )
 
                                     Spacer(modifier = Modifier.height(16.dp))
@@ -1208,63 +1212,7 @@ private fun SettingsContent(
                         }
                     }
 
-                    // Streaming-source override. Relocated here from Diagnostics
-                    // so users can self-rescue when the lossless sources (Qobuz
-                    // via Squid/Kennyy) are down — routes ALL streaming through
-                    // YouTube. Backed by StreamingPreference.forceYouTubeFallback.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Stream via YouTube",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = "Skip the lossless sources (Qobuz) and stream everything via YouTube. Turn this on if lossless playback is down or only playing short clips.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Switch(
-                            checked = forceYouTubeFallback,
-                            onCheckedChange = onToggleForceYouTubeFallback,
-                        )
-                    }
 
-                    // Test-only outage drill for the antra fallback: routes
-                    // streaming AND downloads through antra alone (no Qobuz
-                    // proxies, no YouTube), so the antra path can be verified
-                    // end-to-end. Backed by StreamingPreference.forceAntraOnly.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Force antra only (test)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = "Route streaming and downloads through antra alone — no Qobuz proxies, no YouTube. Each antra fetch spends a single from your quota. Turn off after testing.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Switch(
-                            checked = forceAntraOnly,
-                            onCheckedChange = onToggleForceAntraOnly,
-                        )
-                    }
                 }
 
                 SettingsSubScreen.APPEARANCE -> {
@@ -1423,6 +1371,60 @@ private fun SettingsContent(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "yt-dlp Engine",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Update the yt-dlp binary to the latest nightly for YouTube signature fixes, or test the extractor.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = onUpdateYtDlp,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Update")
+                                }
+                                OutlinedButton(
+                                    onClick = onTestYtDlp,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Test yt-dlp")
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     val aboutContext = LocalContext.current
                     val installedVersion = remember(aboutContext) {
                         runCatching {
@@ -1489,6 +1491,7 @@ private fun SettingsContent(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+}
 }
 
 /**
@@ -1830,6 +1833,8 @@ private fun StorageRow(label: String, value: String) {
 private fun LosslessRoutingStatus(
     squidStatus: com.stash.feature.settings.components.SquidCaptchaStatus,
     onSolveCaptcha: () -> Unit,
+    antraUsername: String?,
+    onConnectAntra: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mono = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -1844,6 +1849,7 @@ private fun LosslessRoutingStatus(
             // entry-point so they can re-verify in one tap.
             Triple(true, "expired", true)
     }
+    val antraConnected = antraUsername != null
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = "ROUTING",
@@ -1867,9 +1873,21 @@ private fun LosslessRoutingStatus(
             actionLabel = if (showSolveLink) "solve captcha \u2192" else null,
             onAction = if (showSolveLink) onSolveCaptcha else null,
         )
+        RoutingRow(
+            host = "antra.hoshi.cfd",
+            configured = antraConnected,
+            statusLabel = if (antraConnected) antraUsername!! else "optional",
+            actionLabel = if (!antraConnected) "connect \u2192" else "reconnect \u2192",
+            onAction = onConnectAntra,
+        )
+        RoutingRow(
+            host = "YouTube",
+            configured = true,
+            statusLabel = "fallback",
+        )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless works on any active source. Adding squid gives you a backup host.",
+            text = "Tracks resolve top-to-bottom. Adding squid/antra gives backup hosts when kennyy is down.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

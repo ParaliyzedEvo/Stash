@@ -51,8 +51,12 @@ sealed interface LyricsViewState {
  * lingers from a previous fetch (shouldn't happen, but defensive).
  */
 internal fun lyricsViewStateFor(track: Track, row: LyricsEntity?): LyricsViewState = when {
-    track.lyricsFetchedAt == null -> LyricsViewState.Loading
-    track.lyricsFetchedAt == 0L -> LyricsViewState.None
+    // Row has actual lyrics data — render it immediately regardless of whether
+    // the track's lyricsFetchedAt stamp has propagated to the UI state yet.
+    // The Room observer for the lyrics entity fires before the tracks-table
+    // observer does, so the outer flatMapLatest capture may still hold a stale
+    // `lyricsFetchedAt == null` Track — checking the stamp first caused lyrics
+    // to stay stuck on "Loading" even though the row was already written.
     row?.instrumental == true -> LyricsViewState.Instrumental
     row?.syncedLrc != null -> {
         val synced = row.syncedLrc!!
@@ -65,6 +69,9 @@ internal fun lyricsViewStateFor(track: Track, row: LyricsEntity?): LyricsViewSta
         }
     }
     row != null && !row.plainText.isNullOrBlank() -> LyricsViewState.Plain(row.plainText!!)
+    // No usable row — fall back to the sentinel to distinguish Loading from None.
+    track.lyricsFetchedAt == null -> LyricsViewState.Loading
+    track.lyricsFetchedAt == 0L -> LyricsViewState.None
     else -> LyricsViewState.None
 }
 

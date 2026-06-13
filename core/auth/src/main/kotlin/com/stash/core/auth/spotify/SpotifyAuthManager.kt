@@ -58,6 +58,14 @@ class SpotifyAuthManager @Inject constructor(
     @Volatile
     private var cachedClientVersion: String? = null
 
+    /** Timestamp when we last attempted to scrape — avoids re-scraping every call
+     *  when the scrape consistently fails. 0 means never attempted. */
+    @Volatile
+    private var clientVersionCacheTimestamp: Long = 0L
+
+    /** How long to cache a failed scrape result (use fallback) before retrying. */
+    private val CLIENT_VERSION_CACHE_TTL_MS = 30 * 60 * 1000L // 30 minutes
+
     /**
      * The sp_t cookie value captured from the token endpoint response.
      * Used as device_id in client token requests (Spotify ties sessions together
@@ -98,11 +106,24 @@ class SpotifyAuthManager @Inject constructor(
      * This fetches the live page and extracts the version from the embedded config.
      * Falls back to [SpotifyAuthConfig.CLIENT_VERSION_FALLBACK] if scraping fails.
      *
+     * Results (including fallback) are cached for [CLIENT_VERSION_CACHE_TTL_MS] to
+     * avoid hammering open.spotify.com on every GraphQL call during sync.
+     *
      * Public so [SpotifyApiClient] can use it for GraphQL request headers.
      */
     fun getClientVersion(): String {
+        // Return live-scraped version if available.
         cachedClientVersion?.let { return it }
 
+        // If we recently failed to scrape, return fallback without retrying.
+        val now = System.currentTimeMillis()
+        if (now - clientVersionCacheTimestamp < CLIENT_VERSION_CACHE_TTL_MS &&
+            clientVersionCacheTimestamp > 0
+        ) {
+            return SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
+        }
+
+        clientVersionCacheTimestamp = now
         return try {
             val request = Request.Builder()
                 .url("https://open.spotify.com")
@@ -135,7 +156,7 @@ class SpotifyAuthManager @Inject constructor(
                 cachedClientVersion = version
                 version
             } else {
-                Log.w(TAG, "Could not scrape client version, using fallback")
+                Log.w(TAG, "Could not scrape client version, using fallback (cached for 30min)")
                 SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
             }
         } catch (e: Exception) {

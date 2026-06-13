@@ -61,6 +61,7 @@ class TrackFinalizer @Inject constructor(
             val art = runCatching { albumArtCache.resolveArt(track) }
                 .onFailure { e -> Log.w(TAG, "art resolve failed: ${e.message}") }
                 .getOrNull()
+            Log.d(TAG, "finalizeFile: trackId=${track.id} artUrl=${track.albumArtUrl?.take(80)} artFile=${art?.absolutePath} artSize=${art?.length() ?: 0}")
             runCatching { metadataEmbedder.embedMetadata(sourceFile, track, art) }
                 .onFailure { e -> Log.w(TAG, "metadata embed failed: ${e.message}") }
         }

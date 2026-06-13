@@ -66,10 +66,16 @@ class SyncNotificationManager @Inject constructor(
      * Should be called once from [android.app.Application.onCreate].
      */
     fun createChannels() {
+        // Android's createNotificationChannel() never lowers an existing
+        // channel's importance — it preserves the value from when the channel
+        // was first created. To move sync_progress from IMPORTANCE_LOW to
+        // IMPORTANCE_MIN on existing installs, we delete-then-recreate.
+        notificationManager.deleteNotificationChannel(CHANNEL_SYNC_PROGRESS)
+
         val progressChannel = NotificationChannel(
             CHANNEL_SYNC_PROGRESS,
             "Sync Progress",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_MIN,
         ).apply {
             description = "Ongoing notification shown while syncing playlists"
             setShowBadge(false)
@@ -150,7 +156,8 @@ class SyncNotificationManager @Inject constructor(
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             .setSilent(true)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
 
         if (progress < 0f) {
             builder.setProgress(0, 0, true) // indeterminate spinner
