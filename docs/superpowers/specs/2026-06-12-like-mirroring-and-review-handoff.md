@@ -9,6 +9,8 @@ next release) and what remains as a backlog.
 
 ## A. Like-Mirroring feature (brainstorm IN PROGRESS — not yet a final spec)
 
+> Superseded by docs/superpowers/plans/2026-06-12-like-mirroring.md (implementation plan; decisions unchanged). Implemented on branch feat/like-mirroring (Tasks 1–10 done, all targeted tests green + app assembles; on-device checklist still owed).
+
 **Goal:** when you ❤️ a track in Stash, also Like it on Spotify and/or YouTube
 Music; un-hearting removes it there too. User is TOS-aware and wants this gated so
 "only a certain type of user (e.g. on a backup account)" opts in.

@@ -977,6 +977,21 @@ interface TrackDao {
     suspend fun markYtMusicSaved(trackId: Long, ts: Long)
 
     /**
+     * v0.9.52 like-mirroring: clears the Spotify dedup timestamp after a
+     * successful symmetric un-like (`DELETE /v1/me/tracks`), so a future
+     * re-heart re-fires the external save.
+     */
+    @Query("UPDATE tracks SET spotify_saved_at = NULL WHERE id = :trackId")
+    suspend fun clearSpotifySaved(trackId: Long)
+
+    /**
+     * v0.9.52 like-mirroring: clears the YT Music dedup timestamp after a
+     * successful InnerTube `like/removelike`.
+     */
+    @Query("UPDATE tracks SET ytmusic_saved_at = NULL WHERE id = :trackId")
+    suspend fun clearYtMusicSaved(trackId: Long)
+
+    /**
      * v0.9.13: Mark a track as added to the local Stash "Liked Songs"
      * playlist. Called by [StashLikedPlaylistRepository.add] after the
      * cross-ref is in place.

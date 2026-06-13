@@ -12,6 +12,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.diagnostics.CrashFileStore
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.LikePreferences
+import com.stash.core.data.social.Destination
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.ThemePreference
@@ -257,6 +258,8 @@ class SettingsViewModel @Inject constructor(
         losslessPrefs.youtubeFallbackEnabled,
         stashMixPreference.enabled,
         losslessPrefs.antraUsername,
+        likePreferences.mirrorLikesSpotify,
+        likePreferences.mirrorLikesYtMusic,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -287,6 +290,8 @@ class SettingsViewModel @Inject constructor(
         val youtubeFallbackEnabled = values[25] as Boolean
         val stashMixesEnabled = values[26] as Boolean
         val antraUsername = (values[27] as String?)
+        val mirrorLikesSpotify = values[28] as Boolean
+        val mirrorLikesYtMusic = values[29] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -335,6 +340,9 @@ class SettingsViewModel @Inject constructor(
             heartDefaultSpotify = heartDefaultSpotify,
             heartDefaultYtMusic = heartDefaultYtMusic,
             autoSavedCountLast7Days = autoSavedCount7d,
+            mirrorLikesSpotify = mirrorLikesSpotify,
+            mirrorLikesYtMusic = mirrorLikesYtMusic,
+            pendingMirrorWarning = local.pendingMirrorWarning,
             youtubeFallbackEnabled = youtubeFallbackEnabled,
             hasCrashReport = local.hasCrashReport,
             databaseBackupState = local.databaseBackupState,
@@ -1013,6 +1021,37 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { likePreferences.setHeartDefaultYtMusic(value) }
     }
 
+    /**
+     * v0.9.52 like-mirroring. Enabling a mirror requires the explicit
+     * "I understand" ack — the pref is only written on confirm (see
+     * [onMirrorWarningConfirmed]); disabling is immediate, no dialog.
+     */
+    fun onMirrorToggleRequested(destination: Destination, enable: Boolean) {
+        if (!enable) {
+            viewModelScope.launch { setMirrorPref(destination, false) }
+            return
+        }
+        _localState.update { it.copy(pendingMirrorWarning = destination) }
+    }
+
+    fun onMirrorWarningConfirmed() {
+        val destination = _localState.value.pendingMirrorWarning ?: return
+        _localState.update { it.copy(pendingMirrorWarning = null) }
+        viewModelScope.launch { setMirrorPref(destination, true) }
+    }
+
+    fun onMirrorWarningDismissed() {
+        _localState.update { it.copy(pendingMirrorWarning = null) }
+    }
+
+    private suspend fun setMirrorPref(destination: Destination, value: Boolean) {
+        when (destination) {
+            Destination.SPOTIFY -> likePreferences.setMirrorLikesSpotify(value)
+            Destination.YT_MUSIC -> likePreferences.setMirrorLikesYtMusic(value)
+            Destination.STASH -> Unit // local likes are always on; not a mirror target
+        }
+    }
+
     // -- Internal state -------------------------------------------------------
 
     /**
@@ -1057,6 +1096,12 @@ class SettingsViewModel @Inject constructor(
          * "Share latest crash report" button + render its subtitle.
          */
         val hasCrashReport: Boolean = false,
+        /**
+         * v0.9.52: non-null while the like-mirroring "I understand" warning
+         * dialog is showing for that destination. The pref is only written
+         * on confirm, so dismissing leaves mirroring off.
+         */
+        val pendingMirrorWarning: Destination? = null,
     )
 
     // -- Diagnostics ----------------------------------------------------------

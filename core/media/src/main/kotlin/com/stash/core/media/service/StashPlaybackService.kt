@@ -23,7 +23,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
@@ -74,7 +74,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var playlistDao: PlaylistDao
-    @Inject lateinit var stashLikedRepository: StashLikedPlaylistRepository
+    @Inject lateinit var likeCoordinator: LikeCoordinator
     @Inject lateinit var prefetchOrchestrator: PrefetchOrchestrator
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
@@ -1173,8 +1173,10 @@ class StashPlaybackService : MediaLibraryService() {
                                     metadata = mediaMetadata,
                                 )
 
-                                if (newLikeState) stashLikedRepository.add(realId)
-                                else              stashLikedRepository.remove(realId)
+                                // v0.9.52: route through LikeCoordinator — local
+                                // Stash like stays synchronous; optional Spotify/YT
+                                // mirroring (off by default) layers on top.
+                                likeCoordinator.setLiked(realId, liked = newLikeState)
                             }.onFailure { e ->
                                 android.util.Log.w(
                                     "StashPlayback",

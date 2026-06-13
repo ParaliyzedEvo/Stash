@@ -346,23 +346,39 @@ class InnerTubeClient @Inject constructor(
      * (signed-out, network down, endpoint blocked) — caller treats
      * non-success as "skip this destination, surface snackbar."
      */
-    suspend fun likeVideo(videoId: String): Boolean = runCatching {
+    suspend fun likeVideo(videoId: String): Boolean =
+        sendLikeAction("$BASE_URL/like/like", videoId)
+
+    /**
+     * v0.9.52: symmetric un-like — sets likeStatus back to INDIFFERENT
+     * and removes the track from Liked Music. Same payload/auth shape
+     * as [likeVideo]; same boolean soft-failure contract.
+     */
+    suspend fun removeLike(videoId: String): Boolean =
+        sendLikeAction("$BASE_URL/like/removelike", videoId)
+
+    private suspend fun sendLikeAction(url: String, videoId: String): Boolean = runCatching {
         val variant = InnerTubeVariant.WEB_REMIX
         val payload = buildJsonObject {
             put("context", buildContext(variant))
             put("target", buildJsonObject { put("videoId", videoId) })
         }
         val outcome = executeRequestWithStatus(
-            url = "$BASE_URL/like/like",
+            url = url,
             body = payload,
             cookie = null,
             variant = variant,
         )
         outcome.body != null && outcome.statusCode in 200..299
     }.getOrElse { e ->
-        Log.w(TAG, "likeVideo failed for $videoId: ${e.message}")
+        Log.w(TAG, "like action failed for $videoId at $url: ${e.message}")
         false
     }
+
+    /** Test-only seam mirroring [executeRequestWithStatusForTest] — lets a test
+     * point the like action at a MockWebServer URL. */
+    internal suspend fun sendLikeActionForTest(url: String, videoId: String): Boolean =
+        sendLikeAction(url, videoId)
 
     /**
      * Audio-focused player lookup. Tries each variant in [AUDIO_VARIANT_ORDER]

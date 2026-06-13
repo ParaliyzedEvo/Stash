@@ -62,7 +62,7 @@ import javax.inject.Inject
 class NowPlayingViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val musicRepository: MusicRepository,
-    private val stashLikedRepository: com.stash.core.data.social.stash.StashLikedPlaylistRepository,
+    private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
     // v0.9.36 Task 12 — lyrics sheet observes the lyrics row and may
     // enqueue a priority on-open fetch. WorkManager is sourced via
@@ -192,6 +192,17 @@ class NowPlayingViewModel @Inject constructor(
         observeUserPlaylists()
         observeStreamingHaltedEvents()
         observePlayerUserMessages()
+        collectMirrorFailures()
+    }
+
+    /**
+     * v0.9.52: best-effort mirror sync failures surface as one subtle
+     * snackbar per session (LikeCoordinator gates the frequency).
+     */
+    private fun collectMirrorFailures() {
+        viewModelScope.launch {
+            likeCoordinator.mirrorFailures.collect { _userMessages.tryEmit(it) }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -702,11 +713,10 @@ class NowPlayingViewModel @Inject constructor(
                 // "Couldn't add to Liked Songs" (issue #105).
                 val finalTrackId = musicRepository.ensureTrackPersisted(track)
 
-                if (wasLiked) {
-                    stashLikedRepository.remove(finalTrackId)
-                } else {
-                    stashLikedRepository.add(finalTrackId)
-                }
+                // v0.9.52: route through LikeCoordinator. The local Stash
+                // like still happens synchronously (same behavior as before);
+                // optional Spotify/YT mirroring (off by default) layers on top.
+                likeCoordinator.setLiked(finalTrackId, liked = !wasLiked)
                 // Once the DB write is confirmed, we can clear the optimistic
                 // override; Room's own emission will carry the truth.
                 optimisticLikeState.update { it - trackKey }

@@ -4,7 +4,7 @@ import android.content.Context
 import app.cash.turbine.test
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
@@ -16,6 +16,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -185,7 +186,9 @@ class NowPlayingViewModelFindInFlacTest {
         every { observeTrackById(any()) } returns flowOf(null)
         every { getUserCreatedPlaylists() } returns flowOf(emptyList())
     }
-    private val stashLikedRepository: StashLikedPlaylistRepository = mockk(relaxed = true)
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
     private val upgrader: LosslessUpgrader = mockk()
     // v0.9.36 Task 12 — Now Playing now depends on the lyrics repository
     // (for the lyrics sheet) and an application Context (used as a
@@ -198,7 +201,7 @@ class NowPlayingViewModelFindInFlacTest {
     private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
-        stashLikedRepository = stashLikedRepository,
+        likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         appContext = appContext,
@@ -286,5 +289,73 @@ class NowPlayingViewModelFindInFlacTest {
         }
 
         coVerify(exactly = 0) { upgrader.upgradeToLossless(any()) }
+    }
+}
+
+/**
+ * v0.9.52: the heart routes through LikeCoordinator (local + optional
+ * external mirroring) instead of the local-only repository.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelLikeRoutingTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+    private val positionFlow = MutableStateFlow(0L)
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns positionFlow
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { getUserCreatedPlaylists() } returns flowOf(emptyList())
+    }
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
+    private val upgrader: LosslessUpgrader = mockk(relaxed = true)
+    private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val appContext: Context = mockk(relaxed = true)
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = likeCoordinator,
+        losslessUpgrader = upgrader,
+        lyricsRepository = lyricsRepository,
+        appContext = appContext,
+    )
+
+    private val unlikedTrack = Track(id = 42L, title = "song", artist = "artist", stashLikedAt = null)
+    private val likedTrack = unlikedTrack.copy(stashLikedAt = 123L)
+
+    @Test fun `onLikeTap routes through LikeCoordinator with resolved id and new state`() =
+        runTest(dispatcher) {
+            coEvery { musicRepository.ensureTrackPersisted(any()) } returns 42L
+            playerStateFlow.value = playerStateFlow.value.copy(currentTrack = unlikedTrack)
+            val vm = newViewModel()
+            advanceUntilIdle()
+
+            vm.onLikeTap()
+            advanceUntilIdle()
+
+            coVerify { likeCoordinator.setLiked(42L, true) }
+        }
+
+    @Test fun `onLikeTap on a liked track requests un-like`() = runTest(dispatcher) {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } returns 42L
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = likedTrack)
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onLikeTap()
+        advanceUntilIdle()
+
+        coVerify { likeCoordinator.setLiked(42L, false) }
     }
 }

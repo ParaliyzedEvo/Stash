@@ -80,8 +80,11 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.material3.AlertDialog
+import com.stash.core.data.social.Destination
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.AudioQualityPicker
+import com.stash.feature.settings.components.LikeMirrorSection
+import com.stash.feature.settings.components.LikeMirrorWarningDialog
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeCookieDialog
 import com.stash.feature.settings.components.YouTubeHistorySyncSection
@@ -246,6 +249,9 @@ fun SettingsScreen(
         onHeartDefaultStashChanged = viewModel::onHeartDefaultStashChanged,
         onHeartDefaultSpotifyChanged = viewModel::onHeartDefaultSpotifyChanged,
         onHeartDefaultYtMusicChanged = viewModel::onHeartDefaultYtMusicChanged,
+        onMirrorToggleRequested = viewModel::onMirrorToggleRequested,
+        onMirrorWarningConfirmed = viewModel::onMirrorWarningConfirmed,
+        onMirrorWarningDismissed = viewModel::onMirrorWarningDismissed,
         onExportDatabase = viewModel::onExportDatabase,
         onImportDatabase = viewModel::onImportDatabase,
         onConfirmImportDatabase = {
@@ -317,6 +323,9 @@ private fun SettingsContent(
     onHeartDefaultStashChanged: (Boolean) -> Unit,
     onHeartDefaultSpotifyChanged: (Boolean) -> Unit,
     onHeartDefaultYtMusicChanged: (Boolean) -> Unit,
+    onMirrorToggleRequested: (Destination, Boolean) -> Unit,
+    onMirrorWarningConfirmed: () -> Unit,
+    onMirrorWarningDismissed: () -> Unit,
     onExportDatabase: (Uri) -> Unit,
     onImportDatabase: (Uri) -> Unit,
     onConfirmImportDatabase: () -> Unit,
@@ -599,6 +608,21 @@ private fun SettingsContent(
                 )
             },
         )
+
+        // v0.9.52: like-mirroring opt-ins. Standalone GlassCard (not an
+        // AccountConnectionCard) — it spans both services. Each row greys
+        // itself out + shows a "Connect … first" hint when disconnected.
+        GlassCard {
+            LikeMirrorSection(
+                spotifyEnabled = uiState.mirrorLikesSpotify,
+                ytMusicEnabled = uiState.mirrorLikesYtMusic,
+                spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
+                ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
+                onSpotifyToggle = { onMirrorToggleRequested(Destination.SPOTIFY, it) },
+                onYtMusicToggle = { onMirrorToggleRequested(Destination.YT_MUSIC, it) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
 
         // Last.fm lives in the Accounts group (v0.4.1 relocation) so
         // users who are scanning for "sign-in / connect" surfaces see
@@ -1335,6 +1359,16 @@ private fun SettingsContent(
                         Text("Cancel")
                     }
                 },
+            )
+        }
+
+        // v0.9.52: like-mirroring opt-in ack. Confirming writes the pref;
+        // dismissing leaves mirroring off (no writes without this ack).
+        uiState.pendingMirrorWarning?.let { dest ->
+            LikeMirrorWarningDialog(
+                serviceName = if (dest == Destination.SPOTIFY) "Spotify" else "YouTube Music",
+                onConfirm = onMirrorWarningConfirmed,
+                onDismiss = onMirrorWarningDismissed,
             )
         }
 

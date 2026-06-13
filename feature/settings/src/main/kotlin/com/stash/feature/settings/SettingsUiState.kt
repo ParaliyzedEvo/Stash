@@ -133,6 +133,11 @@ data class SettingsUiState(
     val heartDefaultYtMusic: Boolean = false,
     /** v0.9.13: count of tracks auto-saved in the last 7 days, for the diagnostics line. */
     val autoSavedCountLast7Days: Int = 0,
+    /** v0.9.52 like-mirroring: per-service opt-in (default off), gated behind the warning dialog. */
+    val mirrorLikesSpotify: Boolean = false,
+    val mirrorLikesYtMusic: Boolean = false,
+    /** Non-null while the "I understand" warning dialog is showing for that destination. */
+    val pendingMirrorWarning: com.stash.core.data.social.Destination? = null,
     /**
      * v0.9.17: when lossless is on, controls whether yt-dlp is allowed
      * to take over a track that no lossless source could resolve. When
