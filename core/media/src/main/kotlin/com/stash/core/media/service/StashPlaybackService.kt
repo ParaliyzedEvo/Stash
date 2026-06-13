@@ -670,6 +670,22 @@ class StashPlaybackService : MediaLibraryService() {
 
     @OptIn(UnstableApi::class)
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // End any active Cast session when the app is swiped away. Without
+        // this, the Cast device keeps playing/buffering with no controlling
+        // app — the user has to manually stop it from the Cast device or
+        // the Google Home app.
+        try {
+            cachedCastContext?.sessionManager?.currentCastSession?.let { session ->
+                if (session.isConnected) {
+                    android.util.Log.i("StashPlayback", "App killed — ending Cast session")
+                    cachedCastContext?.sessionManager?.endCurrentSession(true)
+                    castStateHolder.setConnected(false)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("StashPlayback", "Failed to end Cast session on task removed", e)
+        }
+
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
