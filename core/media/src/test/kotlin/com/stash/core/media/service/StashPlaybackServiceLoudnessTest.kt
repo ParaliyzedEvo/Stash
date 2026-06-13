@@ -4,7 +4,7 @@ package com.stash.core.media.service
 import androidx.media3.common.MediaItem
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.streaming.PrefetchOrchestrator
@@ -31,7 +31,7 @@ class StashPlaybackServiceLoudnessTest {
     private val trackDao = mockk<TrackDao>(relaxed = true)
     private val loudnessController = mockk<LoudnessController>(relaxed = true)
     private val eqController = mockk<EqController>(relaxed = true)
-    private val stashLikedRepository = mockk<StashLikedPlaylistRepository>(relaxed = true)
+    private val likeCoordinator = mockk<LikeCoordinator>(relaxed = true)
     private val prefetchOrchestrator = mockk<PrefetchOrchestrator>(relaxed = true)
 
     private fun newService(): StashPlaybackService {
@@ -42,7 +42,7 @@ class StashPlaybackServiceLoudnessTest {
         service.trackDao = trackDao
         service.loudnessController = loudnessController
         service.eqController = eqController
-        service.stashLikedRepository = stashLikedRepository
+        service.likeCoordinator = likeCoordinator
         service.prefetchOrchestrator = prefetchOrchestrator
         return service
     }
