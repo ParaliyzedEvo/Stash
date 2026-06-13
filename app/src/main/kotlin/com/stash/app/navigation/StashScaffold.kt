@@ -1,11 +1,13 @@
 package com.stash.app.navigation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,14 +92,17 @@ fun StashScaffold(
         }
     }
 
+    // When NowPlaying is the active route, zero out the Scaffold's content
+    // window insets so the player's AmbientBackground draws edge-to-edge
+    // behind the status bar. Without this, the slide-down close animation
+    // reveals a transparent status bar gap (the Scaffold's containerColor
+    // bleeds through) because innerPadding pushes the NavHost below the
+    // system bar and the player's background can't fill the gap.
+    val isNowPlayingActive = currentRoute == NowPlayingRoute::class.qualifiedName
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        // Use Scaffold's default safe-drawing insets so screens automatically
-        // avoid the status bar (top) and gesture / 3-button nav (bottom).
-        // The previous `WindowInsets(0.dp)` override was leaking content under
-        // the system status bar — Pixel 6 Pro and similar devices on Android
-        // 15+ where edge-to-edge is enforced. Reported via Twitter
-        // (https://x.com/tekno_deha1/status/...).
+        contentWindowInsets = if (isNowPlayingActive) WindowInsets(0.dp) else WindowInsets.statusBars,
         bottomBar = {
             val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
                                 currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
@@ -118,8 +123,16 @@ fun StashScaffold(
             )
             val hideMiniPlayer = hideBottomBar ||
                                  innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
-            if (!hideBottomBar) {
-                Column {
+            // While a screen is selecting, render no bottom chrome at all — the
+            // screen's own selection action bar (which handles its own nav insets)
+            // takes the bottom edge. This drops innerPadding.bottom to 0 so the
+            // content extends full-height behind that action bar.
+            if (!selectionActive && !hideBottomBar) {
+                Column(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
                     if (!hideMiniPlayer) {
                         MiniPlayer(
                             onExpand = {
@@ -133,12 +146,30 @@ fun StashScaffold(
                     StashBottomBar(
                         currentRoute = currentRoute,
                         onNavigate = { dest ->
-                            navController.navigate(dest.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            val destRoute = dest.route::class.qualifiedName
+                            val isOnThisTabRoot = currentRoute == destRoute
+                            // If we're already on this tab's root, do nothing.
+                            // If we're on a deeper page but the tab root is in the
+                            // back stack, pop back to the root (clears inner pages).
+                            if (isOnThisTabRoot) {
+                                // Already on root — no-op (avoids reload).
+                                return@StashBottomBar
+                            }
+                            // Try to pop back to the tab root. If it succeeds,
+                            // the user was on an inner page of this tab → return.
+                            val popped = navController.popBackStack(
+                                route = dest.route,
+                                inclusive = false,
+                            )
+                            if (!popped) {
+                                // Not in this tab at all — standard cross-tab nav.
+                                navController.navigate(dest.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
                     )

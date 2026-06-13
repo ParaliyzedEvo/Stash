@@ -118,6 +118,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Promote to foreground service immediately to survive minimization
+        runCatching { setForeground(getForegroundInfo()) }
+
         // Step 1: Create a sync history record.
         val syncEntry = SyncHistoryEntity(
             status = SyncState.AUTHENTICATING,

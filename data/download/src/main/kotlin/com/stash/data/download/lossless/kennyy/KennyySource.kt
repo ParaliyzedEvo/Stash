@@ -45,6 +45,7 @@ class KennyySource @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     private val urlInspector: LosslessUrlInspector,
     private val healthGate: LosslessSourceHealthGate,
+    private val trackIdCache: KennyyTrackIdCache,
 ) : LosslessSource {
 
     override val id: String = SOURCE_ID
@@ -96,6 +97,26 @@ class KennyySource @Inject constructor(
     private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         lastResolveFailedNetwork = false
         Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
+
+        val tier = losslessPrefs.qualityTierNow()
+        val requestedQuality = tier.qobuzCode
+
+        // ── Fast path: cached Qobuz track ID ──────────────────────────
+        // The mapping (artist, title) → Qobuz track ID is stable and
+        // never expires. Only the signed CDN URL expires (~1 h). By
+        // skipping the search call (~1 000 ms) we cut per-track latency
+        // roughly in half for replayed / re-resolved tracks.
+        val cachedEntry = trackIdCache.getEntry(query.artist, query.title)
+        if (cachedEntry != null) {
+            Log.d(TAG, "trackIdCache HIT artist='${query.artist}' title='${query.title}' qobuzId=${cachedEntry.qobuzTrackId}")
+            val cachedResult = resolveFromTrackId(cachedEntry.qobuzTrackId, requestedQuality, bypassRateLimit, cachedEntry.coverArtUrl)
+            if (cachedResult != null) return cachedResult
+            // Cache hit but download failed (e.g. track de-listed) — fall
+            // through to the full search so we don't silently block the track.
+            Log.d(TAG, "trackIdCache stale qobuzId=${cachedEntry.qobuzTrackId} — falling through to search")
+        }
+
+        // ── Slow path: search + score ─────────────────────────────────
         // 1. Search kennyy.com.br for candidates. ISRC is Qobuz's best
         // index key — when we have one, send it as the query directly.
         // Try the full artist credit first (single artists with commas in
@@ -133,8 +154,6 @@ class KennyySource @Inject constructor(
         // 3. Resolve to a signed download URL. kennyy.com.br returns 403
         // when the track is non-streamable; callLimited returns null so
         // we fall through to the next source cleanly.
-        val tier = losslessPrefs.qualityTierNow()
-        val requestedQuality = tier.qobuzCode
         Log.d(TAG, "kennyy_qobuz: requested quality=$requestedQuality (tier=${tier.name})")
         val download = callLimited(bypassRateLimit) {
             apiClient.getFileUrl(best.first.id, requestedQuality)
@@ -145,10 +164,6 @@ class KennyySource @Inject constructor(
             return null
         }
         if (urlInspector.isDegraded(download.url, requestedQuality)) {
-            // Proxy returned a preview sample or a lossy downgrade instead of
-            // the requested lossless track. Treat as a miss so the registry
-            // fails over, and cool the source down so we stop wasting a
-            // round-trip per track until it recovers.
             Log.w(
                 TAG,
                 "degraded url for ${best.first.id} (sample/downgrade) — failing over; " +
@@ -165,6 +180,9 @@ class KennyySource @Inject constructor(
         val artUrl = albumImage?.large
             ?: albumImage?.thumbnail
             ?: albumImage?.small
+
+        // Cache the track ID and art URL for future fast-path resolves.
+        trackIdCache.put(query.artist, query.title, best.first.id, artUrl)
 
         val format = AudioFormat(
             codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
@@ -183,6 +201,50 @@ class KennyySource @Inject constructor(
         )
         Log.d(TAG, "resolved '${query.title}' url=${result.downloadUrl.take(60)}... codec=${format.codec}")
         return result
+    }
+
+    /**
+     * Resolves a signed download URL from a known Qobuz track ID,
+     * skipping the expensive search step. Returns null if the download
+     * call fails or the URL is degraded — the caller falls through to
+     * the full search path.
+     */
+    private suspend fun resolveFromTrackId(
+        qobuzTrackId: Long,
+        requestedQuality: Int,
+        bypassRateLimit: Boolean,
+        cachedArtUrl: String? = null,
+    ): SourceResult? {
+        Log.d(TAG, "kennyy_qobuz: requested quality=$requestedQuality (cached fast-path)")
+        val download = callLimited(bypassRateLimit) {
+            apiClient.getFileUrl(qobuzTrackId, requestedQuality)
+        } ?: return null
+
+        if (download.url.isNullOrEmpty()) {
+            Log.d(TAG, "download-music returned empty url for cached $qobuzTrackId")
+            return null
+        }
+        if (urlInspector.isDegraded(download.url, requestedQuality)) {
+            Log.w(TAG, "degraded url for cached $qobuzTrackId — invalidating cache")
+            healthGate.recordDegraded(id)
+            return null
+        }
+
+        val format = AudioFormat(
+            codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
+            bitrateKbps = 0,
+            sampleRateHz = 0,
+            bitsPerSample = 0,
+        )
+        return SourceResult(
+            sourceId = id,
+            downloadUrl = download.url,
+            downloadHeaders = emptyMap(),
+            format = format,
+            confidence = 1.0f,
+            sourceTrackId = qobuzTrackId.toString(),
+            coverArtUrl = cachedArtUrl,
+        )
     }
 
     override suspend fun rateLimitState(): RateLimitState = rateLimiter.stateOf(id)

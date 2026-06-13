@@ -44,6 +44,10 @@ abstract class MediaModule {
     @Singleton
     abstract fun bindPlayerRepository(impl: PlayerRepositoryImpl): PlayerRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindConnectivityMonitor(impl: com.stash.core.media.streaming.RealConnectivityMonitor): com.stash.core.media.streaming.ConnectivityMonitor
+
     // ------------------------------------------------------------------
     // EQ rebuild — Task 11 (additive only; legacy EqualizerManager untouched)
     // ------------------------------------------------------------------

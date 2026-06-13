@@ -252,7 +252,11 @@ class TrackDownloadWorker @AssistedInject constructor(
             // before calling doWork(). This setForeground() call UPDATES the
             // notification to show the real track count now that we know it.
             syncStateManager.onDownloading(downloaded = 0, total = total)
-            setForeground(createForegroundInfo(downloaded = 0, total = total))
+            runCatching {
+                setForeground(createForegroundInfo(downloaded = 0, total = total))
+            }.onFailure { e ->
+                Log.w(TAG, "Failed to update foreground service notification during startup", e)
+            }
 
             // ── Parallel download loop ──────────────────────────────────
             //
@@ -727,13 +731,17 @@ class TrackDownloadWorker @AssistedInject constructor(
         // Swap the foreground notification to single-track wording so the user
         // sees "Retrying download — Artist – Title" instead of the chain-mode
         // "Syncing playlists / Preparing downloads…" copy.
-        setForeground(
-            createForegroundInfo(
-                title = "Retrying download",
-                text = "${track.artist} – ${track.title}",
-                progress = -1f, // indeterminate — single-track has no N-of-M progress
-            ),
-        )
+        runCatching {
+            setForeground(
+                createForegroundInfo(
+                    title = "Retrying download",
+                    text = "${track.artist} – ${track.title}",
+                    progress = -1f, // indeterminate — single-track has no N-of-M progress
+                ),
+            )
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to update foreground notification for single track retry", e)
+        }
 
         // Manual retries deliberately do NOT increment retry_count — user-initiated
         // attempts should not consume the auto-retry budget owned by chain mode.

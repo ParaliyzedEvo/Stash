@@ -28,6 +28,7 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.mediarouter)
+    implementation(libs.androidx.appcompat)
 
 
     // v0.9.18 — first tests in this module. Stand up the same JUnit +

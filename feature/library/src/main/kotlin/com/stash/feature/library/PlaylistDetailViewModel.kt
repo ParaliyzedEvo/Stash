@@ -201,7 +201,8 @@ class PlaylistDetailViewModel @Inject constructor(
             try {
                 val playable = playableTracks()
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId }
+                if (index < 0) return@launch // tapped track not in playable list
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null

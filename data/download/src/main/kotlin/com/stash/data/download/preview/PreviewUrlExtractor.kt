@@ -166,6 +166,7 @@ class PreviewUrlExtractor @Inject constructor(
                 ytDlpExtract = hooks::ytDlpExtract,
                 itSem = innerTubeSemaphore,
                 ytSem = ytDlpSemaphore,
+                ensureFreshened = {}
             )
 
         /**
@@ -190,6 +191,7 @@ class PreviewUrlExtractor @Inject constructor(
             ytDlpExtract: suspend (String) -> String,
             itSem: Semaphore,
             ytSem: Semaphore,
+            ensureFreshened: suspend () -> Unit,
         ): String {
             itSem.acquire()
             val itResult = try {
@@ -207,6 +209,7 @@ class PreviewUrlExtractor @Inject constructor(
             if (itResult != null) {
                 return itResult
             }
+            ensureFreshened()
             ytSem.acquire()
             return try {
                 ytDlpExtract(videoId)
@@ -356,6 +359,7 @@ class PreviewUrlExtractor @Inject constructor(
                 },
                 itSem = innerTubeSemaphore,
                 ytSem = ytDlpSemaphore,
+                ensureFreshened = { ytDlpManager.ensureFreshened() }
             )
             Log.d("LATDIAG", "extract-end videoId=$videoId dt=${System.currentTimeMillis() - t0}ms")
             url
@@ -389,6 +393,7 @@ class PreviewUrlExtractor @Inject constructor(
      */
     suspend fun extractStreamUrlViaYtDlp(videoId: String): String =
         coalesce("$videoId#ytdlp") {
+            ytDlpManager.ensureFreshened()
             ytDlpSemaphore.withPermit { extractViaYtDlp(videoId) }
         }
 
@@ -479,8 +484,6 @@ class PreviewUrlExtractor @Inject constructor(
 
         return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
-                ytDlpManager.initialize()
-
                 try {
                     val url = "https://www.youtube.com/watch?v=$videoId"
 
@@ -488,6 +491,11 @@ class PreviewUrlExtractor @Inject constructor(
                         addOption("-f", FORMAT_SELECTOR)
                         addOption("--print", "urls")
                         addOption("--no-download")
+                        val cacheDir = File(context.cacheDir, "yt_dlp_cache")
+                        if (!cacheDir.exists()) {
+                            cacheDir.mkdirs()
+                        }
+                        addOption("--cache-dir", cacheDir.absolutePath)
 
                         val qjsPath = ytDlpManager.quickJsPath
                         if (qjsPath != null) {
@@ -529,4 +537,5 @@ class PreviewUrlExtractor @Inject constructor(
             }
         }
     }
+
 }

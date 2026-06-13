@@ -52,7 +52,14 @@ class QobuzStreamResolver @Inject constructor(
             isrc = track.isrc?.takeIf { it.isNotBlank() },
             durationMs = track.durationMs,
         )
-        val result = source.resolveImmediate(query) ?: run {
+        val result = try {
+            kotlinx.coroutines.withTimeout(STREAM_RESOLVE_TIMEOUT_MS) {
+                source.resolveImmediate(query)
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w(TAG, "timeout id=${track.id} after ${STREAM_RESOLVE_TIMEOUT_MS}ms")
+            return null
+        } ?: run {
             Log.d(TAG, "no_result id=${track.id}")
             return null
         }
@@ -85,6 +92,7 @@ class QobuzStreamResolver @Inject constructor(
     private companion object {
         const val TAG = "QobuzStreamResolver"
         const val ORIGIN = "squid"
+        const val STREAM_RESOLVE_TIMEOUT_MS = 3_000L
         val ETSP_REGEX = Regex("""[?&]etsp=(\d+)""")
     }
 }

@@ -83,9 +83,23 @@ class YouTubeStreamResolver @Inject constructor(
         // and cross-matched Spotify rows already have one). Otherwise
         // fall through to a YT Music search by metadata — covers the
         // pure-Spotify case where the original sync never linked to YT.
-        val videoId = track.youtubeId?.takeIf { it.isNotBlank() }
-            ?: searchYouTubeForVideoId(track)
-            ?: return null
+        val t0 = System.currentTimeMillis()
+        val storedId = track.youtubeId?.takeIf { it.isNotBlank() }
+        val videoId = storedId ?: run {
+            val searchResult = searchYouTubeForVideoId(track)
+            val dt = System.currentTimeMillis() - t0
+            if (searchResult == null) {
+                Log.d("LATDIAG", "yt-resolver: videoId-search null dt=${dt}ms " +
+                    "id=${track.id} artist='${track.artist}' title='${track.title}'")
+            } else {
+                Log.d("LATDIAG", "yt-resolver: videoId-search hit dt=${dt}ms " +
+                    "id=${track.id} videoId=$searchResult")
+            }
+            searchResult
+        } ?: return null
+        if (storedId != null) {
+            Log.d("LATDIAG", "yt-resolver: using stored videoId=$storedId id=${track.id}")
+        }
 
         val url = withTimeoutOrNull(YT_RESOLVE_TIMEOUT_MS) {
             // Playback resolution (allowYtDlp=true: tap / prefetch / 403-refresh)
@@ -96,7 +110,9 @@ class YouTubeStreamResolver @Inject constructor(
             // InnerTube fast lane to seed the deep in-order timeline — those
             // placeholders never actually stream audio (prefetch / 403-refresh
             // swap them to a yt-dlp URL before playback).
-            runCatching {
+            Log.d("LATDIAG", "yt-resolver: extracting id=${track.id} videoId=$videoId allowYtDlp=$allowYtDlp")
+            val startTime = System.currentTimeMillis()
+            val result = runCatching {
                 if (allowYtDlp) {
                     urlExtractor.extractStreamUrlViaYtDlp(videoId)
                 } else {
@@ -110,8 +126,14 @@ class YouTubeStreamResolver @Inject constructor(
                     // simply preempted by a newer tap or queue change.
                     if (t is CancellationException) throw t
                     Log.d(TAG, "extraction failed for $videoId: ${t.message}")
+                    Log.d("LATDIAG", "yt-resolver: extraction FAILED id=${track.id} dt=${System.currentTimeMillis() - startTime}ms")
                 }
                 .getOrNull()
+            
+            if (result != null) {
+                Log.d("LATDIAG", "yt-resolver: extraction HIT id=${track.id} dt=${System.currentTimeMillis() - startTime}ms")
+            }
+            result
         } ?: return null
 
         val expiresAtMs = parseExpireMs(url) ?: (System.currentTimeMillis() + DEFAULT_TTL_MS)

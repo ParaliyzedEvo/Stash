@@ -3,18 +3,19 @@ package com.stash.core.media.preview.di
 import android.content.Context
 import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.stash.core.media.preview.TrackKeyCacheKeyFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.OkHttpClient
 import java.io.File
 import javax.inject.Singleton
 
@@ -27,9 +28,11 @@ import javax.inject.Singleton
  * uninstall. 200MB LRU cap. Holds 2-6 FLAC previews; older entries evict
  * on use.
  *
- * HTTP source is `DefaultHttpDataSource.Factory` (no OkHttp connection
- * pool / cookie features needed for stateless Qobuz signed CDN URLs;
- * avoids adding the separate `media3-datasource-okhttp` artifact).
+ * HTTP source uses `OkHttpDataSource.Factory` backed by the app-wide
+ * [OkHttpClient] so preview fetches share the same connection pool,
+ * HTTP/2 multiplexing, DNS tuning, and TLS sessions as all other HTTP
+ * traffic. This replaces the earlier `DefaultHttpDataSource.Factory`
+ * which maintained its own connection pool.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -57,11 +60,11 @@ object PreviewCacheModule {
     ): SimpleCache = SimpleCache(cacheDir, evictor, databaseProvider)
 
     @Provides @Singleton
-    fun provideHttpDataSourceFactory(): HttpDataSource.Factory =
-        DefaultHttpDataSource.Factory()
-            .setUserAgent("Stash/0.9.12")
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
+    fun provideHttpDataSourceFactory(
+        okHttpClient: OkHttpClient,
+    ): HttpDataSource.Factory =
+        OkHttpDataSource.Factory(okHttpClient)
+            .setUserAgent("Stash/0.9.26")
 
     /**
      * Binds [TrackKeyCacheKeyFactory] as the graph-wide [CacheKeyFactory].

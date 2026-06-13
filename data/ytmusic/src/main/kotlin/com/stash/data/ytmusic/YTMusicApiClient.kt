@@ -45,6 +45,7 @@ class YTMusicApiClient @Inject constructor(
 
     companion object {
         private const val TAG = "StashYTApi"
+        private const val CLASSIFY_SAMPLE_SIZE = 3
 
         /** InnerTube browse ID for the YouTube Music home feed. */
         private const val BROWSE_HOME = "FEmusic_home"
@@ -77,6 +78,23 @@ class YTMusicApiClient @Inject constructor(
 
         /** Backoff delays (ms) between retries on transient failures. */
         private val RETRY_BACKOFFS_MS = listOf(500L, 1500L)
+
+        // Localized shelf title variants. InnerTube sends titles in the user's
+        // device language; these cover the most common locales seen in the wild.
+        private val SONGS_TITLES = setOf(
+            "Songs", "Canciones", "Chansons", "Lieder", "Brani", "Músicas",
+            "Lagu", "गाने", "曲", "歌曲", "노래", "Песни", "เพลง", "Şarkılar",
+            "Piosenki", "Låtar", "Sange", "Liedjes", "Skladby",
+        )
+        private val ARTISTS_TITLES = setOf(
+            "Artists", "Artistas", "Artistes", "Künstler", "Artisti", "Artiesten",
+            "Sanatçılar", "Nghệ sĩ", "कलाकार", "アーティスト", "艺术家", "아티스트",
+            "Исполнители", "ศิลปิน", "Wykonawcy", "Artister", "Kunstnere", "Umělci",
+        )
+        private val ALBUMS_TITLES = setOf(
+            "Albums", "Álbumes", "Alben", "アルバム", "专辑", "앨범",
+            "Альбомы", "อัลบั้ม", "Albumy", "Albüm",
+        )
     }
 
     /**
@@ -327,56 +345,83 @@ class YTMusicApiClient @Inject constructor(
             ?.let { parseTopResultCard(it) }
             ?.let { sections.add(SearchResultSection.Top(it)) }
 
-        // 2..4. Named musicShelfRenderer shelves, dispatched by their title text or structural fallback.
+        // Track which section kinds we've already added so duplicates are skipped.
+        var hasSongs = false
+        var hasArtists = false
+        var hasAlbums = false
+
+        // 2..N. Named musicShelfRenderer shelves, dispatched by their title text or structural fallback.
         for (shelf in shelves) {
             val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
             val title = renderer.navigatePath("title", "runs")?.firstArray()
                 ?.firstOrNull()?.asObject()?.get("text")?.asString()
 
-            val shelfType = when (title) {
-                "Songs" -> "Songs"
-                "Artists" -> "Artists"
-                "Albums" -> "Albums"
+            // Title-based matching: accept English titles and common localized variants.
+            val shelfType = when {
+                title != null && SONGS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Songs"
+                title != null && ARTISTS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Artists"
+                title != null && ALBUMS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Albums"
                 else -> {
-                    // Structural fallback check
+                    // Structural fallback: inspect up to 3 items to classify the shelf.
                     val contentsArray = renderer["contents"]?.asArray()
-                    val firstItemObj = contentsArray?.firstOrNull()?.asObject()
-                    if (firstItemObj?.containsKey("musicTwoRowItemRenderer") == true) {
-                        "Albums"
-                    } else {
-                        val itemRenderer = firstItemObj?.get("musicResponsiveListItemRenderer")?.asObject()
-                        if (itemRenderer != null) {
-                            val isSong = parseTrackSummaryFromListItem(itemRenderer) != null
-                            if (isSong) {
-                                "Songs"
-                            } else {
-                                val browseId = itemRenderer.navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString()
-                                if (browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC"))) {
-                                    "Artists"
-                                } else {
-                                    null
-                                }
-                            }
-                        } else {
-                            null
-                        }
-                    }
+                    classifyShelfStructurally(contentsArray)
                 }
             }
 
             // Parsers live in SearchResponseParser.kt as top-level internal funcs.
             when (shelfType) {
-                "Songs" -> parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Songs(it.take(4))) }
-                "Artists" -> parseArtistsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Artists(it)) }
-                "Albums" -> parseAlbumsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Albums(it)) }
+                "Songs" -> if (!hasSongs) {
+                    parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
+                        ?.let { sections.add(SearchResultSection.Songs(it.take(4))); hasSongs = true }
+                }
+                "Artists" -> if (!hasArtists) {
+                    parseArtistsShelf(renderer).takeIf { it.isNotEmpty() }
+                        ?.let { sections.add(SearchResultSection.Artists(it)); hasArtists = true }
+                }
+                "Albums" -> if (!hasAlbums) {
+                    parseAlbumsShelf(renderer).takeIf { it.isNotEmpty() }
+                        ?.let { sections.add(SearchResultSection.Albums(it)); hasAlbums = true }
+                }
+                else -> Log.d(TAG, "searchAll: skipping unrecognized shelf title='$title'")
             }
         }
 
         Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
         return SearchAllResults(sections)
+    }
+
+    /**
+     * Structurally classifies a music shelf by inspecting up to [CLASSIFY_SAMPLE_SIZE]
+     * items. Checks for `musicTwoRowItemRenderer` (Albums), then inspects
+     * `musicResponsiveListItemRenderer` items for song-like traits (videoId + flex
+     * columns) or artist-like traits (browseId starting with UC/MPLAUC).
+     */
+    private fun classifyShelfStructurally(contentsArray: kotlinx.serialization.json.JsonArray?): String? {
+        if (contentsArray == null || contentsArray.isEmpty()) return null
+        val sampleSize = minOf(contentsArray.size, CLASSIFY_SAMPLE_SIZE)
+        for (i in 0 until sampleSize) {
+            val itemObj = contentsArray[i].asObject() ?: continue
+            // musicTwoRowItemRenderer → Albums
+            if (itemObj.containsKey("musicTwoRowItemRenderer")) return "Albums"
+            val itemRenderer = itemObj["musicResponsiveListItemRenderer"]?.asObject() ?: continue
+            // Check for song traits: has a videoId
+            val hasVideoId = itemRenderer["playlistItemData"]?.asObject()
+                ?.get("videoId")?.asString() != null ||
+                itemRenderer.navigatePath(
+                    "overlay", "musicItemThumbnailOverlayRenderer", "content",
+                    "musicPlayButtonRenderer", "playNavigationEndpoint",
+                    "watchEndpoint", "videoId",
+                )?.asString() != null
+            if (hasVideoId) return "Songs"
+            // Check for artist traits: browseId starting with UC or MPLAUC
+            val browseId = itemRenderer.navigatePath(
+                "navigationEndpoint", "browseEndpoint", "browseId",
+            )?.asString()
+            if (browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC"))) {
+                return "Artists"
+            }
+        }
+        return null
     }
 
     /**

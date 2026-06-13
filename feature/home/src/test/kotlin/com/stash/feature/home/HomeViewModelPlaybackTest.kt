@@ -161,6 +161,9 @@ class HomeViewModelPlaybackTest {
         val tipJar = mock<TipJarRepository> {
             onBlocking { isStale() } doReturn false
         }
+        val networkManager = mock<com.stash.core.media.streaming.NetworkAwareStreamingManager> {
+            on { messages } doReturn kotlinx.coroutines.flow.MutableSharedFlow<String>()
+        }
         return HomeViewModel(
             musicRepository = musicRepo,
             playerRepository = playerRepository,
@@ -179,6 +182,8 @@ class HomeViewModelPlaybackTest {
             streamingPreference = streamingPreference,
             metadataBackfillState = mock(),
             lyricsBackfillState = mock(),
+            networkAwareStreamingManager = networkManager,
+            syncScheduler = mock(),
             context = mock(),
         )
     }

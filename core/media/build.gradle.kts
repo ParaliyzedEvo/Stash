@@ -42,6 +42,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.media3.datasource)
+    implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.database)
     implementation(libs.media3.cast)
     implementation(libs.play.services.cast.framework)
@@ -71,11 +72,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     // Unit tests — TrackActionsDelegateTest.
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
     testImplementation(libs.truth)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
-    testImplementation("org.mockito:mockito-core:5.14.2")
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
     // Robolectric — Android environment for EqStoreTest (DataStore + ApplicationProvider).
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)

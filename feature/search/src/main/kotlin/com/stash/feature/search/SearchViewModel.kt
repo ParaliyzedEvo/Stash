@@ -9,6 +9,7 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.actions.TrackActionsDelegate
+import com.stash.core.data.cache.ArtistCache
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.YTMusicApiClient
@@ -17,6 +18,7 @@ import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -58,7 +60,10 @@ class SearchViewModel @Inject constructor(
     val losslessPrefetcher: LosslessUrlPrefetcher,
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
+    private val artistCache: ArtistCache,
 ) : ViewModel() {
+
+    var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     companion object {
         private const val TAG = "SearchVM"
@@ -110,7 +115,7 @@ class SearchViewModel @Inject constructor(
             queryFlow
                 .debounce(DEBOUNCE_MS)
                 .distinctUntilChanged()
-                .flatMapLatest { q -> runSearch(q).flowOn(Dispatchers.IO) }
+                .flatMapLatest { q -> runSearch(q).flowOn(ioDispatcher) }
                 .collect { status -> _uiState.update { it.copy(status = status) } }
         }
     }
@@ -150,6 +155,7 @@ class SearchViewModel @Inject constructor(
                 }
                 prefetchTopN(sections)
                 refreshDownloadedIds(sections)
+                preloadArtistProfiles(sections)
             }
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
@@ -259,6 +265,36 @@ class SearchViewModel @Inject constructor(
             }
         }
         delegate.refreshDownloadedIds(videoIds)
+    }
+
+    /**
+     * Extracts the top matching artists from search results and preloads their profiles
+     * into memory/disk cache, ensuring artist profile screens load instantly on navigation.
+     */
+    private fun preloadArtistProfiles(sections: List<SearchResultSection>) {
+        viewModelScope.launch(ioDispatcher) {
+            val artistIds = mutableListOf<String>()
+            sections.forEach { section ->
+                when (section) {
+                    is SearchResultSection.Top -> {
+                        (section.item as? TopResultItem.ArtistTop)?.artist?.id?.let { artistIds.add(it) }
+                    }
+                    is SearchResultSection.Artists -> {
+                        artistIds.addAll(section.artists.take(3).map { it.id })
+                    }
+                    else -> Unit
+                }
+            }
+            artistIds.distinct().forEach { artistId ->
+                try {
+                    artistCache.get(artistId).collect {}
+                    Log.d(TAG, "Preloaded artist profile for ID: $artistId")
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    Log.w(TAG, "Failed to preload artist profile for ID: $artistId", t)
+                }
+            }
+        }
     }
 
     override fun onCleared() {

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import kotlinx.coroutines.CancellationException
 
 /**
  * HTTP client for the public `qobuz.squid.wtf/api` proxy.
@@ -149,35 +150,58 @@ class QobuzApiClient @Inject constructor(
      *    constructed [T])
      */
     private inline fun <reified T> executeAndParseEnvelope(request: Request): T {
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-
-            if (!response.isSuccessful) {
-                val parsedMessage = runCatching {
-                    json.decodeFromString<SquidWtfEnvelope<T>>(body).error
-                }.getOrNull()
-                throw QobuzApiException(
-                    status = response.code,
-                    message = parsedMessage ?: response.message.ifBlank { "HTTP ${response.code}" },
-                )
-            }
-
-            val envelope = runCatching { json.decodeFromString<SquidWtfEnvelope<T>>(body) }
-                .getOrElse { e ->
-                    throw QobuzApiException(
-                        status = response.code,
-                        message = "malformed JSON: ${e.message}",
-                    )
-                }
-
-            if (!envelope.success || envelope.data == null) {
-                throw QobuzApiException(
-                    status = response.code,
-                    message = envelope.error ?: "empty data with success=${envelope.success}",
-                )
-            }
-            return envelope.data
+        val originalUrl = request.url
+        val isTargetingDefault = originalUrl.toString().startsWith(DEFAULT_BASE_URL)
+        val urlsToTry = if (isTargetingDefault) {
+            listOf(
+                originalUrl,
+                originalUrl.toString().replace(DEFAULT_BASE_URL, "https://us.qobuz.squid.wtf/api").toHttpUrl(),
+                originalUrl.toString().replace(DEFAULT_BASE_URL, "https://eu.qobuz.squid.wtf/api").toHttpUrl()
+            )
+        } else {
+            listOf(originalUrl)
         }
+
+        var lastException: Throwable? = null
+        for (url in urlsToTry) {
+            val newRequest = request.newBuilder().url(url).build()
+            try {
+                httpClient.newCall(newRequest).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+
+                    if (!response.isSuccessful) {
+                        val parsedMessage = runCatching {
+                            json.decodeFromString<SquidWtfEnvelope<T>>(body).error
+                        }.getOrNull()
+                        throw QobuzApiException(
+                            status = response.code,
+                            message = parsedMessage ?: response.message.ifBlank { "HTTP ${response.code}" },
+                        )
+                    }
+
+                    val envelope = runCatching { json.decodeFromString<SquidWtfEnvelope<T>>(body) }
+                        .getOrElse { e ->
+                            throw QobuzApiException(
+                                status = response.code,
+                                message = "malformed JSON: ${e.message}",
+                            )
+                        }
+
+                    if (!envelope.success || envelope.data == null) {
+                        throw QobuzApiException(
+                            status = response.code,
+                            message = envelope.error ?: "empty data with success=${envelope.success}",
+                        )
+                    }
+                    return envelope.data
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                lastException = t
+                android.util.Log.w("QobuzApiClient", "Request failed for mirror $url: ${t.message}. Trying next mirror...")
+            }
+        }
+        throw lastException ?: QobuzApiException(500, "Unknown error resolving mirrors")
     }
 
     companion object {

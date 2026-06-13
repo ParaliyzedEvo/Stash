@@ -77,6 +77,7 @@ class SearchDownloadCoordinatorDeferTest {
         localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        syncNotificationManager = mockk(relaxed = true),
     )
 
     private fun stubTrack(): TrackItem = TrackItem(

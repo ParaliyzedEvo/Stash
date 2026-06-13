@@ -22,7 +22,15 @@ import javax.inject.Singleton
  *      lossless (own multi-source backend). Self-gates: returns null when
  *      not connected / out of quota, so it only engages when both Qobuz
  *      proxies miss. Plays a locally-cached FLAC (no signed CDN URL).
- *   4. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   4. [LucidaStreamResolver]   — `lucida.to`, Qobuz-sourced FLAC via
+ *      intermediary. Self-gates via `LosslessSourceHealthGate`; returns
+ *      null when the content is degraded.
+ *   5. [SaavnStreamResolver]    — JioSaavn API, AAC 320 kbps. Covers
+ *      Indian music that isn't in the Qobuz catalog and may not be on
+ *      YouTube Music. Fast (~1-2 s), better quality than YT. Before
+ *      YouTube because it's faster and higher quality for the tracks it
+ *      covers.
+ *   6. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -51,6 +59,8 @@ class StreamSourceRegistry @Inject constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
     private val antra: AntraStreamResolver,
+    private val lucida: LucidaStreamResolver,
+    private val saavn: SaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
 ) {
@@ -111,19 +121,26 @@ class StreamSourceRegistry @Inject constructor(
                 // the forceYt branch above on purpose: that toggle exists to
                 // force the YouTube path by skipping ALL lossless sources.
                 if (allowAntra) add("antra" to antra::resolve)
+                add("lucida" to lucida::resolve)
+                add("saavn" to saavn::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }
         for ((name, fn) in resolvers) {
+            Log.d("LATDIAG", "registry: trying '$name' for id=${track.id} '${track.title}'")
+            val t0 = System.currentTimeMillis()
             val result = runCatching { fn(track) }
                 .onFailure { e ->
                     // Resolvers should never throw — they catch and return
                     // null. Defensive log so an unexpected throw from one
                     // source doesn't break the chain.
                     Log.w(TAG, "$name threw on resolve for ${track.id} '${track.title}'", e)
+                    Log.w("LATDIAG", "registry: '$name' THREW dt=${System.currentTimeMillis() - t0}ms: ${e.message}")
                 }
                 .getOrNull()
+            val dt = System.currentTimeMillis() - t0
             if (result != null) {
+                Log.d("LATDIAG", "registry: '$name' HIT dt=${dt}ms id=${track.id} origin=${result.origin}")
                 if (name != "kennyy") {
                     // Diagnostic: anything other than the primary source is
                     // a fallback path worth noticing. Helps explain "this
@@ -132,7 +149,9 @@ class StreamSourceRegistry @Inject constructor(
                 }
                 return result
             }
+            Log.d("LATDIAG", "registry: '$name' MISS dt=${dt}ms id=${track.id}")
         }
+        Log.w("LATDIAG", "registry: ALL resolvers failed for id=${track.id} '${track.title}'")
         return null
     }
 

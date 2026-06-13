@@ -100,6 +100,8 @@ class SettingsViewModel @Inject constructor(
     private val crashFileStore: CrashFileStore,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val databaseBackupManager: DatabaseBackupManager,
+    private val previewUrlExtractor: com.stash.data.download.preview.PreviewUrlExtractor,
+    private val ytDlpManager: com.stash.data.download.ytdlp.YtDlpManager,
 ) : ViewModel() {
 
     /**
@@ -1165,4 +1167,60 @@ class SettingsViewModel @Inject constructor(
         val file: java.io.File,
         val contentUri: android.net.Uri,
     )
+
+    fun testYtDlp() {
+        viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            try {
+                val url = previewUrlExtractor.extractStreamUrlViaYtDlp("9bZkp7q19f0")
+                val duration = System.currentTimeMillis() - t0
+                android.widget.Toast.makeText(
+                    appContext,
+                    "yt-dlp Success! Extract took ${duration}ms.\nURL: ${url.take(60)}...",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                val duration = System.currentTimeMillis() - t0
+                android.widget.Toast.makeText(
+                    appContext,
+                    "yt-dlp Failed after ${duration}ms: ${e.message}",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    /**
+     * Force-updates the yt-dlp binary to the latest nightly release.
+     * Shows a Toast with the result and new version string.
+     */
+    fun updateYtDlp() {
+        viewModelScope.launch {
+            android.widget.Toast.makeText(
+                appContext,
+                "Updating yt-dlp to latest nightly\u2026",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            try {
+                val (result, version) = ytDlpManager.forceUpdate()
+                val msg = when (result) {
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.Updated ->
+                        "\u2705 yt-dlp updated!\nVersion: $version"
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.AlreadyUpToDate ->
+                        "\u2705 yt-dlp already up to date.\nVersion: $version"
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.Failed ->
+                        "\u274c Update failed: ${result.reason}\nVersion: $version"
+                }
+                android.widget.Toast.makeText(
+                    appContext, msg, android.widget.Toast.LENGTH_LONG,
+                ).show()
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    appContext,
+                    "\u274c yt-dlp update error: ${e.message}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
 }

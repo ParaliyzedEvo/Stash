@@ -88,6 +88,29 @@ enum class InnerTubeVariant(
         sendsApiKey = false,
     ),
 
+    /**
+     * Android YouTube Music app. Used by InnerTune and other FOSS players.
+     * Frequently returns unciphered audio URLs, especially for music tracks
+     * where IOS returns ciphered `signatureCipher` responses. Falls back to
+     * the `music.youtube.com` host with the standard music API key.
+     */
+    ANDROID_MUSIC(
+        clientName = "ANDROID_MUSIC",
+        clientVersion = "7.27.52",
+        userAgent =
+            "com.google.android.apps.youtube.music/7.27.52 " +
+                "(Linux; U; Android 14; Pixel 8 Build/UD1A.230803.041) gzip",
+        extraClientFields = mapOf(
+            "deviceMake" to "Google",
+            "deviceModel" to "Pixel 8",
+            "osName" to "Android",
+            "osVersion" to "14",
+            "androidSdkVersion" to 34,
+        ),
+        clientNameId = "21",
+        sendsApiKey = true,
+    ),
+
     /** Standard web YouTube Music client. URLs are typically ciphered. */
     WEB_REMIX(
         clientName = "WEB_REMIX",
@@ -151,6 +174,7 @@ class InnerTubeClient @Inject constructor(
          */
         internal val AUDIO_VARIANT_ORDER = listOf(
             InnerTubeVariant.IOS,
+            InnerTubeVariant.ANDROID_MUSIC,
         )
     }
 

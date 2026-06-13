@@ -7,3 +7,13 @@ plugins {
     alias(libs.plugins.hilt) apply false
     alias(libs.plugins.ksp) apply false
 }
+
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10")
+        }
+    }
+}
+

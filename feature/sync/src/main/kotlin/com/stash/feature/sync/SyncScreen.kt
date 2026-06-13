@@ -60,6 +60,8 @@ import com.stash.feature.sync.components.SyncActionProgress
 import com.stash.feature.sync.components.SyncStatusCard
 import com.stash.feature.sync.components.StatusPill
 import com.stash.feature.sync.components.formatRelativeTime
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 
 /**
  * Main Sync screen.
@@ -67,6 +69,7 @@ import com.stash.feature.sync.components.formatRelativeTime
  * Displays connected source status, schedule configuration, a manual sync
  * trigger with live progress, and recent sync history.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SyncScreen(
     modifier: Modifier = Modifier,
@@ -82,12 +85,29 @@ fun SyncScreen(
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    PullToRefreshBox(
+        isRefreshing = uiState.isSyncing,
+        onRefresh = viewModel::onSyncNow,
+        modifier = modifier.fillMaxSize(),
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+        // -- Auth expiry banner ----------------------------------------------
+        // Mounted ABOVE the SyncStatusCard so users see "session expired"
+        // before anything else when probes flag expired Spotify/YouTube
+        // credentials. The banner renders zero-height when neither source
+        // is expired, so it's a no-op for healthy logins.
+        item {
+            AuthExpiredBanner(
+                state = authState,
+                onReauth = onNavigateToSettings,
+            )
+        }
+
         // -- Header -----------------------------------------------------------
         item {
             Spacer(Modifier.height(8.dp))
@@ -297,6 +317,7 @@ fun SyncScreen(
         // Bottom spacing so content isn't hidden behind nav bar
         item { Spacer(Modifier.height(80.dp)) }
     }
+}
 }
 
 // -- Section Label ──────────────────────────────────────────────────────────

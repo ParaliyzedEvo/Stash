@@ -282,8 +282,11 @@ interface TrackDao {
           AND bl.canonical_key IS NULL
           AND (
               t.is_downloaded = 1
-              OR :includeStreamable
               OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+              OR (
+                  :includeStreamable
+                  AND (t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL)
+              )
           )
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,

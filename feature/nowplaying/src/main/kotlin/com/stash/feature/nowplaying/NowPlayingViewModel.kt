@@ -18,6 +18,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
+import com.stash.core.model.RepeatMode
 import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.model.Track
 import com.stash.data.lyrics.LyricsRepository
@@ -302,9 +303,12 @@ class NowPlayingViewModel @Inject constructor(
                 }
 
                 current.copy(
-                    // Prefer Room's live row; fall back to player's MediaItem
-                    // snapshot for non-library content (streams, search previews).
-                    currentTrack = finalTrack,
+                    // Keep the previous track visible during transitions — when the
+                    // player switches from one MediaItem to the next, there's a brief
+                    // window where currentTrack is null. Without the fallback, the
+                    // mini player's AnimatedVisibility(hasTrack) hides and re-shows,
+                    // causing a visible flicker on every skip/auto-advance.
+                    currentTrack = finalTrack ?: current.currentTrack,
                     isPlaying = state.isPlaying,
                     currentPositionMs = positionMs,
                     durationMs = state.durationMs,
@@ -403,7 +407,17 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Advance to the next track in the queue. */
     fun onSkipNext() {
-        viewModelScope.launch { playerRepository.skipNext() }
+        viewModelScope.launch {
+            val size = _uiState.value.queueSize
+            val index = _uiState.value.currentIndex
+            val repeatMode = _uiState.value.repeatMode
+            val hasNext = (index < size - 1) || repeatMode == RepeatMode.ALL
+            if (hasNext) {
+                playerRepository.skipNext()
+            } else if (size > 0) {
+                playerRepository.skipToQueueIndex(0)
+            }
+        }
     }
 
     /** Return to the previous track (or restart current). */

@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Replay
+import com.stash.core.model.RepeatMode
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -95,6 +98,7 @@ fun MiniPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    val ctx = LocalContext.current
                     // Album art thumbnail.
                     val track = uiState.currentTrack
                     val artModel = track?.albumArtPath ?: track?.albumArtUrl
@@ -168,52 +172,64 @@ fun MiniPlayer(
                         }
                     }
 
-                    // Skip next button.
+                    // Skip next / Restart button.
+                    val hasNext = (uiState.currentIndex < uiState.queue.size - 1) || uiState.repeatMode == RepeatMode.ALL
                     IconButton(onClick = viewModel::onSkipNext) {
                         Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            imageVector = if (hasNext) Icons.Default.SkipNext else Icons.Default.Replay,
+                            contentDescription = if (hasNext) "Next" else "Restart",
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     }
 
-                    // Chromecast / Google Cast Route Button.
-                    // Wrapped in Theme_Black context to prevent the "background can not be
-                    // translucent" crash. See NowPlayingScreen.kt for full explanation.
-                    androidx.compose.ui.viewinterop.AndroidView(
-                        factory = { ctx ->
-                            val themedCtx = android.view.ContextThemeWrapper(
-                                ctx,
-                                android.R.style.Theme_Black,
-                            )
-                            runCatching {
-                                androidx.mediarouter.app.MediaRouteButton(themedCtx).apply {
-                                    com.google.android.gms.cast.framework.CastButtonFactory
-                                        .setUpMediaRouteButton(ctx, this)
-                                    // Tint to match other mini player icons (dark gray)
-                                    runCatching {
-                                        val drawable = androidx.core.content.ContextCompat.getDrawable(
-                                            ctx,
-                                            androidx.mediarouter.R.drawable.mr_button_light,
-                                        )
-                                        if (drawable != null) {
-                                            // Use a neutral dark gray that works on light surfaces
-                                            androidx.core.graphics.drawable.DrawableCompat.setTint(
-                                                drawable,
-                                                android.graphics.Color.parseColor("#E0E0E0"),
+                    // Chromecast / Google Cast button — Compose icon + CastContext dialog.
+                    // Uses plain Dialog (not DialogFragment) because MainActivity is
+                    // ComponentActivity, not FragmentActivity. Uses the async
+                    // getSharedInstance(context, executor) overload for robust device support.
+                    IconButton(
+                        onClick = {
+                            try {
+                                com.google.android.gms.cast.framework.CastContext
+                                    .getSharedInstance(ctx, java.util.concurrent.Executors.newSingleThreadExecutor())
+                                    .addOnSuccessListener { castCtx ->
+                                        try {
+                                            val selector = castCtx.mergedSelector
+                                                ?: androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                                    .addControlCategory(
+                                                        com.google.android.gms.cast.CastMediaControlIntent.categoryForCast(
+                                                            com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
+                                                        )
+                                                    )
+                                                    .build()
+
+                                            val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(
+                                                androidx.appcompat.view.ContextThemeWrapper(
+                                                    ctx,
+                                                    androidx.appcompat.R.style.Theme_AppCompat
+                                                )
                                             )
-                                            setRemoteIndicatorDrawable(drawable)
+                                            dialog.routeSelector = selector
+                                            dialog.show()
+                                        } catch (e: Exception) {
+                                            android.util.Log.w("MiniPlayer", "Cast dialog failed", e)
                                         }
                                     }
-                                }
-                            }.getOrElse {
-                                // Safety net: return invisible placeholder if Cast button fails
-                                android.view.View(ctx)
+                                    .addOnFailureListener { e ->
+                                        android.util.Log.w("MiniPlayer", "CastContext init failed", e)
+                                    }
+                            } catch (e: Exception) {
+                                android.util.Log.w("MiniPlayer", "Cast button failed", e)
                             }
                         },
-                        modifier = Modifier.size(24.dp),
-                    )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Cast,
+                            contentDescription = "Cast",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             }
         }

@@ -13,7 +13,7 @@ class PlaylistTypeTest {
     @Test
     fun `enum contains the expected set`() {
         assertEquals(
-            setOf("DAILY_MIX", "LIKED_SONGS", "CUSTOM", "STASH_MIX", "DOWNLOADS_MIX"),
+            setOf("DAILY_MIX", "LIKED_SONGS", "CUSTOM", "STASH_MIX", "DOWNLOADS_MIX", "STASH_LIKED"),
             PlaylistType.entries.map { it.name }.toSet(),
         )
     }

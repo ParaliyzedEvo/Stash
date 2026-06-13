@@ -498,60 +498,49 @@ private fun LibraryContent(
 
         // -- Content area --
         val anyServiceConnected = state.spotifyConnected || state.youTubeConnected
-        if (state.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            PullToRefreshBox(
-                isRefreshing = state.isRefreshing,
-                onRefresh = onRefresh,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-            ) {
-                when (state.activeTab) {
-                    LibraryTab.PLAYLISTS -> PlaylistsGrid(
-                        playlists = state.playlists,
-                        anyServiceConnected = anyServiceConnected,
-                        onPlayPlaylist = onPlayPlaylist,
-                        onAddPlaylistToQueue = onAddPlaylistToQueue,
-                        onRemovePlaylist = onRemovePlaylist,
-                        onDeletePlaylist = onDeletePlaylist,
-                        onSetPlaylistImage = onSetPlaylistImage,
-                        onRemovePlaylistImage = onRemovePlaylistImage,
-                    )
-                    LibraryTab.TRACKS -> TracksTab(
-                        tracks = state.tracks,
-                        currentlyPlayingTrackId = state.currentlyPlayingTrackId,
-                        onTrackClick = onTrackClick,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onDeleteTrack = onDeleteTrack,
-                        anyServiceConnected = anyServiceConnected,
-                        selection = selection,
-                    )
-                    LibraryTab.ARTISTS -> ArtistsGrid(
-                        artists = state.artists,
-                        singleTrackArtists = state.singleTrackArtists,
-                        anyServiceConnected = anyServiceConnected,
-                        onPlayArtist = onPlayArtist,
-                        onAddArtistToQueue = onAddArtistToQueue,
-                        onDeleteArtist = onDeleteArtist,
-                    )
-                    LibraryTab.ALBUMS -> AlbumsGrid(
-                        albums = state.albums,
-                        singleTrackAlbums = state.singleTrackAlbums,
-                        anyServiceConnected = anyServiceConnected,
-                        onPlayAlbum = onPlayAlbum,
-                        onAddAlbumToQueue = onAddAlbumToQueue,
-                    )
-                }
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing || state.isLoading,
+            onRefresh = onRefresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f),
+        ) {
+            when (state.activeTab) {
+                LibraryTab.PLAYLISTS -> PlaylistsGrid(
+                    playlists = state.playlists,
+                    anyServiceConnected = anyServiceConnected,
+                    onPlayPlaylist = onPlayPlaylist,
+                    onAddPlaylistToQueue = onAddPlaylistToQueue,
+                    onRemovePlaylist = onRemovePlaylist,
+                    onDeletePlaylist = onDeletePlaylist,
+                    onSetPlaylistImage = onSetPlaylistImage,
+                    onRemovePlaylistImage = onRemovePlaylistImage,
+                )
+                LibraryTab.TRACKS -> TracksTab(
+                    tracks = state.tracks,
+                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
+                    onTrackClick = onTrackClick,
+                    onPlayNext = onPlayNext,
+                    onAddToQueue = onAddToQueue,
+                    onDeleteTrack = onDeleteTrack,
+                    anyServiceConnected = anyServiceConnected,
+                    selection = selection,
+                )
+                LibraryTab.ARTISTS -> ArtistsGrid(
+                    artists = state.artists,
+                    singleTrackArtists = state.singleTrackArtists,
+                    anyServiceConnected = anyServiceConnected,
+                    onPlayArtist = onPlayArtist,
+                    onAddArtistToQueue = onAddArtistToQueue,
+                    onDeleteArtist = onDeleteArtist,
+                )
+                LibraryTab.ALBUMS -> AlbumsGrid(
+                    albums = state.albums,
+                    singleTrackAlbums = state.singleTrackAlbums,
+                    anyServiceConnected = anyServiceConnected,
+                    onPlayAlbum = onPlayAlbum,
+                    onAddAlbumToQueue = onAddAlbumToQueue,
+                )
             }
         }
     }
@@ -1108,8 +1097,11 @@ private fun PlaylistsGrid(
         playlistForImagePick = null
     }
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1611,8 +1603,11 @@ private fun ArtistsGrid(
 
     val displayList = if (showSingleTrack) artists + singleTrackArtists else artists
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1821,8 +1816,11 @@ private fun AlbumsGrid(
 
     val displayList = if (showSingleTrack) albums + singleTrackAlbums else albums
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

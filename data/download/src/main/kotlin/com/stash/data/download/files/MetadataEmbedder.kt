@@ -231,6 +231,12 @@ class MetadataEmbedder @Inject constructor(
             add("-metadata"); add("title=${sanitize(track.title)}")
             add("-metadata"); add("artist=${sanitize(track.artist)}")
 
+            val youtubeId = track.youtubeId ?: ""
+            val spotifyUri = track.spotifyUri ?: ""
+            if (youtubeId.isNotEmpty() || spotifyUri.isNotEmpty()) {
+                add("-metadata"); add("comment=stash:$youtubeId|$spotifyUri")
+            }
+
             if (track.album.isNotEmpty()) {
                 add("-metadata"); add("album=${sanitize(track.album)}")
             }
