@@ -41,7 +41,7 @@ enum class DownloadNetworkMode(
      * bit of power downloading discoveries.
      */
     ANY_NETWORK(
-        label = "Any network",
+        label = "Any",
         description = "Downloads over cellular too. Uses mobile data.",
     );
 }
