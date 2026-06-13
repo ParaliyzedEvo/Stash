@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.PlaybackStateStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.Collections
@@ -52,6 +53,7 @@ class PrefetchOrchestrator @Inject constructor(
     private val streamResolver: StreamSourceRegistry,
     private val streamUrlCache: StreamUrlCache,
     private val trackDao: TrackDao,
+    private val playbackStateStore: PlaybackStateStore,
 ) {
     /**
      * Track ids for which a prefetch resolve has been attempted in the
@@ -129,6 +131,54 @@ class PrefetchOrchestrator @Inject constructor(
      */
     fun resetSession() {
         attempted.clear()
+    }
+
+    /**
+     * Boot-time stream URL pre-warm. Reads the last-played track from
+     * [PlaybackStateStore] and resolves its stream URL into the cache.
+     * By the time the user taps play, the URL is already cached —
+     * eliminating the first-song latency. Also pre-warms the *next*
+     * track in the persisted queue if one exists.
+     *
+     * Safe to call from `Application.onCreate` in a background scope.
+     * No-ops when: no saved state, streaming disabled, track is
+     * downloaded, or the URL is already cached.
+     */
+    suspend fun prewarmLastPlayed() {
+        try {
+            if (!streamingPreference.current()) return
+            val saved = playbackStateStore.getLastPlaybackState() ?: return
+
+            // Pre-warm the current track
+            prewarmTrack(saved.trackId)
+
+            // Pre-warm the next track in the queue if available
+            val queueIds = saved.queueTrackIds
+            if (queueIds.isNotEmpty()) {
+                val currentIdx = saved.queueIndex.coerceIn(0, queueIds.size - 1)
+                val nextIdx = currentIdx + 1
+                if (nextIdx < queueIds.size) {
+                    prewarmTrack(queueIds[nextIdx])
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Boot prewarm failed", e)
+        }
+    }
+
+    private suspend fun prewarmTrack(trackId: Long) {
+        if (streamUrlCache.get(trackId) != null) return
+        val track = trackDao.getById(trackId) ?: return
+        if (track.isDownloaded) return
+        if (!track.isStreamable && track.isStreamableCheckedAt != null) return
+
+        val resolved = streamResolver.resolve(track)
+        if (resolved != null) {
+            streamUrlCache.put(trackId, resolved)
+            Log.d(TAG, "Boot-prewarm: cached stream URL for track $trackId")
+        } else {
+            Log.w(TAG, "Boot-prewarm: resolve returned null for track $trackId")
+        }
     }
 
     private companion object {

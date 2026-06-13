@@ -44,6 +44,7 @@ import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.media.streaming.KennyyHealthProbe
+import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -159,6 +160,14 @@ class StashApplication : Application(), Configuration.Provider {
      */
     @Inject
     lateinit var kennyyHealthProbe: KennyyHealthProbe
+
+    /**
+     * Boot-time stream URL prefetcher. Pre-resolves the last-played
+     * track's stream URL into the cache at app start so the first
+     * play tap is instant instead of waiting for a Kennyy resolve.
+     */
+    @Inject
+    lateinit var prefetchOrchestrator: PrefetchOrchestrator
 
     /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
@@ -317,6 +326,13 @@ class StashApplication : Application(), Configuration.Provider {
                     Request.Builder().url("https://music.youtube.com/").head().build(),
                 ).execute().close()
             }
+        }
+        // Pre-resolve the last-played track's stream URL at boot so the
+        // first play-tap is instant. Also pre-warms the next track in
+        // the persisted queue. No-ops when streaming is disabled, the
+        // track is downloaded, or the URL is already cached.
+        applicationScope.launch {
+            prefetchOrchestrator.prewarmLastPlayed()
         }
         // Move WorkManager scheduling off the main thread. Each
         // enqueue/schedule call hits the WorkManager SQLite DB — doing 15+
