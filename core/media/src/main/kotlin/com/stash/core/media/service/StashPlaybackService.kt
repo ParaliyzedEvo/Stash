@@ -303,15 +303,15 @@ class StashPlaybackService : MediaLibraryService() {
                     // Also attach the playerListener to CastPlayer for state sync
                     castPlayer?.addListener(playerListener!!)
 
-                    // If the app was killed and restarted while a Cast session
-                    // was still alive, the SessionManagerListener callbacks
-                    // won't fire (they only fire on state *transitions*). Check
-                    // for an already-connected session and switch immediately.
+                    // If a Cast session survived from a previous app instance
+                    // (e.g. force-close), end it immediately — the session has
+                    // stale queue/state that won't match the current player.
+                    // The user can tap Cast again to start a fresh session.
                     val existingSession = castContext.sessionManager.currentCastSession
                     if (existingSession != null && existingSession.isConnected) {
-                        android.util.Log.i("StashPlayback", "Detected existing Cast session on init — switching to CastPlayer")
-                        castStateHolder.setConnected(true)
-                        switchToCastPlayer()
+                        android.util.Log.i("StashPlayback", "Found stale Cast session on init — ending it")
+                        castContext.sessionManager.endCurrentSession(true)
+                        castStateHolder.setConnected(false)
                     }
                 }
                 .addOnFailureListener { e ->
