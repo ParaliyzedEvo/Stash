@@ -769,6 +769,10 @@ class StashPlaybackService : MediaLibraryService() {
                 localPlayer.stop()
                 localPlayer.clearMediaItems()
 
+                // Clear any leftover items from a previous Cast session
+                // so old songs don't briefly flash before the current track.
+                currentCastPlayer.clearMediaItems()
+
                 currentCastPlayer.setMediaItems(listOf(currentCastItem), 0, currentPosition)
                 currentCastPlayer.playWhenReady = playWhenReady
                 currentCastPlayer.prepare()
