@@ -68,6 +68,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -149,6 +150,7 @@ fun LibraryScreen(
         LibraryContent(
             state = state,
             importState = importState,
+            onRefresh = viewModel::refreshLibrary,
             onShuffleLibrary = viewModel::shuffleLibrary,
             onTabSelected = viewModel::selectTab,
             onSearchQueryChanged = viewModel::setSearchQuery,
@@ -308,10 +310,12 @@ fun LibraryScreen(
 
 // ── Stateless content composable ─────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
     importState: com.stash.data.download.files.LocalImportState,
+    onRefresh: () -> Unit,
     onShuffleLibrary: () -> Unit,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
@@ -504,42 +508,50 @@ private fun LibraryContent(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
-            when (state.activeTab) {
-                LibraryTab.PLAYLISTS -> PlaylistsGrid(
-                    playlists = state.playlists,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayPlaylist = onPlayPlaylist,
-                    onAddPlaylistToQueue = onAddPlaylistToQueue,
-                    onRemovePlaylist = onRemovePlaylist,
-                    onDeletePlaylist = onDeletePlaylist,
-                    onSetPlaylistImage = onSetPlaylistImage,
-                    onRemovePlaylistImage = onRemovePlaylistImage,
-                )
-                LibraryTab.TRACKS -> TracksTab(
-                    tracks = state.tracks,
-                    currentlyPlayingTrackId = state.currentlyPlayingTrackId,
-                    onTrackClick = onTrackClick,
-                    onPlayNext = onPlayNext,
-                    onAddToQueue = onAddToQueue,
-                    onDeleteTrack = onDeleteTrack,
-                    anyServiceConnected = anyServiceConnected,
-                    selection = selection,
-                )
-                LibraryTab.ARTISTS -> ArtistsGrid(
-                    artists = state.artists,
-                    singleTrackArtists = state.singleTrackArtists,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayArtist = onPlayArtist,
-                    onAddArtistToQueue = onAddArtistToQueue,
-                    onDeleteArtist = onDeleteArtist,
-                )
-                LibraryTab.ALBUMS -> AlbumsGrid(
-                    albums = state.albums,
-                    singleTrackAlbums = state.singleTrackAlbums,
-                    anyServiceConnected = anyServiceConnected,
-                    onPlayAlbum = onPlayAlbum,
-                    onAddAlbumToQueue = onAddAlbumToQueue,
-                )
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+            ) {
+                when (state.activeTab) {
+                    LibraryTab.PLAYLISTS -> PlaylistsGrid(
+                        playlists = state.playlists,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayPlaylist = onPlayPlaylist,
+                        onAddPlaylistToQueue = onAddPlaylistToQueue,
+                        onRemovePlaylist = onRemovePlaylist,
+                        onDeletePlaylist = onDeletePlaylist,
+                        onSetPlaylistImage = onSetPlaylistImage,
+                        onRemovePlaylistImage = onRemovePlaylistImage,
+                    )
+                    LibraryTab.TRACKS -> TracksTab(
+                        tracks = state.tracks,
+                        currentlyPlayingTrackId = state.currentlyPlayingTrackId,
+                        onTrackClick = onTrackClick,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onDeleteTrack = onDeleteTrack,
+                        anyServiceConnected = anyServiceConnected,
+                        selection = selection,
+                    )
+                    LibraryTab.ARTISTS -> ArtistsGrid(
+                        artists = state.artists,
+                        singleTrackArtists = state.singleTrackArtists,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayArtist = onPlayArtist,
+                        onAddArtistToQueue = onAddArtistToQueue,
+                        onDeleteArtist = onDeleteArtist,
+                    )
+                    LibraryTab.ALBUMS -> AlbumsGrid(
+                        albums = state.albums,
+                        singleTrackAlbums = state.singleTrackAlbums,
+                        anyServiceConnected = anyServiceConnected,
+                        onPlayAlbum = onPlayAlbum,
+                        onAddAlbumToQueue = onAddAlbumToQueue,
+                    )
+                }
             }
         }
     }

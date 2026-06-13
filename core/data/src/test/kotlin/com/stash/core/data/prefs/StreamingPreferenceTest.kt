@@ -41,15 +41,15 @@ class StreamingPreferenceTest {
         if (file.exists()) file.delete()
     }
 
-    @Test fun enabled_defaultsToFalse() = runTest {
-        assertFalse(prefs.enabled.first())
+    @Test fun enabled_defaultsToTrue() = runTest {
+        assertTrue(prefs.enabled.first())
     }
 
     @Test fun enabled_roundTrips() = runTest {
-        prefs.setEnabled(true)
-        assertTrue(prefs.enabled.first())
         prefs.setEnabled(false)
         assertFalse(prefs.enabled.first())
+        prefs.setEnabled(true)
+        assertTrue(prefs.enabled.first())
     }
 
     @Test fun streamOnCellular_defaultsToFalse() = runTest {
@@ -89,10 +89,10 @@ class StreamingPreferenceTest {
     }
 
     @Test fun current_returnsLatestValue() = runTest {
-        assertFalse(prefs.current())
-        prefs.setEnabled(true)
         assertTrue(prefs.current())
         prefs.setEnabled(false)
         assertFalse(prefs.current())
+        prefs.setEnabled(true)
+        assertTrue(prefs.current())
     }
 }

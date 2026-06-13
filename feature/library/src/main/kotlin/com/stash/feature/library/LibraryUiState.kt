@@ -32,6 +32,7 @@ data class LibraryUiState(
     val spotifyConnected: Boolean = false,
     val youTubeConnected: Boolean = false,
     val currentlyPlayingTrackId: Long? = null,
+    val isRefreshing: Boolean = false,
 )
 
 /** Tabs available in the library browser. */
