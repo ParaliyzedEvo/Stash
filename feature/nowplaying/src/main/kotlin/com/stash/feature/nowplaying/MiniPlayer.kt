@@ -108,6 +108,7 @@ fun MiniPlayer(
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(artModel)
+                                .size(96) // Mini player: small decode for 48dp @2x
                                 .allowHardware(false) // Required for Palette bitmap extraction
                                 .build(),
                             contentDescription = "Album art",
