@@ -113,7 +113,7 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.enabled.stateIn(
             scope = viewModelScope,
             started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
+            initialValue = true,
         )
 
     /**
