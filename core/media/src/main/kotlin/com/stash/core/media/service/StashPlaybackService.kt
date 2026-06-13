@@ -278,7 +278,7 @@ class StashPlaybackService : MediaLibraryService() {
                 .getSharedInstance(this, java.util.concurrent.Executors.newSingleThreadExecutor())
                 .addOnSuccessListener { castContext ->
                     cachedCastContext = castContext
-                    castPlayer = CastPlayer(castContext)
+                    castPlayer = CastPlayer(castContext, StashMediaItemConverter())
                     sessionManagerListener = object : SessionManagerListener<CastSession> {
                         override fun onSessionStarting(session: CastSession) {}
                         override fun onSessionStarted(session: CastSession, sessionId: String) {
@@ -693,6 +693,20 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        // End any active Cast session so the Cast device stops playing
+        // when the app is force-closed or destroyed.
+        try {
+            cachedCastContext?.sessionManager?.currentCastSession?.let { session ->
+                if (session.isConnected) {
+                    android.util.Log.i("StashPlayback", "onDestroy — ending Cast session")
+                    cachedCastContext?.sessionManager?.endCurrentSession(true)
+                    castStateHolder.setConnected(false)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("StashPlayback", "Failed to end Cast session on destroy", e)
+        }
+
         likeObserverJob?.cancel()
         prefetchPollJob?.cancel()
         serviceScope.cancel()
@@ -727,77 +741,118 @@ class StashPlaybackService : MediaLibraryService() {
         val currentPosition = localPlayer.currentPosition
         val playWhenReady = localPlayer.playWhenReady
 
-        // Build cast-ready items. For each item in the ExoPlayer timeline:
-        // 1. If it has a valid HTTP(S) URI → use it directly
-        // 2. If it has a local-file URI → skip (Cast can't play local files)
-        // 3. If it has an empty/null URI → try to resolve via StreamUrlCache
-        //    using the track ID embedded in the MediaItem's extras
-        val castReadyItems = mutableListOf<MediaItem>()
-        var adjustedIndex = 0
-        var resolvedFromCache = 0
-        var skippedNoUri = 0
-        var skippedLocal = 0
+        // Mark Cast as connected immediately so PlayerRepository uses
+        // streaming resolution for any new queue changes while we resolve.
+        castStateHolder.setConnected(true)
 
-        for ((i, item) in currentMediaItems.withIndex()) {
-            val uri = item.localConfiguration?.uri
-            val uriStr = uri?.toString().orEmpty()
-            val scheme = uri?.scheme
+        // Two-phase cast handoff:
+        // Phase 1 — resolve ONLY the current track and switch to CastPlayer
+        //           immediately so the user hears audio within ~1 second.
+        // Phase 2 — resolve the remaining queue in the background and update
+        //           CastPlayer's media items once done (keeps queue intact).
+        serviceScope.launch {
+            // ── Phase 1: resolve the current track ──────────────────────
+            val currentItem = currentMediaItems.getOrNull(currentIndex) ?: run {
+                android.util.Log.w("StashPlayback", "switchToCastPlayer: no current item at index $currentIndex")
+                castStateHolder.setConnected(false)
+                return@launch
+            }
 
-            when {
-                // Already has a remote HTTP(S) URI → cast-ready
-                scheme == "http" || scheme == "https" -> {
-                    if (i == currentIndex) adjustedIndex = castReadyItems.size
-                    val fixedItem = ensureMimeType(item)
-                    castReadyItems.add(fixedItem)
-                }
-                // Local file URI → Cast can't play these, skip
-                scheme == "file" || scheme == "content" || scheme == "android.resource" -> {
-                    skippedLocal++
-                }
-                // Empty/null URI → try resolving from StreamUrlCache
-                else -> {
-                    val trackId = item.mediaMetadata.extras
-                        ?.getLong(EXTRA_TRACK_ID, -1L)
-                        ?.takeIf { it > 0 }
-                    val cached = trackId?.let { streamUrlCache.get(it) }
-                    if (cached != null) {
-                        if (i == currentIndex) adjustedIndex = castReadyItems.size
-                        val resolvedItem = item.buildUpon()
-                            .setUri(android.net.Uri.parse(cached.url))
-                            .setMimeType(getMimeTypeFromCodecForCast(cached.codec))
-                            .build()
-                        castReadyItems.add(resolvedItem)
-                        resolvedFromCache++
-                    } else {
-                        skippedNoUri++
+            val currentCastItem = resolveForCast(currentItem) ?: run {
+                android.util.Log.w("StashPlayback", "switchToCastPlayer: failed to resolve current track, aborting")
+                castStateHolder.setConnected(false)
+                return@launch
+            }
+
+            // Hand the single track to CastPlayer now → audio starts fast.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                localPlayer.stop()
+                localPlayer.clearMediaItems()
+
+                currentCastPlayer.setMediaItems(listOf(currentCastItem), 0, currentPosition)
+                currentCastPlayer.playWhenReady = playWhenReady
+                currentCastPlayer.prepare()
+
+                mediaSession?.player = currentCastPlayer
+                android.util.Log.i("StashPlayback", "Switched active player to CastPlayer (phase 1: current track)")
+            }
+
+            // ── Phase 2: resolve the rest of the queue ──────────────────
+            // Current track is already playing on Cast, so we can take our
+            // time resolving the rest of the queue sequentially.
+            if (currentMediaItems.size > 1) {
+                val resolvedAll = currentMediaItems.mapIndexed { i, item ->
+                    if (i == currentIndex) currentCastItem
+                    else resolveForCast(item)
+                }.filterNotNull()
+
+                if (resolvedAll.size > 1) {
+                    val newIndex = resolvedAll.indexOf(currentCastItem).coerceAtLeast(0)
+
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        // Only update if we're still on CastPlayer.
+                        if (mediaSession?.player === currentCastPlayer) {
+                            val pos = currentCastPlayer.currentPosition
+                            currentCastPlayer.setMediaItems(resolvedAll, newIndex, pos)
+                            currentCastPlayer.prepare()
+                            android.util.Log.i(
+                                "StashPlayback",
+                                "switchToCastPlayer phase 2: updated queue to ${resolvedAll.size}/${currentMediaItems.size} items"
+                            )
+                        }
                     }
                 }
             }
         }
+    }
 
-        android.util.Log.i(
-            "StashPlayback",
-            "switchToCastPlayer: ${castReadyItems.size}/${currentMediaItems.size} items ready " +
-                "(resolvedFromCache=$resolvedFromCache, skippedNoUri=$skippedNoUri, skippedLocal=$skippedLocal)"
-        )
+    /**
+     * Resolve a single [MediaItem] to a cast-ready item with an HTTP(S) URL.
+     * Returns `null` if the item can't be resolved.
+     */
+    @OptIn(UnstableApi::class)
+    private suspend fun resolveForCast(item: MediaItem): MediaItem? {
+        val uri = item.localConfiguration?.uri
+        val scheme = uri?.scheme
 
-        if (castReadyItems.isEmpty()) {
-            android.util.Log.w("StashPlayback", "switchToCastPlayer: no cast-ready items, aborting")
-            return
+        // Already has a remote HTTP(S) URI → cast-ready
+        if (scheme == "http" || scheme == "https") {
+            return ensureMimeType(item)
         }
 
-        // Stop and clear the local player BEFORE setting Cast items so there's
-        // never a window where both players hold a ready queue.
-        localPlayer.stop()
-        localPlayer.clearMediaItems()
+        val trackId = item.mediaMetadata.extras
+            ?.getLong(EXTRA_TRACK_ID, -1L)
+            ?.takeIf { it > 0 }
+            ?: return null
 
-        currentCastPlayer.setMediaItems(castReadyItems, adjustedIndex, currentPosition)
-        currentCastPlayer.playWhenReady = playWhenReady
-        currentCastPlayer.prepare()
+        // Try 1: StreamUrlCache
+        val cached = streamUrlCache.get(trackId)
+        if (cached != null) {
+            return item.buildUpon()
+                .setUri(android.net.Uri.parse(cached.url))
+                .setMimeType(getMimeTypeFromCodecForCast(cached.codec))
+                .build()
+        }
 
-        mediaSession?.player = currentCastPlayer
-        castStateHolder.setConnected(true)
-        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer")
+        // Try 2: Live resolve via streamSourceRegistry
+        val entity = trackDao.getById(trackId) ?: return null
+        val resolved = try {
+            streamSourceRegistry.resolve(entity)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "StashPlayback",
+                "resolveForCast: failed for id=$trackId '${entity.title}'",
+                e
+            )
+            null
+        } ?: return null
+
+        // Cache for future use
+        streamUrlCache.put(trackId, resolved)
+        return item.buildUpon()
+            .setUri(android.net.Uri.parse(resolved.url))
+            .setMimeType(getMimeTypeFromCodecForCast(resolved.codec))
+            .build()
     }
 
     /** Ensure MIME type is set for Cast compatibility. */

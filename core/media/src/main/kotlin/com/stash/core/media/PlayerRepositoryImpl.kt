@@ -883,8 +883,11 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYtDlp: Boolean = true,
         allowAntra: Boolean = true,
     ): MediaItem? {
+        val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
-        if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
+        // Cast devices can't play local file:// URIs — skip to streaming
+        // resolution when a Cast session is active.
+        if (!isCasting && track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return track.toMediaItem()
         }
         if (!streamingOn) return null
@@ -1311,8 +1314,10 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYtDlp: Boolean = true,
         allowAntra: Boolean = true,
     ): StreamRoutingResult {
+        val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
-        if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
+        // Cast devices can't play local file:// URIs — skip to streaming.
+        if (!isCasting && track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             val uri = if (localPath.startsWith("/")) Uri.parse("file://$localPath") else Uri.parse(localPath)
             return StreamRoutingResult.Item(
                 MediaItem.Builder()
