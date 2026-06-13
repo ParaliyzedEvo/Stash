@@ -284,6 +284,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                 val activeTracks = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
                 val progressJob = launch {
+                    var lastNotifyMs = 0L
+                    val NOTIFY_INTERVAL_MS = 500L // throttle: update at most every 500ms
                     trackDownloader.progressFlow.collect { event ->
                         val trackName = trackNames[event.trackId] ?: return@collect
                         if (event.status == "COMPLETED" || event.status == "FAILED" || 
@@ -294,6 +296,14 @@ class TrackDownloadWorker @AssistedInject constructor(
                             activeProgress[event.trackId] = event.progress
                             activeTracks[event.trackId] = trackName
                         }
+
+                        // Throttle notification updates — Android rate-limits
+                        // notify() at ~5/sec and with 8 parallel downloads
+                        // the unthrottled collector was firing 500+/sec,
+                        // flooding logcat and wasting CPU on dropped notifs.
+                        val now = System.currentTimeMillis()
+                        if (now - lastNotifyMs < NOTIFY_INTERVAL_MS) return@collect
+                        lastNotifyMs = now
 
                         val completed = downloadedCount.get() + failedCount.get()
                         val sumActiveProgress = activeProgress.values.sum()
