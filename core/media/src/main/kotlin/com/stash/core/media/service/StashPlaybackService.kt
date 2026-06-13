@@ -85,6 +85,8 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
     @Inject lateinit var castStateHolder: com.stash.core.media.CastStateHolder
+    @Inject lateinit var streamUrlCache: com.stash.core.media.streaming.StreamUrlCache
+    @Inject lateinit var streamSourceRegistry: com.stash.core.media.streaming.StreamSourceRegistry
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -379,15 +381,18 @@ class StashPlaybackService : MediaLibraryService() {
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                // Use the active player (which may be CastPlayer), not
+                // the local ExoPlayer reference.
+                val active = mediaSession?.player ?: player
                 when (resumePlayGate.onTimelineChanged(
                     timeline.windowCount,
-                    player.playbackState == Player.STATE_IDLE,
+                    active.playbackState == Player.STATE_IDLE,
                 )) {
                     ResumePlayGate.Action.PREPARE_THEN_PLAY -> {
-                        player.prepare()
-                        player.play()
+                        active.prepare()
+                        active.play()
                     }
-                    ResumePlayGate.Action.PLAY -> player.play()
+                    ResumePlayGate.Action.PLAY -> active.play()
                     ResumePlayGate.Action.NONE -> Unit
                 }
             }
@@ -706,29 +711,59 @@ class StashPlaybackService : MediaLibraryService() {
         val currentPosition = localPlayer.currentPosition
         val playWhenReady = localPlayer.playWhenReady
 
-        // DefaultMediaItemConverter.toMediaQueueItem calls
-        // checkNotNull(localConfiguration) which crashes with NPE when
-        // MediaItem has no URI or an empty URI. Filter those out and
-        // adjust the start index accordingly.
+        // Build cast-ready items. For each item in the ExoPlayer timeline:
+        // 1. If it has a valid HTTP(S) URI → use it directly
+        // 2. If it has a local-file URI → skip (Cast can't play local files)
+        // 3. If it has an empty/null URI → try to resolve via StreamUrlCache
+        //    using the track ID embedded in the MediaItem's extras
         val castReadyItems = mutableListOf<MediaItem>()
         var adjustedIndex = 0
+        var resolvedFromCache = 0
+        var skippedNoUri = 0
+        var skippedLocal = 0
+
         for ((i, item) in currentMediaItems.withIndex()) {
             val uri = item.localConfiguration?.uri
-            if (uri != null && uri.toString().isNotBlank()) {
-                if (i == currentIndex) adjustedIndex = castReadyItems.size
-                // Ensure MIME type is set — DefaultMediaItemConverter
-                // warns "MEDIA_TYPE_MOVIE" and may crash downstream
-                // when mimeType is null.
-                val fixedItem = if (item.localConfiguration?.mimeType.isNullOrBlank()) {
-                    item.buildUpon()
-                        .setMimeType("audio/mpeg")
-                        .build()
-                } else {
-                    item
+            val uriStr = uri?.toString().orEmpty()
+            val scheme = uri?.scheme
+
+            when {
+                // Already has a remote HTTP(S) URI → cast-ready
+                scheme == "http" || scheme == "https" -> {
+                    if (i == currentIndex) adjustedIndex = castReadyItems.size
+                    val fixedItem = ensureMimeType(item)
+                    castReadyItems.add(fixedItem)
                 }
-                castReadyItems.add(fixedItem)
+                // Local file URI → Cast can't play these, skip
+                scheme == "file" || scheme == "content" || scheme == "android.resource" -> {
+                    skippedLocal++
+                }
+                // Empty/null URI → try resolving from StreamUrlCache
+                else -> {
+                    val trackId = item.mediaMetadata.extras
+                        ?.getLong(EXTRA_TRACK_ID, -1L)
+                        ?.takeIf { it > 0 }
+                    val cached = trackId?.let { streamUrlCache.get(it) }
+                    if (cached != null) {
+                        if (i == currentIndex) adjustedIndex = castReadyItems.size
+                        val resolvedItem = item.buildUpon()
+                            .setUri(android.net.Uri.parse(cached.url))
+                            .setMimeType(getMimeTypeFromCodecForCast(cached.codec))
+                            .build()
+                        castReadyItems.add(resolvedItem)
+                        resolvedFromCache++
+                    } else {
+                        skippedNoUri++
+                    }
+                }
             }
         }
+
+        android.util.Log.i(
+            "StashPlayback",
+            "switchToCastPlayer: ${castReadyItems.size}/${currentMediaItems.size} items ready " +
+                "(resolvedFromCache=$resolvedFromCache, skippedNoUri=$skippedNoUri, skippedLocal=$skippedLocal)"
+        )
 
         if (castReadyItems.isEmpty()) {
             android.util.Log.w("StashPlayback", "switchToCastPlayer: no cast-ready items, aborting")
@@ -736,9 +771,7 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         // Stop and clear the local player BEFORE setting Cast items so there's
-        // never a window where both players hold a ready queue. Without this,
-        // the paused ExoPlayer could resume independently (audio focus, BT) and
-        // play a different song than the Cast device.
+        // never a window where both players hold a ready queue.
         localPlayer.stop()
         localPlayer.clearMediaItems()
 
@@ -748,7 +781,27 @@ class StashPlaybackService : MediaLibraryService() {
 
         mediaSession?.player = currentCastPlayer
         castStateHolder.setConnected(true)
-        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer (${castReadyItems.size}/${currentMediaItems.size} items, local player cleared)")
+        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer")
+    }
+
+    /** Ensure MIME type is set for Cast compatibility. */
+    @OptIn(UnstableApi::class)
+    private fun ensureMimeType(item: MediaItem): MediaItem {
+        return if (item.localConfiguration?.mimeType.isNullOrBlank()) {
+            item.buildUpon().setMimeType("audio/mpeg").build()
+        } else {
+            item
+        }
+    }
+
+    /** Map a codec string to a MIME type suitable for Cast. */
+    private fun getMimeTypeFromCodecForCast(codec: String?): String = when (codec?.lowercase()) {
+        "flac" -> "audio/flac"
+        "aac", "m4a" -> "audio/mp4"
+        "opus" -> "audio/ogg"
+        "mp3" -> "audio/mpeg"
+        "wav" -> "audio/wav"
+        else -> "audio/mpeg"
     }
 
     @OptIn(UnstableApi::class)
