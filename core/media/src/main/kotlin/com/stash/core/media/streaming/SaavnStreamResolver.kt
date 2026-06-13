@@ -132,14 +132,30 @@ class SaavnStreamResolver @Inject constructor(
             return null
         }
 
-        // Pick the best match — first result that has an encrypted_media_url.
-        // Optionally: fuzzy match on artist/title, but JioSaavn search is
-        // already fairly good and the first result is usually correct for
-        // "artist title" queries.
+        // Pick the best match — first result that passes both title validation
+        // and duration proximity. v0.9.x fix: prior versions only checked
+        // duration, which let JioSaavn return completely unrelated tracks
+        // (e.g. "KAMIJO — BASTILLE" for "Marshmello ft. Bastille - Happier")
+        // that happened to share a similar duration.
+        val requestWords = significantWords(track.title)
         for (result in results) {
             val song = result.jsonObject
             val encryptedUrl = song["encrypted_media_url"]?.jsonPrimitive?.contentOrNull
                 ?.takeIf { it.isNotBlank() } ?: continue
+
+            val songTitle = song["song"]?.jsonPrimitive?.contentOrNull ?: ""
+            val songArtist = song["primary_artists"]?.jsonPrimitive?.contentOrNull ?: ""
+
+            // Title/artist word-overlap gate: at least one significant word
+            // from the requested title must appear in the candidate's title
+            // or artist, case-insensitive. This catches gross mismatches
+            // where JioSaavn returns a totally different song.
+            val candidateWords = significantWords(songTitle) + significantWords(songArtist)
+            val overlap = requestWords.count { it in candidateWords }
+            if (requestWords.isNotEmpty() && overlap == 0) {
+                Log.d(TAG, "skipping '$songArtist — $songTitle' — zero title word overlap")
+                continue
+            }
 
             // Check duration proximity if available
             val durationSec = song["duration"]?.jsonPrimitive?.contentOrNull
@@ -149,8 +165,6 @@ class SaavnStreamResolver @Inject constructor(
                 val drift = kotlin.math.abs(track.durationMs - candidateMs).toDouble() /
                     track.durationMs.toDouble()
                 if (drift > 0.30) {
-                    // More than 30% duration mismatch — likely wrong track
-                    val songTitle = song["song"]?.jsonPrimitive?.contentOrNull ?: "?"
                     Log.d(TAG, "skipping '$songTitle' — duration drift ${(drift * 100).toInt()}%")
                     continue
                 }
@@ -169,8 +183,6 @@ class SaavnStreamResolver @Inject constructor(
             val has320 = song["320kbps"]?.jsonPrimitive?.contentOrNull == "true"
             val finalUrl = if (has320) highQualityUrl else decryptedUrl
 
-            val songTitle = song["song"]?.jsonPrimitive?.contentOrNull ?: ""
-            val songArtist = song["primary_artists"]?.jsonPrimitive?.contentOrNull ?: ""
             Log.d(TAG, "matched: '$songArtist — $songTitle' has320=$has320")
 
             // Cover art — upgrade to 500x500
@@ -212,6 +224,20 @@ class SaavnStreamResolver @Inject constructor(
             Log.w(TAG, "DES decryption failed: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Tokenizes a title/artist string into a set of lower-cased words,
+     * dropping noise tokens shorter than 3 chars ("ft", "by", "a", etc.).
+     * Used to compute word-overlap between the requested track and the
+     * JioSaavn candidate.
+     */
+    private fun significantWords(text: String): Set<String> {
+        return text.lowercase()
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .split(" ")
+            .filter { it.length >= 3 }
+            .toSet()
     }
 
     companion object {

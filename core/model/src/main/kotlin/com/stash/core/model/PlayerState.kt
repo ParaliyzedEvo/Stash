@@ -28,6 +28,13 @@ data class PlayerState(
      * resolve doesn't look frozen.
      */
     val isBuffering: Boolean = false,
+    /**
+     * `true` when the active player is a CastPlayer — i.e. audio is being
+     * routed to an external Cast receiver. Drives the cast button icon
+     * (connected vs. disconnected) and switches the tap action between
+     * the chooser dialog and the controller dialog.
+     */
+    val isCasting: Boolean = false,
 )
 
 enum class RepeatMode {

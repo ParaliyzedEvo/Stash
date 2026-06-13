@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
@@ -370,6 +371,7 @@ fun NowPlayingScreen(
                             onShowLyrics = viewModel::onShowLyrics,
                             onShowQueue = { showQueue = true },
                             queueSize = uiState.queueSize,
+                            isCasting = uiState.isCasting,
                         )
                     }
                 }
@@ -448,6 +450,7 @@ fun NowPlayingScreen(
                         onShowLyrics = viewModel::onShowLyrics,
                         onShowQueue = { showQueue = true },
                         queueSize = uiState.queueSize,
+                        isCasting = uiState.isCasting,
                     )
                 }
 
@@ -673,14 +676,17 @@ private fun TrackInfoSection(
 /**
  * Bottom action row: Lyrics (left), Cast (center), Queue (right).
  *
- * The cast button uses a Compose [Icon] with [Icons.Filled.Cast] and
- * launches the [CastContext] route chooser dialog on tap.
+ * The cast button uses a Compose [Icon] with [Icons.Filled.Cast] /
+ * [Icons.Filled.CastConnected] and launches either a chooser dialog
+ * (pick device) or a controller dialog (stop casting) depending on
+ * whether a Cast session is already active.
  */
 @Composable
 private fun BottomActionsRow(
     onShowLyrics: () -> Unit,
     onShowQueue: () -> Unit,
     queueSize: Int,
+    isCasting: Boolean = false,
 ) {
     val ctx = LocalContext.current
     Row(
@@ -699,14 +705,11 @@ private fun BottomActionsRow(
             )
         }
 
-        // Cast button — launches the MediaRouter chooser dialog via CastContext.
-        // Uses MediaRouteChooserDialog (plain Dialog) instead of the Fragment
-        // variant because MainActivity extends ComponentActivity, NOT
-        // FragmentActivity — the Fragment path always NPE'd on the FM lookup.
-        // Uses the async getSharedInstance(context, executor) overload because
-        // the deprecated synchronous overload can throw on devices where the
-        // Cast dynamic module hasn't finished loading yet (Samsung Galaxy S23
-        // on Android 16, observed 2026-06-13).
+        // Cast button — context-aware:
+        //   • NOT connected → MediaRouteChooserDialog (pick device)
+        //   • Connected → MediaRouteControllerDialog (stop casting / volume)
+        // Uses the async getSharedInstance(context, executor) overload for
+        // robust device support (Cast dynamic module can load lazily).
         IconButton(
             onClick = {
                 try {
@@ -723,14 +726,21 @@ private fun BottomActionsRow(
                                         )
                                         .build()
 
-                                val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(
-                                    androidx.appcompat.view.ContextThemeWrapper(
-                                        ctx,
-                                        androidx.appcompat.R.style.Theme_AppCompat
-                                    )
+                                val themedCtx = androidx.appcompat.view.ContextThemeWrapper(
+                                    ctx,
+                                    androidx.appcompat.R.style.Theme_AppCompat
                                 )
-                                dialog.routeSelector = selector
-                                dialog.show()
+
+                                if (isCasting) {
+                                    // Already connected — show controller (volume / stop)
+                                    val dialog = androidx.mediarouter.app.MediaRouteControllerDialog(themedCtx)
+                                    dialog.show()
+                                } else {
+                                    // Not connected — show chooser (pick device)
+                                    val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(themedCtx)
+                                    dialog.routeSelector = selector
+                                    dialog.show()
+                                }
                             } catch (e: Exception) {
                                 android.util.Log.w("NowPlaying", "Cast dialog failed", e)
                                 android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
@@ -747,9 +757,9 @@ private fun BottomActionsRow(
             },
         ) {
             Icon(
-                imageVector = Icons.Filled.Cast,
-                contentDescription = "Cast to device",
-                tint = Color.White.copy(alpha = 0.8f),
+                imageVector = if (isCasting) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                contentDescription = if (isCasting) "Stop casting" else "Cast to device",
+                tint = if (isCasting) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.size(24.dp),
             )
         }

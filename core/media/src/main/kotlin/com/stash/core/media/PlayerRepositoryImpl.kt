@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -89,6 +90,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val connectivity: ConnectivityMonitor,
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
+    private val castStateHolder: CastStateHolder,
 ) : PlayerRepository {
 
     /**
@@ -182,6 +184,15 @@ class PlayerRepositoryImpl @Inject constructor(
                 .map { it.currentIndex }
                 .distinctUntilChanged()
                 .collect { idx -> prefetchNextTrack(idx) }
+        }
+
+        // Reactively propagate Cast connection state into PlayerState so the
+        // UI (cast button icon + dialog type) updates immediately when a Cast
+        // session connects or disconnects — not just on the next player event.
+        scope.launch {
+            castStateHolder.connected.collect { isCasting ->
+                _playerState.update { it.copy(isCasting = isCasting) }
+            }
         }
     }
 
@@ -1777,6 +1788,7 @@ class PlayerRepositoryImpl @Inject constructor(
             isBuffering = computeIsBuffering(
                 controller.playbackState == Player.STATE_BUFFERING,
             ),
+            isCasting = castStateHolder.connected.value,
         )
         _playerState.value = newState
 
