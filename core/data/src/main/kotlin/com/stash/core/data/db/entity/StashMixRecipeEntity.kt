@@ -108,4 +108,19 @@ data class StashMixRecipeEntity(
      */
     @ColumnInfo(name = "seed_strategy", defaultValue = "ARTIST_SIMILAR")
     val seedStrategy: String = "ARTIST_SIMILAR",
+
+    /**
+     * v0.9.40: comma-separated mood ids the user picked (e.g. "chill,focus").
+     * Expanded to Last.fm tags at refresh time via [com.stash.core.data.mix.MoodTagMap].
+     */
+    @ColumnInfo(name = "mood_keys_csv", defaultValue = "")
+    val moodKeysCsv: String = "",
+
+    /**
+     * v0.9.40: how far DOWN each tag's top-tracks ranking to start sampling
+     * (skip the top N most-popular). 0 = from the top (custom mixes default);
+     * Deep Cuts uses a positive value for its "deeper cuts" identity.
+     */
+    @ColumnInfo(name = "tag_sample_depth", defaultValue = "0")
+    val tagSampleDepth: Int = 0,
 )

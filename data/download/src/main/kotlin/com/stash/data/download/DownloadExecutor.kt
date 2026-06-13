@@ -3,6 +3,7 @@ package com.stash.data.download
 import android.content.Context
 import android.util.Log
 import com.stash.core.auth.TokenManager
+import com.stash.data.download.files.WebmAudioRemuxer
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -47,6 +48,7 @@ class DownloadExecutor @Inject constructor(
     private val ytDlpManager: YtDlpManager,
     @ApplicationContext private val context: Context,
     private val tokenManager: TokenManager,
+    private val webmRemuxer: WebmAudioRemuxer,
 ) {
     companion object {
         private const val TAG = "StashDL"
@@ -69,7 +71,11 @@ class DownloadExecutor @Inject constructor(
         qualityArgs: List<String>,
         onProgress: (Float) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
-        ytDlpManager.initialize()
+        // Gate on a freshened (latest-nightly) yt-dlp + warmed EJS solver
+        // before the first download in a session. YouTube's signature /
+        // n-challenge changes land in nightly well before stable, so running
+        // the lib-bundled snapshot is what makes downloads fail en masse.
+        ytDlpManager.ensureFreshened()
 
         // SECURITY: Cookie file contains sensitive YouTube session cookies (SAPISID,
         // LOGIN_INFO, etc.). It is written only for the duration of the yt-dlp call and
@@ -149,7 +155,12 @@ class DownloadExecutor @Inject constructor(
 
             if (result != null && result.exists() && result.length() > 0) {
                 Log.d(TAG, "download: SUCCESS file=${result.absolutePath} size=${result.length()}")
-                DownloadResult.Success(result)
+                // YouTube's Opus itags land in a `.webm` container, which
+                // MediaStore tags as video/webm (→ black-screen "videos" in
+                // Google Photos once a library is moved to shared storage).
+                // Losslessly remux webm→opus so it indexes as audio. No-op for
+                // `.m4a`/`.flac`/etc.
+                DownloadResult.Success(webmRemuxer.toOpusIfWebm(result))
             } else {
                 // yt-dlp exited 0 but no file found — list what IS in the dir for debugging
                 val dirContents = outputDir.listFiles()?.map { "${it.name} (${it.length()}b)" }

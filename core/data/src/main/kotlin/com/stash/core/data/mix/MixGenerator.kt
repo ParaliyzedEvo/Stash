@@ -165,6 +165,16 @@ class MixGenerator @Inject constructor(
         val wTag = BASE_TAG_WEIGHT
         val wCmp = BASE_COMPLETION_W
 
+        // Seed the score jitter deterministically per recipe + day. An
+        // unseeded Random re-shuffled the library slice on every refresh, so
+        // any recipe with a fractional library slot (every MULTI-genre custom
+        // mix, whose discoveryRatio rounds below 1.0) produced a different
+        // finalOrderedIds each pass. That defeated StashMixRefreshWorker
+        // .materializeMix's idempotency short-circuit and let the refresh loop
+        // visibly clear+reinsert the mix ("load 40, then repopulate"). Seeding
+        // by recipe+day keeps a day's refreshes identical (short-circuit fires)
+        // while still rotating the order daily.
+        val jitterRng = Random(recipe.id * 1_000_003L xor (System.currentTimeMillis() / 86_400_000L))
         val scored = pool.map { track ->
             val aff = affinityMap[track.id] ?: 0f
             val tag = tagCosineMap[track.id] ?: 0f
@@ -176,7 +186,7 @@ class MixGenerator @Inject constructor(
                 cmp * wCmp +
                 loved -
                 skip +
-                Random.nextFloat() * SORT_JITTER
+                jitterRng.nextFloat() * SORT_JITTER
             track to score
         }
 

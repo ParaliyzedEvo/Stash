@@ -15,9 +15,13 @@ class YoutubeAuthHealthProbeTest {
     private val api: YTMusicApiClient = mockk()
     private val probe = YoutubeAuthHealthProbe(api)
 
-    @Test fun `returns true when getUserPlaylists returns Empty`() = runTest {
+    @Test fun `returns false when getUserPlaylists returns Empty (authed-but-empty library is not expiry)`() = runTest {
+        // Regression: an authenticated account with zero YouTube Music
+        // playlists also returns Empty. Treating Empty as "expired" used to
+        // short-circuit the whole sync (Spotify included) and spam a bogus
+        // "re-authenticate YouTube" prompt. Empty must NOT mean expired.
         coEvery { api.getUserPlaylists() } returns SyncResult.Empty("Library returned no playlists")
-        assertTrue(probe.isExpired())
+        assertFalse(probe.isExpired())
     }
 
     @Test fun `returns false when getUserPlaylists returns Success`() = runTest {

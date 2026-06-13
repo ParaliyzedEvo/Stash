@@ -25,5 +25,14 @@ object LastFmCredentialsModule {
     fun provideLastFmCredentials(): LastFmCredentials = LastFmCredentials(
         apiKey = BuildConfig.LASTFM_API_KEY,
         apiSecret = BuildConfig.LASTFM_API_SECRET,
+        // Comma-separated read-only key pool (optional). Spreads unsigned read
+        // traffic across keys to raise the rate ceiling; blanks are dropped by
+        // LastFmCredentials.readApiKeys.
+        extraReadApiKeys = BuildConfig.LASTFM_EXTRA_API_KEYS
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() },
+        // Optional Worker proxy base URL; blank = direct to Last.fm.
+        proxyUrl = BuildConfig.LASTFM_PROXY_URL.trim().ifBlank { null },
     )
 }

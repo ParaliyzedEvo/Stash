@@ -99,11 +99,26 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
 
         val pending = downloadQueueDao.pendingDiscoveryDownloads()
         if (pending.isEmpty()) {
-            chainRefresh()
+            // Empty queue = nothing downloaded this run = no new playable
+            // content to materialize. Chaining here was the keystone of the
+            // runaway refresh→discovery→download→chainRefresh→… loop: it
+            // re-fired the all-recipes mix refresh even when there was
+            // nothing to surface. Terminate the chain instead.
+            //
+            // Recovery is preserved: a leftover/retry row from a prior crashed
+            // run leaves `pending` NON-empty, so the drain loop below still
+            // runs and re-chains once it completes something.
+            Log.d(TAG, "no pending discovery downloads — nothing to drain; not chaining refresh")
             return Result.success()
         }
 
         Log.i(TAG, "draining ${pending.size} discovery download(s)")
+
+        // Count downloads that produced NEW playable content this run. Only a
+        // non-zero count is allowed to chain the mix refresh — an all-FAILED /
+        // Unmatched / Deferred / blocked run surfaces nothing new, so chaining
+        // would just re-spin the worker cycle for no benefit.
+        var completed = 0
 
         for ((index, queueItem) in pending.withIndex()) {
             safeUpdateForeground(
@@ -143,6 +158,9 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                     status = DownloadStatus.COMPLETED,
                     completedAt = System.currentTimeMillis(),
                 )
+                // Already-on-disk → newly-COMPLETED queue row = new linkable
+                // playable membership. Counts as progress so the refresh chains.
+                completed++
                 continue
             }
 
@@ -173,7 +191,11 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             progressJob.cancel()
 
             when (outcome) {
-                is TrackDownloadOutcome.Success -> handleSuccess(queueItem, trackEntity, outcome)
+                is TrackDownloadOutcome.Success -> {
+                    handleSuccess(queueItem, trackEntity, outcome)
+                    // New audio on disk + COMPLETED row = real progress.
+                    completed++
+                }
                 is TrackDownloadOutcome.Unmatched -> handleUnmatched(queueItem, track, outcome)
                 is TrackDownloadOutcome.Failed -> handleFailed(queueItem, track, outcome)
                 is TrackDownloadOutcome.Deferred -> {
@@ -185,7 +207,15 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             }
         }
 
-        chainRefresh()
+        // Only chain when this run produced new playable content. An all-
+        // FAILED / Unmatched / Deferred / blocked drain surfaces nothing new,
+        // so chaining would just re-spin the worker cycle (see the keystone
+        // note on the empty-queue early return above).
+        if (completed > 0) {
+            chainRefresh()
+        } else {
+            Log.d(TAG, "drained ${pending.size} row(s) but completed 0 — not chaining refresh")
+        }
         return Result.success()
     }
 
@@ -267,12 +297,21 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Always chain — even on all-failure batches. The mix-refresh worker
-     * is a no-op when nothing new is on disk; simpler to unconditionally
-     * fire than to branch. runCatching guards JVM unit tests where
-     * WorkManager isn't initialized; production paths always succeed.
+     * Enqueue the all-recipes mix refresh so newly-downloaded survivors
+     * surface without a manual refresh.
+     *
+     * IMPORTANT: callers MUST gate this on real download progress (a
+     * non-empty queue that completed at least one row). Firing it on an
+     * idle/no-op run re-spun the runaway refresh→discovery→download→
+     * chainRefresh→… worker cycle that re-materialized every mix every
+     * ~45s. See the gating in [doWork].
+     *
+     * runCatching guards JVM unit tests where WorkManager isn't
+     * initialized; production paths always succeed. `internal` (not
+     * `private`) only so the worker-loop convergence tests can verify it
+     * via MockK spyk — body/behaviour is otherwise unchanged.
      */
-    private fun chainRefresh() {
+    internal fun chainRefresh() {
         runCatching { StashMixRefreshWorker.enqueueOneTime(applicationContext) }
             .onFailure { Log.w(TAG, "mix refresh chain failed \u2014 mixes may show stale content until next refresh", it) }
     }

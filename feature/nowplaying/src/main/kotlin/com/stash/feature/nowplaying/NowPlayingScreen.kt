@@ -42,6 +42,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -367,6 +368,7 @@ fun NowPlayingScreen(
             // -- Playback controls --
             PlaybackControls(
                 isPlaying = uiState.isPlaying,
+                isBuffering = uiState.isBuffering,
                 shuffleEnabled = uiState.shuffleEnabled,
                 repeatMode = uiState.repeatMode,
                 accentColor = uiState.vibrantColor,
@@ -630,6 +632,7 @@ private fun AlbumArtSection(
 @Composable
 private fun PlaybackControls(
     isPlaying: Boolean,
+    isBuffering: Boolean,
     shuffleEnabled: Boolean,
     repeatMode: RepeatMode,
     accentColor: Color,
@@ -674,9 +677,12 @@ private fun PlaybackControls(
             )
         }
 
-        // Play / Pause — large gradient circle with spring tactile bounce feedback
+        // Play / Pause — large gradient circle with spring tactile bounce feedback.
+        // While the track is still resolving/buffering (e.g. an ~11 s YouTube-fallback
+        // yt-dlp resolve), show a spinner in place of the icon so it doesn't look frozen.
         IconButton(
             onClick = onPlayPauseClick,
+            enabled = !isBuffering,
             modifier = Modifier
                 .size(64.dp)
                 .graphicsLayer {
@@ -690,12 +696,20 @@ private fun PlaybackControls(
                     shape = CircleShape,
                 ),
         ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = Color.White,
-                modifier = Modifier.size(32.dp),
-            )
+            if (isBuffering) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(28.dp),
+                )
+            } else {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
         }
 
         // Next

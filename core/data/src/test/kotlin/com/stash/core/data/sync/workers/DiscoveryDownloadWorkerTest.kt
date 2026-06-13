@@ -15,7 +15,10 @@ import com.stash.core.model.DownloadStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -54,6 +57,73 @@ class DiscoveryDownloadWorkerTest {
 
         assertEquals(androidx.work.ListenableWorker.Result.success(), result)
         coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
+    // ── Worker-loop convergence: chainRefresh must only fire on real progress ──
+    //
+    // Regression coverage for the runaway 3-worker cycle (refresh→discovery→
+    // download→chainRefresh→…). An idle/no-op DiscoveryDownloadWorker run must
+    // TERMINATE the chain — only a run that produced new playable content
+    // (a completed download) is allowed to kick the mix refresh.
+    //
+    // chainRefresh is `internal` (was `private`) purely so spyk can intercept it
+    // here; its body/behaviour is otherwise unchanged.
+
+    @Test fun `empty queue does not chain a mix refresh`() = runTest {
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns emptyList()
+        val worker = spyk(newWorker())
+        every { worker.chainRefresh() } returns Unit
+
+        val result = worker.doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        verify(exactly = 0) { worker.chainRefresh() }
+    }
+
+    @Test fun `drain that completes nothing does not chain`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Failed(
+            error = "yt-dlp timeout",
+        )
+        val worker = spyk(newWorker())
+        every { worker.chainRefresh() } returns Unit
+
+        worker.doWork()
+
+        verify(exactly = 0) { worker.chainRefresh() }
+    }
+
+    @Test fun `drain with a successful download chains a refresh`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { trackDownloader.downloadTrack(any(), any()) } returns TrackDownloadOutcome.Success(
+            filePath = "/tmp/file.flac",
+        )
+        coEvery { audioDurationExtractor.extract(any()) } returns null
+        val worker = spyk(newWorker())
+        every { worker.chainRefresh() } returns Unit
+
+        worker.doWork()
+
+        verify(exactly = 1) { worker.chainRefresh() }
+    }
+
+    @Test fun `drain that only completes an already-downloaded shortcut chains a refresh`() = runTest {
+        // The already-downloaded→COMPLETED shortcut produces a newly-COMPLETED
+        // queue row (new playable membership becomes linkable), so it counts as
+        // progress and SHOULD chain.
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L, isDownloaded = true, filePath = "/already/here.flac")
+        val worker = spyk(newWorker())
+        every { worker.chainRefresh() } returns Unit
+
+        worker.doWork()
+
+        verify(exactly = 1) { worker.chainRefresh() }
     }
 
     @Test fun `successful download marks COMPLETED and writes isDownloaded`() = runTest {

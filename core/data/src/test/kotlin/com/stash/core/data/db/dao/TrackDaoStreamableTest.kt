@@ -158,6 +158,52 @@ class TrackDaoStreamableTest {
         assertEquals(listOf(1L), tracks.map { it.id })
     }
 
+    // ── getByPlaylist: STASH_MIX offline exemption ──────────────────────
+    // Stash Mixes are an inherently online discovery surface. Their
+    // stream-only tracks must stay visible even when the Online/Offline
+    // preference is OFF (includeStreamable = false), so the full mix shows
+    // in Offline mode instead of collapsing to the few downloaded tracks.
+
+    @Test fun `getByPlaylist STASH_MIX includes streamable even when flag is off`() = runTest {
+        val downloaded = insertDownloaded(id = 1L, album = "A", artist = "Drake")
+        val streamable = insertStreamableOnly(id = 2L, album = "B", artist = "Drake")
+        val playlistId = playlistDao.insert(stashMixPlaylist())
+        playlistDao.insertCrossRef(crossRef(playlistId, downloaded, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlistId, streamable, position = 1))
+
+        val tracks = dao.getByPlaylist(playlistId, includeStreamable = false).first()
+
+        assertEquals(setOf(1L, 2L), tracks.map { it.id }.toSet())
+    }
+
+    @Test fun `getByPlaylist STASH_MIX still excludes unavailable and unchecked when flag is off`() = runTest {
+        val downloaded = insertDownloaded(id = 1L, album = "A", artist = "Drake")
+        val unavailable = insertUnavailable(id = 2L, album = "C", artist = "Drake")
+        val unchecked = insertUnchecked(id = 3L, album = "D", artist = "Drake")
+        val playlistId = playlistDao.insert(stashMixPlaylist())
+        playlistDao.insertCrossRef(crossRef(playlistId, downloaded, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlistId, unavailable, position = 1))
+        playlistDao.insertCrossRef(crossRef(playlistId, unchecked, position = 2))
+
+        val tracks = dao.getByPlaylist(playlistId, includeStreamable = false).first()
+
+        assertEquals(listOf(1L), tracks.map { it.id })
+    }
+
+    @Test fun `getByPlaylist non-mix still excludes streamable when flag is off`() = runTest {
+        // Control: the exemption is scoped to STASH_MIX. A CUSTOM playlist
+        // must still collapse to downloaded-only in Offline mode.
+        val downloaded = insertDownloaded(id = 1L, album = "A", artist = "Drake")
+        val streamable = insertStreamableOnly(id = 2L, album = "B", artist = "Drake")
+        val playlistId = playlistDao.insert(customPlaylist())
+        playlistDao.insertCrossRef(crossRef(playlistId, downloaded, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlistId, streamable, position = 1))
+
+        val tracks = dao.getByPlaylist(playlistId, includeStreamable = false).first()
+
+        assertEquals(listOf(1L), tracks.map { it.id })
+    }
+
     // ── getTotalCount ───────────────────────────────────────────────────
 
     @Test fun `getTotalCount excludes streamable by default`() = runTest {
@@ -351,6 +397,16 @@ class TrackDaoStreamableTest {
         source = MusicSource.BOTH,
         sourceId = "test_playlist_${System.nanoTime()}",
         type = PlaylistType.CUSTOM,
+        trackCount = 0,
+        syncEnabled = true,
+        isActive = true,
+    )
+
+    private fun stashMixPlaylist() = PlaylistEntity(
+        name = "Daily Discover",
+        source = MusicSource.BOTH,
+        sourceId = "stash_mix_${System.nanoTime()}",
+        type = PlaylistType.STASH_MIX,
         trackCount = 0,
         syncEnabled = true,
         isActive = true,

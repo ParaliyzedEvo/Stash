@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless
 
 import android.util.Log
+import com.stash.core.data.prefs.StreamingPreference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,6 +25,8 @@ import javax.inject.Singleton
 class LosslessSourceRegistry @Inject constructor(
     private val sources: Set<@JvmSuppressWildcards LosslessSource>,
     private val prefs: LosslessSourcePreferences,
+    private val healthGate: LosslessSourceHealthGate,
+    private val streamingPreference: StreamingPreference,
 ) {
 
     /**
@@ -34,10 +37,21 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery): SourceResult? {
-        val ordered = orderedSources()
+        // Test toggle (outage drill): antra ONLY — the qobuz proxies are
+        // removed from play so a download either resolves via antra or
+        // falls through visibly. Mirrors StreamSourceRegistry's handling.
+        val ordered = if (streamingPreference.isForceAntraOnly()) {
+            orderedSources().filter { it.id == ANTRA_SOURCE_ID }
+        } else {
+            orderedSources()
+        }
         val minQuality = prefs.minQualityNow()
 
         for (source in ordered) {
+            if (healthGate.isDegraded(source.id)) {
+                Log.d(TAG, "skipping ${source.id}: degraded (content-health cooldown)")
+                continue
+            }
             if (!source.isEnabled()) continue
             val result = runCatching { source.resolve(query) }
                 .onFailure { e ->
@@ -106,5 +120,6 @@ class LosslessSourceRegistry @Inject constructor(
 
     companion object {
         private const val TAG = "LosslessRegistry"
+        private const val ANTRA_SOURCE_ID = "antra"
     }
 }

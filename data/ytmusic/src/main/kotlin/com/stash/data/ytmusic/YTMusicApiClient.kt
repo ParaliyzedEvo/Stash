@@ -295,6 +295,17 @@ class YTMusicApiClient @Inject constructor(
      * @param query The search query string as typed by the user.
      * @return An ordered list of sections; empty if nothing matched.
      */
+    /**
+     * Resolve a single best YouTube **videoId** for [artist]/[title] via the
+     * songs-FILTERED canonical matcher (the same path the download flow trusts).
+     * Title-agnostic and prefers Topic/official audio (ATV/OMV). Far more robust
+     * than [searchAll] for streaming fallback — `searchAll` gates on a literal
+     * "Songs" shelf title and returns nothing for tracks YouTube labels
+     * differently (older / compilation catalog), which silently broke playback.
+     */
+    suspend fun searchCanonicalVideoId(artist: String, title: String): String? =
+        innerTubeClient.searchCanonical(artist, title)
+
     suspend fun searchAll(query: String): SearchAllResults {
         val response = innerTubeClient.search(query)
             ?: return SearchAllResults(emptyList())

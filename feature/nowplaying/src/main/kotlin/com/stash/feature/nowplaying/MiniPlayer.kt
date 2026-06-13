@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -148,14 +149,23 @@ fun MiniPlayer(
                         )
                     }
 
-                    // Play / Pause button.
-                    IconButton(onClick = viewModel::onPlayPauseClick) {
-                        Icon(
-                            imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(28.dp),
-                        )
+                    // Play / Pause button — spinner while the track is still
+                    // resolving/buffering (e.g. a slow YouTube-fallback resolve).
+                    IconButton(onClick = viewModel::onPlayPauseClick, enabled = !uiState.isBuffering) {
+                        if (uiState.isBuffering) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
                     }
 
                     // Skip next button.

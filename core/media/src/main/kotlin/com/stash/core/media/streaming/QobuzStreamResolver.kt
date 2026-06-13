@@ -2,6 +2,7 @@ package com.stash.core.media.streaming
 
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import javax.inject.Inject
@@ -29,8 +30,15 @@ import javax.inject.Singleton
 @Singleton
 class QobuzStreamResolver @Inject constructor(
     private val source: QobuzSource,
+    private val healthGate: LosslessSourceHealthGate,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? {
+        if (healthGate.isDegraded(QobuzSource.SOURCE_ID)) {
+            // Content-degraded (preview-sample / lossy downgrade) within the
+            // cooldown — skip so the streaming registry fails over.
+            Log.d(TAG, "skip id=${track.id} (squid content-degraded)")
+            return null
+        }
         Log.d(TAG, "resolve attempt id=${track.id} title='${track.title}'")
         if (!source.isEnabledForStreaming()) {
             Log.d(TAG, "disabled id=${track.id} (no cookie or stale)")

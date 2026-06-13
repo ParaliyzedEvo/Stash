@@ -119,6 +119,20 @@ interface PlayerRepository {
     suspend fun setQueue(tracks: List<Track>, startIndex: Int = 0)
 
     /**
+     * Restore the last-played queue — full queue, saved current track,
+     * saved position, and shuffle state — and start playing. Reuses the
+     * normal [setQueue] resolution path, so it works in both offline and
+     * online modes (downloaded files and streamed tracks) with background
+     * queue fill, exactly like a normal playlist tap.
+     *
+     * Fire-and-forget: the work runs on the repository's own scope so the
+     * caller (a no-UI trampoline activity launched from an app shortcut /
+     * Bluetooth routine) can finish immediately. Falls back to the most
+     * recently played / added track when no queue has been persisted yet.
+     */
+    fun resumeLastQueue()
+
+    /**
      * v0.9.14: Replace the queue with a freshly-shuffled snapshot of the
      * user's entire downloaded library, begin playback, and arm the
      * auto-grow watcher so the queue refills from the unused remainder

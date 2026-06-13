@@ -35,4 +35,9 @@ dependencies {
     implementation(libs.work.runtime.ktx)
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation("com.google.truth:truth:1.4.4")
+    // Matches the test harness in :feature:library — see MixOfflineTapGuardTest.
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }

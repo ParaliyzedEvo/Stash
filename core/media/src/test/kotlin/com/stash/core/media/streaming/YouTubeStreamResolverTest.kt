@@ -5,6 +5,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,9 +30,10 @@ class YouTubeStreamResolverTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
         // Mock throws CE synchronously — simulates an in-flight
-        // extractStreamUrl call hitting a suspension point that
-        // observes parent cancellation.
-        coEvery { extractor.extractStreamUrl(any()) } throws
+        // extraction call hitting a suspension point that observes
+        // parent cancellation. resolve() defaults allowYtDlp=true, which
+        // now routes through the yt-dlp-direct path.
+        coEvery { extractor.extractStreamUrlViaYtDlp(any()) } throws
             CancellationException("outer cancel")
         val resolver = YouTubeStreamResolver(extractor, ytMusic)
         val track = trackWithYoutubeId("abc123")
@@ -78,7 +80,7 @@ class YouTubeStreamResolverTest {
     fun resolve_returnsNull_onGenuineExtractionTimeout() = runTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
-        coEvery { extractor.extractStreamUrl(any()) } coAnswers {
+        coEvery { extractor.extractStreamUrlViaYtDlp(any()) } coAnswers {
             delay(60_000)
             "unreachable"
         }
@@ -87,6 +89,45 @@ class YouTubeStreamResolverTest {
 
         val result = resolver.resolve(track)
         assertThat(result).isNull()
+    }
+
+    /**
+     * Core of the 2026-06-08 fix: playback resolution (allowYtDlp=true)
+     * must go straight to yt-dlp — the InnerTube/iOS fast lane returns
+     * PO-token-gated URLs that 403 past ~1MB and can't stream a full track.
+     */
+    @Test
+    fun resolve_allowYtDlpTrue_routesToYtDlpDirect_notInnerTubeRace() = runTest {
+        val extractor: PreviewUrlExtractor = mockk()
+        val ytMusic: YTMusicApiClient = mockk()
+        coEvery { extractor.extractStreamUrlViaYtDlp("abc123") } returns "https://ytdlp/abc123"
+        val resolver = YouTubeStreamResolver(extractor, ytMusic)
+
+        val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = true)
+
+        assertThat(result?.url).isEqualTo("https://ytdlp/abc123")
+        coVerify(exactly = 1) { extractor.extractStreamUrlViaYtDlp("abc123") }
+        coVerify(exactly = 0) { extractor.extractStreamUrl(any(), any()) }
+    }
+
+    /**
+     * Background queue-fill (allowYtDlp=false) keeps using the cheap
+     * InnerTube fast lane to seed the deep in-order timeline — these
+     * placeholder URLs never actually stream audio (prefetch / 403-refresh
+     * swap them to yt-dlp before playback).
+     */
+    @Test
+    fun resolve_allowYtDlpFalse_routesToInnerTubeFastLaneOnly() = runTest {
+        val extractor: PreviewUrlExtractor = mockk()
+        val ytMusic: YTMusicApiClient = mockk()
+        coEvery { extractor.extractStreamUrl("abc123", false) } returns "https://innertube/abc123"
+        val resolver = YouTubeStreamResolver(extractor, ytMusic)
+
+        val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = false)
+
+        assertThat(result?.url).isEqualTo("https://innertube/abc123")
+        coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", false) }
+        coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
 
     private fun trackWithYoutubeId(id: String): TrackEntity = TrackEntity(

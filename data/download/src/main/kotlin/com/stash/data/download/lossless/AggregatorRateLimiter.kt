@@ -101,6 +101,27 @@ class AggregatorRateLimiter @Inject constructor() {
             circuitBreakAfter = 5,
             circuitBreakDurationMs = 30 * 60_000L, // 30 min
         )
+
+        // antra runs ONE job at a time (a 2nd POST /api/jobs while one is in
+        // flight returns 429). burst=1 stops the limiter from fanning out
+        // multiple parallel download workers onto antra's single slot; the
+        // AntraJobGate then serializes the actual job lifecycle. A 429 is a
+        // short backoff (10s), not a hard failure — AntraSource reports it
+        // via reportRateLimited, so transient collisions never trip the
+        // breaker. circuitBreak only fires on genuine failures (dead auth,
+        // 5xx) and clears in 5 min.
+        configs["antra"] = Config(
+            tokensPerSecond = 1.0 / 2.0,   // 1 token / 2 seconds
+            burstCapacity = 1.0,           // never fan out — one job at a time
+            backoff429Ms = 10_000L,        // brief pause; the gate already serializes
+            circuitBreakAfter = 5,
+            circuitBreakDurationMs = 5 * 60_000L, // 5 min
+            // antra's 429 = "a job is already running" (absorbed by
+            // AntraJobGate), not a health signal — so collisions apply the
+            // backoff but never brick the source. Only genuine failures
+            // (dead auth, 5xx via reportFailure) trip the breaker.
+            rateLimitTripsBreaker = false,
+        )
     }
 
     companion object {
@@ -238,9 +259,14 @@ class AggregatorRateLimiter @Inject constructor() {
             // 429 also counts as a failure for circuit-breaker purposes —
             // if we keep getting rate-limited, something's structurally
             // wrong (wrong API endpoint, banned IP, etc.) and we should
-            // fall back harder than just the 5-minute backoff.
-            bucket.consecutiveFailures++
-            maybeTripCircuitBreaker(bucket, cfg)
+            // fall back harder than just the backoff. EXCEPT for sources
+            // whose 429 is an expected concurrency reply (antra's "job
+            // already running", absorbed by AntraJobGate) — there a 429 is
+            // not a health signal, so it must never trip the breaker.
+            if (cfg.rateLimitTripsBreaker) {
+                bucket.consecutiveFailures++
+                maybeTripCircuitBreaker(bucket, cfg)
+            }
         }
     }
 
@@ -344,6 +370,12 @@ class AggregatorRateLimiter @Inject constructor() {
      * @property backoff429Ms    Pause-the-source duration on a 429 reply.
      * @property circuitBreakAfter Consecutive failures before extended block.
      * @property circuitBreakDurationMs Length of the extended block.
+     * @property rateLimitTripsBreaker Whether a 429 counts toward the
+     *   circuit breaker. True (default) for the Qobuz proxies, where a 429
+     *   means real over-rate. False for sources whose 429 is a structural
+     *   concurrency reply (antra: "a job is already running") that the job
+     *   gate already absorbs — there a 429 applies only the short backoff and
+     *   must never trip the breaker, however many collide.
      */
     data class Config(
         val tokensPerSecond: Double = 0.125,
@@ -351,6 +383,7 @@ class AggregatorRateLimiter @Inject constructor() {
         val backoff429Ms: Long = 5 * 60_000L,
         val circuitBreakAfter: Int = 3,
         val circuitBreakDurationMs: Long = 30 * 60_000L,
+        val rateLimitTripsBreaker: Boolean = true,
     )
 
     /** Indirection so tests can inject a virtual clock. */

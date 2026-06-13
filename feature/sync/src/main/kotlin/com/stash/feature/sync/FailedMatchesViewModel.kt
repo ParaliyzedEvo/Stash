@@ -125,6 +125,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val swapCoordinator: SwapCoordinator,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
+    private val localFileOps: com.stash.core.data.files.LocalFileOps,
 ) : ViewModel() {
 
     companion object {
@@ -235,7 +236,12 @@ class FailedMatchesViewModel @Inject constructor(
             // Each row becomes a (trackId, searchQuery, rejectedVideoId?)
             // triple so the same semaphored search loop handles both kinds.
             val unmatched = uiState.value.tracks.map {
-                Triple(it.trackId, it.searchQuery, it.rejectedVideoId)
+                // Auto-requeued tracks (TrackDownloadWorker) get a blank
+                // download_queue.search_query. Fall back to "artist - title"
+                // — which we already have on the row — so resync can actually
+                // search instead of firing a blank query that finds nothing.
+                val query = it.searchQuery.ifBlank { "${it.artist} - ${it.title}" }
+                Triple(it.trackId, query, it.rejectedVideoId)
             }
             val flagged = uiState.value.flaggedTracks.map {
                 Triple(it.trackId, it.searchQuery, it.currentYoutubeId)
@@ -254,8 +260,26 @@ class FailedMatchesViewModel @Inject constructor(
                         // For flagged tracks, skip the currently-associated
                         // (wrong) video — surfacing it as the candidate would
                         // just swap the track with itself.
-                        val best = results.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
-                            ?: results.firstOrNull()
+                        var best = results.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
+
+                        // #19/#143: search() is InnerTube-first and only falls
+                        // back to yt-dlp when YT Music returns *zero* results.
+                        // When YT Music returns results but none are usable —
+                        // it's empty, or only the rejected/wrong video came back
+                        // — broaden to a full-YouTube yt-dlp search, which
+                        // surfaces tracks that exist on YouTube but not YouTube
+                        // Music (and genuine alternatives to a wrong match).
+                        if (best == null) {
+                            val direct = searchExecutor.searchYtDlpDirect(query, maxResults = 5)
+                            best = direct.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
+                        }
+
+                        // Last resort: surface the top result even if it's the
+                        // excluded one, so an unmatched track still gets *a*
+                        // candidate to preview rather than nothing.
+                        if (best == null) {
+                            best = results.firstOrNull()
+                        }
                         if (best != null) {
                             _resyncCandidates.update { current ->
                                 current + (trackId to ResyncCandidate(
@@ -278,6 +302,18 @@ class FailedMatchesViewModel @Inject constructor(
             }.joinAll()
 
             _isResyncing.value = false
+
+            // #143: a resync that surfaces no candidates is otherwise
+            // indistinguishable from a button that did nothing. Always report
+            // the outcome so the user knows the pass actually ran.
+            val found = _resyncCandidates.value.size
+            _userMessages.tryEmit(
+                when (found) {
+                    0 -> "No new matches found."
+                    1 -> "Found 1 replacement."
+                    else -> "Found $found replacements."
+                },
+            )
 
             // Pre-extract stream URLs for instant audio previews
             preExtractStreamUrls(_resyncCandidates.value)
@@ -391,7 +427,14 @@ class FailedMatchesViewModel @Inject constructor(
                             title = title,
                             format = result.file.extension,
                         )
-                        trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
+                        // Reject a too-small "successful" download (failed
+                        // yt-dlp run leaving a tiny error body): delete it +
+                        // leave the track not-downloaded (streamable).
+                        if (localFileOps.acceptDownloadOrDelete(committed.filePath)) {
+                            trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
+                        } else {
+                            Log.w(TAG, "resync: discarded too-small download for ${candidate.title}: ${committed.filePath}")
+                        }
                     } else {
                         Log.w(TAG, "Background download failed for ${candidate.title}: $result")
                     }

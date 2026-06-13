@@ -1,16 +1,22 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.util.Log
 import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.db.dao.StashMixRecipeDao
@@ -65,7 +71,36 @@ class StashDiscoveryWorker @AssistedInject constructor(
     private val trackMatcher: TrackMatcher,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val downloadNetworkPreference: DownloadNetworkPreference,
+    private val syncNotificationManager: SyncNotificationManager,
 ) : CoroutineWorker(appContext, params) {
+
+    /**
+     * Required for expedited execution on API < 31 (where expedited work runs
+     * as a short foreground service). Mirrors [DiscoveryDownloadWorker]'s
+     * notification so the brief "preparing your mix" promotion looks
+     * consistent with the rest of the discovery pipeline. On API 31+
+     * WorkManager uses the platform expedited job and never shows this.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        buildForegroundInfo("Building your mix", "Finding tracks…", progress = -1f)
+
+    private fun buildForegroundInfo(title: String, text: String, progress: Float): ForegroundInfo {
+        val notification = syncNotificationManager.buildProgressNotification(
+            title = title,
+            text = text,
+            progress = progress,
+            cancelIntent = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id),
+        )
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ForegroundInfo(
+                SyncNotificationManager.NOTIFICATION_ID_PROGRESS,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            ForegroundInfo(SyncNotificationManager.NOTIFICATION_ID_PROGRESS, notification)
+        }
+    }
 
     companion object {
         private const val TAG = "StashDiscovery"
@@ -113,14 +148,31 @@ class StashDiscoveryWorker @AssistedInject constructor(
          * pipeline: discovery_queue PENDING → stubs + download_queue PENDING →
          * actual downloads.
          */
-        fun enqueueOneTime(context: Context, mode: DownloadNetworkMode) {
-            val work = OneTimeWorkRequestBuilder<StashDiscoveryWorker>()
-                .setConstraints(constraintsForManualTrigger(mode))
-                .build()
+        fun enqueueOneTime(context: Context, mode: DownloadNetworkMode, expedited: Boolean = false) {
+            val builder = OneTimeWorkRequestBuilder<StashDiscoveryWorker>()
+            if (expedited) {
+                // Jump the queue: when a mix is created/refreshed mid library-sync
+                // the drain would otherwise sit behind hundreds of sync-spawned
+                // jobs (downloads, lyrics, art-backfill) on the OS JobScheduler,
+                // leaving the mix on "Building…" for a long time. RUN_AS_NON_-
+                // EXPEDITED fallback means an out-of-quota app still drains, just
+                // not expedited — never worse than the non-expedited path.
+                //
+                // Expedited jobs may carry ONLY network + storage constraints —
+                // battery-not-low (in constraintsForManualTrigger) is rejected by
+                // WorkRequest.build() — so use a network-only constraint here.
+                builder
+                    .setConstraints(
+                        Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+                    )
+                    .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            } else {
+                builder.setConstraints(constraintsForManualTrigger(mode))
+            }
             WorkManager.getInstance(context).enqueueUniqueWork(
                 ONE_SHOT_WORK_NAME,
                 ExistingWorkPolicy.REPLACE,
-                work,
+                builder.build(),
             )
         }
     }
@@ -139,20 +191,41 @@ class StashDiscoveryWorker @AssistedInject constructor(
 
         // v0.9.21: pre-filter the PENDING fetch by under-cap recipes so a
         // single recipe's deferred-at-cap backlog doesn't starve other
-        // recipes' fresh candidates out of the BATCH_SIZE window. See
-        // conversation 2026-05-12: First Listen had 100+ deferred-at-cap
-        // PENDING rows clogging the head of the queue so Deep Cuts'
-        // freshly-queued candidates never reached the worker.
+        // recipes' fresh candidates out of the BATCH_SIZE window.
+        //
+        // v0.9.38: combine the cap pre-filter with round-robin batching.
+        // Plain FIFO `getPending` lets one recipe with a deep PENDING
+        // backlog monopolise the BATCH_SIZE window even when it's *under*
+        // cap (conversation 2026-05-28: Daily Discover had 131 PENDING
+        // queued before Deep Cuts/First Listen's batches and consumed 57
+        // of every 60-row drain; Deep Cuts + First Listen never ran). The
+        // cap query was also dead in v0.9.37 — fixed in the DAO by
+        // counting both downloaded AND streamable DONE rows.
         val cappedRecipeIds = discoveryQueueDao.findRecipesAtWeeklyCap(
             sinceMillis = System.currentTimeMillis() - WEEK_MS,
             cap = PER_RECIPE_WEEKLY_CAP,
         )
-        val pending = if (cappedRecipeIds.isEmpty()) {
-            discoveryQueueDao.getPending(BATCH_SIZE)
-        } else {
+        if (cappedRecipeIds.isNotEmpty()) {
             Log.i(TAG, "recipes at cap (excluded from fetch): $cappedRecipeIds")
-            discoveryQueueDao.getPendingExcludingRecipes(cappedRecipeIds, BATCH_SIZE)
         }
+        // Room rejects empty `IN ()` lists. -1L is safe as a sentinel —
+        // real recipe ids are autogen > 0.
+        val cappedSentinel = cappedRecipeIds.ifEmpty { listOf(-1L) }
+        val activeRecipes = discoveryQueueDao.getRecipesWithPending(cappedSentinel)
+        val pending = if (activeRecipes.isEmpty()) {
+            emptyList()
+        } else {
+            // Fair quota: ceil(BATCH_SIZE / activeRecipes). With the typical
+            // 3 builtin recipes that's 20/each; a single solo recipe still
+            // gets the full 60.
+            val perRecipeQuota = (BATCH_SIZE + activeRecipes.size - 1) / activeRecipes.size
+            activeRecipes.flatMap { rid ->
+                discoveryQueueDao.getPendingForRecipe(rid, perRecipeQuota)
+            }
+        }
+        // Count stream-only stubs created/reused this run so we can trigger a
+        // (network-only) re-materialize afterwards — see the post-loop kick.
+        var newlyMaterialized = 0
         if (pending.isEmpty()) {
             Log.d(TAG, "no pending discoveries")
             // Don't return early — fall through to the chain. download_queue
@@ -189,6 +262,7 @@ class StashDiscoveryWorker @AssistedInject constructor(
                 val result = handle(entry, now)
                 if (result.trackId != null) {
                     recipeBudget[entry.recipeId] = used + 1
+                    newlyMaterialized++
                 }
                 discoveryQueueDao.updateStatus(
                     id = entry.id,
@@ -198,6 +272,26 @@ class StashDiscoveryWorker @AssistedInject constructor(
                     errorMessage = result.error,
                 )
             }
+        }
+
+        // Stream-only stubs need no download — only a materialize pass to link
+        // them into the recipe playlists. That pass runs in StashMixRefreshWorker,
+        // which the DiscoveryDownloadWorker chain below also re-kicks — but that
+        // worker is battery-not-low gated (it downloads files), so on a low
+        // battery the freshly-drained stubs would never surface and the mix sits
+        // on "Building…" indefinitely (root cause: device at 4%, stubs DONE,
+        // playlist empty). Kick the network-only refresh directly so stream-only
+        // mixes materialize regardless of battery. Same unique work as the
+        // chain's kick (REPLACE) → the two coalesce when both fire. Guarded, and
+        // only when we actually produced stubs so an idle run doesn't spin the
+        // refresh⇄drain loop.
+        if (newlyMaterialized > 0) {
+            // Materialize-only: LINK the freshly-drained stubs into the mix
+            // playlists, but do NOT re-queue discovery or re-kick this drain —
+            // otherwise refresh⇄drain loops forever, continuously clearing +
+            // reinserting every mix (the multi-genre "repopulate" churn).
+            runCatching { StashMixRefreshWorker.enqueueOneTime(applicationContext, materializeOnly = true) }
+                .onFailure { Log.w(TAG, "post-drain re-materialize enqueue failed; stubs surface on next refresh", it) }
         }
 
         // v0.9.20: after queueing/processing discoveries, kick the downloader

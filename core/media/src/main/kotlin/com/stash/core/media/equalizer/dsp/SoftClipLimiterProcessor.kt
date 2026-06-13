@@ -33,6 +33,7 @@ import kotlin.math.exp
 class SoftClipLimiterProcessor : BaseAudioProcessor() {
 
   private lateinit var ringBuffer: ShortArray
+  private lateinit var windowMax: SlidingWindowMax
   private var ringWrite = 0
   private var currentGain = 1.0f
   private var attackCoeff = 0f
@@ -44,6 +45,7 @@ class SoftClipLimiterProcessor : BaseAudioProcessor() {
       throw UnhandledAudioFormatException(inputAudioFormat)
     val frames = (inputAudioFormat.sampleRate * LOOKAHEAD_MS / 1000f).toInt().coerceAtLeast(1)
     ringBuffer = ShortArray(frames * inputAudioFormat.channelCount)
+    windowMax = SlidingWindowMax(ringBuffer.size)
     attackCoeff = expCoeff(ATTACK_MS, inputAudioFormat.sampleRate)
     releaseCoeff = expCoeff(RELEASE_MS, inputAudioFormat.sampleRate)
     ringWrite = 0
@@ -65,7 +67,11 @@ class SoftClipLimiterProcessor : BaseAudioProcessor() {
       ringBuffer[ringWrite] = sample
       ringWrite = (ringWrite + 1) % ringBuffer.size
 
-      val peakAbs = lookaheadPeakAbs() / 32768f
+      // O(1) sliding max instead of rescanning the whole ring per sample —
+      // the rescan was O(sampleRate²) overall and starved the playback
+      // thread at 192kHz (audible underrun crackle on hi-res FLAC).
+      windowMax.push(abs(sample.toInt()))
+      val peakAbs = windowMax.max() / 32768f
       val targetGain = if (peakAbs > THRESHOLD) THRESHOLD / peakAbs else 1f
       val coeff = if (targetGain < currentGain) attackCoeff else releaseCoeff
       currentGain += (targetGain - currentGain) * coeff
@@ -80,15 +86,6 @@ class SoftClipLimiterProcessor : BaseAudioProcessor() {
       }
     }
     out.flip()
-  }
-
-  private fun lookaheadPeakAbs(): Int {
-    var max = 0
-    for (s in ringBuffer) {
-      val a = abs(s.toInt())
-      if (a > max) max = a
-    }
-    return max
   }
 
   private fun expCoeff(ms: Float, sampleRate: Int): Float =

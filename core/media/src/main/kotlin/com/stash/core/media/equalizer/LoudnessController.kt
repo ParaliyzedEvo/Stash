@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * The single writer of [LoudnessState]. UI emits user-driven changes here
@@ -42,7 +41,11 @@ class LoudnessController @Inject constructor(
   @Volatile private var initDone = false
 
   init {
-    runBlocking {
+    // Load persisted state OFF the constructor — see EqController.init for
+    // the full rationale (main-thread I/O risk + corrupt-DataStore crashes
+    // construction). LoudnessGainProcessor samples state.value per buffer,
+    // so the brief default-gain window before the load lands is harmless.
+    scope.launch {
       _state.value = store.read()
       initDone = true
     }

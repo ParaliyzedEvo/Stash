@@ -66,6 +66,21 @@ object SpotifyAuthConfig {
      */
     const val HASH_HOME = "23e37f2e58d82d567f27080101d36609009d8c3676457b1086cb0acc55b72a5d"
 
+    /**
+     * Persisted query hash for the `searchDesktop` operation — the search the
+     * Spotify web player uses for search-as-you-type. Unlike the public
+     * /v1/search REST endpoint (which hard-rate-limits both client_credentials
+     * AND sp_dc tokens — 24h then short 429s), this is the first-party Partner
+     * API the web client hammers at high volume, so it tolerates our on-demand
+     * lookups. Returns full track metadata (name/artists/duration) so the
+     * bulletproof SpotifySearchScorer still runs.
+     * Scraped from the web player JS bundles; rotates every few weeks — if
+     * searchDesktop starts returning HTTP 400 "PersistedQueryNotFound", refresh
+     * this from a current web-player session. Alt recently-seen hash:
+     * 21969b655b795601fb2d2204a4243188e75fdc6d3520e7b9cd3f4db2aff9591e
+     */
+    const val HASH_SEARCH_DESKTOP = "75bbf6bfcfdf85b8fc828417bfad92b7cd66bf7f556d85670f4da8292373ebec"
+
     // -- Legacy (kept for reference, no longer used by API client) -------------
 
     /** Base URL for the Spotify Web API v1 (blocked for sp_dc tokens). */

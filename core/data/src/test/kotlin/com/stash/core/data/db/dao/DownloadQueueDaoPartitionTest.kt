@@ -120,6 +120,151 @@ class DownloadQueueDaoPartitionTest {
         assertTrue("expected empty, got $result", result.isEmpty())
     }
 
+    // ---- STASH_MIX stream-only exclusion (v0.9.48) ----
+    //
+    // Stash Mixes are stream-only by design (v0.9.37 seam). Their playlists
+    // are sync_enabled=1 so they stay visible offline, but their stub tracks
+    // must NEVER be treated as download-eligible. "Download-eligible" =
+    // member of a sync-enabled, NON-STASH_MIX playlist.
+
+    @Test fun `getAllPendingBySources excludes a track whose only sync-enabled playlist is a Stash Mix`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val result = dao.getAllPendingBySources(listOf("YOUTUBE"))
+
+        assertTrue("mix-only track must not drain, got $result", result.isEmpty())
+    }
+
+    @Test fun `getAllPendingBySources includes a track in both a Stash Mix and a non-mix playlist`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.LIKED_SONGS, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val result = dao.getAllPendingBySources(listOf("YOUTUBE"))
+
+        assertEquals("overlap track in Liked Songs must still download", listOf(100L), result.map { it.id })
+    }
+
+    @Test fun `getRetryableBySources excludes a track whose only sync-enabled playlist is a Stash Mix`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        dao.insert(failedRow(id = 100L, trackId = 1L, syncId = 5L, retryCount = 1))
+
+        val result = dao.getRetryableBySources(listOf("YOUTUBE"))
+
+        assertTrue("mix-only retry row must not resurface, got $result", result.isEmpty())
+    }
+
+    @Test fun `getUnqueuedTrackIds excludes Stash-Mix-only tracks but keeps non-mix tracks`() = runTest {
+        seedTrack(trackId = 1L) // mix-only
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        seedTrack(trackId = 2L) // genuine library track
+        addPlaylistMembership(trackId = 2L, type = PlaylistType.LIKED_SONGS, syncEnabled = true)
+
+        val result = dao.getUnqueuedTrackIds(listOf("YOUTUBE"))
+
+        assertEquals("only the non-mix track should be re-queued", listOf(2L), result)
+    }
+
+    @Test fun `deleteOrphanedQueueEntries evicts a Stash-Mix-only track's queue row`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val deleted = dao.deleteOrphanedQueueEntries()
+
+        assertEquals("mix-only queue row should be swept", 1, deleted)
+        assertTrue(dao.getAllPendingBySources(listOf("YOUTUBE")).isEmpty())
+    }
+
+    @Test fun `deleteOrphanedQueueEntries spares a track in both a Stash Mix and a non-mix playlist`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.STASH_MIX, syncEnabled = true)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.LIKED_SONGS, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val deleted = dao.deleteOrphanedQueueEntries()
+
+        assertEquals("overlap track must keep its queue row", 0, deleted)
+    }
+
+    // ---- is_active=0 (hidden / rotated-out) exclusion ----
+    //
+    // A playlist can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
+    // daily mix force-enabled by the one-shot enableAllYouTubePlaylistSync
+    // migration, then rotated out of the feed. It's HIDDEN from the Sync UI
+    // (so the user can't toggle it off) but was still downloading its tracks
+    // (observed on-device: Replay Mix, is_active=0 + sync_enabled=1, queued
+    // 90 tracks). Download-eligibility must require the parent be ACTIVE too,
+    // matching PlaylistDao.getSyncEnabledPlaylists (is_active=1 AND sync_enabled=1).
+
+    @Test fun `getAllPendingBySources excludes a track whose only sync-enabled playlist is hidden`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val result = dao.getAllPendingBySources(listOf("YOUTUBE"))
+
+        assertTrue("hidden-playlist track must not download, got $result", result.isEmpty())
+    }
+
+    @Test fun `getAllPendingBySources includes a track in a hidden mix AND an active playlist`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.CUSTOM, syncEnabled = true, isActive = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val result = dao.getAllPendingBySources(listOf("YOUTUBE"))
+
+        assertEquals("track in an active playlist must still download", listOf(100L), result.map { it.id })
+    }
+
+    @Test fun `getRetryableBySources excludes a track whose only sync-enabled playlist is hidden`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        dao.insert(failedRow(id = 100L, trackId = 1L, syncId = 5L, retryCount = 1))
+
+        val result = dao.getRetryableBySources(listOf("YOUTUBE"))
+
+        assertTrue("hidden-playlist retry row must not resurface, got $result", result.isEmpty())
+    }
+
+    @Test fun `getUnqueuedTrackIds excludes hidden-playlist-only tracks but keeps active-playlist tracks`() = runTest {
+        seedTrack(trackId = 1L) // hidden-mix only
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        seedTrack(trackId = 2L) // active playlist
+        addPlaylistMembership(trackId = 2L, type = PlaylistType.CUSTOM, syncEnabled = true, isActive = true)
+
+        val result = dao.getUnqueuedTrackIds(listOf("YOUTUBE"))
+
+        assertEquals("only the active-playlist track should be re-queued", listOf(2L), result)
+    }
+
+    @Test fun `deleteOrphanedQueueEntries evicts a hidden-playlist-only track's queue row`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val deleted = dao.deleteOrphanedQueueEntries()
+
+        assertEquals("hidden-playlist queue row should be swept", 1, deleted)
+        assertTrue(dao.getAllPendingBySources(listOf("YOUTUBE")).isEmpty())
+    }
+
+    @Test fun `deleteOrphanedQueueEntries spares a track in a hidden mix AND an active playlist`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.DAILY_MIX, syncEnabled = true, isActive = false)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.CUSTOM, syncEnabled = true, isActive = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val deleted = dao.deleteOrphanedQueueEntries()
+
+        assertEquals("track in an active playlist must keep its queue row", 0, deleted)
+    }
+
     // ---- helpers ----
 
     private suspend fun seedTrack(trackId: Long) {
@@ -148,15 +293,33 @@ class DownloadQueueDaoPartitionTest {
                 isDownloaded = false,
             )
         )
+        // A genuine downloadable playlist (imported Liked Songs). NOT a
+        // STASH_MIX — mix tracks are stream-only and must be excluded from
+        // the download-eligibility queries (see the STASH_MIX exclusion
+        // tests below).
+        addPlaylistMembership(trackId = trackId, type = PlaylistType.LIKED_SONGS, syncEnabled = true)
+    }
+
+    /**
+     * Link [trackId] into a fresh playlist of [type]. Unique sourceId per
+     * (track, type) so a single track can sit in several playlists at once
+     * (e.g. both a Stash Mix and Liked Songs) for the overlap tests.
+     */
+    private suspend fun addPlaylistMembership(
+        trackId: Long,
+        type: PlaylistType,
+        syncEnabled: Boolean,
+        isActive: Boolean = true,
+    ) {
         val playlistId = playlistDao.insert(
             PlaylistEntity(
-                name = "Test playlist",
+                name = "$type playlist $trackId active=$isActive",
                 source = MusicSource.BOTH,
-                sourceId = "test_playlist_$trackId",
-                type = PlaylistType.STASH_MIX,
+                sourceId = "playlist_${type}_${trackId}_$isActive",
+                type = type,
                 trackCount = 0,
-                syncEnabled = true,
-                isActive = true,
+                syncEnabled = syncEnabled,
+                isActive = isActive,
             )
         )
         playlistDao.insertCrossRef(

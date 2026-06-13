@@ -1,0 +1,72 @@
+{
+  "data": {
+    "me": {
+      "libraryV3": {
+        "totalCount": 5,
+        "items": [
+          {
+            "item": {
+              "__typename": "LibraryPseudoPlaylistResponseWrapper",
+              "data": {
+                "__typename": "PseudoPlaylist",
+                "name": "Liked Songs",
+                "uri": "spotify:collection:tracks"
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:6wyGbrLCQHiRK1pESUTo8Z",
+                "name": "Top Level Playlist",
+                "ownerV2": { "data": { "__typename": "User", "username": "testuser" } },
+                "images": {
+                  "items": [
+                    { "sources": [ { "url": "https://i.scdn.co/image/abc123", "width": 640, "height": 640 } ] }
+                  ]
+                },
+                "content": { "totalCount": 42 }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "FolderResponseWrapper",
+              "data": {
+                "__typename": "Folder",
+                "uri": "spotify:user:testuser:folder:8d1d2954cb43e146",
+                "name": "My Folder",
+                "playlistCount": 3,
+                "folderCount": 1
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:2v6l94wkQJwa2EU3rcJf0n",
+                "name": "Second Playlist",
+                "ownerV2": { "data": { "__typename": "User", "username": "otheruser" } },
+                "images": null,
+                "content": { "totalCount": 7 }
+              }
+            }
+          },
+          {
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "data": {
+                "__typename": "NotFound",
+                "message": "Entity not found"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

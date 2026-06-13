@@ -68,6 +68,7 @@ class LosslessRetryWorker @AssistedInject constructor(
                         album = track.album.takeIf { it.isNotBlank() },
                         isrc = track.isrc,
                         durationMs = track.durationMs.takeIf { it > 0 },
+                        spotifyUri = track.spotifyUri,
                     ),
                 )
             }.getOrNull()

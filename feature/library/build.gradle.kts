@@ -23,6 +23,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.activity.compose)
+    // MixBuilderViewModel enqueues StashMixRefreshWorker on save.
+    implementation(libs.work.runtime.ktx)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

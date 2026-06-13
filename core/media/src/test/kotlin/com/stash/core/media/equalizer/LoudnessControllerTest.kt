@@ -7,7 +7,6 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -21,13 +20,18 @@ import org.junit.Test
 class LoudnessControllerTest {
   private val store = mockk<LoudnessStore>(relaxed = true)
 
+  // Shared between Dispatchers.Main and runTest so the controller's async
+  // init (init { scope.launch { ... } } on Main) is advanced by the same
+  // scheduler the test drives — otherwise awaitInit() would never complete.
+  private val dispatcher = StandardTestDispatcher()
+
   @OptIn(ExperimentalCoroutinesApi::class)
-  @Before fun setUp() { Dispatchers.setMain(StandardTestDispatcher()) }
+  @Before fun setUp() { Dispatchers.setMain(dispatcher) }
 
   @OptIn(ExperimentalCoroutinesApi::class)
   @After fun tearDown() { Dispatchers.resetMain() }
 
-  @Test fun `init restores state from store synchronously`() = runBlocking {
+  @Test fun `init restores state from store after awaitInit`() = runTest(dispatcher) {
     coEvery { store.read() } returns LoudnessState(enabled = false, targetLufs = -11f)
     val ctrl = LoudnessController(store)
     ctrl.awaitInit()
@@ -35,7 +39,7 @@ class LoudnessControllerTest {
     assertThat(ctrl.state.value.targetLufs).isEqualTo(-11f)
   }
 
-  @Test fun `setEnabled updates the state flow`() = runTest {
+  @Test fun `setEnabled updates the state flow`() = runTest(dispatcher) {
     coEvery { store.read() } returns LoudnessState()
     val ctrl = LoudnessController(store)
     ctrl.awaitInit()
@@ -43,7 +47,7 @@ class LoudnessControllerTest {
     assertThat(ctrl.state.value.enabled).isFalse()
   }
 
-  @Test fun `setCurrentTrackGain updates both current and target gain`() = runTest {
+  @Test fun `setCurrentTrackGain updates both current and target gain`() = runTest(dispatcher) {
     coEvery { store.read() } returns LoudnessState()
     val ctrl = LoudnessController(store)
     ctrl.awaitInit()
@@ -52,7 +56,7 @@ class LoudnessControllerTest {
     assertThat(ctrl.state.value.currentTargetGainDb).isEqualTo(6f)
   }
 
-  @Test fun `setEnabled persists after debounce window`() = runTest {
+  @Test fun `setEnabled persists after debounce window`() = runTest(dispatcher) {
     coEvery { store.read() } returns LoudnessState()
     val ctrl = LoudnessController(store)
     ctrl.awaitInit()
@@ -61,7 +65,7 @@ class LoudnessControllerTest {
     coVerify { store.write(match { it.enabled == false }) }
   }
 
-  @Test fun `flush forces immediate persist regardless of debounce`() = runTest {
+  @Test fun `flush forces immediate persist regardless of debounce`() = runTest(dispatcher) {
     coEvery { store.read() } returns LoudnessState()
     val ctrl = LoudnessController(store)
     ctrl.awaitInit()

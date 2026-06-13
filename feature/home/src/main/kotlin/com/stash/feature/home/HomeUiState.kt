@@ -57,6 +57,20 @@ data class HomeUiState(
     /** Custom (non-mix, non-liked) playlists shown in the grid. */
     val playlists: List<Playlist> = emptyList(),
 
+    /**
+     * Playlist ids materialized by user-defined (non-builtin) Stash Mix
+     * recipes. Drives the Edit/Delete context-menu rows so they only
+     * appear for mixes the user built (not the builtin recipe playlists,
+     * which can't be edited or deleted from the Home sheet).
+     */
+    val customMixPlaylistIds: Set<Long> = emptySet(),
+
+    /** Custom-mix playlist ids still populating — card shows a "Building…" state. */
+    val buildingMixIds: Set<Long> = emptySet(),
+
+    /** Custom-mix playlist ids whose discovery finished with no tracks. */
+    val emptyMixIds: Set<Long> = emptySet(),
+
     /** Active sort for the Home Playlists grid. Mirrors Library's chips. */
     val playlistSortOrder: PlaylistSortOrder = PlaylistSortOrder.RECENT,
 

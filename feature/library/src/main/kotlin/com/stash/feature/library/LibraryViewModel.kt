@@ -12,9 +12,14 @@ import com.stash.data.download.files.LocalImportState
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -288,6 +293,131 @@ class LibraryViewModel @Inject constructor(
             }
         }
     }
+
+    // ── Batch (multi-select) actions — Tracks tab ────────────────────────
+    // Each wraps the existing single-track path for the multi-select toolbar.
+    // Queue uses the batch addToQueue(List) overload (single call); Play Next
+    // loops addNext; download/remove/save/delete loop the per-id repo calls.
+    //
+    // Looped batches isolate per-item failures (one bad item must not abort
+    // the rest) and emit a SINGLE roll-up Snackbar. CancellationException is
+    // always re-thrown so structured-concurrency cancellation still
+    // propagates (project rule). Mirrors PlaylistDetailViewModel's batch path.
+
+    /**
+     * Insert each of [tracks] after the currently-playing track, in order.
+     * Silent — the single-track [playNext] emits no message.
+     */
+    fun playSelectedNext(tracks: List<Track>) {
+        viewModelScope.launch {
+            tracks.forEach {
+                runCatching { playerRepository.addNext(it) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+        }
+    }
+
+    /**
+     * Append [tracks] to the queue via the batch overload (single call).
+     * Silent — the single-track [addToQueue] emits no message.
+     */
+    fun addSelectedToQueue(tracks: List<Track>) {
+        viewModelScope.launch {
+            playerRepository.addToQueue(tracks)
+        }
+    }
+
+    /** Queue each of [trackIds] for download. Emits one roll-up Snackbar. */
+    fun downloadSelected(trackIds: List<Long>) {
+        viewModelScope.launch {
+            var succeeded = 0
+            trackIds.forEach { id ->
+                runCatching { musicRepository.queueDownload(id) }
+                    .onSuccess { succeeded++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (succeeded > 0) {
+                _userMessages.tryEmit("Queued $succeeded ${songs(succeeded)} for download.")
+            }
+        }
+    }
+
+    /**
+     * Remove the on-disk file for each of [trackIds], keeping streamable rows.
+     * Emits one roll-up Snackbar.
+     */
+    fun removeDownloadsForSelected(trackIds: List<Long>) {
+        viewModelScope.launch {
+            var succeeded = 0
+            trackIds.forEach { id ->
+                runCatching { musicRepository.removeDownload(id) }
+                    .onSuccess { succeeded++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (succeeded > 0) {
+                _userMessages.tryEmit("Removed downloads for $succeeded ${songs(succeeded)}.")
+            }
+        }
+    }
+
+    /** Add each of [trackIds] to the playlist identified by [playlistId]. Silent. */
+    fun saveSelectedToPlaylist(trackIds: List<Long>, playlistId: Long) {
+        viewModelScope.launch {
+            trackIds.forEach { id ->
+                runCatching { musicRepository.addTrackToPlaylist(id, playlistId) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+        }
+    }
+
+    /** Create a new playlist and add the whole batch of [trackIds] to it. Silent. */
+    fun createPlaylistAndAddTracks(name: String, trackIds: List<Long>) {
+        viewModelScope.launch {
+            val playlistId = musicRepository.createPlaylist(name)
+            trackIds.forEach { id ->
+                runCatching { musicRepository.addTrackToPlaylist(id, playlistId) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+        }
+    }
+
+    /**
+     * Delete each of [tracks] from the library, mirroring the single-track
+     * [deleteTrack] (blacklist-tombstone when [alsoBlacklist], hard-delete
+     * otherwise). Per-item failures are isolated; emits one roll-up Snackbar.
+     */
+    fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean = false) {
+        viewModelScope.launch {
+            var deleted = 0
+            tracks.forEach { track ->
+                runCatching {
+                    if (alsoBlacklist) {
+                        musicRepository.blacklistTrack(track.id)
+                    } else {
+                        musicRepository.deleteTrack(track)
+                    }
+                }.onSuccess { deleted++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (deleted > 0) {
+                _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
+            }
+        }
+    }
+
+    /** "song" / "songs" for [count]-aware roll-up messages. */
+    private fun songs(count: Int): String = if (count == 1) "song" else "songs"
+
+    private val _userMessages = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    /** Snackbar-targeted roll-up messages from the batch (multi-select) actions. */
+    val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
+
+    /** User-created playlists for the batch Save to Playlist picker. */
+    val userPlaylists: kotlinx.coroutines.flow.Flow<List<Playlist>> =
+        musicRepository.getUserCreatedPlaylists()
 
     // ── Playlist actions ────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ package com.stash.core.media.listening
 
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
+import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.media.PlayerRepository
@@ -55,6 +56,7 @@ class ListeningRecorderSkipTest {
         override suspend fun skipPrevious() = Unit
         override suspend fun seekTo(positionMs: Long) = Unit
         override suspend fun setQueue(tracks: List<Track>, startIndex: Int) = Unit
+        override fun resumeLastQueue() = Unit
         override suspend fun shuffleLibrary() = Unit
         override suspend fun addNext(track: Track) = Unit
         override suspend fun addToQueue(track: Track) = Unit
@@ -98,6 +100,7 @@ class ListeningRecorderSkipTest {
             playerRepository = playerRepo,
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
             scope = backgroundScope,
         )
         recorder.start()
@@ -130,6 +133,7 @@ class ListeningRecorderSkipTest {
             playerRepository = playerRepo,
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
             scope = backgroundScope,
         )
         recorder.start()

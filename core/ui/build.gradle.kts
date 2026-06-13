@@ -13,4 +13,13 @@ dependencies {
     implementation(libs.compose.animation)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+
+    // SelectionState unit tests run on the JVM. The Compose BOM is only on the
+    // main classpath (added by stash.compose.library), so re-apply it here to
+    // version-align compose-runtime + runtime-saveable on the test classpath.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.truth)
+    testImplementation(libs.compose.runtime)
+    testImplementation("androidx.compose.runtime:runtime-saveable")
 }

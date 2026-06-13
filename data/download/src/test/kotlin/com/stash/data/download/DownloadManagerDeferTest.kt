@@ -4,6 +4,8 @@ import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.model.MusicSource
+import com.stash.core.model.QualityTier
 import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
@@ -20,7 +22,9 @@ import com.stash.data.download.matching.YtLibraryCanonicalizer
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.shared.TrackFinalizer
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -61,6 +65,12 @@ class DownloadManagerDeferTest {
     private val metadataEmbedder: MetadataEmbedder = mockk(relaxed = true)
     private val albumArtCache: AlbumArtCache = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
+    private val audioDurationExtractor: com.stash.core.data.audio.AudioDurationExtractor =
+        mockk(relaxed = true)
+    private val losslessHealthGate: com.stash.data.download.lossless.LosslessSourceHealthGate =
+        mockk(relaxed = true)
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference =
+        mockk(relaxed = true)
 
     private fun newSubject(): DownloadManager = DownloadManager(
         downloadExecutor = downloadExecutor,
@@ -83,6 +93,9 @@ class DownloadManagerDeferTest {
         metadataEmbedder = metadataEmbedder,
         albumArtCache = albumArtCache,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        audioDurationExtractor = audioDurationExtractor,
+        losslessHealthGate = losslessHealthGate,
+        streamingPreference = streamingPreference,
     )
 
     private fun stubTrack(): Track = Track(
@@ -123,6 +136,95 @@ class DownloadManagerDeferTest {
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
         assertFalse("did not defer, got $result", result is TrackDownloadResult.Deferred)
+    }
+
+    @Test
+    fun `forceAntraOnly defers a Stash Mix track instead of falling to yt-dlp`() = runTest {
+        // Outage drill: under force-antra-only, NOTHING may reach yt-dlp.
+        // Even the Stash-Mix carve-out (which normally falls through) must
+        // defer when antra misses, so the test population stays pure antra.
+        coEvery { streamingPreference.isForceAntraOnly() } returns true
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns true // forceLossless = true
+
+        val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
+
+        assertTrue("expected Deferred under force-antra-only, got $result", result is TrackDownloadResult.Deferred)
+    }
+
+    @Test
+    fun `forceAntraOnly defers a preResolvedUrl track instead of falling to yt-dlp`() = runTest {
+        coEvery { streamingPreference.isForceAntraOnly() } returns true
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
+
+        val result = newSubject().downloadTrack(
+            track = stubTrack(),
+            preResolvedUrl = "https://www.youtube.com/watch?v=abc",
+        )
+
+        assertTrue("expected Deferred under force-antra-only, got $result", result is TrackDownloadResult.Deferred)
+    }
+
+    @Test
+    fun `fallback-off + Spotify track WITH preResolvedUrl defers (does not download lossy)`() = runTest {
+        // THE LEAK: a Spotify track acquires a youtube_id from match-for-
+        // playback, which the queue turns into a youtubeUrl → preResolvedUrl.
+        // Pre-fix, the preResolvedUrl carve-out skipped the defer and the
+        // track downloaded as lossy mp4 even with fallback OFF (671 such
+        // tracks observed on-device). A SPOTIFY-source track's youtube_id is
+        // a match, NOT a user opt-in to YouTube, so it must defer.
+        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
+        // Stub the fall-through path so that, PRE-fix, the test fails on the
+        // assertion (returns a non-Deferred result) rather than throwing
+        // inside the yt-dlp branch.
+        every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } returns
+            DownloadResult.Error("test-stop")
+
+        val result = newSubject().downloadTrack(
+            track = stubTrack(), // source defaults to SPOTIFY
+            preResolvedUrl = "https://music.youtube.com/watch?v=abc",
+        )
+
+        assertTrue(
+            "Spotify track with a youtube_id match must defer when fallback off, got $result",
+            result is TrackDownloadResult.Deferred,
+        )
+    }
+
+    @Test
+    fun `fallback-off + YouTube-source track WITH preResolvedUrl does NOT defer`() = runTest {
+        // Preserve the YT-Music carve-out: a genuinely YouTube-sourced track
+        // (source = YOUTUBE) has YouTube as its source of truth, so a lossless
+        // miss legitimately falls through to yt-dlp even with fallback off —
+        // there is no lossless original to wait for.
+        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
+        // preResolvedUrl is set, so resolveUrl is skipped; stub the tier flow
+        // and the download so the pipeline exits cleanly (non-Deferred).
+        every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } returns
+            DownloadResult.Error("test-stop")
+
+        val result = newSubject().downloadTrack(
+            track = stubTrack().copy(source = MusicSource.YOUTUBE),
+            preResolvedUrl = "https://music.youtube.com/watch?v=abc",
+        )
+
+        assertFalse(
+            "YouTube-source track must fall through to yt-dlp, got $result",
+            result is TrackDownloadResult.Deferred,
+        )
     }
 
     @Test

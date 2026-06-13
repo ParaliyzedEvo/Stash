@@ -78,6 +78,55 @@ class LikeDestinationDispatcher @Inject constructor(
         }
     }
 
+    /**
+     * v0.9.52 symmetric un-like. Mirrors [like], with the inverted
+     * guard: a destination only fires when its `*_saved_at` timestamp
+     * is non-null (never un-Like what Stash never Liked). A successful
+     * remote remove clears the timestamp so a future re-heart re-fires
+     * the save. Failures leave the column untouched → organic retry.
+     */
+    suspend fun unlike(
+        track: Track,
+        destinations: Set<Destination>,
+    ): Map<Destination, Result<Unit>> = coroutineScope {
+        if (destinations.isEmpty()) return@coroutineScope emptyMap()
+        destinations.associateWith { dest ->
+            async { fireUnlikeDestination(track, dest) }
+        }.mapValues { it.value.await() }
+    }
+
+    private suspend fun fireUnlikeDestination(track: Track, dest: Destination): Result<Unit> {
+        if (!alreadySaved(track, dest)) {
+            Log.d(TAG, "skip unlike $dest for track ${track.id} — never saved by Stash")
+            return Result.success(Unit)
+        }
+
+        return try {
+            when (dest) {
+                Destination.STASH -> {
+                    stashLikedRepository.remove(track.id)
+                }
+                Destination.SPOTIFY -> {
+                    val uri = track.spotifyUri ?: throw NoSpotifyUriException()
+                    spotifyLibraryClient.removeTracks(listOf(uri))
+                    runCatching { trackDao.clearSpotifySaved(track.id) }
+                        .onFailure { Log.w(TAG, "clearSpotifySaved failed for ${track.id}", it) }
+                }
+                Destination.YT_MUSIC -> {
+                    val videoId = track.youtubeId ?: throw NoYouTubeIdException()
+                    ytMusicLibraryClient.removeLike(videoId)
+                    runCatching { trackDao.clearYtMusicSaved(track.id) }
+                        .onFailure { Log.w(TAG, "clearYtMusicSaved failed for ${track.id}", it) }
+                }
+            }
+            Result.success(Unit)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Result.failure(t)
+        }
+    }
+
     private fun alreadySaved(track: Track, dest: Destination): Boolean = when (dest) {
         Destination.STASH -> track.stashLikedAt != null
         Destination.SPOTIFY -> track.spotifySavedAt != null

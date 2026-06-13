@@ -118,6 +118,19 @@ data class DurationBackfillRow(
 )
 
 /**
+ * Minimal row projection for the v0.9.38 stream-only metadata backfill —
+ * stubs that StashDiscoveryWorker created with bare title+artist, no art
+ * URL and no duration. A single Last.fm `track.getInfo` lookup yields
+ * both fields so this row carries just the identity needed to make the
+ * call.
+ */
+data class StreamableBackfillRow(
+    val id: Long,
+    val artist: String,
+    val title: String,
+)
+
+/**
  * Minimal projection for the startup file-integrity sweep — only needs id
  * and the stored path so we can verify the file actually exists on disk.
  * `file_path` is nullable in the schema; rows with `is_downloaded=1` and
@@ -245,6 +258,15 @@ interface TrackDao {
      * Checked-but-unavailable rows (checked_at != null AND is_streamable = 0)
      * are always excluded; unchecked rows (checked_at IS NULL) are also
      * excluded so they don't pop in/out as the worker drains.
+     *
+     * STASH_MIX exemption — Stash Mixes are an inherently online discovery
+     * surface (recipe-driven, Last.fm-seeded, stream-only by design; see the
+     * v0.9.37 stream-only design doc). Their streamable tracks stay visible
+     * even when [includeStreamable] is false (Offline mode), so the full mix
+     * renders instead of collapsing to the handful of manually-downloaded
+     * tracks. The per-tap connectivity guard in PlaylistDetailViewModel still
+     * governs whether a stream-only track can actually play. Other playlist
+     * types remain downloaded-only in Offline mode (Library = your saved music).
      */
     @Query(
         """
@@ -258,7 +280,7 @@ interface TrackDao {
         WHERE pt.playlist_id = :playlistId
           AND pt.removed_at IS NULL
           AND bl.canonical_key IS NULL
-          AND (t.is_downloaded = 1 OR (:includeStreamable AND t.is_streamable = 1))
+          AND (t.is_downloaded = 1 OR ((:includeStreamable OR p.type = 'STASH_MIX') AND t.is_streamable = 1))
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
             pt.position ASC
@@ -348,6 +370,14 @@ interface TrackDao {
     /** Find a track by primary key. */
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getById(trackId: Long): TrackEntity?
+
+    /**
+     * Batch lookup by primary key. SQLite's `IN` does not preserve the
+     * order of [trackIds]; callers that need the original order (e.g.
+     * restoring a persisted playback queue) must re-sort the result.
+     */
+    @Query("SELECT * FROM tracks WHERE id IN (:trackIds)")
+    suspend fun getByIds(trackIds: List<Long>): List<TrackEntity>
 
     // ── Download tracking ────────────────────────────────────────────────
 
@@ -943,6 +973,21 @@ interface TrackDao {
     suspend fun markYtMusicSaved(trackId: Long, ts: Long)
 
     /**
+     * v0.9.52 like-mirroring: clears the Spotify dedup timestamp after a
+     * successful symmetric un-like (`DELETE /v1/me/tracks`), so a future
+     * re-heart re-fires the external save.
+     */
+    @Query("UPDATE tracks SET spotify_saved_at = NULL WHERE id = :trackId")
+    suspend fun clearSpotifySaved(trackId: Long)
+
+    /**
+     * v0.9.52 like-mirroring: clears the YT Music dedup timestamp after a
+     * successful InnerTube `like/removelike`.
+     */
+    @Query("UPDATE tracks SET ytmusic_saved_at = NULL WHERE id = :trackId")
+    suspend fun clearYtMusicSaved(trackId: Long)
+
+    /**
      * v0.9.13: Mark a track as added to the local Stash "Liked Songs"
      * playlist. Called by [StashLikedPlaylistRepository.add] after the
      * cross-ref is in place.
@@ -1349,7 +1394,10 @@ interface TrackDao {
     @Query(
         """
         UPDATE tracks
-        SET album = CASE WHEN album IS NULL OR album = '' THEN :album ELSE album END,
+        SET album = CASE
+                WHEN (album IS NULL OR album = '') AND :album IS NOT NULL THEN :album
+                ELSE album
+            END,
             album_art_url = CASE
                 WHEN album_art_url IS NULL OR album_art_url = '' THEN :albumArtUrl
                 ELSE album_art_url
@@ -1486,6 +1534,32 @@ interface TrackDao {
         """
     )
     suspend fun findArtBackfillCandidates(limit: Int): List<ArtBackfillRow>
+
+    /**
+     * Candidate projection for the v0.9.38 stream-only metadata backfill —
+     * tracks that StashDiscoveryWorker filed as `is_streamable = 1,
+     * is_downloaded = 0` stubs with no art and no duration. Returns rows
+     * where at least one of (art, duration) is still missing so a single
+     * Last.fm `track.getInfo` round-trip can fill both in one pass.
+     *
+     * Pre-fix: stream-only mix tracks rendered with empty thumbnails and
+     * "0:00" durations on first paint; metadata only filled in
+     * incidentally when the player resolved a queue window at play time
+     * (conversation 2026-05-28).
+     */
+    @Query(
+        """
+        SELECT id, artist, title
+        FROM tracks
+        WHERE is_streamable = 1
+          AND is_downloaded = 0
+          AND (album_art_url IS NULL OR album_art_url = '' OR duration_ms = 0)
+          AND artist != ''
+          AND title != ''
+        LIMIT :limit
+        """
+    )
+    suspend fun findStreamableMetadataBackfillCandidates(limit: Int): List<StreamableBackfillRow>
 
     /**
      * Atomically reverts a track to an undownloaded state so the download

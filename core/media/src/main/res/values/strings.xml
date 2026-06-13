@@ -8,4 +8,6 @@
     <string name="notification_action_shuffle_on">Shuffle On</string>
     <string name="notification_action_shuffle_off">Shuffle Off</string>
     <string name="shuffle_play">Shuffle Play</string>
+    <string name="resuming_channel_name">Playback</string>
+    <string name="resuming_notification_title">Resuming…</string>
 </resources>

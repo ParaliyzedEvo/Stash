@@ -1,0 +1,16 @@
+{
+  "name": "stash-lastfm-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that proxies generic Last.fm read lookups (tag/similar/etc.) with an edge cache, so Stash Mixes never hit the shared API key's rate limit regardless of user count.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.88.0"
+  }
+}

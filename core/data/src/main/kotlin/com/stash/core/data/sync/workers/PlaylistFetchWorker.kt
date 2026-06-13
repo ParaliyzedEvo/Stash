@@ -11,7 +11,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
-import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
@@ -146,15 +145,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
-            // Step 2b: Probe live auth health for each connected source. If
-            // either source returns expired credentials we abort the chain
-            // before any playlist IO — downstream workers (DiffWorker,
-            // TrackDownloadWorker, SyncFinalizeWorker) won't run because
-            // Result.failure() short-circuits the WorkContinuation. The
-            // AuthExpiredBanner composable reads syncStateManager.authExpiry
-            // to render the per-source "Re-authenticate" CTA.
+            // Step 2b: Probe live auth health for each connected source. We
+            // abort the chain ONLY when no connected source is usable (every
+            // one expired) — downstream workers (DiffWorker, TrackDownloadWorker,
+            // SyncFinalizeWorker) won't run because Result.failure() short-circuits
+            // the WorkContinuation. When only some sources are expired the chain
+            // proceeds and we fetch just the healthy ones (Step 4/5). The same
+            // isAuthenticated() booleans gate both the probe and the fetch so the
+            // "usable source" predicate can't drift. The AuthExpiredBanner reads
+            // syncStateManager.authExpiry to render the per-source "Re-authenticate" CTA.
             val probeResult = runAuthProbes(
-                tokenManager = tokenManager,
+                spotifyConnected = isSpotifyAuthenticated,
+                youtubeConnected = isYouTubeAuthenticated,
                 spotifyProbe = spotifyAuthHealthProbe,
                 youtubeProbe = youtubeAuthHealthProbe,
             )
@@ -179,13 +181,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
             syncStateManager.onFetchingPlaylists()
             syncHistoryDao.updateStatus(syncId, SyncState.FETCHING_PLAYLISTS)
 
-            // Step 4: Fetch Spotify playlists and tracks.
-            if (isSpotifyAuthenticated) {
+            // Step 4 & 5: Fetch each source the probe deemed usable. The
+            // fetch flags fold in both "connected" and "not expired", and are
+            // the SAME values that drove the short-circuit decision above — so
+            // a source skipped here is exactly a source that didn't count
+            // toward keeping the sync alive.
+            if (probeResult.fetchSpotify) {
                 fetchSpotifyPlaylists(syncId, diagnostics)
             }
-
-            // Step 5: Fetch YouTube Music playlists and tracks.
-            if (isYouTubeAuthenticated) {
+            if (probeResult.fetchYoutube) {
                 fetchYouTubePlaylists(syncId, diagnostics)
             }
 
@@ -415,25 +419,63 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // page 1). Issue #49: user with hundreds of playlists saw only
             // 46. Loop bound is a 2000-playlist safety cap — at that scale
             // the user likely has bigger problems than missing playlists.
+            //
+            // Issues #48/#26/#80/#136: libraryV3 is HIERARCHICAL — playlists
+            // filed inside folders never appear at the root listing. Each
+            // page now also yields folderUris; after the root walk we
+            // descend into every folder breadth-first (folders nest, so
+            // each folder page can queue more folders). Page-end is
+            // detected on rawItemCount, NOT parsed size: a 50-item page
+            // dense with folder/pseudo rows parses to few playlists, and
+            // the old post-filter "short page" check ended the whole walk
+            // right there — losing every playlist after it too.
             val userPlaylists = mutableListOf<com.stash.data.spotify.model.SpotifyPlaylistItem>()
             val pageSize = 50
             val pageCap = 40
-            var offset = 0
+            val maxFolderDepth = 5
             var pagesFetched = 0
-            while (pagesFetched < pageCap) {
-                val page = spotifyApiClient.getUserPlaylists(limit = pageSize, offset = offset)
-                pagesFetched++
-                if (page.isEmpty()) break
-                userPlaylists += page
-                if (page.size < pageSize) break // last page short of limit
-                offset += pageSize
+            var foldersWalked = 0
+            val folderQueue = ArrayDeque<Pair<String, Int>>() // folder uri to depth
+            val visitedFolders = mutableSetOf<String>()
+
+            suspend fun pageThrough(folderUri: String?, depth: Int) {
+                var offset = 0
+                while (pagesFetched < pageCap) {
+                    val page = spotifyApiClient.getUserPlaylists(
+                        limit = pageSize,
+                        offset = offset,
+                        folderUri = folderUri,
+                    )
+                    pagesFetched++
+                    userPlaylists += page.playlists
+                    for (uri in page.folderUris) {
+                        if (visitedFolders.add(uri)) folderQueue.addLast(uri to depth + 1)
+                    }
+                    if (page.rawItemCount < pageSize) break // true last page
+                    offset += pageSize
+                }
             }
+
+            pageThrough(folderUri = null, depth = 0)
+            while (folderQueue.isNotEmpty() && pagesFetched < pageCap) {
+                val (uri, depth) = folderQueue.removeFirst()
+                if (depth > maxFolderDepth) {
+                    Log.w(TAG, "fetchSpotifyPlaylists: folder '$uri' beyond depth $maxFolderDepth, skipping")
+                    continue
+                }
+                foldersWalked++
+                pageThrough(folderUri = uri, depth = depth)
+            }
+
             Log.i(
                 TAG,
-                "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across $pagesFetched page(s)",
+                "fetchSpotifyPlaylists: paged ${userPlaylists.size} playlists across " +
+                    "$pagesFetched page(s), $foldersWalked folder(s) descended",
             )
-            // Filter out daily mixes (already handled above) and any Spotify-owned playlists
-            val customPlaylists = userPlaylists.filter { playlist ->
+            // Filter out daily mixes (already handled above) and any Spotify-owned playlists.
+            // distinctBy: defensive — a playlist must not snapshot twice even if
+            // Spotify ever lists it both at the root and inside a folder.
+            val customPlaylists = userPlaylists.distinctBy { it.id }.filter { playlist ->
                 !playlist.owner.id.equals("spotify", ignoreCase = true) &&
                     !playlist.name.matches(Regex("""Daily Mix \d+"""))
             }
@@ -875,33 +917,48 @@ internal fun filterStudioOnly(tracks: List<YTMusicTrack>): List<YTMusicTrack> =
  *
  * @property state Per-source expiry flags to write to
  *  [SyncStateManager.onAuthExpiryProbed]. Drives the AuthExpiredBanner UI.
- * @property shortCircuit `true` when the worker should abort the chain
- *  (return `Result.failure()`) because at least one connected source has
- *  expired credentials. Equivalent to `state.anyExpired`.
+ * @property fetchSpotify `true` when the Spotify fetch should run — i.e.
+ *  Spotify is connected AND its probe did not report expired.
+ * @property fetchYoutube `true` when the YouTube fetch should run — same
+ *  rule for YouTube.
+ *
+ * [shortCircuit] is DERIVED from these: the worker aborts only when there is
+ * nothing left to fetch (every connected source expired). When just one of
+ * several sources is expired the chain proceeds and the worker skips only
+ * that source — this is intentionally NOT `state.anyExpired`. The fetch flags
+ * are the single source of truth shared by the short-circuit decision and the
+ * per-source fetch gate in [PlaylistFetchWorker.doWork], so the two can never
+ * disagree about which sources are usable.
  */
 internal data class AuthProbeResult(
     val state: AuthExpiryState,
-    val shortCircuit: Boolean,
-)
+    val fetchSpotify: Boolean,
+    val fetchYoutube: Boolean,
+) {
+    val shortCircuit: Boolean get() = !fetchSpotify && !fetchYoutube
+}
 
 /**
  * Runs [spotifyProbe] and [youtubeProbe] in parallel, but only for sources
- * the user has actually connected. Skipping disconnected sources is critical
+ * the caller reports as connected. Skipping disconnected sources is critical
  * UX — a user who never linked YouTube must never see a "YouTube expired"
  * banner just because the probe network call would fail.
+ *
+ * [spotifyConnected]/[youtubeConnected] MUST be the same `isAuthenticated()`
+ * values [PlaylistFetchWorker.doWork] uses to gate the actual fetch, so the
+ * "is this source usable" predicate is identical for the short-circuit
+ * decision and the fetch — they cannot drift to two different signals.
  *
  * Extracted from [PlaylistFetchWorker.doWork] so the orchestration can be
  * unit-tested without spinning up a HiltWorker/WorkerParameters harness for
  * an @AssistedInject worker. See [PlaylistFetchWorkerAuthProbeTest].
  */
 internal suspend fun runAuthProbes(
-    tokenManager: TokenManager,
+    spotifyConnected: Boolean,
+    youtubeConnected: Boolean,
     spotifyProbe: SpotifyAuthHealthProbe,
     youtubeProbe: YoutubeAuthHealthProbe,
 ): AuthProbeResult = coroutineScope {
-    val spotifyConnected = tokenManager.spotifyAuthState.first() is AuthState.Connected
-    val youtubeConnected = tokenManager.youTubeAuthState.first() is AuthState.Connected
-
     val spotifyDeferred = async {
         if (spotifyConnected) spotifyProbe.isExpired() else false
     }
@@ -913,5 +970,14 @@ internal suspend fun runAuthProbes(
         spotifyExpired = spotifyDeferred.await(),
         youtubeExpired = youtubeDeferred.await(),
     )
-    AuthProbeResult(state = state, shortCircuit = state.anyExpired)
+    // Per-source gating: a source is fetchable only when it's connected AND not
+    // expired. shortCircuit (derived) is true only when NEITHER is fetchable,
+    // so a single expired source can't nuke a healthy one — the per-source
+    // banner still surfaces from `state`. This is what stops a YouTube
+    // false-positive from killing an otherwise-fine Spotify sync.
+    AuthProbeResult(
+        state = state,
+        fetchSpotify = spotifyConnected && !state.spotifyExpired,
+        fetchYoutube = youtubeConnected && !state.youtubeExpired,
+    )
 }

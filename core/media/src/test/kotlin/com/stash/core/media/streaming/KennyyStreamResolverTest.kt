@@ -3,22 +3,33 @@ package com.stash.core.media.streaming
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.AudioFormat
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.kennyy.KennyySource
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KennyyStreamResolverTest {
 
     private val fakeKennyy: KennyySource = mockk(relaxed = true)
-    private val monitor: KennyyHealthMonitor = mockk(relaxed = true)
-    private val resolver = KennyyStreamResolver(fakeKennyy, monitor)
+    private val monitor: KennyyHealthMonitor = mockk(relaxed = true) {
+        every { isHealthy } returns MutableStateFlow(true) // healthy -> gate lets resolve through
+    }
+    // Content-health gate: default not-degraded so existing tests exercise
+    // the resolve path; the degraded case is covered explicitly below.
+    private fun gate(degraded: Boolean = false): LosslessSourceHealthGate =
+        mockk { every { isDegraded(any()) } returns degraded }
+    private val resolver = KennyyStreamResolver(fakeKennyy, monitor, gate())
 
     @Test
     fun resolve_returnsNullWhenKennyyHasNoMatch() = runTest {
@@ -95,6 +106,45 @@ class KennyyStreamResolverTest {
         verify(exactly = 0) { monitor.recordSuccess() }
         verify(exactly = 0) { monitor.recordFailure() }
     }
+
+    @Test
+    fun resolve_returnsNullWithoutNetwork_whenKennyyUnhealthy() = runTest {
+        val source: KennyySource = mockk(relaxed = true)
+        val monitor = KennyyHealthMonitor()
+        repeat(3) { monitor.recordFailure() } // unhealthy
+        val resolver = KennyyStreamResolver(source, monitor, gate())
+        val result = resolver.resolve(track(id = 1L))
+        assertNull(result)
+        coVerify(exactly = 0) { source.resolveImmediate(any()) } // never hit the network
+    }
+
+    @Test
+    fun resolve_timesOutAsFailure_whenKennyyHangs() = runTest {
+        val source: KennyySource = mockk(relaxed = true) {
+            coEvery { resolveImmediate(any()) } coAnswers { delay(60_000); null }
+        }
+        val monitor: KennyyHealthMonitor = mockk(relaxed = true) {
+            every { isHealthy } returns MutableStateFlow(true) // healthy -> gate lets it through
+        }
+        val resolver = KennyyStreamResolver(source, monitor, gate())
+        val result = resolver.resolve(track(1L))
+        assertNull(result)
+        verify(exactly = 1) { monitor.recordFailure() } // the hang was classified as a failure
+    }
+
+    @Test
+    fun resolve_returnsNullWithoutNetwork_whenContentDegraded() = runTest {
+        val source: KennyySource = mockk(relaxed = true)
+        val healthyMonitor: KennyyHealthMonitor = mockk(relaxed = true) {
+            every { isHealthy } returns MutableStateFlow(true) // healthy -> prove the GATE blocks it
+        }
+        val resolver = KennyyStreamResolver(source, healthyMonitor, gate(degraded = true))
+        val result = resolver.resolve(track(1L))
+        assertNull(result)
+        coVerify(exactly = 0) { source.resolveImmediate(any()) } // skipped before the network
+    }
+
+    private fun track(id: Long): TrackEntity = stubTrack().copy(id = id)
 
     private fun stubTrack(): TrackEntity = TrackEntity(
         id = 42L,

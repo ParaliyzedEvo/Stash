@@ -19,6 +19,24 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Stash">
+        <!--
+            No-UI trampoline launched by the "Resume playback" app shortcut
+            (and Samsung Bixby Routines). Resumes the last queue and finishes
+            immediately, so it uses Theme.NoDisplay and is kept out of the
+            recents/back stack. exported=true so Routines can launch it.
+        -->
+        <!--
+            Launched explicitly (by class) from the "Resume playback" static
+            shortcut, so it needs no intent-filter — only exported=true so the
+            launcher / Bixby Routines can start it from another process.
+        -->
+        <activity
+            android:name=".ResumePlaybackActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/Theme.Stash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -41,6 +59,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <!-- Static app shortcuts (e.g. "Resume playback"). Must live on
+                 the launcher activity. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"

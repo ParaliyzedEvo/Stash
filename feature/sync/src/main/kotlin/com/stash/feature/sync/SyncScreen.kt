@@ -80,6 +80,7 @@ fun SyncScreen(
     val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
     val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
+    val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -131,6 +132,8 @@ fun SyncScreen(
                 healthLabel = uiState.lastSyncHealthLabel,
                 healthColor = uiState.lastSyncHealthColor,
                 isSyncing = uiState.isSyncing,
+                streamingMode = streamingMode,
+                onStreamingModeChange = viewModel::setStreamingEnabled,
                 onSyncNow = viewModel::onSyncNow,
                 progressContent = {
                     SyncActionProgress(

@@ -57,6 +57,9 @@ import com.stash.feature.settings.components.SpotifyLoginWebView
 import com.stash.feature.settings.components.YouTubeCookieDialog
 import com.stash.feature.settings.components.YouTubeHistorySyncSection
 import com.stash.feature.settings.components.YouTubeLoginWebView
+import com.stash.feature.settings.components.LikeMirrorSection
+import com.stash.feature.settings.components.LikeMirrorWarningDialog
+import com.stash.core.data.social.Destination
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +71,14 @@ fun AccountScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val extendedColors = StashTheme.extendedColors
+
+    uiState.pendingMirrorWarning?.let { dest ->
+        LikeMirrorWarningDialog(
+            serviceName = if (dest == Destination.SPOTIFY) "Spotify" else "YouTube Music",
+            onConfirm = viewModel::onMirrorWarningConfirmed,
+            onDismiss = viewModel::onMirrorWarningDismissed,
+        )
+    }
 
     val isWebLoginActive = uiState.showSpotifyWebLogin || uiState.showYouTubeWebLogin
     LaunchedEffect(isWebLoginActive) {
@@ -213,6 +224,18 @@ fun AccountScreen(
                     )
                 },
             )
+
+            GlassCard {
+                LikeMirrorSection(
+                    spotifyEnabled = uiState.mirrorLikesSpotify,
+                    ytMusicEnabled = uiState.mirrorLikesYtMusic,
+                    spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
+                    ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
+                    onSpotifyToggle = { viewModel.onMirrorToggleRequested(Destination.SPOTIFY, it) },
+                    onYtMusicToggle = { viewModel.onMirrorToggleRequested(Destination.YT_MUSIC, it) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
 
             val lastFmUriHandler = LocalUriHandler.current
             GlassCard {

@@ -160,6 +160,27 @@ class TrackDownloadWorker @AssistedInject constructor(
                 Log.i(TAG, "Reset $resetInProgress stale IN_PROGRESS entries back to PENDING")
             }
 
+            // Streaming mode: do not drain ANY pending downloads — DiffWorker
+            // already skipped enqueueing fresh ones (see its v0.9.30 gate),
+            // but pre-toggle PENDING rows (queued while the user was in
+            // Offline mode) would otherwise drain on every Sync Now and the
+            // user sees "downloads happening" despite being in Online mode.
+            // Leave them PENDING so a future switch back to Offline naturally
+            // resumes them. Housekeeping above (orphan sweep, stale-IP reset)
+            // still ran so counters stay accurate. Fall through to finalize
+            // with downloaded=0 so the chain closes cleanly.
+            if (streamingPreference.current()) {
+                Log.i(TAG, "Streaming mode: skipping download drain (PENDING rows preserved)")
+                syncStateManager.onDownloading(downloaded = 0, total = 0)
+                return Result.success(
+                    workDataOf(
+                        KEY_SYNC_ID to syncId,
+                        KEY_DOWNLOADED to 0,
+                        KEY_FAILED to 0,
+                    )
+                )
+            }
+
             // Re-queue tracks that are undownloaded but have no active queue entry.
             // This catches tracks whose retries were all exhausted and entries cleaned up,
             // or tracks that somehow never got queued.

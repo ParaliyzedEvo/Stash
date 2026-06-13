@@ -20,6 +20,7 @@ import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
 import com.stash.feature.library.LikedSongsDetailScreen
 import com.stash.feature.library.PlaylistDetailScreen
+import com.stash.feature.library.mixbuilder.MixBuilderScreen
 import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
@@ -48,6 +49,11 @@ fun StashNavHost(
     navController: NavHostController,
     onWebLoginChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    // Forwarded to detail screens that support multi-select so the host can hide
+    // the mini-player while a screen is in selection mode. General by design:
+    // the same lambda will be wired to Liked/Album/Artist/Library detail screens
+    // in later tasks — only the Playlist destination consumes it today.
+    onSelectionModeChanged: (Boolean) -> Unit = {},
 ) {
     val topLevelRoutes = remember {
         setOf(
@@ -227,7 +233,13 @@ fun StashNavHost(
                 onNavigateToLocalSongs = {
                     navController.navigate(LocalSongsRoute)
                 },
+                onNavigateToMixBuilder = { recipeId ->
+                    navController.navigate(MixBuilderRoute(recipeId))
+                },
             )
+        }
+        composable<MixBuilderRoute> {
+            MixBuilderScreen(onBack = { navController.popBackStack() })
         }
         composable<LibraryRoute> {
             LibraryScreen(
@@ -240,6 +252,7 @@ fun StashNavHost(
                 onNavigateToAlbum = { albumName, artistName ->
                     navController.navigate(AlbumDetailRoute(albumName, artistName))
                 },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
         composable<SearchRoute> {
@@ -296,6 +309,10 @@ fun StashNavHost(
                     navController.navigate(SyncRoute)
                 },
                 onWebLoginChanged = onWebLoginChanged,
+                onNavigateToAntraConnect = {
+                    navController.navigate(AntraConnectRoute)
+                },
+                onNavigateToDiagnosticsPreview = { navController.navigate(DiagnosticsPreviewRoute) },
             )
         }
         composable<AccountRoute> {
@@ -322,6 +339,22 @@ fun StashNavHost(
             )
         }
 
+        composable<AntraConnectRoute> { backStackEntry ->
+            // Same pattern as SquidWtfCaptchaRoute: reach the Settings
+            // ViewModel from the parent route so the harvested antra creds
+            // write to the same store the interceptor reads, surviving this
+            // route's dispose.
+            val settingsEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(SettingsRoute)
+            }
+            val viewModel: com.stash.feature.settings.SettingsViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            com.stash.feature.settings.components.AntraConnectScreen(
+                onConnected = viewModel::onAntraConnected,
+                onClose = { navController.popBackStack() },
+            )
+        }
+
         composable<EqualizerRoute> {
             EqualizerScreen(
                 onNavigateBack = { navController.popBackStack() },
@@ -330,6 +363,12 @@ fun StashNavHost(
 
         composable<LibraryHealthRoute> {
             LibraryHealthScreen(
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable<DiagnosticsPreviewRoute> {
+            com.stash.feature.settings.diagnostics.DiagnosticsPreviewScreen(
                 onNavigateBack = { navController.popBackStack() },
             )
         }
@@ -343,24 +382,28 @@ fun StashNavHost(
         composable<PlaylistDetailRoute> {
             PlaylistDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<AlbumDetailRoute> {
             AlbumDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 
         composable<LikedSongsDetailRoute> {
             LikedSongsDetailScreen(
                 onBack = { navController.popBackStack() },
+                onSelectionModeChanged = onSelectionModeChanged,
             )
         }
 

@@ -47,6 +47,8 @@ class StreamingPreference @Inject constructor(
     private val enabledKey = booleanPreferencesKey("streaming_enabled")
     private val cellularKey = booleanPreferencesKey("streaming_on_cellular")
     private val qualityKey = stringPreferencesKey("streaming_quality_tier")
+    private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
+    private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
 
     val enabled: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
         prefs[enabledKey] ?: false
@@ -61,7 +63,33 @@ class StreamingPreference @Inject constructor(
             .getOrDefault(StreamQualityTier.LOSSLESS)
     }
 
+    /**
+     * Test-only toggle. When `true`, [StreamSourceRegistry] skips Kennyy
+     * and Squid and resolves every streaming track via the YouTube
+     * fallback resolver only — used to reproduce the lossless-down path
+     * on demand. Default `false` (normal use).
+     */
+    val forceYouTubeFallback: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[forceYouTubeFallbackKey] ?: false
+    }
+
+    /**
+     * Test-only toggle: the outage drill for the antra fallback. When
+     * `true`, [StreamSourceRegistry] and the lossless download registry
+     * route through antra ONLY — kennyy, squid and the YouTube fallback are
+     * all removed from play, so a track either resolves via antra or fails
+     * visibly. Default `false` (normal use). Takes precedence over
+     * [forceYouTubeFallback] if both are on.
+     */
+    val forceAntraOnly: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[forceAntraOnlyKey] ?: false
+    }
+
     suspend fun current(): Boolean = enabled.first()
+
+    suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
+
+    suspend fun isForceAntraOnly(): Boolean = forceAntraOnly.first()
 
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
@@ -69,6 +97,14 @@ class StreamingPreference @Inject constructor(
 
     suspend fun setStreamOnCellular(value: Boolean) {
         context.streamingDataStore.edit { it[cellularKey] = value }
+    }
+
+    suspend fun setForceYouTubeFallback(value: Boolean) {
+        context.streamingDataStore.edit { it[forceYouTubeFallbackKey] = value }
+    }
+
+    suspend fun setForceAntraOnly(value: Boolean) {
+        context.streamingDataStore.edit { it[forceAntraOnlyKey] = value }
     }
 
     suspend fun setStreamQuality(tier: StreamQualityTier) {

@@ -34,6 +34,10 @@ private val Context.likeDataStore: DataStore<Preferences> by preferencesDataStor
  *
  * Auto-save off by default. Even with Spotify connected, opt-in
  * required.
+ *
+ * v0.9.52 like-mirroring: `mirror_likes_*` opt-ins, default false —
+ * deliberately NOT reusing `heart_default_*`, whose true-defaults would
+ * auto-enable external writes for every existing user on update.
  */
 @Singleton
 class LikePreferences @Inject constructor(
@@ -44,6 +48,8 @@ class LikePreferences @Inject constructor(
     private val heartDefaultStashKey = booleanPreferencesKey("heart_default_stash")
     private val heartDefaultSpotifyKey = booleanPreferencesKey("heart_default_spotify")
     private val heartDefaultYtMusicKey = booleanPreferencesKey("heart_default_ytmusic")
+    private val mirrorLikesSpotifyKey = booleanPreferencesKey("mirror_likes_spotify")
+    private val mirrorLikesYtMusicKey = booleanPreferencesKey("mirror_likes_youtube")
 
     val autoSaveEnabled: Flow<Boolean> =
         context.likeDataStore.data.map { it[autoSaveEnabledKey] ?: false }
@@ -62,11 +68,19 @@ class LikePreferences @Inject constructor(
     val heartDefaultYtMusic: Flow<Boolean> =
         context.likeDataStore.data.map { it[heartDefaultYtMusicKey] ?: false }
 
+    val mirrorLikesSpotify: Flow<Boolean> =
+        context.likeDataStore.data.map { it[mirrorLikesSpotifyKey] ?: false }
+
+    val mirrorLikesYtMusic: Flow<Boolean> =
+        context.likeDataStore.data.map { it[mirrorLikesYtMusicKey] ?: false }
+
     suspend fun autoSaveEnabledNow(): Boolean = autoSaveEnabled.first()
     suspend fun autoSaveThresholdNow(): Int = autoSaveThreshold.first()
     suspend fun heartDefaultStashNow(): Boolean = heartDefaultStash.first()
     suspend fun heartDefaultSpotifyNow(): Boolean = heartDefaultSpotify.first()
     suspend fun heartDefaultYtMusicNow(): Boolean = heartDefaultYtMusic.first()
+    suspend fun mirrorLikesSpotifyNow(): Boolean = mirrorLikesSpotify.first()
+    suspend fun mirrorLikesYtMusicNow(): Boolean = mirrorLikesYtMusic.first()
 
     suspend fun setAutoSaveEnabled(value: Boolean) {
         context.likeDataStore.edit { it[autoSaveEnabledKey] = value }
@@ -86,5 +100,13 @@ class LikePreferences @Inject constructor(
 
     suspend fun setHeartDefaultYtMusic(value: Boolean) {
         context.likeDataStore.edit { it[heartDefaultYtMusicKey] = value }
+    }
+
+    suspend fun setMirrorLikesSpotify(value: Boolean) {
+        context.likeDataStore.edit { it[mirrorLikesSpotifyKey] = value }
+    }
+
+    suspend fun setMirrorLikesYtMusic(value: Boolean) {
+        context.likeDataStore.edit { it[mirrorLikesYtMusicKey] = value }
     }
 }

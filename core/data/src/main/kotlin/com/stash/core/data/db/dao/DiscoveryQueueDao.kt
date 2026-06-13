@@ -57,9 +57,50 @@ interface DiscoveryQueueDao {
     ): List<DiscoveryQueueEntity>
 
     /**
-     * Recipe ids currently over the weekly download cap. Mirrors
+     * Distinct recipe ids that currently have at least one PENDING row.
+     * Feeds the round-robin scheduler in [com.stash.core.data.sync.workers.StashDiscoveryWorker]:
+     * we ask which recipes are waiting for work, then pull a fair quota
+     * from each rather than letting one recipe's FIFO backlog monopolise
+     * the batch (conversation 2026-05-28).
+     */
+    @Query(
+        """
+        SELECT DISTINCT recipe_id FROM discovery_queue
+        WHERE status = 'PENDING'
+          AND recipe_id NOT IN (:cappedRecipeIds)
+        """
+    )
+    suspend fun getRecipesWithPending(cappedRecipeIds: List<Long>): List<Long>
+
+    /**
+     * PENDING rows for a single recipe, oldest first. Used by the
+     * round-robin scheduler to pull a bounded per-recipe quota out of the
+     * queue so no one recipe can starve the others — v0.9.38 fairness fix.
+     */
+    @Query(
+        """
+        SELECT * FROM discovery_queue
+        WHERE status = 'PENDING'
+          AND recipe_id = :recipeId
+        ORDER BY queued_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getPendingForRecipe(recipeId: Long, limit: Int): List<DiscoveryQueueEntity>
+
+    /**
+     * Recipe ids currently over the weekly cap. Mirrors
      * [countRecentCompletedForRecipe]'s join + filter exactly so the
      * pre-fetch and per-row checks agree.
+     *
+     * v0.9.38: counts both `is_downloaded = 1` AND `is_streamable = 1`
+     * rows. The v0.9.37 stream-only seam stopped writing
+     * `is_downloaded = 1` for discovery survivors — they land as
+     * streamable stubs only. The old downloaded-only count returned 0
+     * for every recipe and the cap never engaged, so a single recipe's
+     * FIFO PENDING backlog could monopolise the worker indefinitely
+     * (Daily Discover drained 60/day while Deep Cuts + First Listen
+     * stayed at 0 DONE — conversation 2026-05-28).
      */
     @Query(
         """
@@ -67,7 +108,7 @@ interface DiscoveryQueueDao {
         INNER JOIN tracks t ON t.id = dq.track_id
         WHERE dq.status = 'DONE'
           AND dq.completed_at >= :sinceMillis
-          AND t.is_downloaded = 1
+          AND (t.is_downloaded = 1 OR t.is_streamable = 1)
         GROUP BY dq.recipe_id
         HAVING COUNT(*) >= :cap
         """
@@ -76,15 +117,20 @@ interface DiscoveryQueueDao {
 
     /**
      * Count of discovery entries completed within [sinceMillis] for a
-     * specific recipe — enforces the per-recipe weekly cap so discovery
-     * doesn't spiral.
+     * specific recipe — enforces the per-recipe weekly cap so a single
+     * recipe doesn't monopolise the queue drainer.
      *
-     * v0.9.21: Aligned with [getDoneTrackIdsForRecipe] — only count DONE
-     * rows whose track actually landed on disk (`is_downloaded = 1`). The
-     * cap exists to bound real disk usage; counting unmaterialized stubs
-     * trapped recipes in a "100 intended but 0 downloaded" loop where
-     * fresh PENDING candidates could never drain. See conversation
-     * 2026-05-12: Deep Cuts had ~100 DONE rows but 0 in the mix.
+     * v0.9.21 narrowed this to `is_downloaded = 1` so unmaterialised stubs
+     * wouldn't "trap" a recipe at cap with 0 actually-downloaded tracks.
+     * v0.9.37 inverted that situation: the stream-only seam stopped writing
+     * downloads at all for discoveries, so this query returned 0 for every
+     * recipe and the cap stopped engaging — letting one recipe's FIFO
+     * PENDING backlog starve the others (conversation 2026-05-28).
+     *
+     * v0.9.38: count both `is_downloaded = 1` and `is_streamable = 1`. The
+     * cap now bounds real worker-output volume per recipe regardless of
+     * which delivery mode wins, which is the property the cap was always
+     * meant to express. Mirror [findRecipesAtWeeklyCap] exactly.
      */
     @Query(
         """
@@ -93,7 +139,7 @@ interface DiscoveryQueueDao {
         WHERE dq.recipe_id = :recipeId
           AND dq.status = 'DONE'
           AND dq.completed_at >= :sinceMillis
-          AND t.is_downloaded = 1
+          AND (t.is_downloaded = 1 OR t.is_streamable = 1)
         """
     )
     suspend fun countRecentCompletedForRecipe(recipeId: Long, sinceMillis: Long): Int
@@ -123,6 +169,26 @@ interface DiscoveryQueueDao {
     fun observeStatusCounts(): Flow<List<StatusCount>>
 
     data class StatusCount(val status: String, val n: Int)
+
+    /**
+     * Per-recipe count of discovery rows that are NOT terminally failed —
+     * i.e. PENDING/SEARCHED/DOWNLOADING (still in flight) or DONE (resolved,
+     * pending link into the mix on the next materialize). Used to tell a
+     * still-building custom mix (count > 0) from one whose discovery finished
+     * with nothing (count == 0). Reactive so the "Building…" indicator clears
+     * itself as rows drain or tracks land.
+     */
+    @Query(
+        """
+        SELECT recipe_id AS recipeId, COUNT(*) AS count
+        FROM discovery_queue
+        WHERE status != 'FAILED'
+        GROUP BY recipe_id
+        """
+    )
+    fun observeNonFailedCountsByRecipe(): Flow<List<RecipeDiscoveryCount>>
+
+    data class RecipeDiscoveryCount(val recipeId: Long, val count: Int)
 
     /**
      * Track ids for every DONE discovery row whose track still exists

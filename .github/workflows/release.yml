@@ -67,6 +67,13 @@ jobs:
           #   LASTFM_API_SECRET  — shared secret from the same page
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          # Optional: route generic Last.fm reads through the Stash proxy Worker
+          # (infra/lastfm-proxy) so the shared key never gets rate-limited.
+          # Empty/unset = app talks to Last.fm directly. See
+          # infra/lastfm-proxy/README.md.
+          LASTFM_PROXY_URL: ${{ secrets.LASTFM_PROXY_URL }}
+          # Optional comma-separated extra read-key pool (raises the ceiling).
+          LASTFM_EXTRA_API_KEYS: ${{ secrets.LASTFM_EXTRA_API_KEYS }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK

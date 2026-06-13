@@ -4,7 +4,7 @@ import android.content.Context
 import app.cash.turbine.test
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
@@ -16,6 +16,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -64,6 +65,108 @@ class NowPlayingViewModelSnackbarCopyTest {
     }
 }
 
+/**
+ * Pins [overlayDisplayTrack] — the codec-badge overlay decision. A
+ * streaming MediaItem carries the real served format (codec/bit-depth) in
+ * its extras; the displayed Track must adopt it instead of the stale Room
+ * `file_format` ("opus") that synced-but-not-downloaded rows keep forever.
+ *
+ * The bug this guards against: antra plays its lossless FLAC from a LOCAL
+ * cache file (`file://`), so the player's `isStreaming` flag — which is
+ * `true` only for http(s) URIs — is false, and the overlay was skipped,
+ * leaving a real 24-bit FLAC mislabeled "OPUS". The fix keys the overlay
+ * on the MediaItem actually carrying a stream origin, not the URI scheme.
+ */
+class NowPlayingCodecOverlayTest {
+
+    private fun streamTrack(
+        id: Long = 1L,
+        fileFormat: String,
+        origin: String?,
+        bits: Int? = null,
+        youtubeId: String? = null,
+    ) = Track(
+        id = id,
+        title = "t",
+        artist = "a",
+        fileFormat = fileFormat,
+        bitsPerSample = bits,
+        streamOrigin = origin,
+        youtubeId = youtubeId,
+    )
+
+    @Test fun `antra file-stream overlays FLAC even though isStreaming is false`() {
+        // antra serves a file:// FLAC, so the player reports isStreaming=false.
+        val base = streamTrack(fileFormat = "opus", origin = null) // stale Room row
+        val streamFormat = streamTrack(fileFormat = "flac", origin = "antra", bits = 24)
+
+        val result = overlayDisplayTrack(
+            isHttpStreaming = false,
+            streamFormat = streamFormat,
+            baseTrack = base,
+        )
+
+        assertEquals("flac", result?.fileFormat)
+        assertEquals(24, result?.bitsPerSample)
+        assertEquals("antra", result?.streamOrigin)
+    }
+
+    @Test fun `http stream still overlays FLAC`() {
+        val base = streamTrack(fileFormat = "opus", origin = null)
+        val streamFormat = streamTrack(fileFormat = "flac", origin = "kennyy", bits = 24)
+
+        val result = overlayDisplayTrack(
+            isHttpStreaming = true,
+            streamFormat = streamFormat,
+            baseTrack = base,
+        )
+
+        assertEquals("flac", result?.fileFormat)
+    }
+
+    @Test fun `downloaded track is not overlaid (no stream origin, not http)`() {
+        // A local downloaded FLAC: the active MediaItem carries no stream
+        // codec, so streamFormat defaults to opus/no-origin. Must keep the
+        // Room row's real format untouched.
+        val base = streamTrack(id = 5L, fileFormat = "flac", origin = null)
+        val streamFormat = streamTrack(id = 5L, fileFormat = "opus", origin = null)
+
+        val result = overlayDisplayTrack(
+            isHttpStreaming = false,
+            streamFormat = streamFormat,
+            baseTrack = base,
+        )
+
+        assertEquals("flac", result?.fileFormat) // unchanged base, no overlay
+        assertEquals(base, result)
+    }
+
+    @Test fun `no overlay when stream format itself is opus`() {
+        // A YouTube-fallback stream genuinely IS opus — don't fabricate FLAC.
+        val base = streamTrack(fileFormat = "opus", origin = null)
+        val streamFormat = streamTrack(fileFormat = "opus", origin = "youtube")
+
+        val result = overlayDisplayTrack(
+            isHttpStreaming = true,
+            streamFormat = streamFormat,
+            baseTrack = base,
+        )
+
+        assertEquals("opus", result?.fileFormat)
+    }
+
+    @Test fun `null base track returns null`() {
+        assertEquals(
+            null,
+            overlayDisplayTrack(
+                isHttpStreaming = false,
+                streamFormat = streamTrack(fileFormat = "flac", origin = "antra"),
+                baseTrack = null,
+            ),
+        )
+    }
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingViewModelFindInFlacTest {
 
@@ -83,7 +186,9 @@ class NowPlayingViewModelFindInFlacTest {
         every { observeTrackById(any()) } returns flowOf(null)
         every { getUserCreatedPlaylists() } returns flowOf(emptyList())
     }
-    private val stashLikedRepository: StashLikedPlaylistRepository = mockk(relaxed = true)
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
     private val upgrader: LosslessUpgrader = mockk()
     // v0.9.36 Task 12 — Now Playing now depends on the lyrics repository
     // (for the lyrics sheet) and an application Context (used as a
@@ -96,7 +201,7 @@ class NowPlayingViewModelFindInFlacTest {
     private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
-        stashLikedRepository = stashLikedRepository,
+        likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         appContext = appContext,
@@ -184,5 +289,73 @@ class NowPlayingViewModelFindInFlacTest {
         }
 
         coVerify(exactly = 0) { upgrader.upgradeToLossless(any()) }
+    }
+}
+
+/**
+ * v0.9.52: the heart routes through LikeCoordinator (local + optional
+ * external mirroring) instead of the local-only repository.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelLikeRoutingTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+    private val positionFlow = MutableStateFlow(0L)
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns positionFlow
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { getUserCreatedPlaylists() } returns flowOf(emptyList())
+    }
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
+    private val upgrader: LosslessUpgrader = mockk(relaxed = true)
+    private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val appContext: Context = mockk(relaxed = true)
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = likeCoordinator,
+        losslessUpgrader = upgrader,
+        lyricsRepository = lyricsRepository,
+        appContext = appContext,
+    )
+
+    private val unlikedTrack = Track(id = 42L, title = "song", artist = "artist", stashLikedAt = null)
+    private val likedTrack = unlikedTrack.copy(stashLikedAt = 123L)
+
+    @Test fun `onLikeTap routes through LikeCoordinator with resolved id and new state`() =
+        runTest(dispatcher) {
+            coEvery { musicRepository.ensureTrackPersisted(any()) } returns 42L
+            playerStateFlow.value = playerStateFlow.value.copy(currentTrack = unlikedTrack)
+            val vm = newViewModel()
+            advanceUntilIdle()
+
+            vm.onLikeTap()
+            advanceUntilIdle()
+
+            coVerify { likeCoordinator.setLiked(42L, true) }
+        }
+
+    @Test fun `onLikeTap on a liked track requests un-like`() = runTest(dispatcher) {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } returns 42L
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = likedTrack)
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onLikeTap()
+        advanceUntilIdle()
+
+        coVerify { likeCoordinator.setLiked(42L, false) }
     }
 }

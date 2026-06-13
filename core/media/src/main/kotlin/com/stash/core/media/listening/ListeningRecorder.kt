@@ -3,6 +3,7 @@ package com.stash.core.media.listening
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.stash.core.data.db.dao.ListeningEventDao
+import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
@@ -43,6 +44,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val listeningEventDao: ListeningEventDao,
     private val trackSkipEventDao: TrackSkipEventDao,
+    private val scrobbler: LastFmScrobbler,
     private val scope: CoroutineScope,
 ) {
 
@@ -51,10 +53,12 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         playerRepository: PlayerRepository,
         listeningEventDao: ListeningEventDao,
         trackSkipEventDao: TrackSkipEventDao,
+        scrobbler: LastFmScrobbler,
     ) : this(
         playerRepository = playerRepository,
         listeningEventDao = listeningEventDao,
         trackSkipEventDao = trackSkipEventDao,
+        scrobbler = scrobbler,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     )
 
@@ -150,6 +154,13 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                         firedFlag = firedFlag,
                         positionAtScheduleMs = playerRepository.playerState.value.positionMs,
                     )
+                    scope.launch {
+                        scrobbler.notifyNowPlaying(
+                            artist = track.artist,
+                            track = track.title,
+                            album = track.album.takeIf { it.isNotBlank() },
+                        )
+                    }
                 }
         }
     }

@@ -4,9 +4,12 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.mix.MixBuildState
+import com.stash.core.data.mix.mixBuildState
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.prefs.DownloadNetworkPreference
@@ -15,6 +18,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.media.PlayerRepository
+import com.stash.core.media.streaming.queuePlayableTracks
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
@@ -91,6 +95,7 @@ class HomeViewModel @Inject constructor(
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
     private val tipJarRepository: com.stash.core.data.tipjar.TipJarRepository,
     private val recipeDao: StashMixRecipeDao,
+    private val discoveryQueueDao: DiscoveryQueueDao,
     private val downloadQueueDao: DownloadQueueDao,
     private val qobuzSource: QobuzSource,
     private val aggregatorRateLimiter: AggregatorRateLimiter,
@@ -201,8 +206,44 @@ class HomeViewModel @Inject constructor(
         musicRepository.getAllPlaylists(),
         musicRepository.getRecentlyAdded(20),
         musicRepository.getAllTracks(),
-    ) { playlists, recentlyAdded, allTracks ->
-        MusicData(playlists, recentlyAdded, allTracks)
+        // Folded in here (rather than as a 6th positional arg to the top-
+        // level `uiState` combine, which is already at the 5-arg typed-
+        // overload max) so the recipe-derived custom-mix sets ride the
+        // existing holder flow alongside `playlists`.
+        recipeDao.observeAll(),
+        discoveryQueueDao.observeNonFailedCountsByRecipe(),
+    ) { playlists, recentlyAdded, allTracks, recipes, discoveryCounts ->
+        val customRecipes = recipes.filter { !it.isBuiltin && it.playlistId != null }
+        val customMixPlaylistIds = customRecipes.mapNotNull { it.playlistId }.toSet()
+
+        // Per-custom-mix build state, so the Home card can show "Building…"
+        // while a freshly-created mix populates, and "No tracks" if it found
+        // nothing — instead of looking broken at "0 tracks".
+        val trackCounts = playlists.associate { it.id to it.trackCount }
+        val discoveryByRecipe = discoveryCounts.associate { it.recipeId to it.count }
+        val buildingMixIds = mutableSetOf<Long>()
+        val emptyMixIds = mutableSetOf<Long>()
+        for (recipe in customRecipes) {
+            val playlistId = recipe.playlistId ?: continue
+            val state = mixBuildState(
+                recipe = recipe,
+                trackCount = trackCounts[playlistId] ?: 0,
+                nonFailedDiscoveryCount = discoveryByRecipe[recipe.id] ?: 0,
+            )
+            when (state) {
+                MixBuildState.BUILDING -> buildingMixIds.add(playlistId)
+                MixBuildState.EMPTY -> emptyMixIds.add(playlistId)
+                MixBuildState.READY -> Unit
+            }
+        }
+        MusicData(
+            playlists = playlists,
+            recentlyAdded = recentlyAdded,
+            allTracks = allTracks,
+            customMixPlaylistIds = customMixPlaylistIds,
+            buildingMixIds = buildingMixIds,
+            emptyMixIds = emptyMixIds
+        )
     }
 
     /**
@@ -417,6 +458,9 @@ class HomeViewModel @Inject constructor(
             spotifyLikedCount = spotifyLikedCount,
             youtubeLikedCount = youtubeLikedCount,
             playlists = otherPlaylists,
+            customMixPlaylistIds = musicData.customMixPlaylistIds,
+            buildingMixIds = musicData.buildingMixIds,
+            emptyMixIds = musicData.emptyMixIds,
             playlistSortOrder = playlistSortOrder,
             isLoading = false,
             lastFmPrompt = prompts.lastFmPrompt,
@@ -609,11 +653,7 @@ class HomeViewModel @Inject constructor(
     fun playPlaylist(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val playable = if (streamingPreference.current()) {
-                tracks
-            } else {
-                tracks.filter { it.filePath != null }
-            }
+            val playable = queuePlayableTracks(tracks, streamingPreference.current())
             if (playable.isNotEmpty()) {
                 playerRepository.setQueue(playable, startIndex = 0)
             }
@@ -660,11 +700,7 @@ class HomeViewModel @Inject constructor(
     fun addPlaylistToQueue(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val playable = if (streamingPreference.current()) {
-                tracks
-            } else {
-                tracks.filter { it.filePath != null }
-            }
+            val playable = queuePlayableTracks(tracks, streamingPreference.current())
             playable.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -826,6 +862,51 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Delete a user-built Stash Mix: removes the materialized playlist (via
+     * the protected-playlist cascade, NOT blacklisting), then deletes the
+     * backing recipe row.
+     *
+     * Order matters: capture the recipe BEFORE the cascade runs, because
+     * `deletePlaylistWithCascade` nulls the recipe's `playlist_id` FK
+     * (SET_NULL), after which `findByPlaylistId` would no longer resolve it.
+     */
+    fun deleteCustomMix(playlist: Playlist) {
+        viewModelScope.launch {
+            val recipe = recipeDao.findByPlaylistId(playlist.id) // capture BEFORE cascade nulls the FK
+            musicRepository.deletePlaylistWithCascade(playlist.id, alsoBlacklist = false)
+            recipe?.let { recipeDao.deleteCustom(it.id) }
+            _userMessages.tryEmit("Deleted “${playlist.name}”")
+        }
+    }
+
+    /**
+     * If [playlistId] backs a user (non-builtin) recipe whose last refresh
+     * is older than [STALE_MIX_MS], kick a refresh. Fire-and-forget from the
+     * mix-card tap so opening a stale custom mix transparently freshens it.
+     * No-ops for builtin recipes (those refresh on the periodic schedule)
+     * and for playlists with no backing recipe.
+     */
+    fun refreshMixIfStale(playlistId: Long) {
+        viewModelScope.launch {
+            val r = recipeDao.findByPlaylistId(playlistId) ?: return@launch
+            val stale = (r.lastRefreshedAt ?: 0L) < System.currentTimeMillis() - STALE_MIX_MS
+            if (!r.isBuiltin && stale) refreshMix(playlistId)
+        }
+    }
+
+    /**
+     * Resolve the recipe id backing [playlistId] asynchronously, invoking
+     * [onResult] with the id (or null if no recipe back-links it). Used by
+     * the context-sheet Edit action to build the MixBuilder nav arg, since
+     * the playlist→recipe mapping isn't carried synchronously in uiState.
+     */
+    fun editRecipeId(playlistId: Long, onResult: (Long?) -> Unit) {
+        viewModelScope.launch {
+            onResult(recipeDao.findByPlaylistId(playlistId)?.id)
+        }
+    }
+
+    /**
      * Plays every downloaded track across every daily mix from the given [source],
      * effectively merging all of that source's mixes into one continuous queue.
      * Passing null plays the combined pool from BOTH sources (Spotify first,
@@ -907,6 +988,8 @@ class HomeViewModel @Inject constructor(
         private const val STREAMING_DISCLOSURE_PREFS = "streaming_disclosure"
         /** Boolean flag — true once the user has dismissed the disclosure dialog. */
         private const val STREAMING_DISCLOSURE_SEEN_KEY = "streaming_disclosure_seen"
+        /** A custom mix older than this (24h) is refreshed on open. */
+        private const val STALE_MIX_MS = 24L * 60 * 60 * 1000
     }
 }
 
@@ -920,6 +1003,12 @@ private data class MusicData(
     val playlists: List<Playlist>,
     val recentlyAdded: List<Track>,
     val allTracks: List<Track>,
+    /** Playlist ids backing user-defined (non-builtin) Stash Mix recipes. */
+    val customMixPlaylistIds: Set<Long>,
+    /** Custom-mix playlist ids still populating (show a "Building…" affordance). */
+    val buildingMixIds: Set<Long>,
+    /** Custom-mix playlist ids whose discovery finished with no tracks. */
+    val emptyMixIds: Set<Long>,
 )
 
 /**

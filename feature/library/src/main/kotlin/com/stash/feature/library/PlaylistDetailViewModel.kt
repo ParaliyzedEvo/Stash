@@ -4,15 +4,21 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.mix.MixBuildState
+import com.stash.core.data.mix.mixBuildState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.core.media.streaming.queuePlayableTracks
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.util.withSearchFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,6 +66,8 @@ class PlaylistDetailViewModel @Inject constructor(
     private val playlistImageHelper: PlaylistImageHelper,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val connectivityMonitor: ConnectivityMonitor,
+    private val recipeDao: StashMixRecipeDao,
+    private val discoveryQueueDao: DiscoveryQueueDao,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -116,6 +124,26 @@ class PlaylistDetailViewModel @Inject constructor(
         initialValue = PlaylistDetailUiState(),
     )
 
+    /**
+     * Build state for THIS playlist if it's a custom Stash Mix — drives the
+     * "Building your mix…" / "Couldn't find tracks" states while a freshly
+     * created mix populates. READY for non-mix playlists and built-ins.
+     */
+    val buildState: StateFlow<MixBuildState> = combine(
+        recipeDao.observeAll(),
+        discoveryQueueDao.observeNonFailedCountsByRecipe(),
+        musicRepository.getTracksByPlaylist(playlistId),
+    ) { recipes, counts, tracks ->
+        val recipe = recipes.firstOrNull { it.playlistId == playlistId }
+            ?: return@combine MixBuildState.READY
+        val count = counts.firstOrNull { it.recipeId == recipe.id }?.count ?: 0
+        mixBuildState(recipe, trackCount = tracks.size, nonFailedDiscoveryCount = count)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = MixBuildState.READY,
+    )
+
     init {
         loadPlaylistMetadata()
     }
@@ -146,35 +174,32 @@ class PlaylistDetailViewModel @Inject constructor(
      * filtered out.
      */
     fun playTrack(trackId: Long) {
-        // ── Stream-only offline guard (Task 5: Mixes Stream-Only) ──
-        // Stream-only Mix tracks (isStreamable + !isDownloaded) have no
-        // local audio and require network. When the device has no validated
-        // internet path, tapping them would either fail or burn time inside
-        // ExoPlayer's read. Bail out early with a Snackbar so the user knows
-        // *why* nothing happened. Downloaded tracks always play (local file
-        // works offline). Stream-only tracks online go through normal play.
-        val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
-        if (tapped != null &&
-            tapped.isStreamable && !tapped.isDownloaded &&
-            !connectivityMonitor.isConnected()
-        ) {
-            _userMessages.tryEmit("Online only — connect to play this track")
-            return
-        }
-
+        // ── Stream-only tap guard ──
+        // Stream-only tracks (isStreamable + !isDownloaded) have no local audio
+        // and require both Online mode AND a live connection. The player's
+        // offline master-gate silently skips them in Offline mode, so bail out
+        // early with a Snackbar so the user knows *why* nothing happened.
+        // Downloaded tracks always play (local file works offline). Stream-only
+        // tracks online (streaming on + connected) go through normal play.
         viewModelScope.launch {
+            val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
+            if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
+                if (!streamingPreference.current()) {
+                    // Offline mode: the player's offline master-gate would
+                    // silently skip a stream-only track. Tell the user how to
+                    // play it instead of enqueuing something that can't play.
+                    _userMessages.tryEmit("Switch to Online mode to play this track")
+                    return@launch
+                }
+                if (!connectivityMonitor.isConnected()) {
+                    _userMessages.tryEmit("Online only — connect to play this track")
+                    return@launch
+                }
+            }
+
             _tappedTrackId.value = trackId
             try {
-                // In streaming mode the queue includes synced-but-not-downloaded
-                // tracks (they'll resolve via Kennyy inside setQueue). In offline
-                // mode we still filter to downloaded-only so we don't enqueue
-                // unplayable items.
-                val streamingOn = streamingPreference.current()
-                val playable = if (streamingOn) {
-                    uiState.value.tracks
-                } else {
-                    uiState.value.tracks.filter { it.filePath != null }
-                }
+                val playable = playableTracks()
                 if (playable.isEmpty()) return@launch
                 val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
                 playerRepository.setQueue(playable, index)
@@ -185,18 +210,30 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
+     * The subset of [uiState] tracks that can actually be enqueued right now.
+     *
+     * - **Streaming mode on:** every track. Stream-only tracks resolve via
+     *   Kennyy inside [PlayerRepository.setQueue].
+     * - **Offline mode (streaming off):** downloaded-only, so we never enqueue
+     *   items the player's offline master-gate would silently skip.
+     *
+     * A Stash Mix still renders its full track list offline (TrackDao's
+     * STASH_MIX visibility exemption), but tapping a stream-only mix track in
+     * Offline mode is handled by the per-tap guard in [playTrack], which
+     * surfaces "Switch to Online mode to play this track" rather than enqueuing
+     * something the player can't play.
+     */
+    private suspend fun playableTracks(): List<Track> =
+        queuePlayableTracks(uiState.value.tracks, streamingPreference.current())
+
+    /**
      * Shuffles the playlist and begins playback. Streaming mode shuffles all
      * tracks (downloaded + synced-streamable); offline mode only shuffles
      * tracks present on disk.
      */
     fun shuffleAll() {
         viewModelScope.launch {
-            val streamingOn = streamingPreference.current()
-            val playable = if (streamingOn) {
-                uiState.value.tracks
-            } else {
-                uiState.value.tracks.filter { it.filePath != null }
-            }
+            val playable = playableTracks()
             if (playable.isEmpty()) return@launch
             val shuffled = playable.shuffled()
             _tappedTrackId.value = shuffled[0].id
@@ -216,12 +253,7 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun playAll() {
         viewModelScope.launch {
-            val streamingOn = streamingPreference.current()
-            val playable = if (streamingOn) {
-                uiState.value.tracks
-            } else {
-                uiState.value.tracks.filter { it.filePath != null }
-            }
+            val playable = playableTracks()
             if (playable.isEmpty()) return@launch
             _tappedTrackId.value = playable[0].id
             _bulkPlayInFlight.value = BulkPlayAction.PLAY_ALL
@@ -313,6 +345,140 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
+    // ── Batch (multi-select) actions ─────────────────────────────────────
+    // Each wraps the existing single-track path for the multi-select toolbar.
+    // Queue uses the batch addToQueue(List) overload (single call); Play Next
+    // loops addNext; download/remove/save/delete loop the per-id repo calls.
+    //
+    // Looped batches isolate per-item failures (one bad item must not abort
+    // the rest) and emit a SINGLE roll-up Snackbar mirroring the single-track
+    // wording. CancellationException is always re-thrown so structured-
+    // concurrency cancellation still propagates (project rule).
+
+    /**
+     * Insert each of [tracks] after the currently-playing track, in order.
+     * Silent — the single-track [playNext] emits no message, so neither does
+     * the batch (the toolbar dismissing is feedback enough).
+     */
+    fun playSelectedNext(tracks: List<Track>) {
+        viewModelScope.launch {
+            tracks.forEach {
+                runCatching { playerRepository.addNext(it) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+        }
+    }
+
+    /**
+     * Append [tracks] to the queue via the batch overload (single call).
+     * Silent — the single-track [addToQueue] emits no message.
+     */
+    fun addSelectedToQueue(tracks: List<Track>) {
+        viewModelScope.launch {
+            playerRepository.addToQueue(tracks)
+        }
+    }
+
+    /** Queue each of [trackIds] for download. Emits one roll-up Snackbar. */
+    fun downloadSelected(trackIds: List<Long>) {
+        viewModelScope.launch {
+            var succeeded = 0
+            trackIds.forEach { id ->
+                runCatching { musicRepository.queueDownload(id) }
+                    .onSuccess { succeeded++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (succeeded > 0) {
+                _userMessages.tryEmit("Queued $succeeded ${songs(succeeded)} for download.")
+            }
+        }
+    }
+
+    /**
+     * Remove the on-disk file for each of [trackIds], keeping streamable rows.
+     * Emits one roll-up Snackbar.
+     */
+    fun removeDownloadsForSelected(trackIds: List<Long>) {
+        viewModelScope.launch {
+            var succeeded = 0
+            trackIds.forEach { id ->
+                runCatching { musicRepository.removeDownload(id) }
+                    .onSuccess { succeeded++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (succeeded > 0) {
+                _userMessages.tryEmit("Removed downloads for $succeeded ${songs(succeeded)}.")
+            }
+        }
+    }
+
+    /** Add each of [trackIds] to the playlist identified by [playlistId]. */
+    fun saveSelectedToPlaylist(trackIds: List<Long>, playlistId: Long) {
+        viewModelScope.launch {
+            trackIds.forEach { id ->
+                runCatching { musicRepository.addTrackToPlaylist(id, playlistId) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+        }
+    }
+
+    /**
+     * Delete each of [tracks] from this playlist via the protected-playlist
+     * cascade. If [alsoBlacklist] is set, destroyed tracks are marked
+     * never-download-again.
+     *
+     * Aggregates each track's [MusicRepository.CascadeRemovalSummary] into one
+     * roll-up Snackbar, mirroring the single-track [deleteTrackFromPlaylist]
+     * wording (including the DOWNLOADS_MIX special-case). Per-item failures are
+     * isolated so one bad track doesn't abort the rest.
+     */
+    fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean) {
+        viewModelScope.launch {
+            val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
+            var removed = 0
+            var deleted = 0
+            var keptProtected = 0
+            var keptElsewhere = 0
+            var blacklisted = 0
+            tracks.forEach { track ->
+                runCatching {
+                    musicRepository.removeTrackFromPlaylistAndMaybeDelete(
+                        trackId = track.id,
+                        fromPlaylistId = playlistId,
+                        alsoBlacklist = alsoBlacklist,
+                    )
+                }.onSuccess { summary ->
+                    removed++
+                    deleted += summary.deleted
+                    keptProtected += summary.keptProtected
+                    keptElsewhere += summary.keptElsewhere
+                    blacklisted += summary.blacklisted
+                }.onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (removed == 0) return@launch
+            val msg = if (isDownloadsMix) {
+                "Deleted $removed ${songs(removed)} from your library."
+            } else {
+                val base = "Removed $removed ${songs(removed)}"
+                when {
+                    keptProtected > 0 ->
+                        "$base. Kept on disk (also in Liked Songs or a custom playlist)."
+                    keptElsewhere > 0 ->
+                        "$base. Kept on disk (in other playlists)."
+                    blacklisted > 0 ->
+                        "$base. Blocked from future syncs."
+                    deleted > 0 ->
+                        "Deleted $removed ${songs(removed)} from your device."
+                    else -> base + "."
+                }
+            }
+            _userMessages.tryEmit(msg)
+        }
+    }
+
+    /** "song" / "songs" for [count]-aware roll-up messages. */
+    private fun songs(count: Int): String = if (count == 1) "song" else "songs"
+
     private val _userMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(
         extraBufferCapacity = 1,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
@@ -336,6 +502,17 @@ class PlaylistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
+        }
+    }
+
+    /** Create a new playlist and add the whole batch of [trackIds] to it. */
+    fun createPlaylistAndAddTracks(name: String, trackIds: List<Long>) {
+        viewModelScope.launch {
+            val playlistId = musicRepository.createPlaylist(name)
+            trackIds.forEach { id ->
+                runCatching { musicRepository.addTrackToPlaylist(id, playlistId) }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
         }
     }
 

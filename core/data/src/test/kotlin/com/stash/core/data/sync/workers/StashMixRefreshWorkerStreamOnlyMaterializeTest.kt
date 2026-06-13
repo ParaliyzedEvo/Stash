@@ -18,6 +18,8 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
+import com.stash.core.data.mix.TagPoolBuilder
+import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -67,6 +69,8 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
     }
     private val trackSkipEventDao: TrackSkipEventDao = mockk(relaxed = true)
     private val trackMatcher: TrackMatcher = mockk(relaxed = true)
+    private val downloadNetworkPreference: DownloadNetworkPreference = mockk(relaxed = true)
+    private val tagPoolBuilder = TagPoolBuilder(lastFmApiClient)
 
     private fun newWorker(recipeId: Long): StashMixRefreshWorker {
         val params: WorkerParameters = mockk(relaxed = true) {
@@ -79,7 +83,7 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
             recipeDao, playlistDao, discoveryQueueDao, listeningEventDao,
             trackDao, mixGenerator, seedGenerator, lastFmApiClient,
             lastFmCredentials, sessionPreference, blocklistGuard,
-            trackSkipEventDao, trackMatcher,
+            trackSkipEventDao, tagPoolBuilder, trackMatcher, downloadNetworkPreference,
         )
     }
 
@@ -141,6 +145,139 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         coVerify(exactly = 0) {
             discoveryQueueDao.getDoneTrackIdsForRecipe(any(), any())
         }
+    }
+
+    // ── v0.9.42 idempotency backstop ──────────────────────────────────────
+    // materializeMix must skip the destructive clear + reinsert when the
+    // playlist's CURRENT ordered membership already equals what it would
+    // write — this prevents the visible "tracks vanish then repopulate"
+    // flash on no-op refreshes (the backstop to the worker-loop gate).
+
+    @Test fun `materializeMix skips clear and reinsert when membership is unchanged`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+
+        // Library section empty → final membership is exactly the discovery
+        // survivors, in order.
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L,
+            name = "Daily Discover",
+            source = MusicSource.BOTH,
+            sourceId = "stash_mix_1",
+            type = PlaylistType.STASH_MIX,
+            trackCount = 2,
+            syncEnabled = true,
+            isActive = true,
+        )
+        coEvery {
+            playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L)
+        } returns listOf(555L, 777L)
+        // Current ordered membership EQUALS what we'd write (same ids, same order).
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns listOf(555L, 777L)
+
+        newWorker(recipeId = 1L).doWork()
+
+        // No destructive churn: neither the clear nor any cross-ref insert runs.
+        coVerify(exactly = 0) { playlistDao.clearPlaylistTracks(100L) }
+        coVerify(exactly = 0) { playlistDao.insertCrossRef(any()) }
+    }
+
+    @Test fun `materializeMix re-materializes when membership order differs`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L,
+            name = "Daily Discover",
+            source = MusicSource.BOTH,
+            sourceId = "stash_mix_1",
+            type = PlaylistType.STASH_MIX,
+            trackCount = 2,
+            syncEnabled = true,
+            isActive = true,
+        )
+        coEvery {
+            playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L)
+        } returns listOf(555L, 777L)
+        // Same ids but DIFFERENT order → not equal → must re-materialize.
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns listOf(777L, 555L)
+
+        val insertedCrossRefs = mutableListOf<PlaylistTrackCrossRef>()
+        coEvery { playlistDao.insertCrossRef(capture(insertedCrossRefs)) } returns Unit
+
+        newWorker(recipeId = 1L).doWork()
+
+        coVerify(exactly = 1) { playlistDao.clearPlaylistTracks(100L) }
+        assertEquals(
+            "differing order must trigger a full re-materialize in the new order",
+            listOf(555L, 777L),
+            insertedCrossRefs.filter { it.playlistId == 100L }.map { it.trackId },
+        )
+    }
+
+    // ── Loop-break: materialize-only re-kick ──────────────────────────────
+    // The post-drain re-kick from StashDiscoveryWorker exists only to LINK
+    // freshly-drained stream-only stubs into the playlists. It must NOT
+    // re-queue discovery or re-kick the drain again — otherwise refresh⇄drain
+    // form a runaway loop that continuously clears + reinserts every mix
+    // (the user-visible "load 40, then repopulate" churn).
+
+    private fun newWorkerMaterializeOnly(): StashMixRefreshWorker {
+        val params: WorkerParameters = mockk(relaxed = true) {
+            coEvery { inputData } returns workDataOf(
+                StashMixRefreshWorker.KEY_MATERIALIZE_ONLY to true,
+            )
+        }
+        return StashMixRefreshWorker(
+            appContext, params,
+            recipeDao, playlistDao, discoveryQueueDao, listeningEventDao,
+            trackDao, mixGenerator, seedGenerator, lastFmApiClient,
+            lastFmCredentials, sessionPreference, blocklistGuard,
+            trackSkipEventDao, tagPoolBuilder, trackMatcher, downloadNetworkPreference,
+        )
+    }
+
+    @Test fun `materialize-only refresh does not re-kick the discovery drain`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L, name = "Daily Discover", source = MusicSource.BOTH,
+            sourceId = "stash_mix_1", type = PlaylistType.STASH_MIX,
+            trackCount = 0, syncEnabled = true, isActive = true,
+        )
+        coEvery { playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L) } returns listOf(555L)
+        // Force a materialize (current membership differs from what we'd write).
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns emptyList()
+
+        newWorkerMaterializeOnly().doWork()
+
+        // The end-of-refresh discovery-drain kick reads downloadNetworkPreference
+        // .current() for its constraints — so a zero call count proves the kick
+        // (the loop edge) was skipped.
+        coVerify(exactly = 0) { downloadNetworkPreference.current() }
+    }
+
+    @Test fun `normal refresh still kicks the discovery drain`() = runTest {
+        val recipe = recipe(id = 1L, name = "Daily Discover", playlistId = 100L)
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+        coEvery { mixGenerator.generate(recipe, any()) } returns emptyList()
+        coEvery { playlistDao.getById(100L) } returns PlaylistEntity(
+            id = 100L, name = "Daily Discover", source = MusicSource.BOTH,
+            sourceId = "stash_mix_1", type = PlaylistType.STASH_MIX,
+            trackCount = 0, syncEnabled = true, isActive = true,
+        )
+        coEvery { playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L) } returns listOf(555L)
+        coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns emptyList()
+
+        newWorker(recipeId = 1L).doWork()
+
+        coVerify(atLeast = 1) { downloadNetworkPreference.current() }
     }
 
     private fun recipe(id: Long, name: String, playlistId: Long?) = StashMixRecipeEntity(

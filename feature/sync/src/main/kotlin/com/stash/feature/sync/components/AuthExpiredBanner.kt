@@ -48,13 +48,15 @@ fun AuthExpiredBanner(
             buttonText = "Re-authenticate"
         }
         state.spotifyExpired -> {
+            // Only Spotify is expired \u2014 any other connected source still syncs,
+            // so this is NOT a full pause. Copy reflects partial sync.
             headline = "Spotify session expired"
-            body = "Sync paused \u2014 re-authenticate to keep your downloads flowing."
+            body = "Re-authenticate to include your Spotify library in sync."
             buttonText = "Re-authenticate Spotify"
         }
         else -> {
             headline = "YouTube session expired"
-            body = "Sync paused \u2014 re-authenticate to keep your downloads flowing."
+            body = "Re-authenticate to include your YouTube library in sync."
             buttonText = "Re-authenticate YouTube"
         }
     }

@@ -45,6 +45,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val stashMixRecipeDao: com.stash.core.data.db.dao.StashMixRecipeDao,
     private val downloadNetworkPreference: com.stash.core.data.prefs.DownloadNetworkPreference,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val localFileOps: com.stash.core.data.files.LocalFileOps,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -161,56 +162,51 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Verifies every `is_downloaded=1` row's file is actually readable.
-     * Handles both regular filesystem paths and SAF `content://` URIs.
-     * Rows with missing files have `is_downloaded`, `file_path`, and
-     * `file_size_bytes` cleared so the rest of the system stops treating
-     * them as playable.
+     * Download-integrity sweep (runs every launch via [runMigrations]). Checks
+     * every `is_downloaded=1` row's file against [LocalFileOps.classify]:
+     *  - reliably MISSING or TOO_SMALL (a failed download's tiny garbage body)
+     *    -> the row is un-marked (`is_downloaded`/`file_path`/`file_size_bytes`
+     *    cleared) so it streams / re-downloads; junk files are also deleted.
+     *  - OK or INCONCLUSIVE -> left untouched. INCONCLUSIVE (a SAF document
+     *    whose size couldn't be read at cold start) is the safety valve: we
+     *    never un-mark or delete on an ambiguous read, so a flaky boot can't
+     *    damage a real external-storage library.
      *
-     * Skipped: rows whose path is already null (they're a separate kind
-     * of corrupt state that bulkResetForReDownload will also clean —
-     * captured in `nullPath`).
+     * Handles both plain filesystem paths and SAF `content://` URIs. Null/blank
+     * paths count toward `nullPath` and are un-marked.
      */
     private suspend fun reconcileMissingDownloadedFiles() {
         val refs = trackDao.getDownloadedFileRefs()
         if (refs.isEmpty()) return
 
-        val missing = mutableListOf<Long>()
-        var nullPath = 0
-        for (ref in refs) {
-            val path = ref.filePath
-            if (path.isNullOrBlank()) {
-                missing += ref.id
-                nullPath++
-                continue
-            }
-            val exists = runCatching {
-                if (path.startsWith("content://")) {
-                    DocumentFile.fromSingleUri(context, path.toUri())?.exists() == true
-                } else {
-                    val plainPath = if (path.startsWith("file://")) {
-                        path.toUri().path ?: path.removePrefix("file://")
-                    } else {
-                        path
-                    }
-                    java.io.File(plainPath).exists()
-                }
-            }.getOrDefault(false)
-            if (!exists) missing += ref.id
+        // A downloaded row is unusable when its file is reliably missing OR too
+        // small to be real audio (a ~274-byte failed-download body). classify()
+        // distinguishes those from an INCONCLUSIVE SAF read (provider didn't
+        // report a size / transient cold-start failure), which we must NOT act
+        // on — un-marking/deleting on an ambiguous read could damage a real
+        // external-storage library on a flaky boot.
+        val result = classifyDownloadedRefs(refs) {
+            localFileOps.classify(it, com.stash.core.common.constants.StashConstants.MIN_PLAYABLE_LOCAL_BYTES)
         }
 
-        if (missing.isEmpty()) {
-            android.util.Log.d("StashMigrations", "file integrity: all ${refs.size} downloaded files present")
+        if (result.resetIds.isEmpty()) {
+            android.util.Log.d("StashMigrations", "download integrity: all ${refs.size} downloaded files usable")
             return
         }
-        // Bulk update in chunks to stay under SQLite's parameter ceiling.
-        missing.chunked(500).forEach { chunk ->
+
+        // Delete the junk files (present-but-tiny). Missing/null-path rows
+        // contribute no path. Best-effort, SAF-aware.
+        result.junkPaths.forEach { localFileOps.delete(it) }
+
+        // Un-mark the unusable rows in chunks to stay under SQLite's parameter
+        // ceiling — they become not-downloaded and therefore streamable.
+        result.resetIds.chunked(500).forEach { chunk ->
             trackDao.bulkResetForReDownload(chunk)
         }
         android.util.Log.i(
             "StashMigrations",
-            "file integrity: scanned ${refs.size} downloaded rows, " +
-                "reset ${missing.size} with missing files (nullPath=$nullPath)",
+            "download integrity: scanned ${refs.size} downloaded rows, reset ${result.resetIds.size} " +
+                "unusable (junk-deleted=${result.junkPaths.size}, nullPath=${result.nullPath})",
         )
     }
 
@@ -254,7 +250,11 @@ class MusicRepositoryImpl @Inject constructor(
     // single place where streaming mode IS meaningful for a Library-ish
     // surface — a synced playlist in streaming mode should show all of
     // its tracks (streamable + downloaded), and tapping a streamable
-    // track streams via Kennyy. In offline mode it stays downloaded-only.
+    // track streams via Kennyy. In offline mode it stays downloaded-only —
+    // EXCEPT Stash Mixes, which are an inherently online discovery surface
+    // and stay fully visible offline (the DAO's STASH_MIX exemption in
+    // TrackDao.getByPlaylist). Tap-time playability is governed by live
+    // connectivity in PlaylistDetailViewModel, not this preference.
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
         streamingPreference.enabled.flatMapLatest { enabled ->
@@ -567,18 +567,47 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addTrackToPlaylist(trackId: Long, playlistId: Long) {
-        val position = playlistDao.getNextPosition(playlistId)
-        playlistDao.insertCrossRef(
-            com.stash.core.data.db.entity.PlaylistTrackCrossRef(
-                playlistId = playlistId,
-                trackId = trackId,
-                position = position,
-                // v0.9.23: mark as user-added so REFRESH-mode sync of
-                // imported Spotify / YT Music playlists doesn't wipe it.
-                // See issue #42.
-                locallyAdded = true,
+        // Issue #114: this previously inserted the cross-ref unconditionally
+        // and crashed the app with SQLITE_CONSTRAINT_FOREIGNKEY when either
+        // parent row was missing (track orphaned by cleanup, playlist deleted
+        // by a parallel REFRESH-mode sync, stale UI cache after re-sync, etc.).
+        // Defensive pre-check + try/catch so the crash becomes a logged no-op
+        // and the user can keep using the app.
+        val trackExists = trackDao.getById(trackId) != null
+        val playlistExists = playlistDao.getById(playlistId) != null
+        if (!trackExists || !playlistExists) {
+            android.util.Log.w(
+                "MusicRepository",
+                "addTrackToPlaylist: skipping insert — trackExists=$trackExists " +
+                    "(id=$trackId), playlistExists=$playlistExists (id=$playlistId)",
             )
-        )
+            return
+        }
+        val position = playlistDao.getNextPosition(playlistId)
+        try {
+            playlistDao.insertCrossRef(
+                com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position,
+                    // v0.9.23: mark as user-added so REFRESH-mode sync of
+                    // imported Spotify / YT Music playlists doesn't wipe it.
+                    // See issue #42.
+                    locallyAdded = true,
+                )
+            )
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            // Pre-check raced with a delete (orphan cleanup, sync REFRESH, blocklist).
+            // The user-visible effect is the same as a missing-parent no-op: the
+            // tap appears to do nothing, but the app stays alive.
+            android.util.Log.w(
+                "MusicRepository",
+                "addTrackToPlaylist: FK constraint failed after pre-check " +
+                    "(trackId=$trackId, playlistId=$playlistId) — likely race with delete",
+                e,
+            )
+            return
+        }
         // v0.9.37 — count downloaded + streamable. Stream-only tracks
         // (e.g. Liked Songs added from the Now Playing heart on a
         // streaming track) are first-class playlist members under the

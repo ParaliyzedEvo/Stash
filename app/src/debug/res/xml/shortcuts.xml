@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        Debug-variant override of app/src/main/res/xml/shortcuts.xml. Identical
+        except targetPackage carries the ".debug" applicationIdSuffix so the
+        explicit shortcut intent resolves in debug builds (com.stash.app.debug).
+        targetClass is the Kotlin class name and is unchanged across variants.
+    -->
+    <shortcut
+        android:shortcutId="resume_playback"
+        android:enabled="true"
+        android:icon="@drawable/ic_resume_playback"
+        android:shortcutShortLabel="@string/resume_playback_short"
+        android:shortcutLongLabel="@string/resume_playback_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.stash.app.debug"
+            android:targetClass="com.stash.app.ResumePlaybackActivity" />
+    </shortcut>
+</shortcuts>

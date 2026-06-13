@@ -326,6 +326,27 @@ interface PlaylistDao {
     suspend fun updateArtUrl(playlistId: Long, artUrl: String?)
 
     /**
+     * Distinct album-art URLs of a playlist's tracks, ordered by first
+     * appearance, capped at [limit]. Used to build the Stash Mix cover mosaic
+     * from ALL its tracks (library + stream-only discovery survivors), so a
+     * 100%-streaming mix still gets a cover. Excludes null/blank art.
+     */
+    @Query(
+        """
+        SELECT t.album_art_url FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND t.album_art_url IS NOT NULL
+          AND t.album_art_url != ''
+        GROUP BY t.album_art_url
+        ORDER BY MIN(pt.position) ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getCoverArtUrlsForPlaylist(playlistId: Long, limit: Int): List<String>
+
+    /**
      * Refreshes the user-facing name for a synced playlist. Spotify changes
      * the display name for its generated mixes over time (e.g. "Your Daily
      * Mix 1" → "Daily Mix 1" or back), so sync runs update the name to
@@ -493,6 +514,22 @@ interface PlaylistDao {
      */
     @Query("SELECT DISTINCT track_id FROM playlist_tracks WHERE playlist_id IN (:playlistIds)")
     suspend fun getTrackIdsForPlaylists(playlistIds: List<Long>): List<Long>
+
+    /**
+     * The CURRENT ordered (by position) track ids of a single playlist,
+     * excluding soft-removed rows. Used by
+     * [com.stash.core.data.sync.workers.StashMixRefreshWorker.materializeMix]
+     * to detect a no-op refresh: if the ordered list it is about to write
+     * equals this, the destructive clear + reinsert (and the visible track
+     * flash it causes) is skipped. Order matters — the comparison is
+     * element-wise.
+     */
+    @Query(
+        "SELECT track_id FROM playlist_tracks " +
+            "WHERE playlist_id = :playlistId AND removed_at IS NULL " +
+            "ORDER BY position ASC",
+    )
+    suspend fun getOrderedTrackIdsForPlaylist(playlistId: Long): List<Long>
 
     /**
      * Like [DiscoveryQueueDao.getDoneTrackIdsForRecipe] but also returns

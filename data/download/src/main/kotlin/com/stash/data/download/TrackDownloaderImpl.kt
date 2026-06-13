@@ -1,6 +1,8 @@
 package com.stash.data.download
 
+import android.util.Log
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.data.sync.TrackDownloadProgress
@@ -22,6 +24,7 @@ import javax.inject.Singleton
 class TrackDownloaderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
     private val downloadQueueDao: DownloadQueueDao,
+    private val localFileOps: LocalFileOps,
 ) : TrackDownloader {
 
     override val progressFlow: Flow<TrackDownloadProgress> =
@@ -36,7 +39,22 @@ class TrackDownloaderImpl @Inject constructor(
 
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
         return when (val result = downloadManager.downloadTrack(track, preResolvedUrl)) {
-            is TrackDownloadResult.Success -> TrackDownloadOutcome.Success(result.filePath)
+            is TrackDownloadResult.Success -> {
+                // Validate the committed file before it can be marked downloaded.
+                // A "successful" download can still be junk — e.g. yt-dlp writing
+                // a ~274-byte error body into a .webm. If that were marked
+                // isDownloaded it would later fail playback with
+                // ERROR_CODE_PARSING_CONTAINER_MALFORMED and skip-storm the queue.
+                // acceptDownloadOrDelete deletes the junk + returns false, so the
+                // track stays not-downloaded (and therefore streamable); the
+                // worker routes Failed through its normal bounded-retry handling.
+                if (localFileOps.acceptDownloadOrDelete(result.filePath)) {
+                    TrackDownloadOutcome.Success(result.filePath)
+                } else {
+                    Log.w(TAG, "discarded too-small download for '${track.artist} - ${track.title}': ${result.filePath}")
+                    TrackDownloadOutcome.Failed("Downloaded file too small — discarded as a failed download")
+                }
+            }
             is TrackDownloadResult.Unmatched -> TrackDownloadOutcome.Unmatched(result.rejectedVideoId)
             is TrackDownloadResult.Failed -> TrackDownloadOutcome.Failed(result.error)
             // v0.9.17: Deferred is the strict-FLAC stay-in-queue signal.
@@ -57,5 +75,9 @@ class TrackDownloaderImpl @Inject constructor(
                 TrackDownloadOutcome.Deferred
             }
         }
+    }
+
+    private companion object {
+        const val TAG = "TrackDownloader"
     }
 }

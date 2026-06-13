@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * The single writer of [EqState]. UI emits events here; AudioProcessors
@@ -40,7 +39,16 @@ class EqController @Inject constructor(
   @Volatile private var initDone = false
 
   init {
-    runBlocking {
+    // Load persisted state OFF the constructor. Blocking disk I/O in a
+    // constructor is an anti-pattern here for two concrete reasons: Hilt may
+    // build this @Singleton on the main thread (the playback graph often
+    // initialises on main), making the read main-thread I/O; and a corrupt
+    // DataStore would throw *during construction*, crashing the DI graph with
+    // no recovery. The DSP stages sample state.value reactively per audio
+    // buffer and rebuild coefficients on change (see EqProcessor), so the
+    // brief window of default (flat) EQ before the load lands is inaudible
+    // and self-correcting. [awaitInit] keeps tests deterministic.
+    scope.launch {
       migration.migrateIfNeeded()
       _state.value = store.read()
       initDone = true

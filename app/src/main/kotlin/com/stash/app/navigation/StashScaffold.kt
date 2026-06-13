@@ -46,6 +46,20 @@ fun StashScaffold(
     val currentRoute = navBackStackEntry?.destination?.route
     var isWebLoginOpen by remember { mutableStateOf(false) }
 
+    // Whether a detail screen is currently in multi-select mode. Detail screens
+    // signal this via `onSelectionModeChanged`; while it is true we hide the
+    // whole bottom chrome (mini-player AND nav bar) so the screen's own bottom
+    // selection action bar owns the bottom edge instead of stacking on / being
+    // crowded by it (premium multi-select pattern, avoids mis-taps).
+    var selectionActive by remember { mutableStateOf(false) }
+
+    // Safeguard: a selection-capable screen normally clears its selection on
+    // every exit path (✕ / Back / last-deselect), which fires
+    // `onSelectionModeChanged(false)` before it leaves composition. Resetting on
+    // route change as well guarantees the mini-player can never stay hidden if a
+    // screen leaves the stack without that signal landing.
+    LaunchedEffect(currentRoute) { selectionActive = false }
+
     // Android 13+ runtime permission for notifications. One-shot per install.
     RequestNotificationPermissionOnce()
 
@@ -105,8 +119,12 @@ fun StashScaffold(
             )
             val hideMiniPlayer = hideBottomBar ||
                                  innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
-            if (!hideBottomBar) {
-                Column {
+            // While a screen is selecting, render no bottom chrome at all — the
+            // screen's own selection action bar (which handles its own nav insets)
+            // takes the bottom edge. This drops innerPadding.bottom to 0 so the
+            // content extends full-height behind that action bar.
+            if (!selectionActive && !hideBottomBar) {
+                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                     if (!hideMiniPlayer) {
                         MiniPlayer(
                             onExpand = {
@@ -140,6 +158,7 @@ fun StashScaffold(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding),
+            onSelectionModeChanged = { selectionActive = it },
         )
     }
 }

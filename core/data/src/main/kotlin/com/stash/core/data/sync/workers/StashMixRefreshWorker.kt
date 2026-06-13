@@ -31,7 +31,10 @@ import com.stash.core.data.lastfm.LastFmTopTrack
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
 import com.stash.core.data.mix.MixSeedStrategy
+import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
+import com.stash.core.data.mix.TagPoolBuilder
+import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -84,7 +87,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private val sessionPreference: LastFmSessionPreference,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val trackSkipEventDao: TrackSkipEventDao,
+    private val tagPoolBuilder: TagPoolBuilder,
     private val trackMatcher: TrackMatcher,
+    private val downloadNetworkPreference: DownloadNetworkPreference,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -134,6 +139,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         const val KEY_RECIPE_ID = "stash_mix_refresh_recipe_id"
 
         /**
+         * Input-data key for [enqueueOneTime]'s materialize-only overload.
+         * When true, [doWork] LINKS already-drained discovery stubs into the
+         * mix playlists but does NOT re-queue discovery candidates and does
+         * NOT re-kick the discovery drain. This is the post-drain re-link
+         * path ([com.stash.core.data.sync.workers.StashDiscoveryWorker] fires
+         * it when it materializes a stub) — running it in full mode formed a
+         * runaway refresh⇄drain loop that continuously cleared + reinserted
+         * every mix (the user-visible "load 40 tracks, then repopulate with
+         * different tracks" churn on multi-genre mixes).
+         */
+        const val KEY_MATERIALIZE_ONLY = "stash_mix_refresh_materialize_only"
+
+        /**
          * Schedule the periodic refresh. Default 24-hour cadence with no
          * constraints — the library-only path works offline and fast
          * enough to not care. Discovery is opportunistic and tolerates
@@ -166,18 +184,20 @@ class StashMixRefreshWorker @AssistedInject constructor(
          * waiting 24 hours for the periodic schedule, and by the
          * manual-refresh button on the Home Stash Mixes card.
          */
-        fun enqueueOneTime(context: Context) {
-            val work = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
+        fun enqueueOneTime(context: Context, materializeOnly: Boolean = false) {
+            val builder = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build(),
                 )
-                .build()
+            if (materializeOnly) {
+                builder.setInputData(androidx.work.workDataOf(KEY_MATERIALIZE_ONLY to true))
+            }
             WorkManager.getInstance(context).enqueueUniqueWork(
                 ONE_SHOT_WORK_NAME,
                 androidx.work.ExistingWorkPolicy.REPLACE,
-                work,
+                builder.build(),
             )
         }
 
@@ -213,6 +233,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // first WorkManager tick.
         StashMixDefaults.seedIfNeeded(recipeDao)
 
+        val materializeOnly = inputData.getBoolean(KEY_MATERIALIZE_ONLY, false)
         val targetId = inputData.getLong(KEY_RECIPE_ID, -1L)
         val active = if (targetId > 0L) {
             val one = recipeDao.getById(targetId)?.takeIf { it.isActive }
@@ -317,11 +338,50 @@ class StashMixRefreshWorker @AssistedInject constructor(
             excludeIds += result.discoveryIds
 
             // Discovery — opportunistic. Don't block refresh success on it.
-            if (recipe.discoveryRatio > 0f && lastFmConfigured) {
+            // Skipped in materialize-only mode: the post-drain re-link must not
+            // queue MORE candidates (that's the loop's fuel).
+            if (recipe.discoveryRatio > 0f && lastFmConfigured && !materializeOnly) {
                 runCatching { queueDiscoveryForRecipe(recipe, personas) }
                     .onFailure { Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it) }
             }
         }
+
+        // v0.9.38 — hydrate fresh stream-only stubs with art + duration.
+        // StashDiscoveryWorker lands those rows bare; without this chain
+        // they'd render empty in the mix until the player resolves a
+        // queue window at play time (conversation 2026-05-28). Fire-and-
+        // forget — backfill failure must never block a successful refresh,
+        // so the enqueue itself is guarded (e.g. WorkManager not yet
+        // initialised in a unit-test JVM throws IllegalStateException).
+        runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
+            .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
+
+        // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe
+        // above only enqueues PENDING candidate rows — it does not turn them
+        // into stream-only stubs; StashDiscoveryWorker does. Without this kick
+        // a freshly-created/refreshed mix sits empty ("Building your mix…")
+        // until the once-daily periodic sweep happens to run, because the
+        // only other drain trigger — the parallel kick in MixBuilderViewModel
+        // .save() — races this fill and usually runs before the PENDING rows
+        // exist (the Last.fm tag queries here take seconds). Kicking the drain
+        // at the END of the fill closes that race for every refresh path
+        // (create, manual "Refresh this mix", periodic). Guarded + REPLACE:
+        // a test-JVM WorkManager throws, and rapid double-fills coalesce.
+        // Loop-break: in materialize-only mode (the post-drain re-link kicked
+        // by StashDiscoveryWorker) we must NOT re-kick the drain. Doing so
+        // formed a runaway refresh⇄drain cycle that continuously cleared +
+        // reinserted every mix. The normal refresh path still kicks it so
+        // freshly-queued candidates get drained once.
+        if (!materializeOnly) {
+            runCatching {
+                StashDiscoveryWorker.enqueueOneTime(
+                    applicationContext,
+                    downloadNetworkPreference.current(),
+                    expedited = true,
+                )
+            }.onFailure { Log.w(TAG, "discovery drain enqueue failed; refresh still succeeded", it) }
+        }
+
         return Result.success()
     }
 
@@ -376,38 +436,20 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // deleted by the user). If gone, fall through to re-create.
         val existing = recipe.playlistId?.let { playlistDao.getById(it) }
 
-        val playlistId = if (existing != null) {
-            playlistDao.clearPlaylistTracks(existing.id)
-            playlistDao.updateName(existing.id, recipe.name)
-            existing.id
-        } else {
-            val firstArt = tracks.firstNotNullOfOrNull { it.albumArtUrl }
-            val newPlaylist = PlaylistEntity(
-                name = recipe.name,
-                source = MusicSource.BOTH,
-                sourceId = "stash_mix_${recipe.id}",
-                type = PlaylistType.STASH_MIX,
-                trackCount = tracks.size,
-                artUrl = firstArt,
-                syncEnabled = true,
-                isActive = true,
-            )
-            playlistDao.insert(newPlaylist)
-        }
-
-        // Rebuild track membership in generator order.
-        val nowInstant = Instant.ofEpochMilli(now)
-        tracks.forEachIndexed { position, track ->
-            playlistDao.insertCrossRef(
-                PlaylistTrackCrossRef(
-                    playlistId = playlistId,
-                    trackId = track.id,
-                    position = position,
-                    addedAt = nowInstant,
-                )
-            )
-        }
-
+        // ── v0.9.42 idempotency backstop ──────────────────────────────────
+        // Compute the discovery survivors (and therefore the FULL ordered
+        // trackId list that WOULD be written) BEFORE touching the playlist.
+        // This lets us short-circuit a no-op refresh: if the set we're about
+        // to write equals what's already there (same ids, same order), we
+        // skip the destructive clear + reinsert that causes the visible
+        // "tracks vanish then repopulate" flash. This is a backstop for any
+        // refresh that re-runs with an identical result (the primary fix is
+        // gating the worker loop in DiscoveryDownloadWorker).
+        //
+        // The discovery computation below depends only on `librarySet` and
+        // the recipe (the candidate query is keyed by recipe.id, not by the
+        // playlist's current cross-refs), so it is safe to run before the
+        // membership is rebuilt.
         // Re-link any Discovery-sourced tracks that this recipe has
         // already accepted on previous refreshes. Without this, every
         // weekly refresh wiped the Discovery slots when the playlist was
@@ -498,6 +540,62 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 "shared=${sharedIds.size} cap=$discoveryCap linked=${discoveryTrackIds.size} " +
                 "excludeIds.size=${excludeIds.size}",
         )
+        // The full ordered membership we are about to write: library slice
+        // (generator order) followed by discovery survivors.
+        val finalOrderedIds = tracks.map { it.id } + discoveryTrackIds
+        val totalCount = finalOrderedIds.size
+
+        // v0.9.42: idempotency short-circuit. If the playlist already exists
+        // and its current ordered membership is identical to what we'd write,
+        // skip the clear + reinsert entirely — no visible flash, no orphan
+        // churn. We still leave the existing art/count alone in this branch
+        // because membership (hence cover + count) is unchanged.
+        if (existing != null) {
+            val current = playlistDao.getOrderedTrackIdsForPlaylist(existing.id)
+            if (current == finalOrderedIds) {
+                Log.i(
+                    TAG,
+                    "'${recipe.name}' (id=${existing.id}) unchanged — skipping re-materialize",
+                )
+                // Name can still drift (e.g. a recipe rename) even when the
+                // track set matches; keep that cheap, non-destructive update.
+                playlistDao.updateName(existing.id, recipe.name)
+                return MaterializeResult(existing.id, discoveryTrackIds)
+            }
+        }
+
+        // Find-or-create the backing playlist row.
+        val playlistId = if (existing != null) {
+            playlistDao.clearPlaylistTracks(existing.id)
+            playlistDao.updateName(existing.id, recipe.name)
+            existing.id
+        } else {
+            val firstArt = tracks.firstNotNullOfOrNull { it.albumArtUrl }
+            val newPlaylist = PlaylistEntity(
+                name = recipe.name,
+                source = MusicSource.BOTH,
+                sourceId = "stash_mix_${recipe.id}",
+                type = PlaylistType.STASH_MIX,
+                trackCount = tracks.size,
+                artUrl = firstArt,
+                syncEnabled = true,
+                isActive = true,
+            )
+            playlistDao.insert(newPlaylist)
+        }
+
+        // Rebuild track membership in generator order (library slice first).
+        val nowInstant = Instant.ofEpochMilli(now)
+        tracks.forEachIndexed { position, track ->
+            playlistDao.insertCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = track.id,
+                    position = position,
+                    addedAt = nowInstant,
+                )
+            )
+        }
         discoveryTrackIds.forEachIndexed { offset, trackId ->
             playlistDao.insertCrossRef(
                 PlaylistTrackCrossRef(
@@ -508,14 +606,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 )
             )
         }
-        val totalCount = tracks.size + discoveryTrackIds.size
 
-        // v0.4.1: single-image cover instead of the 2-tile mosaic used in
-        // older builds. Still rotates every refresh — the top track's
-        // album art becomes the mix cover.
-        val coverUrl = tracks.mapNotNull { it.albumArtUrl }.firstOrNull()
-        if (coverUrl != null) {
-            playlistDao.updateArtUrl(playlistId, coverUrl)
+        // v0.9.40: build an album mosaic from the FULL linked track set
+        // (library slice + stream-only discovery survivors), not just the
+        // library `tracks` — otherwise 100%-discovery mixes (every custom mix
+        // and First Listen) get a blank cover even though their stream-only
+        // tracks carry album art. Up to 4 distinct arts, "|"-joined: the mix
+        // card renders a tile mosaic, and single-image call sites take the
+        // first (PlaylistMapper). Recomputed every refresh, so the mosaic
+        // fills in once stub art is backfilled. Query runs AFTER the cross-refs
+        // above so it sees the full membership.
+        val coverArtUrls = playlistDao.getCoverArtUrlsForPlaylist(playlistId, limit = 4)
+        if (coverArtUrls.isNotEmpty()) {
+            playlistDao.updateArtUrl(playlistId, coverArtUrls.joinToString("|"))
         }
         playlistDao.updateTrackCount(playlistId, totalCount)
         return MaterializeResult(playlistId, discoveryTrackIds)
@@ -536,6 +639,14 @@ class StashMixRefreshWorker @AssistedInject constructor(
     ) {
         val strategy = MixSeedStrategy.fromStored(recipe.seedStrategy)
         if (strategy == MixSeedStrategy.NONE) return
+
+        // TAG_GRAPH recipes seed from their OWN resolved tags (genres+moods+era),
+        // not the user's global top tags — the custom-mix + retuned-Deep-Cuts path.
+        // Other strategies keep the persona-seeded path below, unchanged.
+        if (strategy == MixSeedStrategy.TAG_GRAPH) {
+            queueTagSeededDiscovery(recipe)
+            return
+        }
 
         val since = System.currentTimeMillis() -
             AFFINITY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
@@ -638,6 +749,60 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 "(${candidates.size - filtered.size} filtered as library/banned)",
         )
         mixGenerator.queueDiscoveryCandidates(recipe, final)
+    }
+
+    /**
+     * Tag-seeded discovery for TAG_GRAPH recipes (custom mixes + Deep Cuts).
+     * Pool comes from the recipe's resolved tags via [TagPoolBuilder] — NOT from
+     * tracks similar to the user's library — which is what fixes Deep Cuts. Applies
+     * the same library/skip pre-filter as the persona path, plus a relaxation
+     * ladder (drop era -> drop moods) when the filtered pool is below the floor.
+     */
+    private suspend fun queueTagSeededDiscovery(recipe: StashMixRecipeEntity) {
+        val userTopTags = mixGenerator.computeUserTopTags(limit = 10)
+        val userTopArtists = trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT)
+            .map { it.trim().lowercase() }.toHashSet()
+
+        val libraryKeys = trackDao.getLibraryCanonicalKeys().toHashSet()
+        val skipBannedKeys = trackSkipEventDao.getEarlySkipBannedCanonicalKeys(
+            minSkips = DISCOVERY_SKIP_BAN_MIN_COUNT,
+            sinceMs = System.currentTimeMillis() - DISCOVERY_SKIP_BAN_WINDOW_MS,
+            maxPositionMs = DISCOVERY_SKIP_BAN_MAX_POSITION_MS,
+        ).toHashSet()
+
+        fun filterNew(c: List<MixGenerator.DiscoveryCandidate>) = c.filter {
+            val key = canonicalKey(it.artist, it.title)
+            key !in libraryKeys && key !in skipBannedKeys
+        }
+
+        val baseTags = RecipeTagResolver.resolve(recipe, userTopTags)
+        val pool = filterNew(tagPoolBuilder.build(baseTags, recipe.tagSampleDepth, userTopArtists))
+            .toMutableList()
+        val seen = pool.mapTo(HashSet()) { canonicalKey(it.artist, it.title) }
+
+        if (pool.size < MIN_DISCOVERY_POOL_AFTER_FILTER) {
+            val rungs = buildList {
+                if (recipe.eraStartYear != null) add(recipe.copy(eraStartYear = null, eraEndYear = null))
+                if (recipe.moodKeysCsv.isNotEmpty()) {
+                    add(recipe.copy(eraStartYear = null, eraEndYear = null, moodKeysCsv = ""))
+                }
+            }
+            for (rung in rungs) {
+                if (pool.size >= MIN_DISCOVERY_POOL_AFTER_FILTER) break
+                val rungTags = RecipeTagResolver.resolve(rung, userTopTags)
+                val more = filterNew(tagPoolBuilder.build(rungTags, rung.tagSampleDepth, userTopArtists))
+                    .filter { seen.add(canonicalKey(it.artist, it.title)) }
+                pool.addAll(more)
+                Log.i(TAG, "'${recipe.name}': relaxed tag pool to ${pool.size} (dropped era/mood rung)")
+            }
+        }
+
+        if (pool.isEmpty()) {
+            Log.w(TAG, "'${recipe.name}': tag-seeded pool empty after filtering; skipping queue")
+            return
+        }
+        Log.i(TAG, "'${recipe.name}': queueing ${pool.size} tag-seeded candidates")
+        mixGenerator.queueDiscoveryCandidates(recipe, pool)
     }
 
     /**

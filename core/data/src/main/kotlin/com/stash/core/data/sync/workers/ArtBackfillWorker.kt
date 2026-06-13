@@ -69,6 +69,7 @@ class ArtBackfillWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "ArtBackfill"
         private const val WORK_NAME = "stash_art_backfill"
+        private const val MIX_REFRESH_WORK_NAME = "stash_art_backfill_mix_refresh"
         private const val BATCH_SIZE = 500
         private const val REQUEST_INTERVAL_MS = 220L
 
@@ -90,11 +91,36 @@ class ArtBackfillWorker @AssistedInject constructor(
                 work,
             )
         }
+
+        /**
+         * v0.9.38 — re-fire the backfill after each
+         * [StashMixRefreshWorker] cycle so freshly-created stream-only
+         * stubs gain art + duration within one refresh. Distinct work
+         * name + `REPLACE` policy so the install-time one-shot
+         * ([enqueueOneTime]) keeps its KEEP semantics and the two never
+         * compete. Both pass paths are idempotent — every UPDATE guards
+         * on "still missing" — so concurrent runs would no-op cleanly
+         * anyway, but separate names keep the WorkManager log clear.
+         */
+        fun enqueueFromMixRefresh(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+            val work = OneTimeWorkRequestBuilder<ArtBackfillWorker>()
+                .setConstraints(constraints)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                MIX_REFRESH_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                work,
+            )
+        }
     }
 
     override suspend fun doWork(): Result {
         runArtPass()
         runDurationPass()
+        runStreamableMetadataPass()
         return Result.success()
     }
 
@@ -163,6 +189,68 @@ class ArtBackfillWorker @AssistedInject constructor(
             }
         }
         Log.i(TAG, "duration backfill done: filled=$filled skipped=$skipped (unreadable or missing)")
+    }
+
+    /**
+     * Pass 3: hydrate v0.9.37 stream-only stubs. `StashDiscoveryWorker`
+     * lands those rows with only title + artist; album art and duration
+     * default to NULL / 0, so the mix list rendered with empty thumbnails
+     * and missing run-times until the player resolved a queue window at
+     * play time (conversation 2026-05-28).
+     *
+     * One Last.fm `track.getInfo` lookup per candidate yields both
+     * `bestImageUrl` and `durationMs`, so we issue a single network call
+     * and apply both UPDATEs guarded by their existing "only-if-blank"
+     * predicates. Rate-limited like [runArtPass] to respect Last.fm's
+     * 5 req/s ceiling. No-ops when Last.fm isn't configured (the user
+     * hasn't supplied an API key) — the play-time hydration path remains
+     * the fallback for those installs.
+     */
+    private suspend fun runStreamableMetadataPass() {
+        if (!credentials.isConfigured) {
+            Log.d(TAG, "Last.fm not configured — skipping stream-only metadata backfill")
+            return
+        }
+        val candidates = trackDao.findStreamableMetadataBackfillCandidates(BATCH_SIZE)
+        if (candidates.isEmpty()) {
+            Log.d(TAG, "no stream-only stubs need metadata backfill")
+            return
+        }
+        Log.i(TAG, "backfilling metadata for ${candidates.size} stream-only stubs")
+
+        var artFilled = 0
+        var durationFilled = 0
+        var skipped = 0
+        for (row in candidates) {
+            val info = runCatching {
+                lastFmApiClient.getTrackInfo(row.artist, row.title).getOrNull()
+            }.getOrNull()
+            if (info == null) {
+                skipped++
+                delay(REQUEST_INTERVAL_MS)
+                continue
+            }
+            info.bestImageUrl?.takeIf { it.isNotBlank() }?.let { artUrl ->
+                runCatching { trackDao.fillMissingAlbumArtUrl(row.id, artUrl) }
+                    .onSuccess { artFilled++ }
+                    .onFailure { e ->
+                        Log.w(TAG, "stream-only art fill failed for trackId=${row.id}", e)
+                    }
+            }
+            info.durationMs?.takeIf { it > 0 }?.let { ms ->
+                runCatching { trackDao.fillMissingDuration(row.id, ms) }
+                    .onSuccess { durationFilled++ }
+                    .onFailure { e ->
+                        Log.w(TAG, "stream-only duration fill failed for trackId=${row.id}", e)
+                    }
+            }
+            delay(REQUEST_INTERVAL_MS)
+        }
+        Log.i(
+            TAG,
+            "stream-only backfill done: art=$artFilled duration=$durationFilled " +
+                "skipped=$skipped (Last.fm miss)",
+        )
     }
 
     /**

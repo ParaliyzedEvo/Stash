@@ -41,7 +41,12 @@ import javax.inject.Singleton
 class LastFmApiClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val credentials: LastFmCredentials,
+    private val rateLimitGate: LastFmRateLimitGate,
+    private val cacheDao: com.stash.core.data.db.dao.LastFmCacheDao,
 ) {
+    /** Round-robin cursor for spreading reads across [LastFmCredentials.readApiKeys]. */
+    private val readKeyCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
     /** Step 1 of web-auth: request a token. User then authorises in browser. */
     suspend fun getAuthToken(): Result<String> = runCatching {
         val params = sortedMapOf(
@@ -96,6 +101,30 @@ class LastFmApiClient @Inject constructor(
         Unit
     }
 
+/**
+ * Notify Last.fm that the user is currently listening to a track.
+ * Should be called when playback starts (or resumes after a track change).
+ * Not stored or retried — fire-and-forget by design; Last.fm clears the
+ * now-playing status automatically after ~4 minutes of inactivity.
+ */
+suspend fun updateNowPlaying(
+    sessionKey: String,
+    artist: String,
+    track: String,
+    album: String? = null,
+): Result<Unit> = runCatching {
+    val params = sortedMapOf(
+        "method" to "track.updateNowPlaying",
+        "api_key" to credentials.apiKey,
+        "sk" to sessionKey,
+        "artist" to artist,
+        "track" to track,
+    )
+    if (!album.isNullOrBlank()) params["album"] = album
+    signedPost(params)
+    Unit
+}
+
     // ── Public (API-key-only) read endpoints ──────────────────────────
 
     /**
@@ -115,7 +144,7 @@ class LastFmApiClient @Inject constructor(
             "track" to track,
             "autocorrect" to "1",
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseTopTags(response["toptags"]?.jsonObject)
     }
 
@@ -127,7 +156,7 @@ class LastFmApiClient @Inject constructor(
             "artist" to artist,
             "autocorrect" to "1",
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseTopTags(response["toptags"]?.jsonObject)
     }
 
@@ -148,7 +177,7 @@ class LastFmApiClient @Inject constructor(
             "autocorrect" to "1",
             "limit" to limit.toString(),
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseSimilarArtists(response["similarartists"]?.jsonObject)
     }
 
@@ -171,7 +200,7 @@ class LastFmApiClient @Inject constructor(
             "limit" to limit.toString(),
             "autocorrect" to "1",
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseSimilarTracks(response["similartracks"]?.jsonObject)
     }
 
@@ -187,7 +216,7 @@ class LastFmApiClient @Inject constructor(
             "autocorrect" to "1",
             "limit" to limit.toString(),
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseTopTracks(response["toptracks"]?.jsonObject)
     }
 
@@ -256,7 +285,7 @@ class LastFmApiClient @Inject constructor(
             "tag" to tag,
             "limit" to limit.toString(),
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseTopArtists(response["topartists"]?.jsonObject)
     }
 
@@ -274,7 +303,7 @@ class LastFmApiClient @Inject constructor(
             "tag" to tag,
             "limit" to limit.toString(),
         )
-        val response = unsignedGet(params)
+        val response = unsignedGet(params, cacheable = true)
         parseTopTracks(response["tracks"]?.jsonObject)
     }
 
@@ -302,7 +331,9 @@ class LastFmApiClient @Inject constructor(
             "autocorrect" to "1",
         )
         if (!username.isNullOrBlank()) params["username"] = username
-        val response = unsignedGet(params)
+        // Cacheable only without a username — with one, the response carries
+        // that user's personal playcount/loved flags and must stay per-user.
+        val response = unsignedGet(params, cacheable = username.isNullOrBlank())
         LastFmTrackInfo.parse(response)
     }
 
@@ -384,24 +415,99 @@ class LastFmApiClient @Inject constructor(
      * key, no signature, just an API key. Returns the parsed root JSON
      * object (callers drill into the response-specific subtree).
      */
-    private suspend fun unsignedGet(params: Map<String, String>): JsonObject =
+    private suspend fun unsignedGet(
+        params: Map<String, String>,
+        cacheable: Boolean = false,
+    ): JsonObject =
         withContext(Dispatchers.IO) {
-            val paramsWithFormat = params + ("format" to "json")
-            val url = API_URL.toHttpUrl().newBuilder().apply {
-                paramsWithFormat.forEach { (k, v) -> addQueryParameter(k, v) }
+            val cacheKey = if (cacheable) lastFmCacheKey(params) else null
+
+            // Cache hit comes BEFORE the breaker on purpose: cached generic
+            // lookups keep custom mixes working even while the shared key is
+            // throttled. Only fresh (within-TTL) entries are served.
+            if (cacheKey != null) {
+                val cached = cacheDao.get(cacheKey)
+                if (cached != null &&
+                    System.currentTimeMillis() - cached.fetchedAt < CACHE_TTL_MS
+                ) {
+                    return@withContext json.parseToJsonElement(cached.json).jsonObject
+                }
+            }
+
+            val now = System.currentTimeMillis()
+            val proxyUrl = credentials.proxyUrl
+
+            // Target + key selection. Two paths:
+            //  - Proxy: when a Worker proxy URL is set, route cacheable reads
+            //    through it. The Worker injects its OWN server-side key, so we
+            //    strip api_key and don't rotate. Breaker keyed by "proxy".
+            //  - Direct: round-robin a read key from the pool, skipping any
+            //    whose breaker is open. null = all throttled → fail fast.
+            val useProxy = cacheable && !proxyUrl.isNullOrBlank()
+            val targetBase: String
+            val breakerKey: String
+            val outgoing = params.toMutableMap()
+            if (useProxy) {
+                if (rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
+                    error("Last.fm proxy rate-limited; skipping request (circuit open)")
+                }
+                targetBase = proxyUrl!!
+                breakerKey = PROXY_BREAKER_KEY
+                outgoing.remove("api_key") // the Worker supplies its own key
+            } else {
+                val readKey = selectReadKey(
+                    keys = credentials.readApiKeys,
+                    startIndex = readKeyCounter.getAndIncrement(),
+                    isOpen = { rateLimitGate.isOpen(it, now) },
+                ) ?: error("Last.fm rate-limited; skipping request (all keys throttled)")
+                targetBase = API_URL
+                breakerKey = readKey
+                outgoing["api_key"] = readKey
+            }
+            outgoing["format"] = "json"
+
+            val url = targetBase.toHttpUrl().newBuilder().apply {
+                outgoing.forEach { (k, v) -> addQueryParameter(k, v) }
             }.build()
             val request = Request.Builder().url(url).get().build()
-            val body = okHttpClient.newCall(request).execute().use {
-                check(it.isSuccessful) { "Last.fm GET failed: HTTP ${it.code}" }
-                it.body?.string() ?: error("Empty Last.fm response")
+            val (code, body) = okHttpClient.newCall(request).execute().use {
+                it.code to it.body?.string()
             }
-            val root = json.parseToJsonElement(body).jsonObject
+
+            // HTTP 429 — hard rate limit (direct key or proxy). Trip the
+            // breaker for whichever source we used, then fail.
+            if (code == 429) {
+                rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
+                error("Last.fm GET failed: HTTP 429 (rate limited)")
+            }
+            check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
+            val bodyStr = body ?: error("Empty Last.fm response")
+
+            val root = json.parseToJsonElement(bodyStr).jsonObject
             // Last.fm returns HTTP 200 with { error, message } on some
             // kinds of failures (invalid artist, rate-limited, etc).
             // Surface those so callers don't treat garbage as success.
             root["error"]?.jsonPrimitive?.content?.let { err ->
                 val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                // error 29 == "Rate Limit Exceeded" → trip this source's breaker
+                // so the next calls rotate past it instead of piling on.
+                if (err == "29") rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
                 error("Last.fm API error $err: $msg")
+            }
+
+            // A clean response means this source isn't throttled — close its breaker.
+            rateLimitGate.recordSuccess(breakerKey)
+
+            // Cache only successful (non-error) bodies, keyed independently of
+            // api_key so the entry is shared across key rotation/pooling.
+            if (cacheKey != null) {
+                cacheDao.upsert(
+                    com.stash.core.data.db.entity.LastFmCacheEntity(
+                        cacheKey = cacheKey,
+                        json = bodyStr,
+                        fetchedAt = System.currentTimeMillis(),
+                    ),
+                )
             }
             root
         }
@@ -493,6 +599,16 @@ class LastFmApiClient @Inject constructor(
     companion object {
         private const val API_URL = "https://ws.audioscrobbler.com/2.0/"
         private val json = Json { ignoreUnknownKeys = true }
+
+        /**
+         * TTL for cached generic lookups (tag→tracks, artist→similar, …).
+         * These change slowly, so a week keeps mixes fresh while collapsing
+         * the repeated cross-user traffic that throttled the shared key.
+         */
+        private const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000
+
+        /** Synthetic breaker key for the Worker proxy source (vs. real api keys). */
+        private const val PROXY_BREAKER_KEY = "__proxy__"
     }
 }
 
@@ -523,6 +639,29 @@ data class LastFmTopArtist(val name: String, val playcount: Int)
 data class LastFmCredentials(
     val apiKey: String,
     val apiSecret: String,
+    /**
+     * Optional extra API keys used ONLY for unsigned read endpoints
+     * (tag/similar/etc.). They need no secret. Auth + scrobbling always use
+     * [apiKey] because Last.fm session keys are bound to the key that created
+     * them — rotating those would break scrobbling.
+     */
+    val extraReadApiKeys: List<String> = emptyList(),
+    /**
+     * Optional base URL of the Stash Last.fm proxy Worker (e.g.
+     * `https://stash-lastfm-proxy.<sub>.workers.dev/lastfm`). When set, generic
+     * cacheable reads route through it (the Worker supplies its own key); auth,
+     * scrobble and per-user reads always go direct. Blank/null = direct.
+     */
+    val proxyUrl: String? = null,
 ) {
     val isConfigured: Boolean get() = apiKey.isNotBlank() && apiSecret.isNotBlank()
+
+    /**
+     * Keys eligible for unsigned READ requests: the primary plus any extras,
+     * blanks dropped and de-duplicated, primary first.
+     */
+    val readApiKeys: List<String>
+        get() = (listOf(apiKey) + extraReadApiKeys)
+            .filter { it.isNotBlank() }
+            .distinct()
 }

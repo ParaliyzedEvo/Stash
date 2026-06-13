@@ -25,16 +25,23 @@ import kotlinx.coroutines.withTimeoutOrNull
  * YouTube has effectively complete coverage; falling back to it
  * trades lossless fidelity for actually playing the music.
  *
- * **Why InnerTube-only (fast path).** [PreviewUrlExtractor] races an
- * InnerTube call (~1-2s, returns unciphered audio URL when available)
- * against a yt-dlp call (~15-35s, slower but more reliable). For
- * streaming queue resolution we need the call to complete quickly —
- * a 20-second yt-dlp invocation on the queue's critical path would
- * be a worse UX than just dropping the track. We bound the entire
- * call to [YT_RESOLVE_TIMEOUT_MS]; if InnerTube doesn't return in
- * time, we treat it as unavailable and yt-dlp can be tried later
- * via the download path (which has explicit user intent + a longer
- * tolerance for latency).
+ * **Playback uses yt-dlp; fill uses InnerTube (`allowYtDlp`).** The
+ * InnerTube fast lane returns audio URLs in ~200 ms, but on-device
+ * verification (2026-06-08) proved those URLs are PO-token-gated to a
+ * ~1 MB preview and return HTTP 403 on any full-file request — they
+ * cannot stream a whole track. So:
+ *  - `allowYtDlp = true` (foreground tap, 1-ahead prefetch, and the
+ *    [RefreshingDataSourceFactory] 403-refresh) resolves via yt-dlp
+ *    DIRECT ([PreviewUrlExtractor.extractStreamUrlViaYtDlp]) — ~11 s but
+ *    yields a full-range-playable URL.
+ *  - `allowYtDlp = false` (background queue-fill) still uses the cheap
+ *    InnerTube fast lane to seed the deep in-order timeline without
+ *    touching the serialized cap-1 yt-dlp slot. Those placeholder URLs
+ *    never actually stream audio: prefetch swaps the next-up to a yt-dlp
+ *    URL before it plays, and any placeholder skipped-to before the swap
+ *    403s and is transparently re-resolved via yt-dlp by the refresh seam.
+ * The whole call is bound to [YT_RESOLVE_TIMEOUT_MS]; on timeout we treat
+ * the track as unavailable.
  *
  * **VideoId resolution.** If the track already has a `youtubeId`
  * (YT-synced rows, or Spotify rows that were cross-matched during
@@ -67,7 +74,11 @@ class YouTubeStreamResolver @Inject constructor(
     private val urlExtractor: PreviewUrlExtractor,
     private val ytMusicApiClient: YTMusicApiClient,
 ) {
-    suspend fun resolve(track: TrackEntity): StreamUrl? {
+    /**
+     * @param allowYtDlp when `false`, resolve via the fast InnerTube engine
+     *   only (no slow yt-dlp); used by the background queue-fill path.
+     */
+    suspend fun resolve(track: TrackEntity, allowYtDlp: Boolean = true): StreamUrl? {
         // Prefer the existing youtubeId when present (YT-synced rows
         // and cross-matched Spotify rows already have one). Otherwise
         // fall through to a YT Music search by metadata — covers the
@@ -77,7 +88,21 @@ class YouTubeStreamResolver @Inject constructor(
             ?: return null
 
         val url = withTimeoutOrNull(YT_RESOLVE_TIMEOUT_MS) {
-            runCatching { urlExtractor.extractStreamUrl(videoId, bypassYtDlp = true) }
+            // Playback resolution (allowYtDlp=true: tap / prefetch / 403-refresh)
+            // goes straight to yt-dlp. The InnerTube fast lane returns
+            // PO-token-gated URLs that serve only ~1 MB then 403 on full
+            // playback (proven on-device 2026-06-08), so they must never reach
+            // ExoPlayer. Background fill (allowYtDlp=false) keeps the cheap
+            // InnerTube fast lane to seed the deep in-order timeline — those
+            // placeholders never actually stream audio (prefetch / 403-refresh
+            // swap them to a yt-dlp URL before playback).
+            runCatching {
+                if (allowYtDlp) {
+                    urlExtractor.extractStreamUrlViaYtDlp(videoId)
+                } else {
+                    urlExtractor.extractStreamUrl(videoId, allowYtDlp = false)
+                }
+            }
                 .onFailure { t ->
                     // CancellationException MUST propagate — swallowing it would
                     // surface as StreamRoutingResult.NotAvailable upstream, firing
@@ -126,7 +151,33 @@ class YouTubeStreamResolver @Inject constructor(
      * Spotify track.
      */
     private suspend fun searchYouTubeForVideoId(track: TrackEntity): String? {
-        val query = "${track.artist} ${track.title}".trim()
+        val artist = track.artist.trim()
+        val title = track.title.trim()
+        if (artist.isBlank() && title.isBlank()) return null
+
+        // Primary: the songs-FILTERED canonical matcher the download path uses.
+        // It returns a single predictable Songs shelf, is title-agnostic, and
+        // prefers Topic/official audio (ATV/OMV) — so it finds a videoId for
+        // catalog tracks (older / compilation, e.g. "Demis Roussos - Forever
+        // and Ever") that the legacy unfiltered searchAll mislabels and drops
+        // as "0 sections". That drop silently broke YouTube-fallback playback:
+        // no videoId -> no stream URL -> nothing to play or auto-advance to.
+        val canonical = withTimeoutOrNull(YT_SEARCH_TIMEOUT_MS) {
+            runCatching { ytMusicApiClient.searchCanonicalVideoId(artist, title) }
+                .onFailure { t ->
+                    if (t is CancellationException) throw t
+                    Log.d(TAG, "canonical search failed for '$artist $title': ${t.message}")
+                }
+                .getOrNull()
+        }
+        if (!canonical.isNullOrBlank()) {
+            Log.d(TAG, "canonical search hit '$artist $title' -> $canonical")
+            return canonical
+        }
+
+        // Backstop: the legacy tabbed searchAll — covers anything the canonical
+        // (ATV/OMV-preferring) matcher skips, e.g. UGC-only uploads.
+        val query = "$artist $title".trim()
         if (query.isBlank()) return null
         return withTimeoutOrNull(YT_SEARCH_TIMEOUT_MS) {
             val results = runCatching { ytMusicApiClient.searchAll(query) }
@@ -194,8 +245,16 @@ class YouTubeStreamResolver @Inject constructor(
         return secs * 1000L
     }
 
-    private companion object {
+    companion object {
         private const val TAG = "YouTubeStreamResolver"
+
+        /**
+         * `StreamUrl.origin` stamp for YouTube-extracted (lossy) results.
+         * Public so the player can recognise a lossy fallback — e.g. to
+         * avoid caching a provisional YouTube URL produced by an
+         * antra-disallowed speculative resolve. See
+         * [com.stash.core.media.PlayerRepositoryImpl.buildMediaItemForTrack].
+         */
         const val ORIGIN = "youtube"
 
         /**

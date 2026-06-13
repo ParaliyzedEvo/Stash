@@ -81,6 +81,7 @@ class SearchDownloadCoordinatorEmbedStampTest {
         context = context,
         losslessPrefs = losslessPrefs,
         downloadQueueDao = downloadQueueDao,
+        localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
     )

@@ -76,6 +76,22 @@ interface StashMixRecipeDao {
     @Query("DELETE FROM stash_mix_recipes WHERE is_builtin = 1")
     suspend fun deleteAllBuiltins(): Int
 
+    /** Deletes a USER recipe (never a builtin). Caller deletes the materialized
+     *  playlist separately (FK is SET_NULL, not CASCADE). */
+    @Query("DELETE FROM stash_mix_recipes WHERE id = :id AND is_builtin = 0")
+    suspend fun deleteCustom(id: Long)
+
+    /** Built-in recipes matching [names] — used to fetch their playlist ids
+     *  before retiring them (e.g. removing "Deep Cuts"/"First Listen"). */
+    @Query("SELECT * FROM stash_mix_recipes WHERE is_builtin = 1 AND name IN (:names)")
+    suspend fun getBuiltinsByName(names: List<String>): List<StashMixRecipeEntity>
+
+    /** Deletes named built-in recipes (CASCADE removes their discovery_queue
+     *  rows). Caller deletes the materialized playlists separately. Custom
+     *  recipes with the same name are never touched. */
+    @Query("DELETE FROM stash_mix_recipes WHERE is_builtin = 1 AND name IN (:names)")
+    suspend fun deleteBuiltinsByName(names: List<String>): Int
+
     /**
      * v0.9.26 — flip `is_active` on every built-in mix recipe in one
      * shot. Used by the Stash-Mixes opt-out toggle: setting `active = 0`
@@ -92,9 +108,10 @@ interface StashMixRecipeDao {
      * (e.g. bumping discovery_ratio) and want existing installs to pick
      * it up without wiping the user's accumulated discovery state.
      *
-     * v0.9.20: extended from 4 to 6 fields. The recipe-pivot migration
-     * needs to change affinityBias + seedStrategy alongside the original
-     * three knobs in a single atomic UPDATE.
+     * v0.9.20: extended from 4 to 6 fields (added affinityBias + seedStrategy).
+     * v0.9.40: extended to 8 fields (added moodKeysCsv + tagSampleDepth) for the
+     * tag-seeded engine retune, so a single atomic UPDATE can re-point a builtin
+     * onto TAG_GRAPH with a deep-cut depth.
      */
     @Query(
         """
@@ -103,7 +120,9 @@ interface StashMixRecipeDao {
             freshness_window_days = :freshnessWindowDays,
             target_length = :targetLength,
             affinity_bias = :affinityBias,
-            seed_strategy = :seedStrategy
+            seed_strategy = :seedStrategy,
+            mood_keys_csv = :moodKeysCsv,
+            tag_sample_depth = :tagSampleDepth
         WHERE is_builtin = 1 AND name = :name
         """
     )
@@ -114,5 +133,7 @@ interface StashMixRecipeDao {
         targetLength: Int,
         affinityBias: Float,
         seedStrategy: String,
+        moodKeysCsv: String,
+        tagSampleDepth: Int,
     ): Int
 }

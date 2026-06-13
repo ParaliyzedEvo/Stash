@@ -1,0 +1,11 @@
+name = "stash-lastfm-proxy"
+main = "src/index.js"
+compatibility_date = "2026-05-01"
+
+# Secret: LASTFM_API_KEY
+# The server-side Last.fm API key this proxy uses for ALL generic read
+# lookups. Set via `wrangler secret put LASTFM_API_KEY` (do NOT commit it).
+# Use a DEDICATED key for the proxy — not a key also shipped in the app —
+# so the two traffic sources are isolated. See ../README.md.
+#
+# No KV binding needed: caching uses the edge Cache API (caches.default).

@@ -80,8 +80,11 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.material3.AlertDialog
+import com.stash.core.data.social.Destination
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.AudioQualityPicker
+import com.stash.feature.settings.components.LikeMirrorSection
+import com.stash.feature.settings.components.LikeMirrorWarningDialog
 import com.stash.feature.settings.components.SpotifyCookieDialog
 import com.stash.feature.settings.components.YouTubeCookieDialog
 import com.stash.feature.settings.components.YouTubeHistorySyncSection
@@ -114,6 +117,8 @@ fun SettingsScreen(
     onNavigateToSync: () -> Unit = {},
     onNavigateToAccount: () -> Unit = {},
     onWebLoginChanged: (Boolean) -> Unit = {},
+    onNavigateToAntraConnect: () -> Unit = {},
+    onNavigateToDiagnosticsPreview: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -269,6 +274,9 @@ fun SettingsScreen(
         onHeartDefaultStashChanged = viewModel::onHeartDefaultStashChanged,
         onHeartDefaultSpotifyChanged = viewModel::onHeartDefaultSpotifyChanged,
         onHeartDefaultYtMusicChanged = viewModel::onHeartDefaultYtMusicChanged,
+        onMirrorToggleRequested = viewModel::onMirrorToggleRequested,
+        onMirrorWarningConfirmed = viewModel::onMirrorWarningConfirmed,
+        onMirrorWarningDismissed = viewModel::onMirrorWarningDismissed,
         onExportDatabase = viewModel::onExportDatabase,
         onImportDatabase = viewModel::onImportDatabase,
         onConfirmImportDatabase = {
@@ -284,6 +292,8 @@ fun SettingsScreen(
         onNavigateToSquidWtfCaptcha = onNavigateToSquidWtfCaptcha,
         onNavigateToSync = onNavigateToSync,
         onNavigateToAccount = onNavigateToAccount,
+        onNavigateToAntraConnect = onNavigateToAntraConnect,
+        onNavigateToDiagnosticsPreview = onNavigateToDiagnosticsPreview,
         onShareLatestCrashReport = viewModel::latestCrashShareTarget,
         onDiagnosticsRefresh = viewModel::refreshDiagnostics,
         streamingEnabled = viewModel.streamingEnabled.collectAsStateWithLifecycle().value,
@@ -292,6 +302,10 @@ fun SettingsScreen(
         onStreamOnCellularToggle = viewModel::onStreamOnCellularToggle,
         showBlurLayerInAmoled = viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle().value,
         onShowBlurLayerInAmoledChanged = viewModel::onShowBlurLayerInAmoledChanged,
+        forceYouTubeFallback = viewModel.forceYouTubeFallback.collectAsStateWithLifecycle().value,
+        onToggleForceYouTubeFallback = viewModel::setForceYouTubeFallback,
+        forceAntraOnly = viewModel.forceAntraOnly.collectAsStateWithLifecycle().value,
+        onToggleForceAntraOnly = viewModel::setForceAntraOnly,
         treePicker = treePicker,
         onSetPickerIntent = { pendingPickerIntent = it },
         modifier = modifier,
@@ -395,6 +409,9 @@ private fun SettingsContent(
     onHeartDefaultStashChanged: (Boolean) -> Unit,
     onHeartDefaultSpotifyChanged: (Boolean) -> Unit,
     onHeartDefaultYtMusicChanged: (Boolean) -> Unit,
+    onMirrorToggleRequested: (Destination, Boolean) -> Unit,
+    onMirrorWarningConfirmed: () -> Unit,
+    onMirrorWarningDismissed: () -> Unit,
     onExportDatabase: (Uri) -> Unit,
     onImportDatabase: (Uri) -> Unit,
     onConfirmImportDatabase: () -> Unit,
@@ -405,6 +422,8 @@ private fun SettingsContent(
     onNavigateToSquidWtfCaptcha: () -> Unit,
     onNavigateToSync: () -> Unit,
     onNavigateToAccount: () -> Unit,
+    onNavigateToAntraConnect: () -> Unit,
+    onNavigateToDiagnosticsPreview: () -> Unit,
     /**
      * Returns the latest crash file + its FileProvider URI, or null if
      * none exists. Called only when the user taps the share button —
@@ -431,6 +450,14 @@ private fun SettingsContent(
     showBlurLayerInAmoled: Boolean,
     /** Routed to [SettingsViewModel.onShowBlurLayerInAmoledChanged] in the host. */
     onShowBlurLayerInAmoledChanged: (Boolean) -> Unit,
+    /** Live "force YouTube fallback" test pref — see [SettingsViewModel.forceYouTubeFallback]. */
+    forceYouTubeFallback: Boolean,
+    /** Routed to [SettingsViewModel.setForceYouTubeFallback] in the host. */
+    onToggleForceYouTubeFallback: (Boolean) -> Unit,
+    /** Live "force antra only" test pref — see [SettingsViewModel.forceAntraOnly]. */
+    forceAntraOnly: Boolean,
+    /** Routed to [SettingsViewModel.setForceAntraOnly] in the host. */
+    onToggleForceAntraOnly: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -467,6 +494,48 @@ private fun SettingsContent(
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
+        if (uiState.showImportConfirmation) {
+            AlertDialog(
+                onDismissRequest = onCancelImportDatabase,
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                title = {
+                    Text(
+                        text = "Overwrite Library & Settings?",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This will completely replace your existing library metadata, playlists, settings, and account connections. This action cannot be undone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = onConfirmImportDatabase,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Text("Overwrite")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancelImportDatabase) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+
+        uiState.pendingMirrorWarning?.let { dest ->
+            LikeMirrorWarningDialog(
+                serviceName = if (dest == Destination.SPOTIFY) "Spotify" else "YouTube Music",
+                onConfirm = onMirrorWarningConfirmed,
+                onDismiss = onMirrorWarningDismissed,
+            )
+        }
         if (activeSubScreen == SettingsSubScreen.MAIN) {
             // -- Header --
             Text(
@@ -1138,6 +1207,64 @@ private fun SettingsContent(
                             }
                         }
                     }
+
+                    // Streaming-source override. Relocated here from Diagnostics
+                    // so users can self-rescue when the lossless sources (Qobuz
+                    // via Squid/Kennyy) are down — routes ALL streaming through
+                    // YouTube. Backed by StreamingPreference.forceYouTubeFallback.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Stream via YouTube",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "Skip the lossless sources (Qobuz) and stream everything via YouTube. Turn this on if lossless playback is down or only playing short clips.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = forceYouTubeFallback,
+                            onCheckedChange = onToggleForceYouTubeFallback,
+                        )
+                    }
+
+                    // Test-only outage drill for the antra fallback: routes
+                    // streaming AND downloads through antra alone (no Qobuz
+                    // proxies, no YouTube), so the antra path can be verified
+                    // end-to-end. Backed by StreamingPreference.forceAntraOnly.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Force antra only (test)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "Route streaming and downloads through antra alone — no Qobuz proxies, no YouTube. Each antra fetch spends a single from your quota. Turn off after testing.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = forceAntraOnly,
+                            onCheckedChange = onToggleForceAntraOnly,
+                        )
+                    }
                 }
 
                 SettingsSubScreen.APPEARANCE -> {
@@ -1326,6 +1453,32 @@ private fun SettingsContent(
                                 ),
                             ) {
                                 Text("Check for updates")
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    GlassCard {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Share diagnostics",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Bundle recent logs, sync history, and connection status (no passwords) so a dev can debug your issue.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = onNavigateToDiagnosticsPreview,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                            ) {
+                                Text("Share diagnostics")
                             }
                         }
                     }

@@ -13,6 +13,8 @@ import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.shared.TrackFinalizer
+import com.stash.core.data.audio.AudioDurationExtractor
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.LosslessUrlDownloader
@@ -58,6 +60,25 @@ sealed class TrackDownloadResult {
     data object Deferred : TrackDownloadResult()
 }
 
+/** Absolute ceiling (ms) under which a finished file is "sample-length". */
+internal const val LOSSLESS_SAMPLE_MAX_MS = 35_000L
+
+/** A degraded file must also be below this fraction of the expected duration. */
+internal const val LOSSLESS_SAMPLE_FRACTION = 0.5
+
+/**
+ * True when a finished lossless download is a preview stub: a readable
+ * duration that is both absolutely short (≤ [LOSSLESS_SAMPLE_MAX_MS]) AND far
+ * below the track's known duration (< [LOSSLESS_SAMPLE_FRACTION] of expected).
+ * Requires a known expected duration (> 0) and a readable probe; otherwise
+ * returns false — never reject on missing data (that's the yt-dlp path's job).
+ */
+internal fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Boolean {
+    if (probedMs == null || probedMs <= 0L) return false
+    if (expectedMs <= 0L) return false
+    return probedMs <= LOSSLESS_SAMPLE_MAX_MS && probedMs < expectedMs * LOSSLESS_SAMPLE_FRACTION
+}
+
 /**
  * Orchestrates the full download pipeline for a single track:
  *
@@ -98,6 +119,19 @@ class DownloadManager @Inject constructor(
      * `:data:download` stays free of a cyclic `:data:lyrics` dependency.
      */
     private val lyricsFetchTrigger: LyricsFetchTrigger,
+    /**
+     * Degradation-detection (2026-06-05): probes a finished lossless file's
+     * duration to catch a preview-stub whose URL lacked the `range=` marker,
+     * and the per-source cooldown gate the duration backstop records into.
+     */
+    private val audioDurationExtractor: AudioDurationExtractor,
+    private val losslessHealthGate: LosslessSourceHealthGate,
+    /**
+     * Test-only "Force antra only" outage drill. When on, antra is the sole
+     * source and NOTHING may reach yt-dlp — the stash-mix / preResolvedUrl
+     * fall-through carve-outs are suppressed so exempt tracks defer too.
+     */
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) {
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
@@ -110,6 +144,14 @@ class DownloadManager @Inject constructor(
 
     companion object {
         private const val TAG = "DownloadManager"
+
+        /**
+         * Max lossless resolve→download→probe attempts per track. Each
+         * duration-backstop rejection cools a source down and re-resolves;
+         * the cap bounds that retry to the small set of lossless sources
+         * (kennyy, squid, + headroom) so it can't spin.
+         */
+        internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
     }
 
     /**
@@ -161,25 +203,42 @@ class DownloadManager @Inject constructor(
         // On success we short-circuit the YouTube pipeline. On null /
         // failure we fall through to the YouTube path (or defer when
         // fallback is off, per v0.9.17 strict-FLAC).
+        val forceAntraOnly = streamingPreference.isForceAntraOnly()
         val forceLossless = isStashMixTrack(track.id)
-        if (forceLossless || losslessPrefs.enabledNow()) {
+        if (forceLossless || losslessPrefs.enabledNow() || forceAntraOnly) {
             val losslessResult = tryLosslessDownload(track, forced = forceLossless)
             if (losslessResult != null) return losslessResult
+            // Outage drill (force-antra-only): antra is the only source and
+            // NOTHING may reach yt-dlp — even the stash-mix / preResolvedUrl
+            // carve-outs below defer, so the test population stays pure antra.
+            if (forceAntraOnly) {
+                Log.i(TAG, "deferring '${track.artist} - ${track.title}': force-antra-only, antra missed")
+                return TrackDownloadResult.Deferred
+            }
             // v0.9.17 strict-FLAC: when lossless returned null AND
             // fallback is off, defer instead of falling through to
             // yt-dlp. Two exemptions:
             //  - Stash-mix tracks (forceLossless=true) — small curated
             //    rotating playlist would silently empty if stuck in
             //    deferral, so they keep legacy fall-through semantics.
-            //  - Tracks with a preResolvedUrl already set (YT-Music
-            //    direct sync, lossless-upgrade callers, etc.) — the
-            //    caller already opted into YouTube as the source; the
-            //    fallback toggle was designed for Spotify tracks with
-            //    no source-of-truth audio, not for "I synced a YT
-            //    playlist." Without this carve-out, an entire YT-Music
-            //    playlist defers en-masse the first time lossless can't
-            //    match (2026-05-12).
-            if (preResolvedUrl == null && !forceLossless &&
+            //  - GENUINELY YouTube-sourced tracks with a preResolvedUrl
+            //    (YT-Music direct sync) — YouTube is their source of
+            //    truth, so a lossless miss has no lossless original to
+            //    wait for; falling through is correct. Without this an
+            //    entire YT-Music playlist would defer en-masse the first
+            //    time lossless can't match (2026-05-12).
+            //
+            // The carve-out is gated on track.source == YOUTUBE, NOT on
+            // preResolvedUrl alone. A SPOTIFY/BOTH track acquires a
+            // youtube_id from match-for-playback, which the queue turns
+            // into a youtubeUrl/preResolvedUrl — that is a MATCH, not a
+            // user opt-in to YouTube. Keying the carve-out on the URL
+            // leaked lossy downloads for every matched Spotify track when
+            // fallback was off (observed 2026-06: 671 Spotify tracks came
+            // down as lossy mp4 on-device). Such tracks must defer.
+            val youtubeOptIn = preResolvedUrl != null &&
+                track.source == com.stash.core.model.MusicSource.YOUTUBE
+            if (!youtubeOptIn && !forceLossless &&
                 !losslessPrefs.youtubeFallbackEnabledNow()
             ) {
                 Log.i(
@@ -342,8 +401,15 @@ class DownloadManager @Inject constructor(
             album = track.album.takeIf { it.isNotBlank() },
             isrc = track.isrc,
             durationMs = track.durationMs.takeIf { it > 0 },
+            spotifyUri = track.spotifyUri,
+            trackId = track.id,
         )
 
+        // Bounded failover loop: the duration backstop can reject a degraded
+        // source's preview-stub and record it degraded, after which the
+        // registry skips it — so we re-resolve to reach the next lossless
+        // source. Capped so a pathologically-degrading set can't spin.
+        repeat(MAX_LOSSLESS_FAILOVER_ATTEMPTS) {
         val match: SourceResult = runCatching { losslessRegistry.resolve(query) }
             .onFailure { e ->
                 Log.w(TAG, "lossless registry threw for '${track.artist} - ${track.title}'", e)
@@ -377,6 +443,25 @@ class DownloadManager @Inject constructor(
             Log.w(TAG, "lossless fetch failed for '${track.artist} - ${track.title}': ${e.message}")
             runCatching { tempFile.delete() }
             return null
+        }
+
+        // Duration backstop (degradation detection): a degraded source can
+        // serve a 30s preview whose URL lacked the `range=` marker the
+        // inspector keys on. Probe the fetched file; if it's a sample-length
+        // stub far short of the known duration, reject it, cool the source
+        // down, and re-resolve so the registry fails over to the next source.
+        val probedMs = runCatching { audioDurationExtractor.extractMs(fetched.absolutePath) }
+            .getOrNull()
+        if (isLosslessDurationDegraded(probedMs, track.durationMs)) {
+            Log.w(
+                TAG,
+                "duration backstop: ${match.sourceId} returned ${probedMs}ms vs expected " +
+                    "${track.durationMs}ms for '${track.artist} - ${track.title}' — " +
+                    "rejecting + failing over",
+            )
+            losslessHealthGate.recordDegraded(match.sourceId)
+            runCatching { fetched.delete() }
+            return@repeat
         }
 
         emitProgress(track.id, 0.85f, DownloadStatus.PROCESSING)
@@ -457,6 +542,14 @@ class DownloadManager @Inject constructor(
                 return null  // fall through to yt-dlp — same semantics as before
             }
         }
+        }
+        // Every failover attempt this call rejected its source on the
+        // duration backstop → yt-dlp fallthrough (same null semantics).
+        Log.w(
+            TAG,
+            "lossless: exhausted failover attempts for '${track.artist} - ${track.title}'",
+        )
+        return null
     }
 
     /**
@@ -584,10 +677,12 @@ class DownloadManager @Inject constructor(
      * Runs all verification gates on a match candidate.
      *
      * Four-level verification:
-     * 1. **Title similarity** >= 0.6 (prevents wrong song by same artist)
+     * 1. **Title similarity** >= 0.6, OR the candidate contains the target title
+     *    as a contiguous token run (rescues decorated / CJK / dual-script titles)
      * 2. **Short title containment** — for titles <= 5 chars, candidate must
      *    contain the target as a word (Jaro-Winkler inflates scores for short strings)
-     * 3. **Artist similarity** >= 0.65 + word overlap (prevents wrong artist)
+     * 3. **Artist similarity** >= 0.65 + word overlap, OR a per-part match
+     *    (rescues bilingual slash-joined uploaders); prevents wrong artist
      * 4. **Video ID verification** — InnerTube player endpoint confirms the actual
      *    video title matches (catches InnerTube metadata/ID mismatches)
      *
@@ -620,9 +715,14 @@ class DownloadManager @Inject constructor(
             return null
         }
 
-        // Gate 1: Title similarity
+        // Gate 1: Title similarity — with a containment escape for decorated
+        // candidate titles (artist prefix, "(Official Lyric Video)", 【…】,
+        // "OST - 172", CJK + romanised dual titles) whose Jaro-Winkler is
+        // dragged below 0.6 even though the candidate clearly contains the
+        // target title. Duration (Gate 0), short-title word (Gate 2) and
+        // artist (Gate 3) gates still guard against wrong-song acceptance.
         val titleSim = matchScorer.titleSimilarity(track.title, best.title)
-        if (titleSim < 0.6f) {
+        if (titleSim < 0.6f && !matchScorer.titleContainsTarget(track.title, best.title)) {
             Log.w(TAG, "resolveUrl: rejecting '${best.title}' — title sim ${String.format("%.2f", titleSim)} too low for '${track.title}'")
             return null
         }
@@ -640,13 +740,25 @@ class DownloadManager @Inject constructor(
             }
         }
 
-        // Gate 3: Artist similarity + word overlap
+        // Gate 3: Artist similarity + word overlap, with three escapes for the
+        // CJK / official-upload cases the whitespace-token metric can't see:
+        //  - per-part match for bilingual slash-joined uploaders
+        //    ("かいりきベア／Kairiki bear" whose romanised half == a target part),
+        //  - artist named in the title ("美波「…」MV" / "OMORI OST - …" on a
+        //    romanised or studio channel), and
+        //  - " - Topic" channels (YouTube's auto-generated official audio,
+        //    already trusted by the scorer's topic bonus).
+        // Any escape short-circuits BOTH the fuzzy-sim and word-overlap sub-gates.
         val artistSim = matchScorer.artistSimilarity(track.artist, best.uploader)
-        if (artistSim < 0.65f) {
+        val isTopicChannel = best.uploader.trim().endsWith(" - Topic")
+        val artistMatchOk = isTopicChannel ||
+            matchScorer.artistPartMatches(track.artist, best.uploader) ||
+            matchScorer.artistAppearsInTitle(track.artist, best.title)
+        if (artistSim < 0.65f && !artistMatchOk) {
             Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — fuzzy artist sim ${String.format("%.2f", artistSim)} too low for '${track.artist}'")
             return null
         }
-        if (!artistWordsMatch(track.artist, best.uploader)) {
+        if (!artistMatchOk && !artistWordsMatch(track.artist, best.uploader)) {
             Log.w(TAG, "resolveUrl: rejecting '${best.title}' by '${best.uploader}' — artist words don't match '${track.artist}'")
             return null
         }
@@ -659,7 +771,7 @@ class DownloadManager @Inject constructor(
         val verification = searchExecutor.verifyVideo(best.videoId)
         if (verification != null) {
             val actualTitleSim = matchScorer.titleSimilarity(track.title, verification.title)
-            if (actualTitleSim < 0.6f) {
+            if (actualTitleSim < 0.6f && !matchScorer.titleContainsTarget(track.title, verification.title)) {
                 Log.w(TAG, "resolveUrl: VIDEO ID MISMATCH for '${track.title}' — " +
                     "search said '${best.title}' but player says '${verification.title}' (sim=${String.format("%.2f", actualTitleSim)})")
                 return null

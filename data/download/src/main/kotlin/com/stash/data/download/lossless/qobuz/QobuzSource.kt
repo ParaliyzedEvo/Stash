@@ -4,10 +4,13 @@ import android.util.Log
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSource
+import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.LosslessUrlInspector
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.searchTerms
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,6 +44,8 @@ class QobuzSource @Inject constructor(
     private val rateLimiter: AggregatorRateLimiter,
     private val captchaExpiredNotifier: CaptchaExpiredNotifier,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val urlInspector: LosslessUrlInspector,
+    private val healthGate: LosslessSourceHealthGate,
 ) : LosslessSource {
 
     override val id: String = SOURCE_ID
@@ -124,38 +129,40 @@ class QobuzSource @Inject constructor(
         Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
         // 1. Search squid.wtf for candidates. ISRC is Qobuz's best
         // index key — when we have one, send it as the query directly.
-        val searchTerm = query.isrc ?: "${query.artist} ${query.title}"
-        val searchData = callLimited(bypassRateLimit) { apiClient.search(searchTerm) }
-            ?: return null
+        // Try the full artist credit first (so single artists whose NAME
+        // contains a comma — "Tyler, The Creator", "Earth, Wind & Fire" —
+        // still match), then fall back to the PRIMARY artist (before the
+        // first comma). The fallback rescues multi-artist credits like
+        // "¥$, Kanye West, Ty Dolla $ign": sending the full credit verbatim
+        // makes the proxy return the featured artists' popular tracks instead
+        // of the actual song, so every candidate scores 0 → "failed". ISRC,
+        // when present, is used alone (precise key). See TrackQuery.searchTerms.
+        var found: Pair<QobuzTrack, Float>? = null
+        for (term in query.searchTerms()) {
+            val searchData = callLimited(bypassRateLimit) { apiClient.search(term) } ?: continue
+            val candidates = searchData.tracks?.items.orEmpty()
+            if (candidates.isEmpty()) continue
 
-        val candidates = searchData.tracks?.items.orEmpty()
-        if (candidates.isEmpty()) {
-            Log.d(TAG, "no_match artist='${query.artist}' title='${query.title}' (search returned empty)")
-            return null
-        }
-
-        // 2. Score and pick the best candidate that crosses the
-        // confidence threshold.
-        val scored = candidates.map { it to confidence(query, it) }
-        val best = scored
-            .filter { it.second >= MIN_CONFIDENCE }
-            .maxByOrNull { it.second }
-
-        if (best == null) {
-            // Log the top 3 rejected candidates with scores — without
-            // this it's impossible to see *why* a search returned
-            // results but no match crossed the threshold (the
-            // common case for multi-artist tracks where Spotify's
-            // expanded artist name doesn't jaccard-match Qobuz's
-            // canonical short form).
+            // Score and pick the best candidate that crosses the threshold.
+            val scored = candidates.map { it to confidence(query, it) }
+            val match = scored.filter { it.second >= MIN_CONFIDENCE }.maxByOrNull { it.second }
+            if (match != null) {
+                found = match
+                break
+            }
+            // Log the top 3 rejected candidates per term — shows *why* a
+            // search returned results but nothing crossed the threshold.
             val top = scored.sortedByDescending { it.second }.take(3)
             Log.d(
                 TAG,
-                "reason=below_confidence no candidate above threshold ($MIN_CONFIDENCE) for '${query.artist} - ${query.title}': " +
+                "below_confidence (<$MIN_CONFIDENCE) term='$term' for '${query.artist} - ${query.title}': " +
                     top.joinToString(", ") { (c, s) ->
                         "[${"%.2f".format(s)} '${c.title}' by '${c.performer?.name}']"
                     },
             )
+        }
+        val best = found ?: run {
+            Log.d(TAG, "no_match artist='${query.artist}' title='${query.title}'")
             return null
         }
 
@@ -172,6 +179,19 @@ class QobuzSource @Inject constructor(
 
         if (download.url.isNullOrEmpty()) {
             Log.d(TAG, "download-music returned empty url for ${best.first.id}")
+            return null
+        }
+        if (urlInspector.isDegraded(download.url, requestedQuality)) {
+            // Proxy returned a preview sample or a lossy downgrade instead of
+            // the requested lossless track. Treat as a miss so the registry
+            // fails over, and cool the source down so we stop wasting a
+            // round-trip per track until it recovers.
+            Log.w(
+                TAG,
+                "degraded url for ${best.first.id} (sample/downgrade) — failing over; " +
+                    "url=${download.url.take(80)}",
+            )
+            healthGate.recordDegraded(id)
             return null
         }
 

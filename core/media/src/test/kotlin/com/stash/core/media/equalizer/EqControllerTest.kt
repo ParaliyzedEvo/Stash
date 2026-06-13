@@ -7,7 +7,6 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -22,13 +21,18 @@ class EqControllerTest {
   private val store = mockk<EqStore>(relaxed = true)
   private val migration = mockk<EqMigration>(relaxed = true)
 
+  // Shared between Dispatchers.Main and runTest so the controller's async
+  // init (init { scope.launch { ... } } on Main) is advanced by the same
+  // scheduler the test drives — otherwise awaitInit() would never complete.
+  private val dispatcher = StandardTestDispatcher()
+
   @OptIn(ExperimentalCoroutinesApi::class)
-  @Before fun setUp() { Dispatchers.setMain(StandardTestDispatcher()) }
+  @Before fun setUp() { Dispatchers.setMain(dispatcher) }
 
   @OptIn(ExperimentalCoroutinesApi::class)
   @After fun tearDown() { Dispatchers.resetMain() }
 
-  @Test fun `init reads persisted state synchronously before exposing it`() = runBlocking {
+  @Test fun `init loads persisted state and exposes it after awaitInit`() = runTest(dispatcher) {
     coEvery { store.read() } returns EqState(enabled = true, presetId = "rock")
     val ctrl = EqController(store, migration)
     ctrl.awaitInit()
@@ -36,7 +40,7 @@ class EqControllerTest {
     assertThat(ctrl.state.value.presetId).isEqualTo("rock")
   }
 
-  @Test fun `setEnabled flips the flag and triggers persist`() = runTest {
+  @Test fun `setEnabled flips the flag and triggers persist`() = runTest(dispatcher) {
     coEvery { store.read() } returns EqState()
     val ctrl = EqController(store, migration)
     ctrl.awaitInit()
@@ -46,7 +50,7 @@ class EqControllerTest {
     coVerify { store.write(match { it.enabled == true }) }
   }
 
-  @Test fun `setBandGain clamps to spec range`() = runTest {
+  @Test fun `setBandGain clamps to spec range`() = runTest(dispatcher) {
     coEvery { store.read() } returns EqState()
     val ctrl = EqController(store, migration)
     ctrl.awaitInit()
@@ -56,7 +60,7 @@ class EqControllerTest {
     assertThat(ctrl.state.value.gainsDb[0]).isEqualTo(-12f)
   }
 
-  @Test fun `setPreset updates gains from catalog`() = runTest {
+  @Test fun `setPreset updates gains from catalog`() = runTest(dispatcher) {
     coEvery { store.read() } returns EqState()
     val ctrl = EqController(store, migration)
     ctrl.awaitInit()
@@ -66,7 +70,7 @@ class EqControllerTest {
     assertThat(ctrl.state.value.presetId).isEqualTo("rock")
   }
 
-  @Test fun `flush forces immediate persist regardless of debounce`() = runTest {
+  @Test fun `flush forces immediate persist regardless of debounce`() = runTest(dispatcher) {
     coEvery { store.read() } returns EqState()
     val ctrl = EqController(store, migration)
     ctrl.awaitInit()

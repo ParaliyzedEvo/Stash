@@ -41,6 +41,9 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object SquidWtfCaptchaRoute
 @Serializable data object RecentlyAddedRoute
 @Serializable data object LocalSongsRoute
+@Serializable data object AntraConnectRoute
+@Serializable data object DiagnosticsPreviewRoute
+@Serializable data class MixBuilderRoute(val recipeId: Long? = null)
 
 @Serializable
 data class SearchArtistRoute(

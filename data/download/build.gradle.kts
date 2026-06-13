@@ -39,6 +39,7 @@ dependencies {
     implementation(project(":core:auth"))
     implementation(project(":core:network"))
     implementation(project(":data:ytmusic"))
+    implementation(project(":data:spotify"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)

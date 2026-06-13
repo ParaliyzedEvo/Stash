@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -23,6 +25,15 @@ data class SavedPlaybackState(
     val trackId: Long,
     val positionMs: Long,
     val queueIndex: Int,
+    /**
+     * The full playback queue as an ordered list of track ids, in the
+     * player's window order (the order `getMediaItemAt` returns, which is
+     * the original insertion order regardless of shuffle). Empty when no
+     * queue has been persisted yet — callers fall back to a single-track
+     * resume in that case.
+     */
+    val queueTrackIds: List<Long>,
+    val isShuffled: Boolean,
 )
 
 @Singleton
@@ -33,6 +44,8 @@ class PlaybackStateStore @Inject constructor(
         val TRACK_ID = longPreferencesKey("last_track_id")
         val POSITION_MS = longPreferencesKey("last_position_ms")
         val QUEUE_INDEX = intPreferencesKey("last_queue_index")
+        val QUEUE_IDS = stringPreferencesKey("last_queue_ids")
+        val IS_SHUFFLED = booleanPreferencesKey("last_is_shuffled")
     }
 
     suspend fun savePosition(trackId: Long, positionMs: Long, queueIndex: Int) {
@@ -43,13 +56,32 @@ class PlaybackStateStore @Inject constructor(
         }
     }
 
+    /**
+     * Persists the full queue separately from the (frequently updated)
+     * position. Caller should only invoke this when the queue contents or
+     * shuffle state actually change, not on every position tick, so the
+     * comma-joined id list isn't rewritten 4×/second.
+     */
+    suspend fun saveQueue(trackIds: List<Long>, isShuffled: Boolean) {
+        context.playbackDataStore.edit { prefs ->
+            prefs[Keys.QUEUE_IDS] = trackIds.joinToString(",")
+            prefs[Keys.IS_SHUFFLED] = isShuffled
+        }
+    }
+
     suspend fun getLastPlaybackState(): SavedPlaybackState? {
         val prefs = context.playbackDataStore.data.first()
         val trackId = prefs[Keys.TRACK_ID] ?: return null
+        val queueTrackIds = prefs[Keys.QUEUE_IDS]
+            ?.split(",")
+            ?.mapNotNull { it.toLongOrNull() }
+            ?: emptyList()
         return SavedPlaybackState(
             trackId = trackId,
             positionMs = prefs[Keys.POSITION_MS] ?: 0L,
             queueIndex = prefs[Keys.QUEUE_INDEX] ?: 0,
+            queueTrackIds = queueTrackIds,
+            isShuffled = prefs[Keys.IS_SHUFFLED] ?: false,
         )
     }
 

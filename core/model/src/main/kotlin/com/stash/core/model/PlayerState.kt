@@ -10,13 +10,24 @@ data class PlayerState(
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = 0,
     /**
-     * `true` when the currently-loaded MediaItem's URI scheme is `http`
-     * or `https` — i.e. the active track is being streamed rather than
-     * read from local storage. Computed from the player's
-     * `currentMediaItem.localConfiguration.uri.scheme` on every state
-     * refresh (see `PlayerRepositoryImpl.updateState`).
+     * `true` when the active track is being streamed rather than read from
+     * local storage — drives the Now Playing wifi/streaming indicator.
+     * True when the MediaItem's URI scheme is `http`/`https` (kennyy/squid/
+     * youtube) OR it carries a stream origin (antra, which plays its FLAC
+     * from a local `file://` cache file but is still a stream). Downloaded
+     * tracks play `file://` with no stream origin and read as not-streaming.
+     * Computed in `PlayerRepositoryImpl.computeIsStreaming` on every refresh.
      */
     val isStreaming: Boolean = false,
+    /**
+     * `true` while the active track is loading and not yet playable —
+     * either ExoPlayer is in `STATE_BUFFERING`, or `setQueue` is still
+     * resolving a tapped track's stream URL (the YouTube-fallback yt-dlp
+     * resolve takes ~11 s, during which no MediaItem is set yet so the
+     * player isn't buffering). Drives the play/pause spinner so a slow
+     * resolve doesn't look frozen.
+     */
+    val isBuffering: Boolean = false,
 )
 
 enum class RepeatMode {

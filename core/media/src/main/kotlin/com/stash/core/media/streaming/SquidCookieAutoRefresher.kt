@@ -24,10 +24,11 @@ import kotlinx.coroutines.launch
  * 25-min window leaves a 5-min safety margin against squid.wtf's
  * 30-min sliding cookie expiry.
  *
- * Failure ladder:
- *  - Single solve failure -> retry in 60s
- *  - Two consecutive failures -> stop refresh loop, rely on existing
- *    CaptchaExpiredNotifier to nag the user
+ * Failure handling: on each solve failure the refresh loop backs off
+ * exponentially (60s, 120s, 240s, ...) capped at 5min, and keeps
+ * retrying for the rest of the session. It never permanently halts;
+ * the loop exits only when Kennyy recovers (health flips healthy) or
+ * when [stop] cancels the job.
  *
  * Placement note: lives in :core:media (not :data:download) because
  * it depends on KennyyHealthMonitor (own module) AND
@@ -65,7 +66,6 @@ class SquidCookieAutoRefresher(
     )
 
     private var job: Job? = null
-    private var consecutiveFailures: Int = 0
 
     fun start() {
         if (job?.isActive == true) return
@@ -100,29 +100,37 @@ class SquidCookieAutoRefresher(
     }
 
     private suspend fun refresh() {
-        Log.d(TAG, "refresh attempt")
-        val newCookie = solver.solve()
-        if (newCookie != null) {
-            prefs.setCaptchaCookieValue(newCookie)
-            qobuzSource.clearLastKnownBad()
-            consecutiveFailures = 0
-            Log.d(TAG, "refresh success")
-        } else {
-            consecutiveFailures += 1
-            Log.w(TAG, "refresh failure ($consecutiveFailures consecutive)")
-            if (consecutiveFailures >= MAX_FAILURES) {
-                Log.w(TAG, "max failures reached, halting auto-refresh")
-                stop()
-            } else {
-                delay(FAILURE_RETRY_DELAY_MS)
+        // Keep attempting while Kennyy is unhealthy; back off on failure; never
+        // permanently halt for the session. Returns on success or when Kennyy
+        // recovers (health flips healthy). Cancelled cleanly by stop().
+        var consecutive = 0
+        while (!healthMonitor.isHealthy.value) {
+            Log.d(TAG, "refresh attempt")
+            val newCookie = solver.solve()
+            if (newCookie != null) {
+                prefs.setCaptchaCookieValue(newCookie)
+                qobuzSource.clearLastKnownBad()
+                Log.d(TAG, "refresh success")
+                return
             }
+            consecutive += 1
+            // Short-circuit past the cap point so the shift can never overflow.
+            // BASE_RETRY_MS doubling hits/exceeds MAX_RETRY_MS at consecutive=4
+            // (480s -> capped 300s), so from consecutive>=5 use the cap directly.
+            val backoff = if (consecutive >= 5) {
+                MAX_RETRY_MS
+            } else {
+                minOf(BASE_RETRY_MS shl (consecutive - 1), MAX_RETRY_MS)
+            }
+            Log.w(TAG, "refresh failure ($consecutive) - retrying in ${backoff}ms")
+            delay(backoff)
         }
     }
 
     private companion object {
         const val TAG = "SquidAutoRefresher"
         const val COOKIE_REFRESH_AGE_MS = 25 * 60_000L
-        const val FAILURE_RETRY_DELAY_MS = 60_000L
-        const val MAX_FAILURES = 2
+        const val BASE_RETRY_MS = 60_000L   // 60s, doubles each failure
+        const val MAX_RETRY_MS = 300_000L   // cap at 5min
     }
 }

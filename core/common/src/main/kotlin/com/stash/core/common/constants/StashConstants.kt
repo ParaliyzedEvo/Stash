@@ -12,6 +12,19 @@ object StashConstants {
     const val LOW_DISK_THRESHOLD_BYTES = 100L * 1024 * 1024
 
     /**
+     * Minimum size, in bytes, for a local file to count as a real, playable
+     * download. A failed download can leave tiny garbage behind (observed:
+     * ~274-byte yt-dlp error bodies written to a `.webm` and marked complete).
+     * Anything below this floor is treated as NOT a valid download:
+     *  - the download pipeline refuses to mark it `isDownloaded` (and deletes it),
+     *  - the playback layer streams the track instead of playing junk,
+     *  - the startup repair sweep un-marks + deletes existing junk rows.
+     * 16 KiB is orders of magnitude below the smallest real music file, so it
+     * never rejects a legitimate download.
+     */
+    const val MIN_PLAYABLE_LOCAL_BYTES = 16L * 1024L
+
+    /**
      * Online-Streaming Engine master kill-switch — feature-module-visible
      * mirror of `com.stash.app.BuildConfig.STREAMING_ENGINE_ENABLED`.
      *

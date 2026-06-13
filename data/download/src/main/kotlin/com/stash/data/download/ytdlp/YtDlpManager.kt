@@ -6,9 +6,7 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -33,7 +31,30 @@ class YtDlpManager @Inject constructor(
     private var initialized = false
     private val warmMutex = Mutex()
     private var warmed = false
-    private val backgroundScope = CoroutineScope(Dispatchers.IO)
+    private val freshenMutex = Mutex()
+    @Volatile private var freshened = false
+
+    /**
+     * The "freshen" operation: pull the latest yt-dlp from the configured
+     * update channel. Overridable so the [runFreshenOnce] coalescing logic
+     * can be unit-tested without touching the youtubedl-android singleton.
+     */
+    internal var freshenOp: suspend () -> Unit = { doNightlyUpdate() }
+
+    /**
+     * Runs [freshenOp] at most once for the lifetime of this process,
+     * coalescing concurrent callers behind [freshenMutex]. Subsequent
+     * callers (and the first download after the op has run) return
+     * immediately.
+     */
+    internal suspend fun runFreshenOnce() {
+        if (freshened) return
+        freshenMutex.withLock {
+            if (freshened) return
+            freshenOp()
+            freshened = true
+        }
+    }
 
     /** Path to the extracted QuickJS binary, set during [initialize]. */
     var quickJsPath: String? = null
@@ -44,20 +65,28 @@ class YtDlpManager @Inject constructor(
         private const val QJS_LIB_NAME = "libqjs.so"
 
         /**
-         * Canonical short test clip maintained by youtube-dl's upstream
-         * maintainers. Stable URL, ~10s long, unlikely to be removed. We
-         * do a throwaway URL extraction against it at app start so the
-         * first real user preview doesn't pay the cold-start cost
-         * (player-JS fetch + parse + QuickJS bootstrap ~14 s on-device).
+         * Evergreen clip for the throwaway warmup extraction at app start, so
+         * the first real user preview doesn't pay the cold-start cost
+         * (player-JS fetch + parse + QuickJS bootstrap ~14 s on-device) and so
+         * a failed warmup is a genuine signal that challenge-solving is broken.
+         *
+         * "Me at the zoo" — the first-ever YouTube upload (id `jNQXAC9IVRw`).
+         * Public, never age/geo-gated, and effectively guaranteed to outlive
+         * the app. The previous canary (`BaW_jenozKc`, youtube-dl's old test
+         * clip) went "Video unavailable" in 2026, which silently masked the
+         * warmup's ability to detect signature/n-challenge regressions.
          */
         private const val WARMUP_VIDEO_URL =
-            "https://www.youtube.com/watch?v=BaW_jenozKc"
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     }
 
     /**
-     * Initializes the yt-dlp native binary, locates QuickJS, and attempts
-     * a self-update. Safe to call multiple times; only the first invocation
-     * performs real work.
+     * Initializes the yt-dlp native binary and locates QuickJS. Safe to call
+     * multiple times; only the first invocation performs real work.
+     *
+     * Does NOT update yt-dlp — freshening is gated through [ensureFreshened]
+     * so the first download in a session is guaranteed to run the latest
+     * nightly extractor + EJS solver rather than the lib-bundled snapshot.
      */
     suspend fun initialize() {
         if (initialized) return
@@ -73,23 +102,27 @@ class YtDlpManager @Inject constructor(
                 // on app_data_file — only native libs have the apk_data_file context
                 // that allows process execution.
                 locateQuickJs()
-
-                // Schedule non-blocking background update check so initialization
-                // is not held up by network latency.
-                backgroundScope.launch {
-                    try {
-                        val status = YoutubeDL.getInstance().updateYoutubeDL(
-                            context,
-                            YoutubeDL.UpdateChannel._STABLE,
-                        )
-                        Log.i(TAG, "yt-dlp background update: $status")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "yt-dlp background update failed: ${e.message}")
-                    }
-                }
             }
             initialized = true
         }
+    }
+
+    /**
+     * Idempotent session gate for the download path: ensures yt-dlp is
+     * initialized, freshened to the latest nightly ([runFreshenOnce], at most
+     * once per process), and the runtime/EJS solver are warmed. The update is
+     * AWAITED so the first download doesn't run on the stale lib-bundled
+     * binary — that race is what made "sync finds tracks, then every download
+     * fails" survive even with a self-update in place.
+     *
+     * Best-effort: a failed update/warmup leaves the existing binary in place
+     * and the gate still opens (we can't do better than the bundled binary,
+     * and refusing to download would be strictly worse).
+     */
+    suspend fun ensureFreshened() {
+        initialize()
+        runFreshenOnce()
+        warmUp()
     }
 
     /**
@@ -154,7 +187,31 @@ class YtDlpManager @Inject constructor(
     }
 
     /**
-     * Attempts to update the yt-dlp binary to the latest stable release.
+     * Pulls the latest yt-dlp from the NIGHTLY channel. YouTube's player /
+     * n-challenge changes land in yt-dlp nightly (and its bundled EJS solver)
+     * well before they reach the ~monthly stable release, so following
+     * nightly is what keeps downloads working as YouTube tightens signing.
+     * Best-effort: a failed update leaves the previously-installed binary in
+     * place. Re-throws cancellation so WorkManager teardown isn't masked.
+     */
+    private suspend fun doNightlyUpdate() {
+        withContext(Dispatchers.IO) {
+            try {
+                val status = YoutubeDL.getInstance().updateYoutubeDL(
+                    context,
+                    YoutubeDL.UpdateChannel._NIGHTLY,
+                )
+                Log.i(TAG, "yt-dlp freshen (nightly): $status, version now ${getVersion()}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "yt-dlp freshen (nightly) failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Attempts to update the yt-dlp binary to the latest nightly release.
      *
      * @return an [UpdateResult] describing the outcome.
      */
@@ -163,7 +220,7 @@ class YtDlpManager @Inject constructor(
             try {
                 val status = YoutubeDL.getInstance().updateYoutubeDL(
                     context,
-                    YoutubeDL.UpdateChannel._STABLE,
+                    YoutubeDL.UpdateChannel._NIGHTLY,
                 )
                 when (status) {
                     YoutubeDL.UpdateStatus.DONE -> UpdateResult.Updated

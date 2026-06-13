@@ -6,8 +6,21 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Discards everything written to it. A desugaring-safe stand-in for
+ * [OutputStream.nullOutputStream] (added in Java 11 / Android API 33), which
+ * throws [NoSuchMethodError] on this app's minSdk-26 range — every device
+ * below Android 13 crashed the ffmpeg/loudness path with it. Overriding the
+ * bulk `write` keeps `InputStream.copyTo` (which writes whole buffers) cheap.
+ */
+internal object NullOutputStream : OutputStream() {
+    override fun write(b: Int) = Unit
+    override fun write(b: ByteArray, off: Int, len: Int) = Unit
+}
 
 /**
  * Thin adapter around the ffmpeg binary shipped by
@@ -95,7 +108,7 @@ class FFmpegBridgeImpl @Inject constructor(
             // Summary lives on stderr.
             val stdoutDrainer = Thread {
                 try {
-                    process.inputStream.use { it.copyTo(java.io.OutputStream.nullOutputStream()) }
+                    process.inputStream.use { it.copyTo(NullOutputStream) }
                 } catch (_: Exception) {
                     // Stream closed while draining — fine.
                 }

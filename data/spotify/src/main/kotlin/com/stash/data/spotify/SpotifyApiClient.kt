@@ -14,6 +14,8 @@ import com.stash.data.spotify.model.SpotifyTrackItem
 import com.stash.data.spotify.model.SpotifyTrackObject
 import com.stash.data.spotify.model.SpotifyTracksRef
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -115,6 +117,14 @@ class SpotifyApiClient @Inject constructor(
     private var clientCredentialsExpiry: Long = 0
 
     /**
+     * Serializes refreshes of [clientCredentialsToken]. Concurrent callers
+     * (e.g. parallel [searchTracks] calls) would otherwise each fire a token
+     * request when the cache expires; the mutex + in-lock double-check makes
+     * exactly one refresh win and everyone else reuse its result.
+     */
+    private val tokenMutex = Mutex()
+
+    /**
      * Returns a valid client_credentials token, refreshing if expired.
      * The token is cached for 1 hour minus a 60-second safety margin.
      *
@@ -127,16 +137,27 @@ class SpotifyApiClient @Inject constructor(
             return cached
         }
 
-        Log.d(TAG, "getClientCredentialsToken: cache expired or empty, acquiring new token")
-        val token = spotifyAuthManager.getClientCredentialsToken()
-        if (token != null) {
-            clientCredentialsToken = token
-            clientCredentialsExpiry = now + 3600 // 1 hour
-            Log.d(TAG, "getClientCredentialsToken: cached new token, expires at ${clientCredentialsExpiry}")
-        } else {
-            Log.e(TAG, "getClientCredentialsToken: failed to acquire token")
+        // Serialize the refresh so concurrent callers don't each acquire a
+        // fresh token. Double-check inside the lock: a caller that blocked
+        // here while another refreshed reuses the now-valid cached token.
+        return tokenMutex.withLock {
+            val recheckNow = System.currentTimeMillis() / 1000
+            val recached = clientCredentialsToken
+            if (recached != null && recheckNow < clientCredentialsExpiry - 60) {
+                return@withLock recached
+            }
+
+            Log.d(TAG, "getClientCredentialsToken: cache expired or empty, acquiring new token")
+            val token = spotifyAuthManager.getClientCredentialsToken()
+            if (token != null) {
+                clientCredentialsToken = token
+                clientCredentialsExpiry = recheckNow + 3600 // 1 hour
+                Log.d(TAG, "getClientCredentialsToken: cached new token, expires at ${clientCredentialsExpiry}")
+            } else {
+                Log.e(TAG, "getClientCredentialsToken: failed to acquire token")
+            }
+            token
         }
-        return token
     }
 
     // ── GraphQL Client Token Cache (for sp_dc operations) ───────────────
@@ -173,17 +194,29 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
-     * Fetches the current user's playlists via the GraphQL `libraryV3` operation.
+     * Fetches one page of the user's library via the GraphQL `libraryV3`
+     * operation — playlists AND folder URIs (see [SpotifyLibraryPage]).
      *
      * Uses sp_dc-derived access token + client token (Prong 2).
      * The previous Web API endpoint (/v1/users/{id}/playlists) was removed
      * by Spotify in February 2026.
+     *
+     * @param folderUri When non-null, lists the CONTENTS of that folder
+     *   instead of the library root — the same persisted query the web
+     *   client uses when a sidebar folder is opened. Required because
+     *   libraryV3 is hierarchical: folder-filed playlists never appear at
+     *   the root (issues #48/#26/#80/#136).
      */
     suspend fun getUserPlaylists(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
-    ): List<SpotifyPlaylistItem> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getUserPlaylists: limit=$limit, offset=$offset (via GraphQL libraryV3)")
+        folderUri: String? = null,
+    ): SpotifyLibraryPage = withContext(Dispatchers.IO) {
+        Log.d(
+            TAG,
+            "getUserPlaylists: limit=$limit, offset=$offset, " +
+                "folderUri=${folderUri ?: "<root>"} (via GraphQL libraryV3)",
+        )
 
         try {
             val variables = buildJsonObject {
@@ -193,6 +226,7 @@ class SpotifyApiClient @Inject constructor(
                 putJsonArray("features") { add("LIKED_SONGS"); add("YOUR_EPISODES") }
                 put("limit", limit)
                 put("offset", offset)
+                if (folderUri != null) put("folderUri", folderUri)
             }.toString()
 
             val responseJson = executeGraphQL(
@@ -202,16 +236,20 @@ class SpotifyApiClient @Inject constructor(
             )
 
             if (responseJson != null) {
-                val playlists = parseLibraryResponse(responseJson)
-                Log.d(TAG, "getUserPlaylists: parsed ${playlists.size} playlists from libraryV3")
-                playlists
+                val page = parseLibraryPage(responseJson)
+                Log.d(
+                    TAG,
+                    "getUserPlaylists: parsed ${page.playlists.size} playlists, " +
+                        "${page.folderUris.size} folders from libraryV3",
+                )
+                page
             } else {
                 Log.w(TAG, "getUserPlaylists: GraphQL returned null")
-                emptyList()
+                SpotifyLibraryPage.EMPTY
             }
         } catch (e: Exception) {
             Log.e(TAG, "getUserPlaylists: GraphQL libraryV3 failed", e)
-            emptyList()
+            SpotifyLibraryPage.EMPTY
         }
     }
 
@@ -437,6 +475,200 @@ class SpotifyApiClient @Inject constructor(
             allPlaylists
         } catch (e: Exception) {
             Log.e(TAG, "parseHomeFeedForSpotifyMixes: failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Searches the public Spotify catalog for tracks via the Web API
+     * `/v1/search?type=track` endpoint, using a client_credentials token.
+     *
+     * Returns up to [limit] candidate tracks that the caller's scorer judges.
+     * Parseable-but-empty responses yield an empty list.
+     *
+     * @param query  The free-text search query (URL-encoded internally).
+     * @param limit  Max candidates to return (Spotify caps at 50).
+     * @param market ISO 3166-1 alpha-2 market for relinking/availability.
+     * @return List of [SpotifyTrackCandidate], possibly empty.
+     * @throws SpotifyRateLimitException on HTTP 429 (so callers can back off).
+     * @throws SpotifyApiException on other non-2xx responses or missing token.
+     */
+    suspend fun searchTracks(
+        query: String,
+        limit: Int = 8,
+        market: String = "US",
+    ): List<SpotifyTrackCandidate> = withContext(Dispatchers.IO) {
+        // Use the user's sp_dc-derived WEB access token, NOT the app-level
+        // client_credentials token. Spotify hard-blocks /v1/search for
+        // client_credentials (observed on-device: 429 Retry-After=86400 on a
+        // fresh token) — search requires a user-authorized token. This web
+        // token is the same one used for liked-songs / private playlists
+        // (executeGraphQL) and carries the user's search quota.
+        val token = tokenManager.getSpotifyAccessToken()
+            ?: throw SpotifyApiException(
+                httpCode = 0,
+                url = "$WEB_API_BASE/search",
+                message = "searchTracks: no Spotify web access token (user not connected)",
+            )
+
+        val url = "$WEB_API_BASE/search?type=track&limit=$limit&market=$market" +
+            "&q=${URLEncoder.encode(query, "UTF-8")}"
+
+        Log.d(TAG, "searchTracks: GET $url")
+
+        var response = executeSearchRequest(url, token)
+        var responseBody = response.body?.string()
+
+        // 401: web token expired — force-refresh once and retry.
+        if (response.code == 401) {
+            Log.w(TAG, "searchTracks: 401, refreshing web access token and retrying once")
+            val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                ?: throw SpotifyApiException(
+                    httpCode = 401,
+                    url = url,
+                    message = "searchTracks: web token refresh failed after 401",
+                )
+            response = executeSearchRequest(url, refreshed)
+            responseBody = response.body?.string()
+        }
+
+        if (response.code == 429) {
+            val retryAfter = response.header("Retry-After")?.toLongOrNull()
+            Log.w(TAG, "searchTracks: 429 rate limited (Retry-After=$retryAfter)")
+            throw SpotifyRateLimitException(retryAfterSeconds = retryAfter)
+        }
+
+        if (!response.isSuccessful) {
+            throw SpotifyApiException(
+                httpCode = response.code,
+                url = url,
+                message = "searchTracks: HTTP ${response.code}, " +
+                    "bodyLen=${responseBody?.length ?: 0}",
+            )
+        }
+
+        val body = responseBody ?: return@withContext emptyList()
+        val candidates = parseSearchTracks(body)
+        Log.d(TAG, "searchTracks: parsed ${candidates.size} candidates for query '$query'")
+        candidates
+    }
+
+    /** Builds and executes a single authenticated GET against the search endpoint. */
+    private fun executeSearchRequest(url: String, token: String): okhttp3.Response {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        return okHttpClient.newCall(request).execute()
+    }
+
+    /**
+     * Search tracks via the web player's `searchDesktop` GraphQL operation
+     * (Partner API), NOT the rate-limited public /v1/search REST endpoint.
+     * Same auth/plumbing as the other GraphQL operations (sp_dc access token +
+     * client token). Returns full track metadata (name/artists/duration) so the
+     * bulletproof matcher still runs.
+     *
+     * Returns [] on any failure (no token, HTTP error, parse failure, or the
+     * persisted-query hash going stale). Unlike [searchTracks] this does NOT
+     * throw on rate limits — the Partner API isn't quota-throttled like the
+     * public API — so the caller treats an empty list as "no candidates".
+     */
+    suspend fun searchTracksGraphQL(query: String, limit: Int = 10): List<SpotifyTrackCandidate> =
+        withContext(Dispatchers.IO) {
+            val variables = buildJsonObject {
+                put("searchTerm", query)
+                put("offset", 0)
+                put("limit", limit)
+                put("numberOfTopResults", 5)
+                put("includeAudiobooks", false)
+                put("includePreReleases", false)
+            }.toString()
+
+            val responseJson = executeGraphQL(
+                operationName = "searchDesktop",
+                variables = variables,
+                hash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+            ) ?: return@withContext emptyList<SpotifyTrackCandidate>()
+
+            parseSearchDesktop(responseJson).also {
+                Log.d(TAG, "searchTracksGraphQL: parsed ${it.size} candidates for '$query'")
+            }
+        }
+
+    /**
+     * Parse a `searchDesktop` GraphQL response into [SpotifyTrackCandidate]s.
+     *
+     * The response shape depends on which persisted-query hash is live
+     * (device-confirmed 2026-06-10), so both variants are handled:
+     *  - `data.search.tracks.items[].track`           (current hash)
+     *  - `data.searchV2.tracksV2.items[].item.data`   (newer web-player hash)
+     * Track fields: { uri, name, artists.items[].profile.name,
+     * duration.totalMilliseconds, album|albumOfTrack.name, contentRating.label }.
+     * Null-safe at every hop so a schema tweak yields an empty list, never a crash.
+     */
+    private fun parseSearchDesktop(root: JsonObject): List<SpotifyTrackCandidate> {
+        return try {
+            val data = root["data"]?.jsonObject
+            val items = data?.get("search")?.jsonObject
+                ?.get("tracks")?.jsonObject
+                ?.get("items")?.jsonArray
+                ?: data?.get("searchV2")?.jsonObject
+                    ?.get("tracksV2")?.jsonObject
+                    ?.get("items")?.jsonArray
+                ?: run {
+                    Log.w(TAG, "parseSearchDesktop: no tracks container, " +
+                        "data keys=${data?.keys}")
+                    return emptyList()
+                }
+
+            items.mapNotNull { itemEl ->
+                val itemObj = itemEl as? JsonObject ?: return@mapNotNull null
+                // Track payload: item.track (search), item.item.data (searchV2),
+                // or a flatter item.data.
+                val track = itemObj["track"]?.jsonObject
+                    ?: itemObj["item"]?.jsonObject?.get("data")?.jsonObject
+                    ?: itemObj["data"]?.jsonObject
+                    ?: return@mapNotNull null
+
+                val typename = track["__typename"]?.jsonPrimitive?.contentOrNull
+                if (typename != null && typename != "Track") return@mapNotNull null
+
+                val uri = track["uri"]?.jsonPrimitive?.contentOrNull
+                val id = uri?.removePrefix("spotify:track:")?.takeIf { it != uri && it.isNotBlank() }
+                    ?: return@mapNotNull null
+                val name = track["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+
+                val artists = track["artists"]?.jsonObject
+                    ?.get("items")?.jsonArray
+                    ?.mapNotNull {
+                        it.jsonObject["profile"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+                    }
+                    ?: emptyList()
+
+                val durationMs = track["duration"]?.jsonObject
+                    ?.get("totalMilliseconds")?.jsonPrimitive?.longOrNull
+                    ?: 0L
+
+                val album = (track["album"] ?: track["albumOfTrack"])?.jsonObject
+                    ?.get("name")?.jsonPrimitive?.contentOrNull
+                    ?: ""
+
+                SpotifyTrackCandidate(
+                    id = id,
+                    name = name,
+                    artists = artists,
+                    albumName = album,
+                    durationMs = durationMs,
+                    isrc = null, // searchDesktop doesn't surface ISRC
+                    explicit = track["contentRating"]?.jsonObject
+                        ?.get("label")?.jsonPrimitive?.contentOrNull == "EXPLICIT",
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "parseSearchDesktop: parse failed: ${e.message}")
             emptyList()
         }
     }
@@ -794,92 +1026,6 @@ class SpotifyApiClient @Inject constructor(
     }
 
     // ── Response parsing (GraphQL) ──────────────────────────────────────
-
-    /**
-     * Parses the `libraryV3` GraphQL response into [SpotifyPlaylistItem] objects.
-     */
-    private fun parseLibraryResponse(responseJson: JsonObject): List<SpotifyPlaylistItem> {
-        return try {
-            val items = responseJson["data"]
-                ?.jsonObject?.get("me")
-                ?.jsonObject?.get("libraryV3")
-                ?.jsonObject?.get("items")
-                ?.jsonArray
-
-            if (items == null) {
-                Log.w(TAG, "parseLibraryResponse: could not find data.me.libraryV3.items")
-                Log.d(TAG, "parseLibraryResponse: top-level keys: ${responseJson.keys}")
-                val dataKeys = responseJson["data"]?.jsonObject?.keys
-                Log.d(TAG, "parseLibraryResponse: data keys: $dataKeys")
-                return emptyList()
-            }
-
-            Log.d(TAG, "parseLibraryResponse: found ${items.size} library items")
-
-            items.mapNotNull { element ->
-                try {
-                    val wrapper = element.jsonObject
-                    val item = wrapper["item"]?.jsonObject ?: return@mapNotNull null
-                    val typeName = item["__typename"]?.jsonPrimitive?.contentOrNull
-                    val data = item["data"]?.jsonObject ?: return@mapNotNull null
-
-                    val dataTypeName = data["__typename"]?.jsonPrimitive?.contentOrNull
-                    if (dataTypeName != "Playlist") {
-                        Log.d(TAG, "parseLibraryResponse: skipping item type: $typeName/$dataTypeName")
-                        return@mapNotNull null
-                    }
-
-                    val uri = data["uri"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    if (!uri.startsWith("spotify:playlist:")) return@mapNotNull null
-
-                    val playlistId = uri.removePrefix("spotify:playlist:")
-                    val name = data["name"]?.jsonPrimitive?.contentOrNull ?: "Untitled"
-
-                    val ownerUsername = data["ownerV2"]
-                        ?.jsonObject?.get("data")
-                        ?.jsonObject?.get("username")
-                        ?.jsonPrimitive?.contentOrNull ?: ""
-
-                    val imageUrl = data["images"]
-                        ?.jsonObject?.get("items")
-                        ?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("sources")
-                        ?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("url")
-                        ?.jsonPrimitive?.contentOrNull
-
-                    val images = if (imageUrl != null) {
-                        listOf(SpotifyImage(url = imageUrl))
-                    } else {
-                        null
-                    }
-
-                    val totalCount = data["content"]
-                        ?.jsonObject?.get("totalCount")
-                        ?.jsonPrimitive?.intOrNull ?: 0
-
-                    SpotifyPlaylistItem(
-                        id = playlistId,
-                        name = name,
-                        owner = SpotifyOwner(id = ownerUsername),
-                        images = images,
-                        tracks = SpotifyTracksRef(total = totalCount),
-                    ).also {
-                        Log.d(TAG, "parseLibraryResponse: playlist '${it.name}' " +
-                            "(id=${it.id}, owner=${it.owner.id}, tracks=$totalCount)")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "parseLibraryResponse: failed to parse item", e)
-                    null
-                }
-            }.also { playlists ->
-                Log.d(TAG, "parseLibraryResponse: parsed ${playlists.size} playlists total")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "parseLibraryResponse: failed to parse response", e)
-            emptyList()
-        }
-    }
 
     /**
      * Parses the `fetchPlaylist` GraphQL response into [SpotifyTrackItem]s.

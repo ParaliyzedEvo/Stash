@@ -3,6 +3,7 @@ package com.stash.core.media
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.common.constants.StashConstants
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
@@ -12,6 +13,7 @@ import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -22,6 +24,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 /**
  * Tests for [PlayerRepositoryImpl.buildMediaItemForTrack] and
@@ -65,10 +68,54 @@ class PlayerRepositoryStreamingTest {
             streamUrlCache = streamUrlCache,
             connectivity = connectivity,
             trackDao = trackDao,
+            playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
         )
         // Tests that don't care about disk existence get a "file is there"
         // default; the not-downloaded tests can override per-test.
         repo.filePathExistsOnDisk = { true }
+    }
+
+    @Test
+    fun `filePathExistsOnDisk rejects too-small junk downloads, accepts real audio`() {
+        // Proven on-device root cause: failed YouTube downloads left ~274-byte
+        // .webm error bodies marked isDownloaded=true. exists()/length() are
+        // both truthy, so the old check played them as local sources -> ExoPlayer
+        // read a few hundred bytes of non-audio -> ERROR_CODE_PARSING_CONTAINER_MALFORMED
+        // -> skip-storm. Requiring MIN_PLAYABLE_LOCAL_BYTES makes those rows fall
+        // through to streaming instead.
+        //
+        // Use a fresh repo so we exercise the REAL default lambda (setUp above
+        // overrides it to { true }).
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val fresh = PlayerRepositoryImpl(
+            context = context,
+            playbackStateStore = playbackStateStore,
+            musicRepository = musicRepository,
+            streamingPreference = streamingPreference,
+            streamResolver = streamResolver,
+            streamUrlCache = streamUrlCache,
+            connectivity = connectivity,
+            trackDao = trackDao,
+            playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
+        )
+
+        val empty = File.createTempFile("stash-empty", ".flac").apply { deleteOnExit() }
+        val junk = File.createTempFile("stash-junk", ".webm").apply {
+            writeBytes(ByteArray(274)) // the exact failure shape from the device
+            deleteOnExit()
+        }
+        val real = File.createTempFile("stash-real", ".flac").apply {
+            writeBytes(ByteArray((StashConstants.MIN_PLAYABLE_LOCAL_BYTES + 1).toInt()))
+            deleteOnExit()
+        }
+        val missing = File(empty.parentFile, "stash-missing-${empty.name}")
+
+        // Plain paths (java.io.File handles them on any OS; a file:// URI over a
+        // Windows drive-letter path is an env artifact, not a real-app case).
+        assertThat(fresh.filePathExistsOnDisk(empty.absolutePath)).isFalse()
+        assertThat(fresh.filePathExistsOnDisk(junk.absolutePath)).isFalse()
+        assertThat(fresh.filePathExistsOnDisk(real.absolutePath)).isTrue()
+        assertThat(fresh.filePathExistsOnDisk(missing.absolutePath)).isFalse()
     }
 
     @Test
@@ -148,6 +195,195 @@ class PlayerRepositoryStreamingTest {
         verify {
             streamUrlCache.put(3L, match { it.url.contains("fresh?etsp=1234") })
         }
+    }
+
+    /**
+     * The optimistic "tapped track is resolving" spinner must survive
+     * controller state emissions. setQueue emits isBuffering=true before a
+     * resolve that can take 60-120s (antra job), during which the previous
+     * queue keeps playing — every controller event recomputes state, and
+     * pre-fix that stomped isBuffering back to false (player looked frozen
+     * for the rest of the resolve). computeIsBuffering ORs the controller's
+     * real buffering with the epoch-keyed "tap resolve in flight" flag.
+     */
+    @Test
+    fun computeIsBuffering_passesThroughControllerBuffering_whenNoTapResolve() {
+        repo.tapResolveEpoch = -1L
+
+        assertThat(repo.computeIsBuffering(controllerBuffering = true)).isTrue()
+        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
+    }
+
+    @Test
+    fun computeIsBuffering_true_whileTapResolveInFlight_evenWhenControllerIdle() {
+        repo.setQueueEpoch = 5L
+        repo.tapResolveEpoch = 5L
+
+        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isTrue()
+    }
+
+    @Test
+    fun computeIsBuffering_false_afterTapResolveCleared() {
+        repo.setQueueEpoch = 5L
+        repo.tapResolveEpoch = -1L
+
+        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
+    }
+
+    @Test
+    fun computeIsBuffering_false_whenTapResolveSuperseded_byNewerSetQueue() {
+        // A stale in-flight resolve (epoch 5) must not keep the spinner on
+        // once a newer setQueue (epoch 6) owns the player state.
+        repo.setQueueEpoch = 6L
+        repo.tapResolveEpoch = 5L
+
+        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
+    }
+
+    // ── isStreaming: drives the Now Playing wifi/streaming indicator ──
+    // A track counts as "streaming" when it came from a stream resolver,
+    // NOT purely when its URI is http(s). antra plays its lossless FLAC
+    // from a LOCAL cache file (file://) but is every bit a stream — without
+    // this it rendered like a downloaded track (no wifi glyph).
+
+    @Test
+    fun computeIsStreaming_true_for_http_url() {
+        assertThat(repo.computeIsStreaming(scheme = "https", streamOrigin = null)).isTrue()
+        assertThat(repo.computeIsStreaming(scheme = "http", streamOrigin = null)).isTrue()
+    }
+
+    @Test
+    fun computeIsStreaming_true_for_antra_file_uri_with_stream_origin() {
+        // antra: file:// URI but resolved by a stream resolver.
+        assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = "antra")).isTrue()
+    }
+
+    @Test
+    fun computeIsStreaming_false_for_downloaded_local_file() {
+        // Downloaded track: file:// and NO stream origin → not streaming.
+        assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = null)).isFalse()
+        assertThat(repo.computeIsStreaming(scheme = null, streamOrigin = null)).isFalse()
+    }
+
+    @Test
+    fun buildMediaItem_forwards_allowAntra_false_to_resolver() = runTest {
+        // The background-fill / prefetch paths pass allowAntra = false so a
+        // speculative resolve can never spend antra quota (1 single per
+        // resolve). Verify the flag reaches the registry untouched.
+        val track = streamable(id = 4L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(4L) } returns null
+        coEvery {
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+        } returns null
+
+        val result = repo.buildMediaItemForTrack(
+            track,
+            allowYouTube = true,
+            allowYtDlp = false,
+            allowAntra = false,
+        )
+
+        assertThat(result).isEqualTo(StreamRoutingResult.NotAvailable)
+        coVerify {
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+        }
+    }
+
+    @Test
+    fun buildMediaItem_speculativeYouTubeFallback_isNotCached() = runTest {
+        // ROOT CAUSE (antra cache poisoning): during a Qobuz outage the
+        // queue-wide background fill resolves with allowAntra = false and
+        // falls through to a LOSSY youtube URL. Persisting that into the
+        // shared StreamUrlCache poisons the track: the next-up prefetch and
+        // a later foreground tap (both allowAntra = TRUE) defer to the
+        // fresh cache entry and never give antra its chance — so the user
+        // hears YouTube AAC even though antra could serve FLAC. A youtube
+        // result from an antra-DISALLOWED call must therefore stay
+        // provisional (not cached).
+        val track = streamable(id = 40L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(40L) } returns null
+        coEvery {
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+        } returns StreamUrl(
+            url = "https://yt.example/fallback",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+        )
+
+        val result = repo.buildMediaItemForTrack(
+            track,
+            allowYouTube = true,
+            allowYtDlp = false,
+            allowAntra = false,
+        )
+
+        // The track still plays (timeline floor), but the lossy URL is NOT
+        // cached, so an antra-allowed path can re-resolve to lossless.
+        assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
+        verify(exactly = 0) { streamUrlCache.put(eq(40L), any()) }
+    }
+
+    @Test
+    fun buildMediaItem_genuineYouTubeOnly_isCachedFromFullPermissionCall() = runTest {
+        // No regression: when antra WAS allowed (foreground tap / next-up
+        // prefetch) and youtube is still the best we found, the track is
+        // genuinely lossless-less — cache it so we don't re-attempt a
+        // 60-120s antra job on every single play.
+        val track = streamable(id = 41L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(41L) } returns null
+        coEvery {
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = true, allowAntra = true)
+        } returns StreamUrl(
+            url = "https://yt.example/only",
+            expiresAtMs = 9_999_000L,
+            origin = "youtube",
+        )
+
+        repo.buildMediaItemForTrack(track) // defaults: all allowed
+
+        verify { streamUrlCache.put(eq(41L), match { it.url.contains("yt.example/only") }) }
+    }
+
+    @Test
+    fun buildMediaItem_speculativeLosslessHit_isStillCached() = runTest {
+        // Precision guard: the suppression is for LOSSY fallbacks only. A
+        // background-fill call (allowAntra = false) that resolves kennyy/
+        // squid lossless SHOULD warm the cache — that result is the best
+        // available and re-resolving it later is wasteful.
+        val track = streamable(id = 42L)
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(42L) } returns null
+        coEvery {
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+        } returns StreamUrl(
+            url = "https://cdn.example/lossless?etsp=5",
+            expiresAtMs = 5_000L,
+            origin = "kennyy",
+        )
+
+        repo.buildMediaItemForTrack(
+            track,
+            allowYouTube = true,
+            allowYtDlp = false,
+            allowAntra = false,
+        )
+
+        verify { streamUrlCache.put(eq(42L), match { it.origin == "kennyy" }) }
     }
 
     @Test

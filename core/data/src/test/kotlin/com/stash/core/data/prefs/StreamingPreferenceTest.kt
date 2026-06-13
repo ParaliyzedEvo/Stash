@@ -74,6 +74,20 @@ class StreamingPreferenceTest {
         assertEquals(StreamQualityTier.LOSSLESS, prefs.streamQuality.first())
     }
 
+    @Test fun forceYouTubeFallback_defaultsToFalse() = runTest {
+        assertFalse(prefs.forceYouTubeFallback.first())
+        assertFalse(prefs.isForceYouTubeFallback())
+    }
+
+    @Test fun forceYouTubeFallback_roundTrips() = runTest {
+        prefs.setForceYouTubeFallback(true)
+        assertTrue(prefs.forceYouTubeFallback.first())
+        assertTrue(prefs.isForceYouTubeFallback())
+        prefs.setForceYouTubeFallback(false)
+        assertFalse(prefs.forceYouTubeFallback.first())
+        assertFalse(prefs.isForceYouTubeFallback())
+    }
+
     @Test fun current_returnsLatestValue() = runTest {
         assertFalse(prefs.current())
         prefs.setEnabled(true)

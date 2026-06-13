@@ -260,6 +260,124 @@ class PreviewUrlExtractorTest {
     }
 
     @Test
+    fun fastOnly_does_not_invoke_ytdlp_arm() = runTest {
+        val extractor = PreviewUrlExtractor(
+            context = mockk(relaxed = true),
+            ytDlpManager = mockk(relaxed = true),
+            tokenManager = mockk(relaxed = true),
+            innerTubeClient = mockk(relaxed = true),
+        )
+        val ytdlpCalled = AtomicBoolean(false)
+        val hooks = object : PreviewUrlExtractor.TestHooks {
+            override suspend fun innerTubeExtract(id: String): String? = null
+            override suspend fun ytDlpExtract(id: String): String {
+                ytdlpCalled.set(true)
+                return "https://ytdlp/$id"
+            }
+        }
+
+        val err = runCatching {
+            extractor.extractStreamUrlForTest(hooks, "X", allowYtDlp = false)
+        }.exceptionOrNull()
+
+        assertThat(err).isInstanceOf(NoFastStreamException::class.java)
+        assertThat(ytdlpCalled.get()).isFalse()
+    }
+
+    @Test
+    fun fastOnly_returns_innertube_url_when_present() = runTest {
+        val extractor = PreviewUrlExtractor(
+            context = mockk(relaxed = true),
+            ytDlpManager = mockk(relaxed = true),
+            tokenManager = mockk(relaxed = true),
+            innerTubeClient = mockk(relaxed = true),
+        )
+        val ytdlpCalled = AtomicBoolean(false)
+        val hooks = object : PreviewUrlExtractor.TestHooks {
+            override suspend fun innerTubeExtract(id: String): String? = "it-url"
+            override suspend fun ytDlpExtract(id: String): String {
+                ytdlpCalled.set(true)
+                return "https://ytdlp/$id"
+            }
+        }
+
+        val url = extractor.extractStreamUrlForTest(hooks, "X", allowYtDlp = false)
+
+        assertThat(url).isEqualTo("it-url")
+        assertThat(ytdlpCalled.get()).isFalse()
+    }
+
+    @Test
+    fun fullRace_still_falls_back_to_ytdlp() = runTest {
+        val extractor = PreviewUrlExtractor(
+            context = mockk(relaxed = true),
+            ytDlpManager = mockk(relaxed = true),
+            tokenManager = mockk(relaxed = true),
+            innerTubeClient = mockk(relaxed = true),
+        )
+        val hooks = object : PreviewUrlExtractor.TestHooks {
+            override suspend fun innerTubeExtract(id: String): String? = null
+            override suspend fun ytDlpExtract(id: String): String = "yt-url"
+        }
+
+        val url = extractor.extractStreamUrlForTest(hooks, "X", allowYtDlp = true)
+
+        assertThat(url).isEqualTo("yt-url")
+    }
+
+    @Test
+    fun viaYtDlp_bypasses_innertube_entirely() = runTest {
+        // The streaming-playback path must NEVER use an InnerTube/iOS URL:
+        // those are PO-token-gated to ~1MB and 403 on full playback. This
+        // direct path goes straight to yt-dlp (full-range-playable URLs).
+        val extractor = PreviewUrlExtractor(
+            context = mockk(relaxed = true),
+            ytDlpManager = mockk(relaxed = true),
+            tokenManager = mockk(relaxed = true),
+            innerTubeClient = mockk(relaxed = true),
+        )
+        val innerTubeCalled = AtomicBoolean(false)
+        val hooks = object : PreviewUrlExtractor.TestHooks {
+            override suspend fun innerTubeExtract(id: String): String? {
+                innerTubeCalled.set(true)
+                return "https://innertube/$id"
+            }
+            override suspend fun ytDlpExtract(id: String): String = "https://ytdlp/$id"
+        }
+
+        val url = extractor.extractStreamUrlViaYtDlpForTest(hooks, "X")
+
+        assertThat(url).isEqualTo("https://ytdlp/X")
+        assertThat(innerTubeCalled.get()).isFalse()
+    }
+
+    @Test
+    fun viaYtDlp_caps_concurrency_at_1() = runTest {
+        // The yt-dlp-direct path must hold the shared cap-1 yt-dlp semaphore.
+        // extractViaYtDlpForRetry historically bypassed it (only race() took
+        // the permit); a second concurrent execute() crashes at the JNI
+        // boundary (YoutubeDLException). This locks the cap.
+        val extractor = PreviewUrlExtractor(
+            context = mockk(relaxed = true),
+            ytDlpManager = mockk(relaxed = true),
+            tokenManager = mockk(relaxed = true),
+            innerTubeClient = mockk(relaxed = true),
+        )
+        val ytMax = AtomicInteger(0); val ytCur = AtomicInteger(0)
+        val hooks = object : PreviewUrlExtractor.TestHooks {
+            override suspend fun innerTubeExtract(id: String): String? = error("unreached")
+            override suspend fun ytDlpExtract(id: String): String {
+                ytMax.updateAndGet { m -> maxOf(m, ytCur.incrementAndGet()) }
+                return try { delay(50); "y" } finally { ytCur.decrementAndGet() }
+            }
+        }
+        coroutineScope {
+            (1..10).map { async { extractor.extractStreamUrlViaYtDlpForTest(hooks, "id$it") } }.awaitAll()
+        }
+        assertEquals("expected exactly 1 concurrent yt-dlp slot", 1, ytMax.get())
+    }
+
+    @Test
     fun extractStreamUrl_map_entry_clears_on_failure() = runTest {
         val extractor = PreviewUrlExtractor(
             context = mockk(relaxed = true),

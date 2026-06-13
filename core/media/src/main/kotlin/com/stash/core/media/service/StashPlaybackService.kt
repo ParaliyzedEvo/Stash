@@ -6,6 +6,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -26,13 +27,18 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
+import com.stash.core.media.PlaybackResumer
+import com.stash.core.media.ResumePlayGate
+import com.stash.core.media.ResumeStreamResolver
 import com.stash.core.media.streaming.PrefetchOrchestrator
+import com.stash.core.media.streaming.StashMediaSourceFactory
+import com.stash.core.media.streaming.StreamingMediaSourceFactory
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +55,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.guava.future
 import javax.inject.Inject
+import androidx.core.app.ServiceCompat
 import androidx.core.net.toUri
 import com.stash.core.data.db.entity.TrackEntity
 
@@ -71,8 +78,11 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var playlistDao: PlaylistDao
-    @Inject lateinit var stashLikedRepository: StashLikedPlaylistRepository
+    @Inject lateinit var likeCoordinator: LikeCoordinator
     @Inject lateinit var prefetchOrchestrator: PrefetchOrchestrator
+    @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
+    @Inject lateinit var playbackResumer: PlaybackResumer
+    @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -172,6 +182,18 @@ class StashPlaybackService : MediaLibraryService() {
      */
     private var prefetchPollJob: Job? = null
 
+    /**
+     * Forces playback to start when a real *play* request restores a queue
+     * onto the empty player. Media3 is supposed to auto-play after
+     * resumption on a play request, but from a warm process that auto-play
+     * sometimes doesn't take and the queue loads paused. Armed in
+     * [onPlaybackResumption] and consumed in [onTimelineChanged] once the
+     * restored timeline lands. Stays closed for boot-time notification
+     * population so the device never starts playing on its own after a
+     * reboot. See [ResumePlayGate].
+     */
+    private val resumePlayGate = ResumePlayGate()
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
@@ -202,8 +224,30 @@ class StashPlaybackService : MediaLibraryService() {
             )
             .build()
 
+        // Route ONLY YouTube-origin streaming items through the refresh chain
+        // (RefreshingDataSource → yt-dlp on 403). Background queue-fill seeds
+        // the timeline with cheap InnerTube/iOS placeholder URLs that 403 past
+        // ~1 MB; without this they surface as onPlayerError and skip-storm the
+        // queue. Lossless (Kennyy/Squid) and local/downloaded items stay on the
+        // default factory, unchanged.
+        val mediaSourceFactory = StashMediaSourceFactory(
+            context = this,
+            streamingFactory = streamingMediaSourceFactory,
+            streamingTrackId = { item ->
+                val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
+                val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
+                val trackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: -1L
+                if ((scheme == "http" || scheme == "https") && origin == "youtube" && trackId > 0L) {
+                    trackId
+                } else {
+                    null
+                }
+            },
+        )
+
         val player = ExoPlayer.Builder(this)
             .setRenderersFactory(StashRenderersFactory(this, eqController, loudnessController))
+            .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
@@ -314,6 +358,27 @@ class StashPlaybackService : MediaLibraryService() {
                 }
             }
 
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                // When a play-triggered resumption lands its restored queue
+                // on the (previously empty) player, force playback to start.
+                // The gate keeps this scoped to resumption only — normal
+                // in-app setQueue never arms it, and boot-time notification
+                // population (isForPlayback = false) leaves it closed so the
+                // device doesn't auto-play after a reboot. Idempotent with
+                // Media3's own post-resumption play().
+                when (resumePlayGate.onTimelineChanged(
+                    timeline.windowCount,
+                    player.playbackState == Player.STATE_IDLE,
+                )) {
+                    ResumePlayGate.Action.PREPARE_THEN_PLAY -> {
+                        player.prepare()
+                        player.play()
+                    }
+                    ResumePlayGate.Action.PLAY -> player.play()
+                    ResumePlayGate.Action.NONE -> Unit
+                }
+            }
+
             override fun onRepeatModeChanged(repeatMode: Int) {
                 updateCustomLayout()
             }
@@ -327,6 +392,49 @@ class StashPlaybackService : MediaLibraryService() {
         castPlayer?.addListener(playerListener)
 
         updateCustomLayout()
+    }
+
+    /**
+     * Posts a lightweight "Resuming…" foreground notification so a
+     * media-button-triggered resumption (started via startForegroundService
+     * on a dead process) satisfies the OS ~5s "must call startForeground"
+     * deadline even when the current track needs a slow stream-URL resolve.
+     *
+     * Reuses Media3's default notification id so the real media notification
+     * replaces this placeholder seamlessly once playback starts — no
+     * lingering "Resuming…" entry.
+     */
+    @OptIn(UnstableApi::class)
+    private fun showResumingForegroundNotification() {
+        val channelId = "stash_playback_resume"
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            nm.getNotificationChannel(channelId) == null
+        ) {
+            nm.createNotificationChannel(
+                android.app.NotificationChannel(
+                    channelId,
+                    getString(R.string.resuming_channel_name),
+                    android.app.NotificationManager.IMPORTANCE_LOW,
+                ),
+            )
+        }
+        val notification = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle(getString(R.string.resuming_notification_title))
+            .setOngoing(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .build()
+        val id = androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            startForeground(
+                id,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        } else {
+            startForeground(id, notification)
+        }
     }
 
     /**
@@ -774,10 +882,56 @@ class StashPlaybackService : MediaLibraryService() {
                         )
                     }
                 }
+                // Browse-tap on a playlist/recently-added child (#154/#173):
+                // the mediaId carries its parent, so rebuild the whole parent
+                // as the queue, starting at the tapped track — mirroring the
+                // SHUFFLE_PLAY_ expansion above, but in order and unshuffled.
+                if (mediaItems.size == 1) {
+                    val parsed = AutoBrowseQueue.parse(mediaItems[0].mediaId)
+                    if (parsed != null) {
+                        val plan = AutoBrowseQueue.queuePlan(
+                            tracksForBrowseParent(parsed.parentId),
+                            tappedTrackId = parsed.trackId,
+                        )
+                        if (plan.tracks.isNotEmpty()) {
+                            val items = plan.tracks.map { track ->
+                                MediaItem.Builder()
+                                    .setMediaId(track.id.toString())
+                                    .setUri(track.filePath ?: "")
+                                    .setMediaMetadata(track.toMediaMetadata())
+                                    .build()
+                            }
+                            // An explicit in-order tap means in-order playback;
+                            // shuffle stays reachable via the Shuffle Play entry.
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                mediaSession.player.shuffleModeEnabled = false
+                            }
+                            return@future MediaSession.MediaItemsWithStartPosition(
+                                items,
+                                plan.startIndex,
+                                C.TIME_UNSET,
+                            )
+                        }
+                    }
+                }
                 val resolvedItems = mediaItems.map { resolveMediaItem(it) }
                 MediaSession.MediaItemsWithStartPosition(resolvedItems, startIndex, startPositionMs)
             }
         }
+
+        /**
+         * Loads the track list backing an Auto browse parent id — the same
+         * rows (and order) `onGetChildren` listed for it.
+         */
+        private suspend fun tracksForBrowseParent(parentId: String): List<TrackEntity> =
+            when {
+                parentId.startsWith(PLAYLIST_PREFIX) ->
+                    parentId.removePrefix(PLAYLIST_PREFIX).toLongOrNull()
+                        ?.let { playlistDao.getTracksForPlaylist(it) }
+                        ?: emptyList()
+                parentId == RECENTLY_ADDED_ID -> trackDao.getRecentlyAdded(20).first()
+                else -> emptyList()
+            }
 
         @OptIn(UnstableApi::class)
         override fun onAddMediaItems(
@@ -798,7 +952,19 @@ class StashPlaybackService : MediaLibraryService() {
                         }.shuffled()
                     }
                 }
-                mediaItems.map { resolveMediaItem(it) }
+                mediaItems.map { item ->
+                    // A browse-child id in an ADD context (e.g. "add to queue")
+                    // means just that one track — strip the parent envelope and
+                    // resolve it as a normal library item. Queue expansion only
+                    // happens on a SET (onSetMediaItems above).
+                    val parsed = AutoBrowseQueue.parse(item.mediaId)
+                    val normalized = if (parsed != null) {
+                        item.buildUpon().setMediaId(parsed.trackId.toString()).build()
+                    } else {
+                        item
+                    }
+                    resolveMediaItem(normalized)
+                }
             }
         }
 
@@ -839,13 +1005,23 @@ class StashPlaybackService : MediaLibraryService() {
                 else -> {
                     // Try to resolve track or playlist
                     serviceScope.future {
-                        val trackId = mediaId.toLongOrNull()
+                        // Browse-child ids (AUTOQ_…) resolve to their track,
+                        // keeping the parent-carrying mediaId intact so a
+                        // subsequent tap still expands the playlist (#154/#173).
+                        val trackId = AutoBrowseQueue.parse(mediaId)?.trackId
+                            ?: mediaId.toLongOrNull()
                         if (trackId != null) {
                             val track = trackDao.getById(trackId)
                             if (track != null) {
                                 return@future LibraryResult.ofItem(
                                     MediaItem.Builder()
-                                        .setMediaId(track.id.toString())
+                                        .setMediaId(
+                                            if (mediaId.startsWith(AutoBrowseQueue.PREFIX)) {
+                                                mediaId
+                                            } else {
+                                                track.id.toString()
+                                            },
+                                        )
                                         .setUri(track.filePath ?: "")
                                         .setMediaMetadata(
                                             track.toMediaMetadata(),
@@ -980,7 +1156,7 @@ class StashPlaybackService : MediaLibraryService() {
                     RECENTLY_ADDED_ID -> {
                         trackDao.getRecentlyAdded(20).first().map { track ->
                             MediaItem.Builder()
-                                .setMediaId(track.id.toString())
+                                .setMediaId(AutoBrowseQueue.childMediaId(parentId, track.id))
                                 .setUri(track.filePath ?: "")
                                 .setMediaMetadata(
                                     track.toMediaMetadata(),
@@ -1006,9 +1182,11 @@ class StashPlaybackService : MediaLibraryService() {
 
                                 // v0.9.37: include streamable tracks so stream-only Mix entries are
                                 // playable. Downloaded-only filter would silently drop them.
+                                // mediaId carries the parent playlist (AUTOQ_…) so a tap can
+                                // queue the WHOLE playlist, not a single item — #154/#173.
                                 val tracks = playlistDao.getTracksForPlaylist(playlistId).filter{track -> track.isDownloaded || track.isStreamable}.map { track ->
                                     MediaItem.Builder()
-                                        .setMediaId(track.id.toString())
+                                        .setMediaId(AutoBrowseQueue.childMediaId(parentId, track.id))
                                         .setUri(track.filePath ?: "")
                                         .setMediaMetadata(
                                             track.toMediaMetadata(),
@@ -1148,8 +1326,10 @@ class StashPlaybackService : MediaLibraryService() {
                                     metadata = mediaMetadata,
                                 )
 
-                                if (newLikeState) stashLikedRepository.add(realId)
-                                else              stashLikedRepository.remove(realId)
+                                // v0.9.52: route through LikeCoordinator — local
+                                // Stash like stays synchronous; optional Spotify/YT
+                                // mirroring (off by default) layers on top.
+                                likeCoordinator.setLiked(realId, liked = newLikeState)
                             }.onFailure { e ->
                                 android.util.Log.w(
                                     "StashPlayback",
@@ -1167,6 +1347,42 @@ class StashPlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
 
+        /**
+         * Builds a resumable [MediaItem] from a DB row, mirroring the URI
+         * resolution in [resolveMediaItem]: downloaded tracks get a
+         * `file://` URI. When [streamUrl] is non-null (the current track was
+         * resolved via [ResumeStreamResolver] for online-mode resume), it is
+         * used as the playback URI. Otherwise a streaming-only row is left
+         * without a URI, which the player surfaces as an onPlayerError →
+         * skip-next recovery (see [resolveMediaItem]).
+         */
+        private fun buildResumeItem(track: TrackEntity, streamUrl: String? = null): MediaItem {
+            val builder = MediaItem.Builder()
+                .setMediaId(track.id.toString())
+                .setMediaMetadata(track.toMediaMetadata())
+            val localPath = track.filePath
+            when {
+                track.isDownloaded && !localPath.isNullOrBlank() -> {
+                    val uri = if (localPath.startsWith("/")) {
+                        "file://$localPath".toUri()
+                    } else {
+                        localPath.toUri()
+                    }
+                    builder.setUri(uri)
+                }
+                streamUrl != null -> builder.setUri(streamUrl.toUri())
+                !localPath.isNullOrBlank() -> {
+                    val uri = if (localPath.startsWith("/")) {
+                        "file://$localPath".toUri()
+                    } else {
+                        localPath.toUri()
+                    }
+                    builder.setUri(uri)
+                }
+            }
+            return builder.build()
+        }
+
         @OptIn(UnstableApi::class)
         override fun onPlaybackResumption(
             session: MediaSession,
@@ -1174,31 +1390,72 @@ class StashPlaybackService : MediaLibraryService() {
             isForPlayback: Boolean,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             return serviceScope.future {
-                val track = trackDao.getLastPlayedTrack()
-                val item = if (track != null) {
-                    MediaItem.Builder()
-                        .setMediaId(track.id.toString())
-                        .setUri(track.filePath ?: "")
-                        .setMediaMetadata(track.toMediaMetadata())
-                        .build()
-                } else {
-                    // Fallback to most recently added if no last-played record exists
-                    trackDao.getRecentlyAdded(1).first().firstOrNull()?.let { recentlyAdded ->
-                        MediaItem.Builder()
-                            .setMediaId(recentlyAdded.id.toString())
-                            .setUri(recentlyAdded.filePath ?: "")
-                            .setMediaMetadata(recentlyAdded.toMediaMetadata())
-                            .build()
+                // This callback can run for a genuine play request started via
+                // startForegroundService (media button on a dead process). The
+                // current track may need a (possibly slow) stream-URL resolve
+                // for online mode, which can blow the OS 5s "must call
+                // startForeground" window. Post a lightweight "Resuming…"
+                // foreground notification first to satisfy it; Media3 replaces
+                // it with the real media notification once playback starts.
+                // Only for a real play request — never for boot-time
+                // notification population (isForPlayback = false).
+                if (isForPlayback) showResumingForegroundNotification()
+
+                // Preferred path: restore the full persisted queue at the
+                // saved track + position so next/prev work and playback
+                // continues where it stopped.
+                val plan = playbackResumer.buildResumePlan()
+                if (plan != null) {
+                    // Resolve ONLY the current track's stream URL in the
+                    // foreground so it plays in online mode; other streamed
+                    // tracks resolve later via the prefetch/skip path.
+                    // Downloaded tracks return null here and use their file.
+                    val currentStreamUrl = resumeStreamResolver
+                        .resolveStreamUrl(plan.tracks[plan.startIndex])
+                    val items = plan.tracks.mapIndexed { index, track ->
+                        buildResumeItem(
+                            track,
+                            streamUrl = if (index == plan.startIndex) currentStreamUrl else null,
+                        )
                     }
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        session.player.shuffleModeEnabled = plan.isShuffled
+                    }
+                    // Force play once the queue lands iff this is a real play
+                    // request (not boot-time notification population).
+                    resumePlayGate.arm(isForPlayback)
+                    return@future MediaSession.MediaItemsWithStartPosition(
+                        ImmutableList.copyOf(items),
+                        plan.startIndex,
+                        plan.positionMs,
+                    )
+                }
+
+                // Fallback (no persisted queue yet): single last-played
+                // track, or the most recently added track if none.
+                val track = trackDao.getLastPlayedTrack()
+                    ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
+                val item = track?.let {
+                    buildResumeItem(it, streamUrl = resumeStreamResolver.resolveStreamUrl(it))
                 }
 
                 if (item != null) {
+                    resumePlayGate.arm(isForPlayback)
                     MediaSession.MediaItemsWithStartPosition(
                         ImmutableList.of(item),
                         /* startIndex= */ 0,
                         /* startPositionMs= */ C.TIME_UNSET,
                     )
                 } else {
+                    // Nothing to resume (empty library). Drop the "Resuming…"
+                    // placeholder we may have posted so it doesn't linger as a
+                    // stuck foreground notification, then signal no-resume.
+                    if (isForPlayback) {
+                        ServiceCompat.stopForeground(
+                            this@StashPlaybackService,
+                            ServiceCompat.STOP_FOREGROUND_REMOVE,
+                        )
+                    }
                     throw UnsupportedOperationException()
                 }
             }
