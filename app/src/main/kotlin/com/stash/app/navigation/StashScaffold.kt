@@ -118,8 +118,6 @@ fun StashScaffold(
                 BlockedSongsRoute::class.qualifiedName,
                 FailedMatchesRoute::class.qualifiedName,
                 FailedDownloadsRoute::class.qualifiedName,
-                SearchArtistRoute::class.qualifiedName,
-                SearchAlbumRoute::class.qualifiedName,
             )
             val hideMiniPlayer = hideBottomBar ||
                                  innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }

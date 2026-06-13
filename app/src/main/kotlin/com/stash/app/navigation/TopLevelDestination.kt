@@ -35,6 +35,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class LikedSongsDetailRoute(val source: String? = null)
 @Serializable data object FailedMatchesRoute
 @Serializable data object FailedDownloadsRoute
+@Serializable data object ActiveDownloadsRoute
 @Serializable data object BlockedSongsRoute
 @Serializable data object EqualizerRoute
 @Serializable data object LibraryHealthRoute

@@ -84,6 +84,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
+    @Inject lateinit var castStateHolder: com.stash.core.media.CastStateHolder
 
     companion object {
         /** Custom command action for toggling shuffle mode. */
@@ -307,6 +308,7 @@ class StashPlaybackService : MediaLibraryService() {
                     val existingSession = castContext.sessionManager.currentCastSession
                     if (existingSession != null && existingSession.isConnected) {
                         android.util.Log.i("StashPlayback", "Detected existing Cast session on init — switching to CastPlayer")
+                        castStateHolder.setConnected(true)
                         switchToCastPlayer()
                     }
                 }
@@ -704,6 +706,35 @@ class StashPlaybackService : MediaLibraryService() {
         val currentPosition = localPlayer.currentPosition
         val playWhenReady = localPlayer.playWhenReady
 
+        // DefaultMediaItemConverter.toMediaQueueItem calls
+        // checkNotNull(localConfiguration) which crashes with NPE when
+        // MediaItem has no URI or an empty URI. Filter those out and
+        // adjust the start index accordingly.
+        val castReadyItems = mutableListOf<MediaItem>()
+        var adjustedIndex = 0
+        for ((i, item) in currentMediaItems.withIndex()) {
+            val uri = item.localConfiguration?.uri
+            if (uri != null && uri.toString().isNotBlank()) {
+                if (i == currentIndex) adjustedIndex = castReadyItems.size
+                // Ensure MIME type is set — DefaultMediaItemConverter
+                // warns "MEDIA_TYPE_MOVIE" and may crash downstream
+                // when mimeType is null.
+                val fixedItem = if (item.localConfiguration?.mimeType.isNullOrBlank()) {
+                    item.buildUpon()
+                        .setMimeType("audio/mpeg")
+                        .build()
+                } else {
+                    item
+                }
+                castReadyItems.add(fixedItem)
+            }
+        }
+
+        if (castReadyItems.isEmpty()) {
+            android.util.Log.w("StashPlayback", "switchToCastPlayer: no cast-ready items, aborting")
+            return
+        }
+
         // Stop and clear the local player BEFORE setting Cast items so there's
         // never a window where both players hold a ready queue. Without this,
         // the paused ExoPlayer could resume independently (audio focus, BT) and
@@ -711,12 +742,13 @@ class StashPlaybackService : MediaLibraryService() {
         localPlayer.stop()
         localPlayer.clearMediaItems()
 
-        currentCastPlayer.setMediaItems(currentMediaItems, currentIndex, currentPosition)
+        currentCastPlayer.setMediaItems(castReadyItems, adjustedIndex, currentPosition)
         currentCastPlayer.playWhenReady = playWhenReady
         currentCastPlayer.prepare()
 
         mediaSession?.player = currentCastPlayer
-        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer (local player cleared)")
+        castStateHolder.setConnected(true)
+        android.util.Log.i("StashPlayback", "Switched active player to CastPlayer (${castReadyItems.size}/${currentMediaItems.size} items, local player cleared)")
     }
 
     @OptIn(UnstableApi::class)
@@ -745,6 +777,7 @@ class StashPlaybackService : MediaLibraryService() {
         exoPlayer.prepare()
 
         mediaSession?.player = exoPlayer
+        castStateHolder.setConnected(false)
         android.util.Log.i("StashPlayback", "Switched active player back to ExoPlayer (cast player cleared)")
     }
 

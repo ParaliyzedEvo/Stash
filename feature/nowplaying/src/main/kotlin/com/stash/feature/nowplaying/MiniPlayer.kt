@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -183,10 +184,11 @@ fun MiniPlayer(
                         )
                     }
 
-                    // Chromecast / Google Cast button — Compose icon + CastContext dialog.
-                    // Uses plain Dialog (not DialogFragment) because MainActivity is
-                    // ComponentActivity, not FragmentActivity. Uses the async
-                    // getSharedInstance(context, executor) overload for robust device support.
+                    // Chromecast / Google Cast button — context-aware.
+                    // When NOT connected: shows MediaRouteChooserDialog (pick device).
+                    // When connected: shows MediaRouteControllerDialog (stop / volume).
+                    // Uses the async getSharedInstance(context, executor) overload for
+                    // robust device support (Cast dynamic module can load lazily).
                     IconButton(
                         onClick = {
                             try {
@@ -203,14 +205,21 @@ fun MiniPlayer(
                                                     )
                                                     .build()
 
-                                            val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(
-                                                androidx.appcompat.view.ContextThemeWrapper(
-                                                    ctx,
-                                                    androidx.appcompat.R.style.Theme_AppCompat
-                                                )
+                                            val themedCtx = androidx.appcompat.view.ContextThemeWrapper(
+                                                ctx,
+                                                androidx.appcompat.R.style.Theme_AppCompat
                                             )
-                                            dialog.routeSelector = selector
-                                            dialog.show()
+
+                                            if (uiState.isCasting) {
+                                                // Already connected — show controller (volume / stop)
+                                                val dialog = androidx.mediarouter.app.MediaRouteControllerDialog(themedCtx)
+                                                dialog.show()
+                                            } else {
+                                                // Not connected — show chooser (pick device)
+                                                val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(themedCtx)
+                                                dialog.routeSelector = selector
+                                                dialog.show()
+                                            }
                                         } catch (e: Exception) {
                                             android.util.Log.w("MiniPlayer", "Cast dialog failed", e)
                                         }
@@ -224,9 +233,9 @@ fun MiniPlayer(
                         },
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Cast,
-                            contentDescription = "Cast",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            imageVector = if (uiState.isCasting) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                            contentDescription = if (uiState.isCasting) "Stop casting" else "Cast",
+                            tint = if (uiState.isCasting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     }
