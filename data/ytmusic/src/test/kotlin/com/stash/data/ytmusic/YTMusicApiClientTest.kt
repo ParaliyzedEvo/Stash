@@ -209,6 +209,203 @@ class YTMusicApiClientTest {
         assertTrue("related should be empty", profile.related.isEmpty())
     }
 
+    // ── getArtist A/B-test renderer edge cases ──────────────────────────
+
+    @Test
+    fun `getArtist parses musicVisualHeaderRenderer (A-B test variant)`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_visual_header.json"))
+
+        val profile = client.getArtist("UCVISUALID1")
+
+        // Must extract the same fields as the immersive header variant.
+        assertEquals("Lootpack", profile.name)
+        assertTrue(
+            "avatarUrl should start with https://, was ${profile.avatarUrl}",
+            profile.avatarUrl!!.startsWith("https://"),
+        )
+        assertTrue(
+            "subscribersText should contain 'subscriber', was '${profile.subscribersText}'",
+            profile.subscribersText?.contains("subscriber", ignoreCase = true) == true,
+        )
+        assertTrue("popular should not be empty", profile.popular.isNotEmpty())
+        assertTrue("albums should not be empty", profile.albums.isNotEmpty())
+    }
+
+    @Test
+    fun `getArtist parses twoColumnBrowseResultsRenderer (A-B test variant)`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_two_column.json"))
+
+        val profile = client.getArtist("UCTWOCOLID1")
+
+        assertEquals("Two Column Artist", profile.name)
+        assertTrue("popular should not be empty", profile.popular.isNotEmpty())
+        assertTrue("albums should not be empty", profile.albums.isNotEmpty())
+        assertEquals("TWOCOLVIDEO1", profile.popular.first().videoId)
+    }
+
+    @Test
+    fun `getArtist parses visual header + twoColumn content (worst-case combo)`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_visual_two_column.json"))
+
+        val profile = client.getArtist("UCCOMBOID1")
+
+        // Both A/B-test variants active simultaneously.
+        assertEquals("Combo Artist", profile.name)
+        assertTrue(
+            "subscribersText should contain 'subscriber', was '${profile.subscribersText}'",
+            profile.subscribersText?.contains("subscriber", ignoreCase = true) == true,
+        )
+        assertTrue("popular should not be empty", profile.popular.isNotEmpty())
+        assertEquals("COMBOVIDEO1", profile.popular.first().videoId)
+    }
+
+    @Test
+    fun `getArtist returns empty profile when InnerTube returns null`() = runTest {
+        val inner = mock<InnerTubeClient>()
+        runBlocking { whenever(inner.browse(any())).thenReturn(null) }
+        val client = YTMusicApiClient(inner)
+
+        val profile = client.getArtist("UCnulltest")
+
+        assertEquals("", profile.name)
+        assertNull(profile.avatarUrl)
+        assertNull(profile.subscribersText)
+        assertTrue(profile.popular.isEmpty())
+        assertTrue(profile.albums.isEmpty())
+        assertTrue(profile.singles.isEmpty())
+        assertTrue(profile.related.isEmpty())
+    }
+
+    @Test
+    fun `getArtist returns empty profile when header is missing`() = runTest {
+        // Response has content but NO header at all.
+        val noHeader = """{
+            "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                    "tabs": [{"tabRenderer": {"content": {"sectionListRenderer": {"contents": [
+                        {"musicShelfRenderer": {"title": {"runs": [{"text": "Popular"}]}, "contents": [
+                            {"musicResponsiveListItemRenderer": {
+                                "playlistItemData": {"videoId": "NOHEADVID"},
+                                "flexColumns": [
+                                    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Track"}]}}},
+                                    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Artist"}]}}}
+                                ],
+                                "fixedColumns": [{"musicResponsiveListItemFixedColumnRenderer": {"text": {"runs": [{"text": "3:00"}]}}}]
+                            }}
+                        ]}}
+                    ]}}}}]
+                }
+            }
+        }"""
+        val client = fakeBrowseClient(noHeader)
+
+        val profile = client.getArtist("UCNOHEADER")
+
+        // Name should be empty since header is missing, but sections should still parse.
+        assertEquals("", profile.name)
+        assertNull(profile.avatarUrl)
+        assertTrue("popular should still parse from sections", profile.popular.isNotEmpty())
+    }
+
+    @Test
+    fun `getArtist returns empty profile when unknown header renderer is used`() = runTest {
+        // Future-proofing: if YouTube introduces yet another header renderer.
+        val unknownHeader = """{
+            "header": {
+                "musicFutureHeaderRenderer": {
+                    "title": {"runs": [{"text": "Future Artist"}]}
+                }
+            },
+            "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                    "tabs": [{"tabRenderer": {"content": {"sectionListRenderer": {"contents": []}}}}]
+                }
+            }
+        }"""
+        val client = fakeBrowseClient(unknownHeader)
+
+        val profile = client.getArtist("UCFUTURE")
+
+        // Should not crash — just produce empty header fields.
+        assertEquals("", profile.name)
+        assertNull(profile.avatarUrl)
+    }
+
+    @Test
+    fun `getArtist returns empty profile when both content renderers are missing`() = runTest {
+        // Header exists but content uses an unknown renderer.
+        val noContent = """{
+            "header": {
+                "musicImmersiveHeaderRenderer": {
+                    "title": {"runs": [{"text": "No Content Artist"}]}
+                }
+            },
+            "contents": {
+                "threeColumnBrowseResultsRenderer": {
+                    "tabs": [{"tabRenderer": {"content": {"sectionListRenderer": {"contents": []}}}}]
+                }
+            }
+        }"""
+        val client = fakeBrowseClient(noContent)
+
+        val profile = client.getArtist("UCNOCONTENT")
+
+        // Name parsed from header but sections are empty (unknown content renderer).
+        assertEquals("No Content Artist", profile.name)
+        assertTrue(profile.popular.isEmpty())
+        assertTrue(profile.albums.isEmpty())
+    }
+
+    @Test
+    fun `getArtist handles localized shelf title 'Top songs' instead of 'Popular'`() = runTest {
+        // Some locales ship "Top songs" instead of "Popular" for the popular shelf.
+        val localizedShelf = """{
+            "header": {
+                "musicImmersiveHeaderRenderer": {
+                    "title": {"runs": [{"text": "Localized Artist"}]}
+                }
+            },
+            "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                    "tabs": [{"tabRenderer": {"content": {"sectionListRenderer": {"contents": [
+                        {"musicShelfRenderer": {
+                            "title": {"runs": [{"text": "Top songs"}]},
+                            "contents": [
+                                {"musicResponsiveListItemRenderer": {
+                                    "playlistItemData": {"videoId": "LOCALVID1"},
+                                    "flexColumns": [
+                                        {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Local Track"}]}}},
+                                        {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Localized Artist"}]}}}
+                                    ],
+                                    "fixedColumns": [{"musicResponsiveListItemFixedColumnRenderer": {"text": {"runs": [{"text": "3:30"}]}}}]
+                                }}
+                            ]
+                        }}
+                    ]}}}}]
+                }
+            }
+        }"""
+        val client = fakeBrowseClient(localizedShelf)
+
+        val profile = client.getArtist("UCLOCALIZED")
+
+        // "Top songs" should still be recognized as the popular shelf.
+        assertEquals("Localized Artist", profile.name)
+        assertTrue("popular should parse from 'Top songs' shelf", profile.popular.isNotEmpty())
+        assertEquals("LOCALVID1", profile.popular.first().videoId)
+    }
+
+    @Test
+    fun `getArtist normalizes MPLAUC prefix in browseId`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_sparse.json"))
+
+        // MPLAUC prefix should be stripped to bare UC for the browse call.
+        val profile = client.getArtist("MPLAUCSPARSEID1")
+
+        assertEquals("Obscure Artist", profile.name)
+    }
+
+
     // NOTE: The three hand-built `getAlbum` fixture tests that used to live here
     // were written against a guessed JSON shape (`musicDetailHeaderRenderer` +
     // single-column layout) that does NOT match what InnerTube actually returns

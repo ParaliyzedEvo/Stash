@@ -327,6 +327,18 @@ class StashApplication : Application(), Configuration.Provider {
                 ).execute().close()
             }
         }
+        // Warm up qobuz.kennyy.com.br TLS + DNS so the first stream resolve
+        // doesn't pay a ~200-400ms handshake on top of the search latency.
+        // The health probe also hits Kennyy, but it runs through a separate
+        // OkHttp client; this HEAD request warms the shared connection pool
+        // that KennyyApiClient uses for actual resolves.
+        applicationScope.launch {
+            runCatching {
+                okHttpClient.newCall(
+                    Request.Builder().url("https://qobuz.kennyy.com.br/").head().build(),
+                ).execute().close()
+            }
+        }
         // Pre-resolve the last-played track's stream URL at boot so the
         // first play-tap is instant. Also pre-warms the next track in
         // the persisted queue. No-ops when streaming is disabled, the
