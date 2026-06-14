@@ -17,12 +17,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.theme.StashTextPrimary
 
 /**
  * A horizontal segmented control. Renders [options] as equal-width segments over a
- * faint white track; the segment at [selectedIndex] gets a purple-tinted gradient
- * fill. Tapping a segment invokes [onSelect] with its index. Pure presentation —
- * the caller owns selection state.
+ * faint track; the segment at [selectedIndex] gets a purple-tinted gradient fill.
+ * Tapping a segment invokes [onSelect] with its index. Pure presentation — the
+ * caller owns selection state.
  */
 @Composable
 fun SettingsSegmented(
@@ -35,7 +36,9 @@ fun SettingsSegmented(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            // Theme-aware track: a faint tint of onSurface so the control reads on
+            // both the dark (#06060C) and light (#F6F3FF) backgrounds.
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
             .padding(4.dp),
     ) {
         options.forEachIndexed { index, label ->
@@ -62,8 +65,11 @@ fun SettingsSegmented(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
+                    // The active pill is always a dark purple gradient, so its label
+                    // must stay light in BOTH themes (onSurface would go dark — and
+                    // illegible — in light mode).
                     color = if (active) {
-                        MaterialTheme.colorScheme.onSurface
+                        StashTextPrimary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
