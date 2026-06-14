@@ -55,7 +55,7 @@ class PlayerRepositorySetQueueGateTest {
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk()
     private val trackDao: TrackDao = mockk()
-    private val castStateHolder: CastStateHolder = mockk(relaxed = true)
+    private val castStateHolder: CastStateHolder = CastStateHolder()
 
     private lateinit var repo: PlayerRepositoryImpl
 
