@@ -14,6 +14,7 @@ jobs:
   unit-tests:
     name: core:media unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
