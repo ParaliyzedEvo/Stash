@@ -37,7 +37,7 @@ fun SettingsGroupCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             rows.forEachIndexed { i, row ->
                 if (i > 0) {
-                    HorizontalDivider(color = SettingsDivider, thickness = 1.dp)
+                    HorizontalDivider(color = settingsDivider, thickness = 1.dp)
                 }
                 row()
             }
