@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /**
@@ -34,7 +35,7 @@ fun SettingsToggleRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .clickable(enabled = enabled, role = Role.Switch) { onCheckedChange(!checked) }
             .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
