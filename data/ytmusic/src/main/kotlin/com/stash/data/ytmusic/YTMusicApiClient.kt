@@ -430,8 +430,12 @@ class YTMusicApiClient @Inject constructor(
      *
      * The browse response for an artist channel (browseId starting with `UC`
      * or `MPLAUC`) contains:
-     *   - `header.musicImmersiveHeaderRenderer` — name, avatar, subscribers.
-     *   - A single `singleColumnBrowseResultsRenderer` tab holding a mix of
+     *   - A header renderer — either `musicImmersiveHeaderRenderer` (full-bleed
+     *     hero) or `musicVisualHeaderRenderer` (compact visual), depending on
+     *     YouTube's A/B test bucket for the device. Both carry name, avatar,
+     *     and subscriber count at identical JSON paths.
+     *   - A content renderer — either `singleColumnBrowseResultsRenderer` or
+     *     `twoColumnBrowseResultsRenderer` — holding a tab with a mix of
      *     `musicShelfRenderer` (Popular) and `musicCarouselShelfRenderer`
      *     (Albums, Singles, "Fans also like") sections.
      *
@@ -451,8 +455,19 @@ class YTMusicApiClient @Inject constructor(
         val response = innerTubeClient.browse(normalized)
             ?: return emptyArtistProfile(normalized)
 
-        val header = response["header"]?.asObject()
-            ?.get("musicImmersiveHeaderRenderer")?.asObject()
+        // YouTube A/B-tests between two header renderers. Some devices/regions
+        // get musicImmersiveHeaderRenderer (full-bleed hero) while others get
+        // musicVisualHeaderRenderer (compact visual header). Both carry the
+        // same key fields at identical JSON paths; we try immersive first
+        // because it's been the historical default.
+        val headerObj = response["header"]?.asObject()
+        val header = headerObj?.get("musicImmersiveHeaderRenderer")?.asObject()
+            ?: headerObj?.get("musicVisualHeaderRenderer")?.asObject()
+        val headerVariant = when {
+            headerObj?.containsKey("musicImmersiveHeaderRenderer") == true -> "immersive"
+            headerObj?.containsKey("musicVisualHeaderRenderer") == true -> "visual"
+            else -> "unknown(keys=${headerObj?.keys})"
+        }
         val name = header?.navigatePath("title", "runs")?.firstArray()
             ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: ""
         // Pick the largest thumbnail by explicit width — InnerTube's ordering
@@ -470,11 +485,19 @@ class YTMusicApiClient @Inject constructor(
             "subscriberCountText", "runs",
         )?.firstArray()?.firstOrNull()?.asObject()?.get("text")?.asString()
 
+        // YouTube also A/B-tests the content layout: some devices get
+        // singleColumnBrowseResultsRenderer, others get twoColumnBrowseResultsRenderer.
+        // Both wrap their sections in tabs[0].tabRenderer.content.sectionListRenderer.contents.
         val sections = response.navigatePath(
             "contents", "singleColumnBrowseResultsRenderer", "tabs",
         )?.firstArray()?.firstOrNull()?.asObject()
             ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
             ?.asArray()
+            ?: response.navigatePath(
+                "contents", "twoColumnBrowseResultsRenderer", "tabs",
+            )?.firstArray()?.firstOrNull()?.asObject()
+                ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+                ?.asArray()
             ?: return emptyArtistProfile(normalized, name, avatarUrl, subscribersText)
 
         var popular = emptyList<TrackSummary>()
@@ -570,7 +593,7 @@ class YTMusicApiClient @Inject constructor(
 
         Log.d(
             TAG,
-            "getArtist('$normalized'): name='$name' popular=${popular.size} " +
+            "getArtist('$normalized'): header=$headerVariant name='$name' popular=${popular.size} " +
                 "albums=${albums.size} singles=${singles.size} related=${related.size}",
         )
         return ArtistProfile(
