@@ -70,6 +70,18 @@ fun SettingsHubScreen(
 
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
 
+    // Consume any pending deep-link focus from Home banners ("fix lossless" /
+    // Last.fm nudge) once on entry and drill into the relevant spoke. The
+    // monolith satisfied this by scrolling a single screen; in hub-and-spoke we
+    // navigate to the category that owns the control instead.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        when (viewModel.consumeDeepLinkFocus()) {
+            com.stash.core.data.navigation.SettingsFocus.LOSSLESS -> onOpenAudioQuality()
+            com.stash.core.data.navigation.SettingsFocus.LASTFM -> onOpenAccounts()
+            null -> Unit
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
