@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -38,6 +40,75 @@ fun SettingsAccountsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+
+    // Spotify WebView login (full-screen overlay). Replaces the screen content
+    // while active — the connect flow on the Spotify card flips this flag.
+    if (uiState.showSpotifyWebLogin) {
+        com.stash.feature.settings.components.SpotifyLoginWebView(
+            onCookieExtracted = viewModel::onSpotifyWebLoginCookieExtracted,
+            onDismiss = viewModel::onDismissSpotifyWebLogin,
+            onManualFallback = viewModel::onConnectSpotifyManual,
+        )
+        return
+    }
+
+    // YouTube Music WebView login (full-screen overlay).
+    if (uiState.showYouTubeWebLogin) {
+        com.stash.feature.settings.components.YouTubeLoginWebView(
+            onCookieExtracted = viewModel::onYouTubeWebLoginCookieExtracted,
+            onDismiss = viewModel::onDismissYouTubeWebLogin,
+            onManualFallback = viewModel::onConnectYouTubeManual,
+        )
+        return
+    }
+
+    // Spotify sp_dc cookie input dialog (manual fallback).
+    if (uiState.showSpotifyCookieDialog) {
+        com.stash.feature.settings.components.SpotifyCookieDialog(
+            isValidating = uiState.isSpotifyCookieValidating,
+            errorMessage = uiState.spotifyCookieError,
+            onConnect = { cookie, username -> viewModel.onConnectSpotifyWithCookie(cookie, username) },
+            onDismiss = viewModel::onDismissSpotifyCookieDialog,
+        )
+    }
+
+    // YouTube Music cookie input dialog.
+    if (uiState.showYouTubeCookieDialog) {
+        com.stash.feature.settings.components.YouTubeCookieDialog(
+            isValidating = uiState.isYouTubeCookieValidating,
+            errorMessage = uiState.youTubeCookieError,
+            onConnect = viewModel::onConnectYouTubeWithCookie,
+            onDismiss = viewModel::onDismissYouTubeCookieDialog,
+        )
+    }
+
+    // YouTube error dialog (missing credentials, network failure, etc.).
+    if (uiState.youTubeError != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::onDismissYouTubeError,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large,
+            title = {
+                Text(
+                    text = "YouTube Music",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    text = uiState.youTubeError!!,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::onDismissYouTubeError) {
+                    Text("OK")
+                }
+            },
+        )
+    }
 
     SettingsScaffold(title = "Accounts & Sync", onBack = onBack, modifier = modifier) {
         // Like-mirroring opt-in ack. Rendered at the top of the scaffold so it
