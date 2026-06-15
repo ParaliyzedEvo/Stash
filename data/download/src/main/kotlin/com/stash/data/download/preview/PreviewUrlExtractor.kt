@@ -291,7 +291,6 @@ class PreviewUrlExtractor @Inject constructor(
         key: String,
         doRace: suspend () -> String,
     ): String {
-        val mapKey = if (bypassYtDlp) videoId else "$videoId-fallback"
         // Fast path — share an in-flight extract if one exists.
         inFlightExtracts[key]?.let { return it.await() }
 
@@ -344,9 +343,6 @@ class PreviewUrlExtractor @Inject constructor(
                     result.getOrThrow()
                 },
                 ytDlpExtract = { id ->
-                    if (bypassYtDlp) {
-                        throw NoSuchElementException("No unciphered stream URL available (yt-dlp bypassed)")
-                    }
                     val yt0 = System.currentTimeMillis()
                     val result = runCatching { extractViaYtDlp(id) }
                     val dt = System.currentTimeMillis() - yt0
