@@ -241,14 +241,14 @@ class HomeViewModel @Inject constructor(
     private val musicDataFlow = combine(
         musicRepository.getAllPlaylists(),
         musicRepository.getRecentlyAdded(20),
-        musicRepository.getAllDownloadedTracks(),
+        musicRepository.getAllTracks(),
         // Folded in here (rather than as a 6th positional arg to the top-
         // level `uiState` combine, which is already at the 5-arg typed-
         // overload max) so the recipe-derived custom-mix sets ride the
         // existing holder flow alongside `playlists`.
         recipeDao.observeAll(),
         discoveryQueueDao.observeNonFailedCountsByRecipe(),
-    ) { playlists, recentlyAdded, downloadedTracks, recipes, discoveryCounts ->
+    ) { playlists, recentlyAdded, allTracks, recipes, discoveryCounts ->
         val customRecipes = recipes.filter { !it.isBuiltin && it.playlistId != null }
         val customMixPlaylistIds = customRecipes.mapNotNull { it.playlistId }.toSet()
 
@@ -272,7 +272,7 @@ class HomeViewModel @Inject constructor(
                 MixBuildState.READY -> Unit
             }
         }
-        MusicData(playlists, recentlyAdded, downloadedTracks, customMixPlaylistIds, buildingMixIds, emptyMixIds)
+        MusicData(playlists, recentlyAdded, allTracks, customMixPlaylistIds, buildingMixIds, emptyMixIds)
     }
 
     /**
