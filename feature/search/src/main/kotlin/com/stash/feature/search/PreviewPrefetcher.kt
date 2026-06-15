@@ -68,7 +68,7 @@ class PreviewPrefetcher(
             .forEach { id ->
                 val job = scope.launch {
                     try {
-                        previewUrlCache[id] = extractor.extractStreamUrl(id, bypassYtDlp = true)
+                        previewUrlCache[id] = extractor.extractStreamUrl(id, allowYtDlp = true)
                     } catch (t: Throwable) {
                         if (t is CancellationException) throw t
                         Log.w(TAG, "prefetch fail $id: ${t.message}")

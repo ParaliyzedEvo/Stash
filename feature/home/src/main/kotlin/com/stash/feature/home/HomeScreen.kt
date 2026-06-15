@@ -135,7 +135,7 @@ fun HomeScreen(
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToRecentlyAdded: () -> Unit = {},
     onNavigateToLocalSongs: () -> Unit = {},
-    viewModel: HomeViewModel = hiltViewModel(),
+    onNavigateToMixBuilder: (Long?) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
@@ -260,7 +260,7 @@ fun HomeScreen(
                     modifier = Modifier.size(40.dp),
                 ) {
                     androidx.compose.material3.Icon(
-                        imageVector = Icons.Filled.Build,
+                        imageVector = Icons.Filled.BugReport,
                         contentDescription = "Report an issue on GitHub",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
