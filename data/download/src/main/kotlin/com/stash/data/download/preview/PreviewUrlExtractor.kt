@@ -327,7 +327,7 @@ class PreviewUrlExtractor @Inject constructor(
         }
 
         val t0 = System.currentTimeMillis()
-        Log.d("LATDIAG", "extract-start videoId=$videoId bypassYtDlp=$bypassYtDlp")
+        Log.d("LATDIAG", "extract-start videoId=$videoId")
         return try {
             val url = race(
                 videoId = videoId,
