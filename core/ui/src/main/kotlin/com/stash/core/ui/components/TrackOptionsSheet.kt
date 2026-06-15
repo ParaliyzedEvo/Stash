@@ -19,8 +19,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -131,14 +131,14 @@ fun TrackOptionsSheet(
 
         // -- Play Next option --
         SheetOptionRow(
-            icon = Icons.Default.PlaylistPlay,
+            icon = Icons.AutoMirrored.Filled.PlaylistPlay,
             label = "Play Next",
             onClick = { onPlayNext(track) },
         )
 
         // -- Add to Queue option --
         SheetOptionRow(
-            icon = Icons.Default.PlaylistAdd,
+            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
             label = "Add to Queue",
             onClick = { onAddToQueue(track) },
         )

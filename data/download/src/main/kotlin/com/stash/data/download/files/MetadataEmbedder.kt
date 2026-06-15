@@ -168,9 +168,9 @@ class MetadataEmbedder @Inject constructor(
     companion object {
         private const val TAG = "MetadataEmbedder"
 
-        // Containers that don't support ffmpeg's `-disposition:v:0 attached_pic`
+        // Containers that don't support or have issues with ffmpeg's `-disposition:v:0 attached_pic`
         // mapping (mux fails with exit 234). Tag writing still works for these.
-        private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg")
+        private val OPUS_OGG_EXTENSIONS = setOf("opus", "ogg", "flac")
 
         // Issue #118 threshold: max base64 length we'll inline into argv before
         // switching to the ffmetadata-file fallback. Linux MAX_ARG_STRLEN is
@@ -230,6 +230,12 @@ class MetadataEmbedder @Inject constructor(
 
             add("-metadata"); add("title=${sanitize(track.title)}")
             add("-metadata"); add("artist=${sanitize(track.artist)}")
+
+            val youtubeId = track.youtubeId ?: ""
+            val spotifyUri = track.spotifyUri ?: ""
+            if (youtubeId.isNotEmpty() || spotifyUri.isNotEmpty()) {
+                add("-metadata"); add("comment=stash:$youtubeId|$spotifyUri")
+            }
 
             if (track.album.isNotEmpty()) {
                 add("-metadata"); add("album=${sanitize(track.album)}")

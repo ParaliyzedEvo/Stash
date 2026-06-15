@@ -71,7 +71,7 @@ fun AccountConnectionCard(
         modifier = modifier.fillMaxWidth(),
         color = extendedColors.glassBackground,
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Column {
             Row(

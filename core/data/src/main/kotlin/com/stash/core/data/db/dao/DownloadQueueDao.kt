@@ -620,6 +620,56 @@ interface DownloadQueueDao {
     /** Find a queue entry by track ID (used for auto-reconciliation). */
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId AND status = 'FAILED' LIMIT 1")
     suspend fun getFailedByTrackId(trackId: Long): DownloadQueueEntity?
+
+    // ── Active Downloads page ───────────────────────────────────────────
+
+    /**
+     * Reactive feed for the Active Downloads page. Returns every queue row
+     * whose status indicates it is queued, in-flight, or deferred — joined
+     * with track metadata for display. Ordered by status priority
+     * (IN_PROGRESS first so the user sees what's actively downloading),
+     * then by creation time so the oldest queued track appears next.
+     */
+    @Query("""
+        SELECT dq.id AS queueId, t.id AS trackId, t.title, t.artist,
+               t.album_art_url AS albumArtUrl,
+               dq.status, dq.created_at AS createdAt
+          FROM download_queue dq
+          INNER JOIN tracks t ON t.id = dq.track_id
+         WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+         ORDER BY
+           CASE dq.status
+             WHEN 'IN_PROGRESS' THEN 0
+             WHEN 'PENDING' THEN 1
+             WHEN 'WAITING_FOR_LOSSLESS' THEN 2
+           END,
+           dq.created_at ASC
+    """)
+    fun getActiveDownloads(): Flow<List<ActiveDownloadRow>>
+
+    /** Reactive count of active (queued + in-progress) downloads for badge display. */
+    @Query("SELECT COUNT(*) FROM download_queue WHERE status IN ('PENDING', 'IN_PROGRESS')")
+    fun getActiveDownloadCount(): Flow<Int>
+
+    /**
+     * Reactive feed of recently completed downloads for the history tab.
+     * Capped at 200 most recent by completed_at timestamp.
+     */
+    @Query("""
+        SELECT dq.id AS queueId, t.id AS trackId, t.title, t.artist,
+               t.album_art_url AS albumArtUrl,
+               dq.status, dq.created_at AS createdAt
+          FROM download_queue dq
+          INNER JOIN tracks t ON t.id = dq.track_id
+         WHERE dq.status = 'COMPLETED'
+         ORDER BY dq.completed_at DESC
+         LIMIT 200
+    """)
+    fun getCompletedDownloads(): Flow<List<ActiveDownloadRow>>
+
+    /** Cancel a single download by removing its queue entry. */
+    @Query("DELETE FROM download_queue WHERE id = :queueId")
+    suspend fun deleteById(queueId: Long)
 }
 
 /**
@@ -655,4 +705,18 @@ data class FailedDownloadRow(
     val errorMessage: String?,
     val retryCount: Int,
     val completedAt: Long?,
+)
+
+/**
+ * Room projection for the Active Downloads page. One row per queue entry
+ * that is currently queued, downloading, or waiting for a lossless source.
+ */
+data class ActiveDownloadRow(
+    val queueId: Long,
+    val trackId: Long,
+    val title: String,
+    val artist: String,
+    val albumArtUrl: String?,
+    val status: DownloadStatus,
+    val createdAt: Long,
 )

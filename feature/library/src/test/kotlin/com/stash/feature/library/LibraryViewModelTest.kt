@@ -8,6 +8,7 @@ import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.files.LocalImportState
+import com.stash.core.data.sync.SyncPhase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -234,5 +235,9 @@ class LibraryViewModelTest {
         tokenManager = tokenManager,
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
+        syncScheduler = mock(),
+        syncStateManager = mock {
+            on { phase } doReturn MutableStateFlow<SyncPhase>(SyncPhase.Idle)
+        },
     )
 }

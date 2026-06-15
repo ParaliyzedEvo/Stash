@@ -1,5 +1,8 @@
 package com.stash.core.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -10,19 +13,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * v0.9.13: Heart icon — standard like-button toggle. Tap on an unliked
- * track adds it to the local Stash Liked Songs playlist; tap on a
+ * v0.9.13: Heart icon — standard like-button toggle with dynamic spring scale micro-interaction.
+ * Tap on an unliked track adds it to the local Stash Liked Songs playlist; tap on a
  * liked track removes it. Stash-only by design — no fan-out to
- * external services on tap. The Spotify auto-save scrobbler runs
- * separately and is one-way (Stash unlike does NOT propagate).
+ * external services on tap.
  *
  * The visible icon is rendered at [size] (default 24.dp) but the
  * clickable surface is expanded to the Material3 minimum interactive
@@ -48,6 +52,16 @@ fun LikeButton(
     unlikedTint: Color? = null,
     size: Dp = 24.dp,
 ) {
+    // Dynamic bouncy scale micro-animation on state change (Expressive UI)
+    val scale by animateFloatAsState(
+        targetValue = if (isLiked) 1.25f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioHighBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "likeScaleAnimation"
+    )
+
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
@@ -65,7 +79,12 @@ fun LikeButton(
             } else {
                 unlikedTint ?: MaterialTheme.colorScheme.onSurface
             },
-            modifier = Modifier.size(size),
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
         )
     }
 }

@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.map
  * Uses 300ms debounce (not 500ms like SearchScreen) because this is
  * client-side string matching, not a network call.
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 fun Flow<List<Track>>.withSearchFilter(
     queryFlow: StateFlow<String>,
 ): Flow<List<Track>> {

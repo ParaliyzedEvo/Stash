@@ -4,13 +4,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,6 +49,7 @@ import kotlinx.coroutines.flow.merge
  * Snackbar host — refresh failures show a one-liner but the cached data
  * keeps rendering underneath, matching §3.4's stale-while-revalidate UX.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistProfileScreen(
     onBack: () -> Unit,
@@ -57,6 +63,9 @@ fun ArtistProfileScreen(
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+
+    var trackToRemove by remember { mutableStateOf<SearchResultItem?>(null) }
+    val sheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(vm) {
         merge(
@@ -72,7 +81,7 @@ fun ArtistProfileScreen(
             contentPadding = PaddingValues(bottom = 96.dp),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(inner),
+                .padding(bottom = inner.calculateBottomPadding()),
         ) {
             item {
                 ArtistHero(
@@ -105,6 +114,7 @@ fun ArtistProfileScreen(
                         onPreview = { track -> vm.delegate.previewTrack(track) },
                         onStopPreview = vm.delegate::stopPreview,
                         onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
+                        onRemoveDownload = { item -> trackToRemove = item },
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                     )
@@ -120,11 +130,25 @@ fun ArtistProfileScreen(
                     onPreview = { track -> vm.delegate.previewTrack(track) },
                     onStopPreview = vm.delegate::stopPreview,
                     onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
+                    onRemoveDownload = { item -> trackToRemove = item },
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
                 )
             }
         }
+    }
+
+    if (trackToRemove != null) {
+        RemoveDownloadSheet(
+            trackTitle = trackToRemove!!.title,
+            trackArtist = trackToRemove!!.artist,
+            onConfirm = {
+                vm.delegate.removeDownload(trackToRemove!!.videoId)
+                trackToRemove = null
+            },
+            onDismiss = { trackToRemove = null },
+            sheetState = sheetState,
+        )
     }
 }
 
@@ -144,6 +168,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onPreview: (TrackItem) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
+    onRemoveDownload: (SearchResultItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
 ) {
@@ -160,6 +185,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 onPreview = onPreview,
                 onStopPreview = onStopPreview,
                 onDownload = onDownload,
+                onRemoveDownload = onRemoveDownload,
             )
         }
     }

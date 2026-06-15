@@ -11,6 +11,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
@@ -43,9 +45,10 @@ class InnerTubeSearchExecutorTest {
             .use { it.readText() }
 
     private fun executorFor(fixture: String): InnerTubeSearchExecutor {
-        val inner = mock<InnerTubeClient>()
         val parsed = Json.parseToJsonElement(loadFixture(fixture)).jsonObject
-        runBlocking { whenever(inner.search(any())).thenReturn(parsed) }
+        val inner = mock<InnerTubeClient> {
+            onBlocking { search(any(), anyOrNull()) } doReturn parsed
+        }
         return InnerTubeSearchExecutor(inner)
     }
 
@@ -90,11 +93,12 @@ class InnerTubeSearchExecutorTest {
         // Player-endpoint fixture for the Smooth Criminal OMV (videoId h_D3VFfhvs4).
         // `videoDetails.musicVideoType == "MUSIC_VIDEO_TYPE_OMV"` per the real
         // production response we captured in Phase 0.5.
-        val inner = mock<InnerTubeClient>()
         val playerResponse = Json.parseToJsonElement(
             loadFixture("innertube_player_smooth_criminal_omv.json"),
         ).jsonObject
-        runBlocking { whenever(inner.player(any(), any())).thenReturn(playerResponse) }
+        val inner = mock<InnerTubeClient> {
+            onBlocking { player(any(), any()) } doReturn playerResponse
+        }
         val executor = InnerTubeSearchExecutor(inner)
 
         val verification = executor.verifyVideo("h_D3VFfhvs4")

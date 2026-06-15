@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -44,10 +46,9 @@ class YtLibraryCanonicalizerTest {
      * without spinning up a full network mock.
      */
     private fun smoothCriminalCandidates(): List<YtDlpSearchResult> {
-        val inner = mock<InnerTubeClient>()
         val json = loadFixture("innertube_search_smooth_criminal.json")
-        runBlocking {
-            whenever(inner.search(any())).thenReturn(Json.parseToJsonElement(json).jsonObject)
+        val inner = mock<InnerTubeClient> {
+            onBlocking { search(any(), anyOrNull()) } doReturn Json.parseToJsonElement(json).jsonObject
         }
         val realExecutor = InnerTubeSearchExecutor(inner)
         return runBlocking { realExecutor.search("Michael Jackson Smooth Criminal", maxResults = 10) }
@@ -55,7 +56,6 @@ class YtLibraryCanonicalizerTest {
 
     @Test
     fun `OMV videoId is swapped for ATV equivalent when search returns one`() = runTest {
-        val searchExecutor = mock<InnerTubeSearchExecutor>()
         val trackDao = mock<TrackDao>()
 
         // Precompute the candidates before any `whenever` stubbing — the
@@ -65,15 +65,14 @@ class YtLibraryCanonicalizerTest {
         val candidates = smoothCriminalCandidates()
 
         // verifyVideo reports the OMV for this videoId.
-        whenever(searchExecutor.verifyVideo("h_D3VFfhvs4")).thenReturn(
-            InnerTubeSearchExecutor.VideoVerification(
+        val searchExecutor = mock<InnerTubeSearchExecutor> {
+            onBlocking { verifyVideo("h_D3VFfhvs4") } doReturn InnerTubeSearchExecutor.VideoVerification(
                 title = "Smooth Criminal (Official Video)",
                 isPlayable = true,
                 musicVideoType = MusicVideoType.OMV,
-            ),
-        )
-        // Canonicalizer's search returns the real fixture candidates.
-        whenever(searchExecutor.search(any(), any())).thenReturn(candidates)
+            )
+            onBlocking { search(any(), any()) } doReturn candidates
+        }
 
         val canonicalizer = YtLibraryCanonicalizer(
             searchExecutor = searchExecutor,
@@ -114,23 +113,22 @@ class YtLibraryCanonicalizerTest {
             title = eq("Smooth Criminal"),
             canonicalTitle = any(),
             canonicalArtist = any(),
-            album = any(),
-            albumArtUrl = any(),
+            album = anyOrNull(),
+            albumArtUrl = anyOrNull(),
             durationMs = any(),
         )
     }
 
     @Test
     fun `ATV videoId is returned unchanged without calling search or DB`() = runTest {
-        val searchExecutor = mock<InnerTubeSearchExecutor>()
         val trackDao = mock<TrackDao>()
-        whenever(searchExecutor.verifyVideo("atv1")).thenReturn(
-            InnerTubeSearchExecutor.VideoVerification(
+        val searchExecutor = mock<InnerTubeSearchExecutor> {
+            onBlocking { verifyVideo("atv1") } doReturn InnerTubeSearchExecutor.VideoVerification(
                 title = "Studio Song",
                 isPlayable = true,
                 musicVideoType = MusicVideoType.ATV,
-            ),
-        )
+            )
+        }
         val canonicalizer = YtLibraryCanonicalizer(
             searchExecutor = searchExecutor,
             matchScorer = MatchScorer(TrackMatcher()),
@@ -153,16 +151,15 @@ class YtLibraryCanonicalizerTest {
 
     @Test
     fun `OMV falls back to original when no better candidate is found`() = runTest {
-        val searchExecutor = mock<InnerTubeSearchExecutor>()
         val trackDao = mock<TrackDao>()
-        whenever(searchExecutor.verifyVideo("omv1")).thenReturn(
-            InnerTubeSearchExecutor.VideoVerification(
+        val searchExecutor = mock<InnerTubeSearchExecutor> {
+            onBlocking { verifyVideo("omv1") } doReturn InnerTubeSearchExecutor.VideoVerification(
                 title = "Obscure OMV",
                 isPlayable = true,
                 musicVideoType = MusicVideoType.OMV,
-            ),
-        )
-        whenever(searchExecutor.search(any(), any())).thenReturn(emptyList())
+            )
+            onBlocking { search(any(), any()) } doReturn emptyList()
+        }
         val canonicalizer = YtLibraryCanonicalizer(
             searchExecutor = searchExecutor,
             matchScorer = MatchScorer(TrackMatcher()),

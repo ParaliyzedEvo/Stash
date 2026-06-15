@@ -153,13 +153,17 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
                 )
             }
 
-            setForeground(
-                createForegroundInfo(
-                    title = modeLabel,
-                    text = "0 of $total checked",
-                    progress = 0f,
-                ),
-            )
+            runCatching {
+                setForeground(
+                    createForegroundInfo(
+                        title = modeLabel,
+                        text = "0 of $total checked",
+                        progress = 0f,
+                    ),
+                )
+            }.onFailure { e ->
+                Log.w(TAG, "Failed to update foreground service notification on startup", e)
+            }
 
             val semaphore = Semaphore(VERIFY_CONCURRENCY)
             val checked = AtomicInteger(0)

@@ -64,6 +64,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -103,6 +104,8 @@ class HomeViewModel @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val lyricsBackfillState: LyricsBackfillState,
+    private val networkAwareStreamingManager: com.stash.core.media.streaming.NetworkAwareStreamingManager,
+    private val syncScheduler: com.stash.core.data.sync.SyncScheduler,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -121,7 +124,7 @@ class HomeViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
+            initialValue = true,
         )
 
     /**
@@ -186,12 +189,45 @@ class HomeViewModel @Inject constructor(
                 tipJarRepository.refresh()
             }
         }
+        // Forward network-aware streaming messages (Online↔Offline auto-switch
+        // notifications) to the Home screen's toast channel.
+        viewModelScope.launch {
+            networkAwareStreamingManager.messages.collect { msg ->
+                _userMessages.tryEmit(msg)
+            }
+        }
     }
 
     /** v0.9.13: callable from the screen on resume to keep the pill fresh. */
     fun refreshTipJarIfStale() {
         viewModelScope.launch {
             if (tipJarRepository.isStale()) tipJarRepository.refresh()
+        }
+    }
+
+    /**
+     * Pull-to-refresh handler. Triggers a one-shot sync (same work
+     * request pattern the Sync tab uses) and refreshes the tip-jar
+     * data. The refresh indicator stays visible for at least 1s so the
+     * user gets visual feedback even if the sync returns instantly.
+     */
+    fun onRefresh() {
+        if (_isRefreshing.value) return // debounce
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val startMs = System.currentTimeMillis()
+            try {
+                // Enqueue a one-shot sync just like the Sync tab does.
+                syncScheduler.triggerManualSync()
+                // Also refresh tip-jar data.
+                if (tipJarRepository.isStale()) tipJarRepository.refresh()
+            } catch (e: Exception) {
+                Log.w(TAG, "pull-to-refresh sync failed", e)
+            }
+            // Keep the indicator visible for at least 1s.
+            val elapsed = System.currentTimeMillis() - startMs
+            if (elapsed < 1_000L) delay(1_000L - elapsed)
+            _isRefreshing.value = false
         }
     }
 
@@ -367,11 +403,20 @@ class HomeViewModel @Inject constructor(
      * non-vararg-friendly arg count. Mirrors the [authStateFlow]
      * precedent.
      */
-    private val bannersInfoFlow: Flow<BannersInfo> = combine(
+    private val bannersInfoFlow: StateFlow<BannersInfo> = combine(
         bannerStateFlow,
         metadataBackfillBannerFlow,
         lyricsBackfillBannerFlow,
     ) { lossless, backfill, lyrics -> BannersInfo(lossless, backfill, lyrics) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = BannersInfo(
+                WaitingForLosslessBannerState.Hidden,
+                MetadataBackfillBannerState.Hidden,
+                LyricsBackfillBannerState.Hidden,
+            ),
+        )
 
     /**
      * Bundles the two prompt-banner flows so the top-level combine
@@ -380,7 +425,7 @@ class HomeViewModel @Inject constructor(
      * Spotify or YouTube Music" prompt — that responsibility moved
      * to `:feature:sync` along with the card itself.
      */
-    private val promptsFlow = combine(
+    private val promptsFlow: StateFlow<PromptsInfo> = combine(
         lastFmPromptFlow,
         losslessPromptFlow,
     ) { lastFmPrompt, losslessPrompt ->
@@ -388,9 +433,16 @@ class HomeViewModel @Inject constructor(
             lastFmPrompt = lastFmPrompt,
             losslessPrompt = losslessPrompt,
         )
-    }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = PromptsInfo(lastFmPrompt = null, losslessPrompt = null),
+    )
 
-    val uiState: StateFlow<HomeUiState> = combine(
+    /** Pull-to-refresh state — set by [onRefresh], cleared after the refresh completes. */
+    private val _isRefreshing = MutableStateFlow(false)
+
+    private val _baseUiState: Flow<HomeUiState> = combine(
         musicDataFlow,
         promptsFlow,
         _playlistSortOrder,
@@ -428,11 +480,23 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
+        val localSongs = musicData.allTracks.filter { it.isDownloaded }
+            .sortedByDescending { it.dateAdded }
+            .take(20)
+
+        val likedSongs = musicData.allTracks.filter {
+            it.spotifySavedAt != null || it.ytMusicSavedAt != null || it.stashLikedAt != null
+        }.sortedByDescending {
+            maxOf(it.spotifySavedAt ?: 0L, it.ytMusicSavedAt ?: 0L, it.stashLikedAt ?: 0L)
+        }.take(20)
+
         HomeUiState(
             stashMixes = stashMixes,
             spotifyMixes = spotifyMixes,
             youtubeMixes = youtubeMixes,
             recentlyAdded = musicData.recentlyAdded,
+            localSongs = localSongs,
+            likedSongs = likedSongs,
             spotifyLikedPlaylists = spotifyLikedPlaylists,
             youtubeLikedPlaylists = youtubeLikedPlaylists,
             spotifyLikedCount = spotifyLikedCount,
@@ -450,6 +514,13 @@ class HomeViewModel @Inject constructor(
             metadataBackfillBanner = metadataBackfillBanner,
             lyricsBackfillBanner = lyricsBackfillBanner,
         )
+    }
+
+    val uiState: StateFlow<HomeUiState> = combine(
+        _baseUiState,
+        _isRefreshing,
+    ) { base, refreshing ->
+        base.copy(isRefreshing = refreshing)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

@@ -26,6 +26,10 @@ dependencies {
     implementation(libs.palette.ktx)
     implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.play.services.cast.framework)
+    implementation(libs.androidx.mediarouter)
+    implementation(libs.androidx.appcompat)
+
 
     // v0.9.18 — first tests in this module. Stand up the same JUnit +
     // mockk + coroutines-test + Robolectric harness that :feature:home

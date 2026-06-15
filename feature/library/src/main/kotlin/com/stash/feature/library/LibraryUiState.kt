@@ -32,6 +32,7 @@ data class LibraryUiState(
     val spotifyConnected: Boolean = false,
     val youTubeConnected: Boolean = false,
     val currentlyPlayingTrackId: Long? = null,
+    val isRefreshing: Boolean = false,
 )
 
 /** Tabs available in the library browser. */
@@ -47,7 +48,7 @@ enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED }
  * of my tracks". When selected, only lossless-codec files (flac, alac,
  * wav, etc.) survive.
  */
-enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC }
+enum class SourceFilter { ALL, LOCAL, YOUTUBE, SPOTIFY, FLAC }
 
 /**
  * @property name           Display name of the artist.

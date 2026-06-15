@@ -24,7 +24,10 @@ import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
+import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.SyncPreferencesManager
+import com.stash.core.data.sync.SyncScheduler
 import com.stash.data.download.backfill.MetadataBackfillScheduler
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.data.lyrics.backfill.LyricsBackfillScheduler
@@ -41,6 +44,7 @@ import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.media.streaming.KennyyHealthProbe
+import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
@@ -49,6 +53,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -73,6 +78,12 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var syncNotificationManager: SyncNotificationManager
+
+    @Inject
+    lateinit var syncScheduler: SyncScheduler
+
+    @Inject
+    lateinit var syncPreferencesManager: SyncPreferencesManager
 
     @Inject
     lateinit var ytDlpManager: YtDlpManager
@@ -151,6 +162,14 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var kennyyHealthProbe: KennyyHealthProbe
 
     /**
+     * Boot-time stream URL prefetcher. Pre-resolves the last-played
+     * track's stream URL into the cache at app start so the first
+     * play tap is instant instead of waiting for a Kennyy resolve.
+     */
+    @Inject
+    lateinit var prefetchOrchestrator: PrefetchOrchestrator
+
+    /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
      * later share the latest report from Settings → Diagnostics. Installed
      * as the first thing after super.onCreate() so it catches errors from
@@ -183,6 +202,21 @@ class StashApplication : Application(), Configuration.Provider {
      */
     @Inject
     lateinit var lyricsBackfillScheduler: LyricsBackfillScheduler
+
+    /**
+     * Reactively switches between Online/Offline streaming modes based on
+     * network connectivity. Started in [onCreate] with the application scope.
+     */
+    @Inject
+    lateinit var networkAwareStreamingManager: com.stash.core.media.streaming.NetworkAwareStreamingManager
+
+    /**
+     * Used at cold-start to force-reset the removed test-only toggles
+     * (forceYouTubeFallback, forceAntraOnly) so a stale persisted `true`
+     * can never silently bypass the lossless source chain again.
+     */
+    @Inject
+    lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -234,6 +268,19 @@ class StashApplication : Application(), Configuration.Provider {
                 }
             },
         )
+        // Start the network-aware streaming manager that auto-switches
+        // between Online and Offline modes when connectivity changes.
+        networkAwareStreamingManager.startObserving(applicationScope)
+        // Force-clear the removed test-only toggles on every cold start so
+        // a stale persisted true can never silently bypass the lossless
+        // source chain again (see StreamSourceRegistry).
+        // Also force streaming enabled so the app always opens online —
+        // the auto-detect offline logic was removed because it was unreliable.
+        applicationScope.launch {
+            streamingPreference.setEnabled(true)
+            streamingPreference.setForceYouTubeFallback(false)
+            streamingPreference.setForceAntraOnly(false)
+        }
         applicationScope.launch {
             musicRepository.runMigrations()
         }
@@ -280,8 +327,34 @@ class StashApplication : Application(), Configuration.Provider {
                 ).execute().close()
             }
         }
-        YtDlpUpdateWorker.schedulePeriodicUpdate(this)
-        UpdateCheckWorker.schedulePeriodicCheck(this)
+        // Warm up qobuz.kennyy.com.br TLS + DNS so the first stream resolve
+        // doesn't pay a ~200-400ms handshake on top of the search latency.
+        // The health probe also hits Kennyy, but it runs through a separate
+        // OkHttp client; this HEAD request warms the shared connection pool
+        // that KennyyApiClient uses for actual resolves.
+        applicationScope.launch {
+            runCatching {
+                okHttpClient.newCall(
+                    Request.Builder().url("https://qobuz.kennyy.com.br/").head().build(),
+                ).execute().close()
+            }
+        }
+        // Pre-resolve the last-played track's stream URL at boot so the
+        // first play-tap is instant. Also pre-warms the next track in
+        // the persisted queue. No-ops when streaming is disabled, the
+        // track is downloaded, or the URL is already cached.
+        applicationScope.launch {
+            prefetchOrchestrator.prewarmLastPlayed()
+        }
+        // Move WorkManager scheduling off the main thread. Each
+        // enqueue/schedule call hits the WorkManager SQLite DB — doing 15+
+        // of them synchronously in onCreate causes ~80 skipped frames. All
+        // use KEEP or REPLACE policies, so running them async after the
+        // first Compose frame is safe and eliminates the startup jank.
+        applicationScope.launch {
+            YtDlpUpdateWorker.schedulePeriodicUpdate(this@StashApplication)
+            UpdateCheckWorker.schedulePeriodicCheck(this@StashApplication)
+        }
 
         // Stash Mixes scheduling. Daily refresh for mix regeneration,
         // separate daily tag enrichment (unmetered+charging), separate
@@ -341,26 +414,28 @@ class StashApplication : Application(), Configuration.Provider {
                 androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
             )
         }
-        LoudnessBackfillWorker.schedulePeriodic(this)
-        // Repair missing album_art_url on tracks downloaded before 0.5.3 —
-        // primarily Stash Discover candidates whose match pipeline surfaced
-        // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
-        // worker is a no-op on every subsequent launch once it completes.
-        ArtBackfillWorker.enqueueOneTime(this)
-        // v0.9.11: kick a background sweep that fills in bit-depth +
-        // sample-rate for tracks downloaded before the columns existed.
-        // The flag is set immediately on enqueue (not after success) so
-        // an interrupted worker doesn't re-trigger on every launch — the
-        // manual "Refresh quality info" button in Settings → Library
-        // Health covers any rows that slipped through, and the worker's
-        // own predicate is idempotent.
-        maybeEnqueueQualityBackfill()
-        maybeEnqueueBlocklistIntegrity()
-        // Also fire a one-shot check on every cold start so a release pushed
-        // between periodic-worker windows surfaces within seconds of the
-        // next launch — the 24-hour periodic worker alone can leave users
-        // waiting up to 48 hours when Android Doze defers the fire.
-        UpdateCheckWorker.enqueueOneTimeCheck(this)
+        applicationScope.launch {
+            LoudnessBackfillWorker.schedulePeriodic(this@StashApplication)
+            // Repair missing album_art_url on tracks downloaded before 0.5.3 —
+            // primarily Stash Discover candidates whose match pipeline surfaced
+            // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
+            // worker is a no-op on every subsequent launch once it completes.
+            ArtBackfillWorker.enqueueOneTime(this@StashApplication)
+            // v0.9.11: kick a background sweep that fills in bit-depth +
+            // sample-rate for tracks downloaded before the columns existed.
+            // The flag is set immediately on enqueue (not after success) so
+            // an interrupted worker doesn't re-trigger on every launch — the
+            // manual "Refresh quality info" button in Settings → Library
+            // Health covers any rows that slipped through, and the worker's
+            // own predicate is idempotent.
+            maybeEnqueueQualityBackfill()
+            maybeEnqueueBlocklistIntegrity()
+            // Also fire a one-shot check on every cold start so a release pushed
+            // between periodic-worker windows surfaces within seconds of the
+            // next launch — the 24-hour periodic worker alone can leave users
+            // waiting up to 48 hours when Android Doze defers the fire.
+            UpdateCheckWorker.enqueueOneTimeCheck(this@StashApplication)
+        }
         applicationScope.launch { maybeInvalidateArtistCache() }
         applicationScope.launch { maybeEnableYouTubePlaylistSync() }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
@@ -397,6 +472,26 @@ class StashApplication : Application(), Configuration.Provider {
         // deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
         losslessRetryScheduler.start()
+
+        // Re-apply the daily sync schedule on every app launch. WorkManager
+        // persists its own work across reboots, but force-stop or a completed
+        // chain leaves no pending work — the next scheduled sync never fires
+        // until a reboot triggers BootReceiver. By re-scheduling here (with
+        // REPLACE policy inside SyncScheduler) the alarm is always live. This
+        // is idempotent: if a chain is already pending for the same slot, the
+        // new REPLACE just recomputes the delay and re-enqueues.
+        applicationScope.launch {
+            val prefs = syncPreferencesManager.preferences.first()
+            if (prefs.autoSyncEnabled) {
+                syncScheduler.scheduleDailySync(
+                    prefs.syncHour,
+                    prefs.syncMinute,
+                    wifiOnly = prefs.wifiOnly,
+                    days = DayOfWeekSet(prefs.syncDays),
+                )
+                Log.i("StashStartup", "re-scheduled daily sync at ${prefs.syncHour}:${String.format("%02d", prefs.syncMinute)}")
+            }
+        }
     }
 
     /**

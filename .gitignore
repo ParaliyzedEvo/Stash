@@ -14,6 +14,7 @@
 bin/
 gen/
 out/
+logs
 build/
 
 # Gradle files
@@ -21,6 +22,7 @@ build/
 gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
+gradle-daemon-jvm.properties
 
 # Local configuration file
 local.properties
@@ -73,3 +75,4 @@ node_modules/
 # Claude Code per-machine local state (the shared .claude/ config stays tracked)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+stash-release.jks

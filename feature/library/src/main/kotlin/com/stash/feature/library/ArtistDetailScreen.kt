@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -119,91 +120,304 @@ fun ArtistDetailScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        if (state.isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
-            ) {
-                // ── Header section ──────────────────────────────────────
-                item(key = "header") {
-                    ArtistDetailHeader(
-                        state = state,
-                        bulkPlayInFlight = bulkPlayInFlight,
-                        onBack = onBack,
-                        onPlayAll = {
-                            val firstTrack = state.tracks.firstOrNull { it.filePath != null }
-                            if (firstTrack != null) viewModel.playTrack(firstTrack.id)
-                        },
-                        onShuffle = { viewModel.shuffleAll() },
-                        onToggleSearch = { viewModel.toggleSearch() },
-                    )
-                }
+        if (!state.isLoading) {
+            val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+            val isLandscape = orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                ) {
+                    // Left Side: Header & Controls (40% width)
+                    Column(
+                        modifier = Modifier
+                            .weight(0.4f)
+                            .fillMaxHeight()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
 
-                // ── Search filter bar ───────────────────────────────────
-                if (state.showSearch) {
-                    item(key = "search") {
-                        SearchFilterBar(
-                            query = state.searchQuery,
-                            onQueryChanged = viewModel::onSearchQueryChanged,
-                            onClear = viewModel::clearSearch,
-                        )
-                    }
-                }
-
-                // ── Empty search results ───────────────────────────────
-                if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
-                    item(key = "no-results") {
+                        val firstTrackWithArt = state.tracks.firstOrNull { it.albumArtPath != null || it.albumArtUrl != null }
+                        val artUrl = firstTrackWithArt?.albumArtPath ?: firstTrackWithArt?.albumArtUrl
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center,
+                                .size(160.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(extendedColors.elevatedSurface)
                         ) {
+                            if (artUrl != null) {
+                                coil3.compose.AsyncImage(
+                                    model = artUrl,
+                                    contentDescription = state.artistName,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                colors = listOf(
+                                                    MaterialTheme.colorScheme.primaryContainer,
+                                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+                                                )
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "No matching songs",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = state.artistName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val trackCount = state.tracks.size
+                            Text(
+                                text = "$trackCount track${if (trackCount != 1) "s" else ""}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val firstTrack = state.tracks.firstOrNull { it.filePath != null }
+                                    if (firstTrack != null) viewModel.playTrack(firstTrack.id)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            ) {
+                                if (bulkPlayInFlight == BulkPlayAction.PLAY_ALL) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Play All",
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.shuffleAll() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                            ) {
+                                if (bulkPlayInFlight == BulkPlayAction.SHUFFLE_ALL) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = "Shuffle",
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.toggleSearch() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Right Side: Track List (60% width)
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(0.6f)
+                            .fillMaxHeight(),
+                        contentPadding = PaddingValues(top = 16.dp, bottom = if (selection.isActive) 140.dp else 120.dp),
+                    ) {
+                        if (state.showSearch) {
+                            item(key = "search") {
+                                SearchFilterBar(
+                                    query = state.searchQuery,
+                                    onQueryChanged = viewModel::onSearchQueryChanged,
+                                    onClear = viewModel::clearSearch,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                        }
+
+                        if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                            item(key = "no-results") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 48.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "No matching songs",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+
+                        itemsIndexed(
+                            items = state.tracks,
+                            key = { _, track -> track.id },
+                            contentType = { _, _ -> "track" },
+                        ) { index, track ->
+                            DetailTrackRow(
+                                track = track,
+                                trackNumber = index + 1,
+                                isPlaying = track.id == state.currentlyPlayingTrackId,
+                                onClick = {
+                                    if (selection.isActive) selection.toggle(track.id)
+                                    else viewModel.playTrack(track.id)
+                                },
+                                onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                                subtitleOverride = track.album,
+                                isResolving = track.id == tappedTrackId,
+                                selectionActive = selection.isActive,
+                                selected = selection.isSelected(track.id),
+                                onMoreClick = { selectedTrack = track },
+                            )
+
+                            if (index < state.tracks.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                    thickness = 0.5.dp,
+                                    color = extendedColors.glassBorder,
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
+                ) {
+                    // ── Header section ──────────────────────────────────────
+                    item(key = "header") {
+                        ArtistDetailHeader(
+                            state = state,
+                            bulkPlayInFlight = bulkPlayInFlight,
+                            onBack = onBack,
+                            onPlayAll = {
+                                val firstTrack = state.tracks.firstOrNull { it.filePath != null }
+                                if (firstTrack != null) viewModel.playTrack(firstTrack.id)
+                            },
+                            onShuffle = { viewModel.shuffleAll() },
+                            onToggleSearch = { viewModel.toggleSearch() },
+                        )
+                    }
+
+                    // ── Search filter bar ───────────────────────────────────
+                    if (state.showSearch) {
+                        item(key = "search") {
+                            SearchFilterBar(
+                                query = state.searchQuery,
+                                onQueryChanged = viewModel::onSearchQueryChanged,
+                                onClear = viewModel::clearSearch,
+                            )
+                        }
+                    }
+
+                    // ── Empty search results ───────────────────────────────
+                    if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                        item(key = "no-results") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "No matching songs",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    // ── Track list ──────────────────────────────────────────
+                    itemsIndexed(
+                        items = state.tracks,
+                        key = { _, track -> track.id },
+                        contentType = { _, _ -> "track" },
+                    ) { index, track ->
+                        DetailTrackRow(
+                            track = track,
+                            trackNumber = index + 1,
+                            isPlaying = track.id == state.currentlyPlayingTrackId,
+                            onClick = {
+                                if (selection.isActive) selection.toggle(track.id)
+                                else viewModel.playTrack(track.id)
+                            },
+                            onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                            subtitleOverride = track.album,
+                            isResolving = track.id == tappedTrackId,
+                            selectionActive = selection.isActive,
+                            selected = selection.isSelected(track.id),
+                            onMoreClick = { selectedTrack = track },
+                        )
+
+                        if (index < state.tracks.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                thickness = 0.5.dp,
+                                color = extendedColors.glassBorder,
                             )
                         }
                     }
                 }
-
-                // ── Track list ──────────────────────────────────────────
-                itemsIndexed(
-                    items = state.tracks,
-                    key = { _, track -> track.id },
-                ) { index, track ->
-                    DetailTrackRow(
-                        track = track,
-                        trackNumber = index + 1,
-                        isPlaying = track.id == state.currentlyPlayingTrackId,
-                        onClick = {
-                            if (selection.isActive) selection.toggle(track.id)
-                            else viewModel.playTrack(track.id)
-                        },
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
-                        subtitleOverride = track.album,
-                        isResolving = track.id == tappedTrackId,
-                        selectionActive = selection.isActive,
-                        selected = selection.isSelected(track.id),
-                        onMoreClick = { selectedTrack = track },
-                    )
-
-                    if (index < state.tracks.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 80.dp, end = 20.dp),
-                            thickness = 0.5.dp,
-                            color = extendedColors.glassBorder,
-                        )
-                    }
-                }
             }
         }
+
 
         // ── Selection chrome (overlaid contextual top + bottom bars) ────────
         val selectedTracks = state.tracks.filter { it.id in selection.selectedIds }
@@ -340,84 +554,95 @@ private fun ArtistDetailHeader(
     val extendedColors = StashTheme.extendedColors
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // ── Back button row ─────────────────────────────────────────────
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 8.dp, top = 8.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(300.dp)
+                .background(MaterialTheme.colorScheme.background)
         ) {
+            // Full-bleed background image using the first track's art
+            val firstTrackWithArt = state.tracks.firstOrNull { it.albumArtPath != null || it.albumArtUrl != null }
+            val artUrl = firstTrackWithArt?.albumArtPath ?: firstTrackWithArt?.albumArtUrl
+            
+            if (artUrl != null) {
+                coil3.compose.AsyncImage(
+                    model = artUrl,
+                    contentDescription = state.artistName,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                // Fallback gradient if no art is available
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
+                                ),
+                            )
+                        )
+                )
+            }
+
+            // Vertical gradient wash to blend into text
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f),
+                                androidx.compose.ui.graphics.Color.Transparent,
+                                androidx.compose.ui.graphics.Color.Transparent,
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
+                                MaterialTheme.colorScheme.background
+                            ),
+                            startY = 0f,
+                        )
+                    )
+            )
+
+            // Back button
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(top = 12.dp, start = 8.dp),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ── Artist icon + name ──────────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Circular artist icon placeholder
-            Box(
+            // Artist info at the bottom
+            Column(
                 modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                            ),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                Text(
+                    text = state.artistName,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val trackCount = state.tracks.size
+                Text(
+                    text = "$trackCount track${if (trackCount != 1) "s" else ""}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Artist name
-            Text(
-                text = state.artistName,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Track count
-            val trackCount = state.tracks.size
-            Text(
-                text = "$trackCount track${if (trackCount != 1) "s" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

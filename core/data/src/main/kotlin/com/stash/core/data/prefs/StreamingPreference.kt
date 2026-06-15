@@ -51,7 +51,7 @@ class StreamingPreference @Inject constructor(
     private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
 
     val enabled: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
-        prefs[enabledKey] ?: false
+        prefs[enabledKey] ?: true
     }
 
     val streamOnCellular: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->

@@ -282,8 +282,11 @@ interface TrackDao {
           AND bl.canonical_key IS NULL
           AND (
               t.is_downloaded = 1
-              OR :includeStreamable
               OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+              OR (
+                  :includeStreamable
+                  AND (t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL)
+              )
           )
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
@@ -1114,12 +1117,15 @@ interface TrackDao {
      *
      * Excludes tracks with source = 'BOTH' because those are local/custom
      * imports that should never be auto-deleted.
+     * Excludes tracks with source = 'LOCAL' because those are user-imported
+     * files that must persist regardless of playlist membership.
      */
     @Query(
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
           AND t.source != 'BOTH'
+          AND t.source != 'LOCAL'
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
@@ -1234,12 +1240,12 @@ interface TrackDao {
     )
     fun getFlacStorageBytes(): Flow<Long>
 
-    /** Count of downloaded tracks from Spotify. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'SPOTIFY'")
+    /** Count of downloaded tracks from Spotify (includes cross-source BOTH tracks). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND (source = 'SPOTIFY' OR source = 'BOTH')")
     fun getSpotifyDownloadedCount(): Flow<Int>
 
-    /** Count of downloaded tracks from YouTube. */
-    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND source = 'YOUTUBE'")
+    /** Count of downloaded tracks from YouTube (includes cross-source BOTH tracks). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE is_downloaded = 1 AND (source = 'YOUTUBE' OR source = 'BOTH')")
     fun getYouTubeDownloadedCount(): Flow<Int>
 
     // ── Aggregate queries ───────────────────────────────────────────────

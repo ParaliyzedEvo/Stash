@@ -98,6 +98,49 @@ class LikedSongsDetailViewModelTest {
         uiSub.cancel()
     }
 
+    @Test
+    fun `liked songs with duplicate titles and artists are merged and deduplicated`() = runTest {
+        val spotifyTrack = Track(
+            id = 42L,
+            title = "Hit (Remix)",
+            artist = "Aditya",
+            source = MusicSource.SPOTIFY,
+            isDownloaded = false
+        )
+        val ytTrack = Track(
+            id = 43L,
+            title = "Hit - Remix",
+            artist = "Aditya",
+            source = MusicSource.YOUTUBE,
+            isDownloaded = true
+        )
+
+        val spotifyPlaylist = Playlist(
+            id = 1L, name = "Liked", source = MusicSource.SPOTIFY, type = PlaylistType.LIKED_SONGS,
+        )
+        val ytPlaylist = Playlist(
+            id = 2L, name = "Liked", source = MusicSource.YOUTUBE, type = PlaylistType.LIKED_SONGS,
+        )
+
+        val musicRepo = mock<MusicRepository> {
+            on { getPlaylistsByType(any()) } doReturn flowOf(listOf(spotifyPlaylist, ytPlaylist))
+            on { getTracksByPlaylist(spotifyPlaylist.id) } doReturn flowOf(listOf(spotifyTrack))
+            on { getTracksByPlaylist(ytPlaylist.id) } doReturn flowOf(listOf(ytTrack))
+            on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
+        }
+
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val uiSub = backgroundScope.launch { vm.uiState.collect {} }
+        runCurrent()
+
+        val tracks = vm.uiState.value.tracks
+        assertThat(tracks).hasSize(1)
+        assertThat(tracks[0].id).isEqualTo(43L)
+
+        uiSub.cancel()
+    }
+
     // ------------------------------------------------------------------
     // Batch (multi-select) actions — mirror PlaylistDetailViewModelTest
     // ------------------------------------------------------------------
@@ -220,6 +263,7 @@ class LikedSongsDetailViewModelTest {
 
     // ------------------------------------------------------------------
     // Helpers
+
     // ------------------------------------------------------------------
 
     private fun track(id: Long) = Track(id = id, title = "Track $id", artist = "Artist")

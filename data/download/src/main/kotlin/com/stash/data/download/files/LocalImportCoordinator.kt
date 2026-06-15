@@ -3,6 +3,7 @@ package com.stash.data.download.files
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.repository.MusicRepository
@@ -87,6 +88,51 @@ class LocalImportCoordinator @Inject constructor(
         activeJob = scope.launch { runImport(uris) }
     }
 
+    /**
+     * Start recursively importing all audio files under the directory [treeUri].
+     * No-op if already [LocalImportState.Running].
+     */
+    fun startFolderImport(treeUri: Uri) {
+        if (_state.value is LocalImportState.Running) return
+        activeJob = scope.launch {
+            _state.value = LocalImportState.Running(current = 0, total = 0)
+            val uris = mutableListOf<Uri>()
+            runCatching {
+                val rootDir = DocumentFile.fromTreeUri(context, treeUri)
+                if (rootDir != null && rootDir.isDirectory) {
+                    collectAudioUris(rootDir, uris)
+                }
+            }
+            if (uris.isEmpty()) {
+                _state.value = LocalImportState.Done(imported = 0, failed = 0)
+            } else {
+                runImport(uris)
+            }
+        }
+    }
+
+    private fun collectAudioUris(dir: DocumentFile, outList: MutableList<Uri>) {
+        val files = dir.listFiles()
+        for (file in files) {
+            if (file.isDirectory) {
+                collectAudioUris(file, outList)
+            } else if (file.isFile) {
+                val name = file.name?.lowercase() ?: ""
+                val type = file.type?.lowercase() ?: ""
+                val isAudio = type.startsWith("audio/") ||
+                        name.endsWith(".mp3") ||
+                        name.endsWith(".m4a") ||
+                        name.endsWith(".flac") ||
+                        name.endsWith(".wav") ||
+                        name.endsWith(".ogg") ||
+                        name.endsWith(".aac")
+                if (isAudio) {
+                    outList.add(file.uri)
+                }
+            }
+        }
+    }
+
     /** Cancel a running import. Files imported so far remain in the library. */
     fun cancel() {
         activeJob?.cancel()
@@ -106,16 +152,35 @@ class LocalImportCoordinator @Inject constructor(
             val total = uris.size
             var imported = 0
             var failed = 0
+            var skipped = 0
             _state.value = LocalImportState.Running(current = 0, total = total)
+
+            // Snapshot existing downloaded tracks once for the whole batch so we
+            // can detect duplicates without a per-file DB round-trip.
+            val existingLocal = musicRepository.getAllDownloadedTracks()
+            // Primary key: "title_lowercase|artist_lowercase|duration_bucket_seconds"
+            // Duration bucketed to nearest 5 s to absorb minor tag discrepancies
+            // (e.g. MediaMetadataRetriever vs embedded tag rounding).
+            val existingKeys = existingLocal.mapTo(mutableSetOf()) { track ->
+                "${track.title.trim().lowercase()}|${track.artist.trim().lowercase()}|${track.durationMs / 5000}"
+            }
+            // Secondary guard: set of committed file paths so we never insert
+            // the same physical file twice even if metadata differs.
+            val existingPaths = existingLocal.mapNotNullTo(mutableSetOf()) { it.filePath }
 
             for ((index, uri) in uris.withIndex()) {
                 _state.value = LocalImportState.Running(current = index, total = total)
-                val ok = runCatching { importOne(uri) }
-                if (ok.isSuccess) {
-                    imported++
-                } else {
-                    failed++
-                    Log.w(TAG, "Import failed for $uri", ok.exceptionOrNull())
+                val ok = runCatching { importOne(uri, existingKeys, existingPaths) }
+                when {
+                    ok.isSuccess && ok.getOrNull() == ImportResult.INSERTED -> imported++
+                    ok.isSuccess && ok.getOrNull() == ImportResult.SKIPPED_DUPLICATE -> {
+                        skipped++
+                        Log.d(TAG, "Skipped duplicate for $uri")
+                    }
+                    else -> {
+                        failed++
+                        Log.w(TAG, "Import failed for $uri", ok.exceptionOrNull())
+                    }
                 }
             }
 
@@ -129,7 +194,9 @@ class LocalImportCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun importOne(uri: Uri) {
+    private enum class ImportResult { INSERTED, SKIPPED_DUPLICATE }
+
+    private suspend fun importOne(uri: Uri, existingKeys: MutableSet<String>, existingPaths: MutableSet<String>): ImportResult {
         val displayName = runCatching {
             DocumentFile.fromSingleUri(context, uri)?.name
         }.getOrNull()
@@ -152,6 +219,30 @@ class LocalImportCoordinator @Inject constructor(
         } ?: error("Could not open input stream for $uri")
 
         val metadata = extractMetadata(tempFile, displayName)
+
+        // Duplicate check — compare against the pre-built key set.
+        // Do this BEFORE committing to storage so we don't waste disk IO.
+        val candidateKey = "${metadata.title.trim().lowercase()}|${metadata.artist.trim().lowercase()}|${metadata.durationMs / 5000}"
+        if (candidateKey in existingKeys) {
+            tempFile.delete()
+            return ImportResult.SKIPPED_DUPLICATE
+        }
+
+        var source = MusicSource.LOCAL
+        var youtubeId: String? = null
+        var spotifyUri: String? = null
+
+        val comment = metadata.comment
+        if (comment != null && comment.startsWith("stash:")) {
+            val parts = comment.removePrefix("stash:").split("|")
+            val yId = parts.getOrNull(0)?.trim()?.takeIf { it.isNotEmpty() }
+            val sUri = parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+            if (yId != null || sUri != null) {
+                youtubeId = yId
+                spotifyUri = sUri
+                source = if (sUri != null) MusicSource.SPOTIFY else MusicSource.YOUTUBE
+            }
+        }
 
         val committed = fileOrganizer.commitDownload(
             tempFile = tempFile,
@@ -179,14 +270,22 @@ class LocalImportCoordinator @Inject constructor(
                 filePath = committed.filePath,
                 fileFormat = ext,
                 fileSizeBytes = committed.sizeBytes,
-                source = MusicSource.LOCAL,
-                spotifyUri = null,
-                youtubeId = null,
+                source = source,
+                spotifyUri = spotifyUri,
+                youtubeId = youtubeId,
                 albumArtPath = albumArtPath,
                 isDownloaded = true,
                 metadataEmbeddedAt = System.currentTimeMillis(),
             ),
         )
+
+        // Add to the in-memory key set so subsequent files in the same
+        // batch don't re-import the same track if the user picked duplicates.
+        val newKey = "${metadata.title.trim().lowercase()}|${metadata.artist.trim().lowercase()}|${metadata.durationMs / 5000}"
+        existingKeys.add(newKey)
+        committed.filePath?.let { existingPaths.add(it) }
+
+        return ImportResult.INSERTED
     }
 
     private data class LocalMetadata(
@@ -195,6 +294,7 @@ class LocalImportCoordinator @Inject constructor(
         val album: String?,
         val durationMs: Long,
         val embeddedArt: ByteArray?,
+        val comment: String?,
     )
 
     /**
@@ -220,6 +320,17 @@ class LocalImportCoordinator @Inject constructor(
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val embedded = retriever.embeddedPicture
+            // METADATA_KEY_COMMENT (14) is not a public constant in
+            // MediaMetadataRetriever but works on API 28+ when the tag exists.
+            val taggedComment = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                @Suppress("InlinedApi")
+                val commentKeyId = 14 // internal METADATA_KEY_COMMENT
+                retriever
+                    .extractMetadata(commentKeyId)
+                    ?.trim()?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
 
             // Filename fallback: "Artist - Title.ext" → split on " - ".
             val baseName = (displayName ?: file.nameWithoutExtension).substringBeforeLast('.')
@@ -242,6 +353,7 @@ class LocalImportCoordinator @Inject constructor(
                 album = taggedAlbum,
                 durationMs = duration,
                 embeddedArt = embedded,
+                comment = taggedComment,
             )
         } finally {
             runCatching { retriever.release() }

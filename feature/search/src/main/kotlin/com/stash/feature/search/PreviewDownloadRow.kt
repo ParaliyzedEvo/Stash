@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -76,6 +77,11 @@ fun PreviewDownloadRow(
      * don't thread the resolving state yet.
      */
     isResolving: Boolean = false,
+    /**
+     * Optional callback to trigger download removal when tapping the green
+     * checkmark.
+     */
+    onRemoveDownload: (() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -85,6 +91,7 @@ fun PreviewDownloadRow(
             .testTag("PreviewDownloadRow")
             .clip(RoundedCornerShape(12.dp))
             .background(extendedColors.glassBackground)
+            .clickable { if (isPreviewPlaying) onStopPreview() else onPreview() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -178,12 +185,23 @@ fun PreviewDownloadRow(
         ) {
             when {
                 isDownloaded -> {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Downloaded",
-                        modifier = Modifier.size(24.dp),
-                        tint = extendedColors.success,
-                    )
+                    if (onRemoveDownload != null) {
+                        IconButton(onClick = onRemoveDownload) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Downloaded. Tap to remove.",
+                                modifier = Modifier.size(24.dp),
+                                tint = extendedColors.success,
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Downloaded",
+                            modifier = Modifier.size(24.dp),
+                            tint = extendedColors.success,
+                        )
+                    }
                 }
                 isDownloading -> {
                     CircularProgressIndicator(

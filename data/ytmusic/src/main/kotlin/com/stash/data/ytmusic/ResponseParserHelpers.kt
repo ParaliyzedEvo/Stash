@@ -17,6 +17,18 @@ import kotlinx.serialization.json.JsonObject
  */
 
 /**
+ * Subtitle type labels that InnerTube places in search shelf subtitle runs.
+ * These are NOT artist names and must be filtered out during artist extraction.
+ * Covers both English and common localized labels.
+ */
+internal val SUBTITLE_TYPE_LABELS = setOf(
+    "Song", "Video", "Album", "Single", "EP", "Playlist", "Podcast",
+    "Artist", "Remix", "Live", "Performance",
+    // Common localized type labels
+    "Canción", "Chanson", "Lied", "Brano", "Música",
+)
+
+/**
  * Spec §8 Open Question 1: InnerTube returns artists with either `UC…`
  * (channel) or `MPLAUC…` (music channel) browseIds. Cache-key stability
  * requires a single form — we strip the `MPLA` prefix only when it is
@@ -82,17 +94,58 @@ internal fun parseTrackSummaryFromListItem(
     val artistRuns = flexColumns.getOrNull(1)?.asObject()
         ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
         ?.asArray()
-    val parsedArtist = artistRuns
-        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-        ?.filterNot { it == " & " || it == ", " || it == " x " }
-        ?.joinToString(", ")
-        .orEmpty()
+
+    // Search shelf subtitle runs are a flat sequence like:
+    //   "Song" • "Alan Walker" (nav→UC…) • "Faded" (nav→MPREb_…) • "3:32"
+    // We classify each run by its browseEndpoint prefix to extract only
+    // artist names. Runs with no endpoint are type labels, separators, or
+    // duration tokens — all ignored for the artist field.
+    val artistNames = mutableListOf<String>()
+    var parsedAlbumFromSubtitle: String? = null
+    val hasNavigatableRuns = artistRuns?.any { run ->
+        run.asObject()?.navigatePath(
+            "navigationEndpoint", "browseEndpoint", "browseId",
+        )?.asString() != null
+    } ?: false
+
+    if (hasNavigatableRuns) {
+        // Prefer navigation-endpoint-based classification.
+        artistRuns?.forEach { run ->
+            val obj = run.asObject() ?: return@forEach
+            val text = obj["text"]?.asString() ?: return@forEach
+            val browseId = obj.navigatePath(
+                "navigationEndpoint", "browseEndpoint", "browseId",
+            )?.asString()
+            when {
+                browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC")) ->
+                    artistNames.add(text)
+                browseId != null && browseId.startsWith("MPREb_") ->
+                    if (parsedAlbumFromSubtitle == null) parsedAlbumFromSubtitle = text
+                // Runs without endpoints (separators, type labels, durations) are skipped.
+            }
+        }
+    } else {
+        // Fallback: no runs have browse endpoints (some shelf layouts).
+        // Filter out separators, type labels, and duration tokens.
+        artistRuns
+            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+            ?.filterNot { text ->
+                text == " & " || text == ", " || text == " x " || text == " • " ||
+                    text == " · " || text.isBlank() ||
+                    text.matches(DURATION_REGEX) ||
+                    text in SUBTITLE_TYPE_LABELS
+            }
+            ?.let { artistNames.addAll(it) }
+    }
+
+    val parsedArtist = artistNames.joinToString(", ")
     val artist = parsedArtist.ifBlank { fallbackArtist.orEmpty() }
 
     val album = flexColumns.getOrNull(2)?.asObject()
         ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
         ?.firstArray()?.firstOrNull()?.asObject()
         ?.get("text")?.asString()
+        ?: parsedAlbumFromSubtitle
 
     val thumbnails = renderer.navigatePath(
         "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",

@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.PlaybackException
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.media.preview.SearchPreviewMediaSource
@@ -50,6 +51,7 @@ class TrackActionsDelegate @Inject constructor(
     private val searchDownloadCoordinator: SearchDownloadCoordinator,
     private val playerRepository: com.stash.core.media.PlayerRepository,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val musicRepository: MusicRepository,
 ) {
     /** Mirrors [PreviewPlayer.previewState] so consumers don't need a second dep. */
     val previewState: StateFlow<PreviewState> = previewPlayer.previewState
@@ -351,6 +353,19 @@ class TrackActionsDelegate @Inject constructor(
                 Log.e(TAG, "downloadTrack failed for $key", e)
                 _downloadingIds.update { it - key }
                 _userMessages.tryEmit("Download failed: ${e.message ?: "unknown error"}")
+            }
+        }
+    }
+
+    /**
+     * Removes the downloaded file and clears the download status in Room.
+     */
+    fun removeDownload(videoId: String) {
+        scope().launch {
+            val entity = trackDao.findByYoutubeId(videoId)
+            if (entity != null) {
+                musicRepository.removeDownload(entity.id)
+                _downloadedIds.update { it - videoId }
             }
         }
     }

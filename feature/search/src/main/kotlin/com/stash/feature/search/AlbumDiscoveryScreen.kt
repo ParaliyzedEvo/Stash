@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Box
@@ -12,16 +14,21 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -65,6 +72,7 @@ import kotlinx.coroutines.flow.merge
  * (matching [ArtistProfileScreen]) — the screen does not hold its own
  * copies.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumDiscoveryScreen(
     onBack: () -> Unit,
@@ -77,6 +85,9 @@ fun AlbumDiscoveryScreen(
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+
+    var trackToRemove by remember { mutableStateOf<SearchResultItem?>(null) }
+    val sheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(vm) {
         merge(
@@ -192,6 +203,7 @@ fun AlbumDiscoveryScreen(
                                         ),
                                     )
                                 },
+                                onRemoveDownload = { trackToRemove = track.toSearchResultItem() },
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
                                     .clickable { vm.playAlbum(startIndex = index) },
@@ -237,6 +249,19 @@ fun AlbumDiscoveryScreen(
                         TextButton(onClick = vm::onDownloadAllDismissed) { Text("Cancel") }
                     }
                 },
+            )
+        }
+
+        if (trackToRemove != null) {
+            RemoveDownloadSheet(
+                trackTitle = trackToRemove!!.title,
+                trackArtist = trackToRemove!!.artist,
+                onConfirm = {
+                    vm.delegate.removeDownload(trackToRemove!!.videoId)
+                    trackToRemove = null
+                },
+                onDismiss = { trackToRemove = null },
+                sheetState = sheetState,
             )
         }
     }

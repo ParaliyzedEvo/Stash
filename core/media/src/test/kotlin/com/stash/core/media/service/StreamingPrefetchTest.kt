@@ -45,6 +45,7 @@ class StreamingPrefetchTest {
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val trackDao: TrackDao = mockk()
+    private val playbackStateStore: com.stash.core.media.PlaybackStateStore = mockk(relaxed = true)
 
     private val dispatcher = StandardTestDispatcher()
     private val testScope = TestScope(dispatcher)
@@ -62,6 +63,7 @@ class StreamingPrefetchTest {
             streamResolver = streamResolver,
             streamUrlCache = streamUrlCache,
             trackDao = trackDao,
+            playbackStateStore = playbackStateStore,
         )
     }
 

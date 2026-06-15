@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import android.net.Uri
+import com.stash.core.data.sync.SyncPhase
+import com.stash.core.data.sync.SyncScheduler
+import com.stash.core.data.sync.SyncStateManager
 import javax.inject.Inject
 
 /**
@@ -53,6 +56,8 @@ class LibraryViewModel @Inject constructor(
     private val tokenManager: TokenManager,
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
+    private val syncScheduler: SyncScheduler,
+    private val syncStateManager: SyncStateManager,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -61,6 +66,11 @@ class LibraryViewModel @Inject constructor(
     /** Kick off an import for the URIs picked via the SAF audio picker. */
     fun startLocalImport(uris: List<Uri>) {
         localImportCoordinator.start(uris)
+    }
+
+    /** Kick off a recursive folder import via the SAF directory picker. */
+    fun startFolderImport(treeUri: Uri) {
+        localImportCoordinator.startFolderImport(treeUri)
     }
 
     /** Cancel an in-progress import. Files imported so far stay put. */
@@ -129,6 +139,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply source filter --
         val sourceFiltered = when (controls.sourceFilter) {
             SourceFilter.ALL -> allTracks
+            SourceFilter.LOCAL -> allTracks.filter { it.source == MusicSource.LOCAL }
             SourceFilter.YOUTUBE -> allTracks.filter { it.source == MusicSource.YOUTUBE }
             SourceFilter.SPOTIFY -> allTracks.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
             // Codec set kept in sync with com.stash.core.ui.components.FlacBadge
@@ -210,6 +221,11 @@ class LibraryViewModel @Inject constructor(
         libraryState.copy(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
         )
+    }.combine(syncStateManager.phase) { libraryState, phase ->
+        val isSyncing = phase !is SyncPhase.Idle &&
+                phase !is SyncPhase.Completed &&
+                phase !is SyncPhase.Error
+        libraryState.copy(isRefreshing = isSyncing)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -217,6 +233,11 @@ class LibraryViewModel @Inject constructor(
     )
 
     // ── Public actions ───────────────────────────────────────────────────
+
+    /** Trigger a manual sync to pull down and refresh the library. */
+    fun refreshLibrary() {
+        syncScheduler.triggerManualSync()
+    }
 
     /** Switch the active content tab. */
     fun selectTab(tab: LibraryTab) {

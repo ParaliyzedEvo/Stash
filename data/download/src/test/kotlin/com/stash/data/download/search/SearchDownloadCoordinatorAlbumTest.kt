@@ -81,6 +81,7 @@ class SearchDownloadCoordinatorAlbumTest {
         localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
+        syncNotificationManager = mockk(relaxed = true),
     )
 
     @Before

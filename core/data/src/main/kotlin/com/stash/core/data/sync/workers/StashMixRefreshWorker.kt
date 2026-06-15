@@ -40,7 +40,8 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
@@ -97,7 +98,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
         private const val WORK_NAME = "stash_mix_refresh"
         const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
         private const val TOP_ARTISTS_LIMIT = 8
-        private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
         private const val AFFINITY_LOOKBACK_DAYS = 180L
 
         /**
@@ -827,7 +827,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
      * [withTimeout] at the call site — failures here surface as the
      * cancelled-coroutine path which the caller turns into [LastFmPersonas.EMPTY].
      */
-    private suspend fun fetchPersonas(username: String): LastFmPersonas {
+    private suspend fun fetchPersonas(username: String): LastFmPersonas = coroutineScope {
         val periods = listOf(
             LastFmPeriod.SEVEN_DAY,
             LastFmPeriod.ONE_MONTH,
@@ -835,15 +835,23 @@ class StashMixRefreshWorker @AssistedInject constructor(
             LastFmPeriod.SIX_MONTH,
             LastFmPeriod.OVERALL,
         )
-        val tracks = mutableMapOf<LastFmPeriod, List<LastFmTopTrack>>()
-        val artists = mutableMapOf<LastFmPeriod, List<LastFmTopArtist>>()
-        for (period in periods) {
-            tracks[period] = lastFmApiClient.getUserTopTracks(username, period, limit = 100)
-                .getOrNull().orEmpty()
-            artists[period] = lastFmApiClient.getUserTopArtists(username, period, limit = 50)
-                .getOrNull().orEmpty()
-            delay(SIMILAR_REQUEST_INTERVAL_MS)
+        // Fire all 10 requests (5 periods × 2 endpoints) concurrently.
+        // Key rotation + rate-limit breakers handle throttling at the
+        // client layer. Slashing wall-clock from ~10s → ~1-2s.
+        val trackJobs = periods.associateWith { period ->
+            async {
+                lastFmApiClient.getUserTopTracks(username, period, limit = 100)
+                    .getOrNull().orEmpty()
+            }
         }
-        return LastFmPersonas(tracks, artists)
+        val artistJobs = periods.associateWith { period ->
+            async {
+                lastFmApiClient.getUserTopArtists(username, period, limit = 50)
+                    .getOrNull().orEmpty()
+            }
+        }
+        val tracks = trackJobs.mapValues { (_, deferred) -> deferred.await() }
+        val artists = artistJobs.mapValues { (_, deferred) -> deferred.await() }
+        LastFmPersonas(tracks, artists)
     }
 }

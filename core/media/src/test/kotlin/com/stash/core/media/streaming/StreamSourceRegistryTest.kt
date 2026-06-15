@@ -16,10 +16,17 @@ class StreamSourceRegistryTest {
     private val kennyy: KennyyStreamResolver = mockk()
     private val qobuz: QobuzStreamResolver = mockk()
     private val antra: AntraStreamResolver = mockk()
+    private val lucida: LucidaStreamResolver = mockk()
+    private val saavn: SaavnStreamResolver = mockk()
     private val youtube: YouTubeStreamResolver = mockk()
     private val streamingPreference: StreamingPreference = mockk()
 
-    private fun registry() = StreamSourceRegistry(kennyy, qobuz, antra, youtube, streamingPreference)
+    private fun registry(): StreamSourceRegistry {
+        coEvery { lucida.resolve(any()) } returns null
+        coEvery { saavn.resolve(any()) } returns null
+        return StreamSourceRegistry(kennyy, qobuz, antra, lucida, saavn, youtube, streamingPreference)
+    }
+
 
     /**
      * The forceAntraOnly test toggle is the outage drill for the antra

@@ -15,10 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Replay
+import com.stash.core.model.RepeatMode
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -38,7 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.toBitmap
 
 /**
  * Compact mini player bar that sits above the bottom navigation.
@@ -81,8 +88,8 @@ fun MiniPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(2.dp),
-                    color = dominantColor,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    color = uiState.vibrantColor,
+                    trackColor = uiState.vibrantColor.copy(alpha = 0.15f),
                 )
 
                 Row(
@@ -92,6 +99,7 @@ fun MiniPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    val ctx = LocalContext.current
                     // Album art thumbnail.
                     val track = uiState.currentTrack
                     val artModel = track?.albumArtPath ?: track?.albumArtUrl
@@ -100,9 +108,22 @@ fun MiniPlayer(
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(artModel)
+                                .size(96) // Mini player: small decode for 48dp @2x
+                                .allowHardware(false) // Required for Palette bitmap extraction
                                 .build(),
                             contentDescription = "Album art",
                             contentScale = ContentScale.Crop,
+                            onState = { state ->
+                                if (state is AsyncImagePainter.State.Success) {
+                                    try {
+                                        val bitmap = state.result.image.toBitmap()
+                                        viewModel.onAlbumArtLoaded(bitmap)
+                                    } catch (_: Exception) {
+                                        // Bitmap extraction failed; palette will use defaults
+                                        viewModel.onAlbumArtLoaded(null)
+                                    }
+                                }
+                            },
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(RoundedCornerShape(8.dp)),
@@ -153,12 +174,69 @@ fun MiniPlayer(
                         }
                     }
 
-                    // Skip next button.
+                    // Skip next / Restart button.
+                    val hasNext = (uiState.currentIndex < uiState.queue.size - 1) || uiState.repeatMode == RepeatMode.ALL
                     IconButton(onClick = viewModel::onSkipNext) {
                         Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            imageVector = if (hasNext) Icons.Default.SkipNext else Icons.Default.Replay,
+                            contentDescription = if (hasNext) "Next" else "Restart",
                             tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+
+                    // Chromecast / Google Cast button — context-aware.
+                    // When NOT connected: shows MediaRouteChooserDialog (pick device).
+                    // When connected: shows MediaRouteControllerDialog (stop / volume).
+                    // Uses the async getSharedInstance(context, executor) overload for
+                    // robust device support (Cast dynamic module can load lazily).
+                    IconButton(
+                        onClick = {
+                            try {
+                                com.google.android.gms.cast.framework.CastContext
+                                    .getSharedInstance(ctx, java.util.concurrent.Executors.newSingleThreadExecutor())
+                                    .addOnSuccessListener { castCtx ->
+                                        try {
+                                            val selector = castCtx.mergedSelector
+                                                ?: androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                                    .addControlCategory(
+                                                        com.google.android.gms.cast.CastMediaControlIntent.categoryForCast(
+                                                            com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
+                                                        )
+                                                    )
+                                                    .build()
+
+                                            val themedCtx = androidx.appcompat.view.ContextThemeWrapper(
+                                                ctx,
+                                                androidx.appcompat.R.style.Theme_AppCompat
+                                            )
+
+                                            if (uiState.isCasting) {
+                                                // Already connected — show controller (volume / stop)
+                                                val dialog = androidx.mediarouter.app.MediaRouteControllerDialog(themedCtx)
+                                                dialog.show()
+                                            } else {
+                                                // Not connected — show chooser (pick device)
+                                                val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(themedCtx)
+                                                dialog.routeSelector = selector
+                                                dialog.show()
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.w("MiniPlayer", "Cast dialog failed", e)
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        android.util.Log.w("MiniPlayer", "CastContext init failed", e)
+                                    }
+                            } catch (e: Exception) {
+                                android.util.Log.w("MiniPlayer", "Cast button failed", e)
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isCasting) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                            contentDescription = if (uiState.isCasting) "Stop casting" else "Cast",
+                            tint = if (uiState.isCasting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     }

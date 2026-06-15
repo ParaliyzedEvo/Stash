@@ -70,9 +70,16 @@ class SearchPreviewMediaSource @Inject constructor(
         // Earlier code appended `?trackKey=...` to the URL, which broke
         // Qobuz + YouTube signed-URL HMACs and 403'd every byte fetch —
         // the v0.9.12 launch-day "preview takes forever" symptom.
+        val mimeType = if (cacheKey.startsWith("lossless:")) "audio/flac" else "audio/aac"
         val mediaItem = MediaItem.Builder()
             .setUri(upstreamUrl)
             .setCustomCacheKey(cacheKey)
+            .setMimeType(mimeType)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setMediaType(androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .build()
+            )
             .build()
         // Fail-fast retry policy: ExoPlayer's default 3-retry exponential
         // backoff means a broken URL or transient outage takes 30-90s to

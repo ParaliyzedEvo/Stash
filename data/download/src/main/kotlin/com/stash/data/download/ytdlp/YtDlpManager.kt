@@ -164,6 +164,11 @@ class YtDlpManager @Inject constructor(
                         addOption("-f", "bestaudio")
                         addOption("--print", "urls")
                         addOption("--no-download")
+                        val cacheDir = File(context.cacheDir, "yt_dlp_cache")
+                        if (!cacheDir.exists()) {
+                            cacheDir.mkdirs()
+                        }
+                        addOption("--cache-dir", cacheDir.absolutePath)
                         quickJsPath?.let { qjs ->
                             addOption("--js-runtimes", "quickjs:$qjs")
                             addOption("--remote-components", "ejs:github")
@@ -232,6 +237,29 @@ class YtDlpManager @Inject constructor(
             }
         }
     }
+
+    /**
+     * Force-updates the yt-dlp binary to the latest nightly, ignoring the
+     * once-per-process [freshened] flag. Called from Settings when the user
+     * explicitly taps "Update yt-dlp". After the update, re-warms the
+     * runtime so the next extraction is fast.
+     *
+     * @return an [UpdateResult] describing the outcome, plus the new version.
+     */
+    suspend fun forceUpdate(): Pair<UpdateResult, String> {
+        initialize()
+        val result = updateYtDlp()
+        if (result is UpdateResult.Updated) {
+            // Reset the warmed flag so the next warmup runs with the
+            // freshly-updated binary (new player-JS cache, etc.)
+            warmed = false
+            warmUp()
+        }
+        // Mark freshened so ensureFreshened() doesn't re-run in this session
+        freshened = true
+        return result to getVersion()
+    }
+
 
     /**
      * Returns the current yt-dlp version string, or "unknown" if the binary

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Only back up user settings (SharedPreferences).
+             When <include> is present, everything else is implicitly excluded,
+             so explicit <exclude> tags for other domains are unnecessary
+             and trigger a lint vital error. -->
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

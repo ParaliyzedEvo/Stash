@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -45,6 +46,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -52,7 +55,10 @@ import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -62,6 +68,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -143,6 +150,7 @@ fun LibraryScreen(
         LibraryContent(
             state = state,
             importState = importState,
+            onRefresh = viewModel::refreshLibrary,
             onShuffleLibrary = viewModel::shuffleLibrary,
             onTabSelected = viewModel::selectTab,
             onSearchQueryChanged = viewModel::setSearchQuery,
@@ -164,6 +172,7 @@ fun LibraryScreen(
             onPlayAlbum = onNavigateToAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
             onStartImport = viewModel::startLocalImport,
+            onStartFolderImport = viewModel::startFolderImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
             selection = selection,
@@ -301,10 +310,12 @@ fun LibraryScreen(
 
 // ── Stateless content composable ─────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
     importState: com.stash.data.download.files.LocalImportState,
+    onRefresh: () -> Unit,
     onShuffleLibrary: () -> Unit,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
@@ -326,6 +337,7 @@ private fun LibraryContent(
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
     onStartImport: (List<Uri>) -> Unit,
+    onStartFolderImport: (Uri) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
     selection: SelectionState,
@@ -347,6 +359,11 @@ private fun LibraryContent(
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
         }
+        val folderPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+        ) { uri: Uri? ->
+            if (uri != null) onStartFolderImport(uri)
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -359,27 +376,60 @@ private fun LibraryContent(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
             )
-            // Filled-tonal button (icon + label) instead of a ghost
-            // IconButton — users were missing the plain '+' too easily. The
-            // tonal background + "Import" word makes the affordance obvious
-            // without dominating the heading row.
-            androidx.compose.material3.FilledTonalButton(
-                onClick = { importPicker.launch(arrayOf("audio/*")) },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 14.dp,
-                    vertical = 8.dp,
-                ),
-            ) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Import",
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            var showImportMenu by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.wrapContentSize()) {
+                androidx.compose.material3.FilledTonalButton(
+                    onClick = { showImportMenu = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 14.dp,
+                        vertical = 8.dp,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Import",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showImportMenu,
+                    onDismissRequest = { showImportMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Import Files") },
+                        onClick = {
+                            showImportMenu = false
+                            importPicker.launch(arrayOf("audio/*"))
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Audiotrack,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Import Folder") },
+                        onClick = {
+                            showImportMenu = false
+                            folderPicker.launch(null)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -392,28 +442,41 @@ private fun LibraryContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // -- Shuffle Library CTA (v0.9.14) --
-        // Pre-existing per-playlist queues only ever held ~30-50 tracks, so
-        // shuffle "felt like the same songs" once libraries grew past a few
-        // hundred. This entry point seeds the queue from EVERY downloaded
-        // track and arms an auto-grow watcher in PlayerRepository so the
-        // queue refills as the user nears the tail. Sized to read as the
-        // primary action on the tab without crowding the search bar below.
-        ShuffleLibraryCard(
-            onClick = onShuffleLibrary,
-            modifier = Modifier.padding(horizontal = 20.dp),
-        )
+        // -- Search bar + Shuffle button in one row --
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassSearchBar(
+                query = state.searchQuery,
+                onQueryChange = onSearchQueryChanged,
+                modifier = Modifier.weight(1f),
+            )
+            // Shuffle icon button — compact, sits right of the search bar
+            val extColors = StashTheme.extendedColors
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(onClick = onShuffleLibrary),
+                color = extColors.glassBackground,
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Shuffle,
+                        contentDescription = "Shuffle Library",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
-
-        // -- Glassmorphic search bar --
-        GlassSearchBar(
-            query = state.searchQuery,
-            onQueryChange = onSearchQueryChanged,
-            modifier = Modifier.padding(horizontal = 20.dp),
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
 
         // -- Tab chips (horizontal scroll) --
         TabChipRow(
@@ -423,34 +486,25 @@ private fun LibraryContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // -- Sort chips --
-        SortChipRow(
+        // -- Filters button row (opens bottom sheet) --
+        FiltersRow(
             activeSort = state.sortOrder,
-            onSortSelected = onSortOrderChanged,
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // -- Source filter chips --
-        SourceFilterChipRow(
             activeFilter = state.sourceFilter,
-            onFilterSelected = onSourceFilterChanged,
+            onSortOrderChanged = onSortOrderChanged,
+            onSourceFilterChanged = onSourceFilterChanged,
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         // -- Content area --
         val anyServiceConnected = state.spotifyConnected || state.youTubeConnected
-        if (state.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing || state.isLoading,
+            onRefresh = onRefresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f),
+        ) {
             when (state.activeTab) {
                 LibraryTab.PLAYLISTS -> PlaylistsGrid(
                     playlists = state.playlists,
@@ -514,7 +568,7 @@ private fun ShuffleLibraryCard(
             .clickable(onClick = onClick),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         Row(
             modifier = Modifier
@@ -555,7 +609,7 @@ private fun GlassSearchBar(
             .clip(RoundedCornerShape(16.dp)),
         color = extendedColors.glassBackground,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+
     ) {
         TextField(
             value = query,
@@ -730,9 +784,180 @@ private fun SourceFilterChipRow(
 
 private fun SourceFilter.displayName(): String = when (this) {
     SourceFilter.ALL -> "All"
+    SourceFilter.LOCAL -> "Downloaded"
     SourceFilter.YOUTUBE -> "YouTube"
     SourceFilter.SPOTIFY -> "Spotify"
     SourceFilter.FLAC -> "FLAC"
+}
+
+// ── Filters row (opens bottom sheet with sort + source chips) ────────────────
+
+/**
+ * A single compact row showing active filter summary + a "Filters" button
+ * that opens a bottom sheet with Sort and Source filter chips.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FiltersRow(
+    activeSort: SortOrder,
+    activeFilter: SourceFilter,
+    onSortOrderChanged: (SortOrder) -> Unit,
+    onSourceFilterChanged: (SourceFilter) -> Unit,
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val extColors = StashTheme.extendedColors
+
+    // Summary chip showing active filters
+    val hasActiveFilters = activeSort != SortOrder.RECENT || activeFilter != SourceFilter.ALL
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.clickable { showSheet = true },
+            color = if (hasActiveFilters) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else extColors.glassBackground,
+            shape = RoundedCornerShape(20.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Filters",
+                    tint = if (hasActiveFilters) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = "Filters",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (hasActiveFilters) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Active filter pills
+        if (activeSort != SortOrder.RECENT) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Text(
+                    text = activeSort.displayName(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
+        if (activeFilter != SourceFilter.ALL) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Text(
+                    text = activeFilter.displayName(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text = "Sort & Filter",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Sort section
+                Text(
+                    text = "SORT BY",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SortOrder.entries.forEach { order ->
+                        val isSelected = order == activeSort
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSortOrderChanged(order) },
+                            label = { Text(order.displayName(), style = MaterialTheme.typography.labelMedium) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                containerColor = extColors.glassBackground,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                borderColor = extColors.glassBorder,
+                                selectedBorderColor = MaterialTheme.colorScheme.primary,
+                                enabled = true,
+                                selected = isSelected,
+                            ),
+                        )
+                    }
+                }
+
+                // Source filter section
+                Text(
+                    text = "SOURCE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SourceFilter.entries.forEach { filter ->
+                        val isSelected = filter == activeFilter
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSourceFilterChanged(filter) },
+                            label = { Text(filter.displayName(), style = MaterialTheme.typography.labelMedium) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                containerColor = extColors.glassBackground,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                borderColor = extColors.glassBorder,
+                                selectedBorderColor = MaterialTheme.colorScheme.primary,
+                                enabled = true,
+                                selected = isSelected,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── Local import progress strip ─────────────────────────────────────────────
@@ -872,8 +1097,11 @@ private fun PlaylistsGrid(
         playlistForImagePick = null
     }
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1375,8 +1603,11 @@ private fun ArtistsGrid(
 
     val displayList = if (showSingleTrack) artists + singleTrackArtists else artists
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1449,9 +1680,7 @@ private fun ArtistsGrid(
                         .clickable { showSingleTrack = !showSingleTrack },
                     color = StashTheme.extendedColors.glassBackground,
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, StashTheme.extendedColors.glassBorder,
-                    ),
+
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -1587,8 +1816,11 @@ private fun AlbumsGrid(
 
     val displayList = if (showSingleTrack) albums + singleTrackAlbums else albums
 
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1668,9 +1900,7 @@ private fun AlbumsGrid(
                         .clickable { showSingleTrack = !showSingleTrack },
                     color = StashTheme.extendedColors.glassBackground,
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, StashTheme.extendedColors.glassBorder,
-                    ),
+
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),

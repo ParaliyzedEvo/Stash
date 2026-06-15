@@ -38,6 +38,12 @@ data class NowPlayingUiState(
      * a small wifi indicator on the quality line.
      */
     val isStreaming: Boolean = false,
+    /**
+     * `true` when playback is routed to a Cast device. Used to switch the
+     * cast button between chooser (pick a device) and controller (stop
+     * casting) dialogs, and to tint the icon for connected state.
+     */
+    val isCasting: Boolean = false,
 ) {
 
     /**

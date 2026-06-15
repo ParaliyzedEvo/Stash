@@ -60,7 +60,7 @@ fun MetadataBackfillBanner(
         modifier = modifier.fillMaxWidth(),
         color = accent.copy(alpha = 0.10f),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+
     ) {
         Column(
             modifier = Modifier

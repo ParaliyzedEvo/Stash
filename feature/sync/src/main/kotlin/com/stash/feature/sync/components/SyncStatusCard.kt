@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -56,19 +58,28 @@ fun SyncStatusCard(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // -- Connection + sync status header --
+            // -- Connection + sync status header + last sync time --
             // Uses SyncDisplayStatus so "Completed with some failures" and
             // "Interrupted mid-run" don't both read as a generic failure.
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PulseDot(color = syncStatusDotColor(syncStatus, anyServiceConnected, hasEverSynced))
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = syncStatusLabel(syncStatus, anyServiceConnected, hasEverSynced),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+                if (hasEverSynced && syncStatus.lastSyncTime != null) {
+                    Text(
+                        text = formatRelativeTimeForCard(syncStatus.lastSyncTime),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             // -- Prompt or stats depending on sync state --
@@ -85,44 +96,47 @@ fun SyncStatusCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                // Decoupled gating: show each FLAC sub-line whenever its
-                // own value is > 0. The previous AND-coupling
-                // (`flacTracks > 0 && flacStorageBytes > 0`) hid the
-                // sub-text for any user whose DB had FLAC rows but
-                // file_size_bytes still at 0 — turning the "defensive"
-                // check into a permanent display blocker. Per-stat
-                // gating is the design that v0.9.0 originally shipped
-                // with; the coupling was a regression introduced in
-                // c3c6529 and is now reverted.
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    StatItem(
-                        label = "Tracks",
-                        value = syncStatus.totalTracks.toString(),
-                        subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Tracks",
+                                value = "%,d".format(syncStatus.totalTracks),
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Spotify",
+                                value = "%,d".format(syncStatus.spotifyTracks),
+                            )
+                        }
+                    }
+                    androidx.compose.foundation.layout.Spacer(
+                        modifier = Modifier.height(4.dp),
                     )
-                    StatItem(
-                        label = "Spotify",
-                        value = syncStatus.spotifyTracks.toString(),
-                    )
-                    StatItem(
-                        label = "YouTube",
-                        value = syncStatus.youTubeTracks.toString(),
-                    )
-                    StatItem(
-                        label = "Storage",
-                        value = formatBytes(syncStatus.storageUsedBytes),
-                        subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
-                    )
-                }
-                if (syncStatus.lastSyncTime != null) {
-                    Text(
-                        text = "Last sync ${formatRelativeTimeForCard(syncStatus.lastSyncTime)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "YouTube",
+                                value = "%,d".format(syncStatus.youTubeTracks),
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            StatItem(
+                                label = "Storage",
+                                value = formatBytes(syncStatus.storageUsedBytes),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -181,11 +195,12 @@ private fun syncStatusDotColor(
 }
 
 @Composable
-private fun StatItem(label: String, value: String, subValue: String? = null) {
+private fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
@@ -193,13 +208,6 @@ private fun StatItem(label: String, value: String, subValue: String? = null) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (subValue != null) {
-            Text(
-                text = subValue,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }
 

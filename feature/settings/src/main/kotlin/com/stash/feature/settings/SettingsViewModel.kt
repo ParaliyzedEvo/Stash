@@ -79,6 +79,7 @@ class SettingsViewModel @Inject constructor(
     private val storagePreference: StoragePreference,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val moveLibraryCoordinator: MoveLibraryCoordinator,
+    private val localImportCoordinator: com.stash.data.download.files.LocalImportCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
@@ -99,6 +100,8 @@ class SettingsViewModel @Inject constructor(
     private val crashFileStore: CrashFileStore,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val databaseBackupManager: DatabaseBackupManager,
+    private val previewUrlExtractor: com.stash.data.download.preview.PreviewUrlExtractor,
+    private val ytDlpManager: com.stash.data.download.ytdlp.YtDlpManager,
 ) : ViewModel() {
 
     /**
@@ -112,7 +115,7 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.enabled.stateIn(
             scope = viewModelScope,
             started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
+            initialValue = true,
         )
 
     /**
@@ -367,6 +370,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             storagePreference.setExternalTreeUri(uri)
         }
+    }
+
+    /**
+     * Scans the newly-selected folder for audio files and imports any that
+     * aren't already in the library. Called automatically when the user
+     * picks a new default music folder so the Library reflects the folder
+     * contents immediately without a manual import step.
+     */
+    fun scanFolderForAudio(uri: Uri) {
+        localImportCoordinator.startFolderImport(uri)
     }
 
     /**
@@ -861,6 +874,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Exposes the blur layer visibility preference for AMOLED mode. */
+    val showBlurLayerInAmoled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        themePreference.showBlurLayerInAmoled.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = true,
+        )
+
+    /** Persists the blur layer visibility preference for AMOLED mode. */
+    fun onShowBlurLayerInAmoledChanged(show: Boolean) {
+        viewModelScope.launch {
+            themePreference.setShowBlurLayerInAmoled(show)
+        }
+    }
+
     /**
      * Persists a new download-network mode AND re-schedules the two
      * workers that depend on it ([StashDiscoveryWorker],
@@ -1139,4 +1167,60 @@ class SettingsViewModel @Inject constructor(
         val file: java.io.File,
         val contentUri: android.net.Uri,
     )
+
+    fun testYtDlp() {
+        viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            try {
+                val url = previewUrlExtractor.extractStreamUrlViaYtDlp("9bZkp7q19f0")
+                val duration = System.currentTimeMillis() - t0
+                android.widget.Toast.makeText(
+                    appContext,
+                    "yt-dlp Success! Extract took ${duration}ms.\nURL: ${url.take(60)}...",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                val duration = System.currentTimeMillis() - t0
+                android.widget.Toast.makeText(
+                    appContext,
+                    "yt-dlp Failed after ${duration}ms: ${e.message}",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    /**
+     * Force-updates the yt-dlp binary to the latest nightly release.
+     * Shows a Toast with the result and new version string.
+     */
+    fun updateYtDlp() {
+        viewModelScope.launch {
+            android.widget.Toast.makeText(
+                appContext,
+                "Updating yt-dlp to latest nightly\u2026",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            try {
+                val (result, version) = ytDlpManager.forceUpdate()
+                val msg = when (result) {
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.Updated ->
+                        "\u2705 yt-dlp updated!\nVersion: $version"
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.AlreadyUpToDate ->
+                        "\u2705 yt-dlp already up to date.\nVersion: $version"
+                    is com.stash.data.download.ytdlp.YtDlpManager.UpdateResult.Failed ->
+                        "\u274c Update failed: ${result.reason}\nVersion: $version"
+                }
+                android.widget.Toast.makeText(
+                    appContext, msg, android.widget.Toast.LENGTH_LONG,
+                ).show()
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    appContext,
+                    "\u274c yt-dlp update error: ${e.message}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
 }

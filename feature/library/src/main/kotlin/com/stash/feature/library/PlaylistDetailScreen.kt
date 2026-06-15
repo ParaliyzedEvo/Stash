@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -148,148 +150,404 @@ fun PlaylistDetailScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        if (state.isLoading) {
-            // -- Loading indicator centered on screen --
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                // Task 7 hides the mini-player while selecting, but the bottom
-                // selection bar (~100dp + nav insets) then takes its place. Pad
-                // enough that the last row clears it in either state.
-                contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
-            ) {
-                // ── Header section ──────────────────────────────────────
-                item(key = "header") {
-                    PlaylistHeader(
-                        state = state,
-                        bulkPlayInFlight = bulkPlayInFlight,
-                        onBack = onBack,
-                        onPlayAll = { viewModel.playAll() },
-                        onShuffle = { viewModel.shuffleAll() },
-                        onToggleSearch = { viewModel.toggleSearch() },
-                        onSetImage = {
-                            imagePickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                    )
-                }
-
-                // ── Search filter bar ───────────────────────────────────
-                if (state.showSearch) {
-                    item(key = "search") {
-                        SearchFilterBar(
-                            query = state.searchQuery,
-                            onQueryChanged = viewModel::onSearchQueryChanged,
-                            onClear = viewModel::clearSearch,
-                        )
-                    }
-                }
-
-                // ── Empty search results ───────────────────────────────
-                if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
-                    item(key = "no-results") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center,
+        if (!state.isLoading) {
+            val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+            val isLandscape = orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                ) {
+                    // Left Side: Header & Controls (40% width)
+                    Column(
+                        modifier = Modifier
+                            .weight(0.4f)
+                            .fillMaxHeight()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text(
-                                text = "No matching songs",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                            val playlist = state.playlist
+                            if (playlist != null) {
+                                SourceIndicator(source = playlist.source, size = 10.dp)
+                            }
+                        }
+
+                        val playlist = state.playlist
+                        if (playlist != null) {
+                            val stashMixBanner = if (playlist.type == PlaylistType.STASH_MIX || playlist.type == PlaylistType.DOWNLOADS_MIX) {
+                                getStashMixBannerUrl(playlist.name)
+                            } else {
+                                null
+                            }
+                            val artworkUrl = stashMixBanner ?: playlist.artUrl
+
+                            Box(
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(extendedColors.elevatedSurface)
+                                    .clickable {
+                                        imagePickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    }
+                            ) {
+                                if (!artworkUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = artworkUrl,
+                                        contentDescription = "${playlist.name} artwork",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(
+                                                        MaterialTheme.colorScheme.primaryContainer,
+                                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+                                                    )
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = playlist.name,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${state.tracks.size} tracks • ${formatTotalDuration(state.tracks.sumOf { it.durationMs })}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { viewModel.playAll() },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                ) {
+                                    if (bulkPlayInFlight == BulkPlayAction.PLAY_ALL) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play All",
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.shuffleAll() },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                                ) {
+                                    if (bulkPlayInFlight == BulkPlayAction.SHUFFLE_ALL) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Shuffle,
+                                            contentDescription = "Shuffle",
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+
+
+                                IconButton(
+                                    onClick = { viewModel.toggleSearch() },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Right Side: Track List (60% width)
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(0.6f)
+                            .fillMaxHeight(),
+                        contentPadding = PaddingValues(top = 16.dp, bottom = if (selection.isActive) 140.dp else 120.dp),
+                    ) {
+                        if (state.showSearch) {
+                            item(key = "search") {
+                                SearchFilterBar(
+                                    query = state.searchQuery,
+                                    onQueryChanged = viewModel::onSearchQueryChanged,
+                                    onClear = viewModel::clearSearch,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                        }
+
+                        if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                            item(key = "no-results") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 48.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "No matching songs",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+
+                        if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
+                            when (buildState) {
+                                MixBuildState.BUILDING -> item(key = "mix-building") {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 56.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            text = "Building your mix…",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                                MixBuildState.EMPTY -> item(key = "mix-empty") {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 56.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            text = "Couldn't find tracks",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                                MixBuildState.READY -> Unit
+                            }
+                        }
+
+                        itemsIndexed(
+                            items = state.tracks,
+                            key = { _, track -> track.id },
+                            contentType = { _, _ -> "track" },
+                        ) { index, track ->
+                            DetailTrackRow(
+                                track = track,
+                                trackNumber = index + 1,
+                                isPlaying = track.id == state.currentlyPlayingTrackId,
+                                onClick = {
+                                    if (selection.isActive) selection.toggle(track.id)
+                                    else viewModel.playTrack(track.id)
+                                },
+                                onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                                isResolving = track.id == tappedTrackId,
+                                selectionActive = selection.isActive,
+                                selected = selection.isSelected(track.id),
+                                onMoreClick = { selectedTrack = track },
+                            )
+
+                            if (index < state.tracks.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                    thickness = 0.5.dp,
+                                    color = extendedColors.glassBorder,
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
+                ) {
+                    item(key = "header") {
+                        PlaylistHeader(
+                            state = state,
+                            bulkPlayInFlight = bulkPlayInFlight,
+                            onBack = onBack,
+                            onPlayAll = { viewModel.playAll() },
+                            onShuffle = { viewModel.shuffleAll() },
+                            onToggleSearch = { viewModel.toggleSearch() },
+                            onSetImage = {
+                                imagePickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                        )
+                    }
+
+                    if (state.showSearch) {
+                        item(key = "search") {
+                            SearchFilterBar(
+                                query = state.searchQuery,
+                                onQueryChanged = viewModel::onSearchQueryChanged,
+                                onClear = viewModel::clearSearch,
                             )
                         }
                     }
-                }
 
-                // ── Custom-mix building / empty state ───────────────────
-                // A freshly created mix populates asynchronously; show a
-                // "Building…" state instead of a blank body, and a clear
-                // "found nothing" state if discovery comes up empty.
-                if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
-                    when (buildState) {
-                        MixBuildState.BUILDING -> item(key = "mix-building") {
-                            Column(
+                    if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
+                        item(key = "no-results") {
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 56.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                                 Text(
-                                    text = "Building your mix…",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = "Finding fresh tracks from your genres — this can take a moment.",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    text = "No matching songs",
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 32.dp),
                                 )
                             }
                         }
-                        MixBuildState.EMPTY -> item(key = "mix-empty") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 56.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = "Couldn't find tracks",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = "Try editing this mix with different genres or moods.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 32.dp),
-                                )
-                            }
-                        }
-                        MixBuildState.READY -> Unit
                     }
-                }
 
-                // ── Track list ──────────────────────────────────────────
-                itemsIndexed(
-                    items = state.tracks,
-                    key = { _, track -> track.id },
-                ) { index, track ->
-                    DetailTrackRow(
-                        track = track,
-                        trackNumber = index + 1,
-                        isPlaying = track.id == state.currentlyPlayingTrackId,
-                        onClick = {
-                            if (selection.isActive) selection.toggle(track.id)
-                            else viewModel.playTrack(track.id)
-                        },
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
-                        isResolving = track.id == tappedTrackId,
-                        selectionActive = selection.isActive,
-                        selected = selection.isSelected(track.id),
-                        onMoreClick = { selectedTrack = track },
-                    )
+                    if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
+                        when (buildState) {
+                            MixBuildState.BUILDING -> item(key = "mix-building") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 56.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "Building your mix…",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Finding fresh tracks from your genres — this can take a moment.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp),
+                                    )
+                                }
+                            }
+                            MixBuildState.EMPTY -> item(key = "mix-empty") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 56.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "Couldn't find tracks",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "Try editing this mix with different genres or moods.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp),
+                                    )
+                                }
+                            }
+                            MixBuildState.READY -> Unit
+                        }
+                    }
 
-                    // Subtle divider between rows (skip after last item).
-                    if (index < state.tracks.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 80.dp, end = 20.dp),
-                            thickness = 0.5.dp,
-                            color = extendedColors.glassBorder,
+                    itemsIndexed(
+                        items = state.tracks,
+                        key = { _, track -> track.id },
+                        contentType = { _, _ -> "track" },
+                    ) { index, track ->
+                        DetailTrackRow(
+                            track = track,
+                            trackNumber = index + 1,
+                            isPlaying = track.id == state.currentlyPlayingTrackId,
+                            onClick = {
+                                if (selection.isActive) selection.toggle(track.id)
+                                else viewModel.playTrack(track.id)
+                            },
+                            onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                            isResolving = track.id == tappedTrackId,
+                            selectionActive = selection.isActive,
+                            selected = selection.isSelected(track.id),
+                            onMoreClick = { selectedTrack = track },
                         )
+
+                        if (index < state.tracks.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                thickness = 0.5.dp,
+                                color = extendedColors.glassBorder,
+                            )
+                        }
                     }
                 }
             }
@@ -583,6 +841,14 @@ private fun PlaylistHeader(
     val playlist = state.playlist ?: return
     val extendedColors = StashTheme.extendedColors
 
+    // Get Stash Mix banner URL if applicable
+    val stashMixBanner = if (playlist.type == PlaylistType.STASH_MIX || playlist.type == PlaylistType.DOWNLOADS_MIX) {
+        getStashMixBannerUrl(playlist.name)
+    } else {
+        null
+    }
+    val artworkUrl = stashMixBanner ?: playlist.artUrl
+
     Column(modifier = Modifier.fillMaxWidth()) {
         // -- Artwork with back button and gradient scrim --
         Box(
@@ -591,20 +857,50 @@ private fun PlaylistHeader(
                 .aspectRatio(1f),
         ) {
             // Album art or gradient placeholder
-            if (playlist.artUrl != null) {
+            if (!artworkUrl.isNullOrBlank()) {
+                var imageLoadFailed by remember(artworkUrl) { mutableStateOf(false) }
+                
                 AsyncImage(
-                    model = playlist.artUrl,
+                    model = artworkUrl,
                     contentDescription = "${playlist.name} artwork",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
+                    onSuccess = { imageLoadFailed = false },
+                    onError = { 
+                        imageLoadFailed = true
+                    },
                 )
+                
+                // Show gradient placeholder overlay if image failed to load
+                if (imageLoadFailed) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
+                                    ),
+                                ),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                        )
+                    }
+                }
             } else {
-                // Gradient placeholder with music icon
+                // Gradient placeholder with music icon when no artUrl
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
-                            Brush.linearGradient(
+                            Brush.verticalGradient(
                                 colors = listOf(
                                     MaterialTheme.colorScheme.primaryContainer,
                                     MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
@@ -800,3 +1096,16 @@ private fun PlaylistHeader(
     }
 }
 
+
+/**
+ * Returns the banner URL for Stash Mix playlists based on their name.
+ * Matches the same logic used in HomeScreen for consistency.
+ */
+private fun getStashMixBannerUrl(name: String): String {
+    return when (name) {
+        "Daily Discover" -> "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=400"
+        "Deep Cuts" -> "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400"
+        "First Listen" -> "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400"
+        else -> "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400"
+    }
+}

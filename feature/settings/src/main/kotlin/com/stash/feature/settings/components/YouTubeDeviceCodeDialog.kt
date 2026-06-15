@@ -88,7 +88,7 @@ fun YouTubeDeviceCodeDialog(
                 Surface(
                     color = extendedColors.glassBackground,
                     shape = MaterialTheme.shapes.medium,
-                    border = BorderStroke(1.dp, extendedColors.glassBorderBright),
+
                 ) {
                     Text(
                         text = deviceCodeState.userCode,

@@ -28,7 +28,7 @@ class InnerTubeVariantTest {
         assertTrue(web.sendsApiKey)
     }
 
-    @Test fun audio_variant_order_is_ios_only() {
-        assertEquals(listOf(InnerTubeVariant.IOS), InnerTubeClient.AUDIO_VARIANT_ORDER)
+    @Test fun audio_variant_order_is_ios_and_android_music() {
+        assertEquals(listOf(InnerTubeVariant.IOS, InnerTubeVariant.ANDROID_MUSIC), InnerTubeClient.AUDIO_VARIANT_ORDER)
     }
 }

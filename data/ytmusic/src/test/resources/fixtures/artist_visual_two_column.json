@@ -1,0 +1,86 @@
+{
+  "_comment": "Synthetic artist browse response combining BOTH A/B test variants: musicVisualHeaderRenderer (header) + twoColumnBrowseResultsRenderer (content). Tests the worst-case combination for devices like the Xiaomi 2602BRT18C.",
+  "header": {
+    "musicVisualHeaderRenderer": {
+      "title": {
+        "runs": [
+          { "text": "Combo Artist" }
+        ]
+      },
+      "thumbnail": {
+        "musicThumbnailRenderer": {
+          "thumbnail": {
+            "thumbnails": [
+              { "url": "https://lh3.googleusercontent.com/combo-avatar=w544-h544", "width": 544, "height": 544 }
+            ]
+          }
+        }
+      },
+      "subscriptionButton": {
+        "subscribeButtonRenderer": {
+          "subscriberCountText": {
+            "runs": [
+              { "text": "99 subscribers" }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {
+                    "musicShelfRenderer": {
+                      "title": { "runs": [ { "text": "Popular" } ] },
+                      "contents": [
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "COMBOVIDEO1" },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Combo Track" } ] }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": { "runs": [ { "text": "Combo Artist" } ] }
+                                }
+                              }
+                            ],
+                            "fixedColumns": [
+                              {
+                                "musicResponsiveListItemFixedColumnRenderer": {
+                                  "text": { "runs": [ { "text": "2:45" } ] }
+                                }
+                              }
+                            ],
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    { "url": "https://lh3.googleusercontent.com/combo1=w60-h60", "width": 60, "height": 60 }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

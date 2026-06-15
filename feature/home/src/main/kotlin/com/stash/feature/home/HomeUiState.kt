@@ -36,6 +36,12 @@ data class HomeUiState(
     /** Recently downloaded tracks across all sources. */
     val recentlyAdded: List<Track> = emptyList(),
 
+    /** Local (downloaded) tracks. */
+    val localSongs: List<Track> = emptyList(),
+
+    /** Liked tracks across all sources. */
+    val likedSongs: List<Track> = emptyList(),
+
     /** Spotify liked-songs playlists (usually one — "Liked Songs"). */
     val spotifyLikedPlaylists: List<Playlist> = emptyList(),
 
@@ -68,7 +74,9 @@ data class HomeUiState(
     /** Active sort for the Home Playlists grid. Mirrors Library's chips. */
     val playlistSortOrder: PlaylistSortOrder = PlaylistSortOrder.RECENT,
 
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
+    /** True while a user-initiated pull-to-refresh is in flight. */
+    val isRefreshing: Boolean = false,
     /**
      * Non-null when Last.fm creds are wired but the user hasn't
      * connected yet AND there are local plays queued waiting to be

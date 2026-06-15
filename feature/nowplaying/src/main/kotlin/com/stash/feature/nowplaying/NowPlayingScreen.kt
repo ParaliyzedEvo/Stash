@@ -1,14 +1,21 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.stash.feature.nowplaying
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,6 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
@@ -31,14 +40,21 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lyrics
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.stash.core.ui.components.SheetOptionRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,7 +66,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -86,12 +104,20 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 @Composable
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
+    onNavigateToArtist: (String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val hasNext = (uiState.currentIndex < uiState.queueSize - 1) || uiState.repeatMode == RepeatMode.ALL
+    val isAmoled = MaterialTheme.colorScheme.background == Color.Black
+    // Safe collection with default value to prevent crashes
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
+    
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
+    var showOptionsSheet by remember { mutableStateOf(false) }
+    val optionsSheetState = rememberModalBottomSheetState()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
@@ -240,145 +266,208 @@ fun NowPlayingScreen(
         )
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Ambient animated background behind everything.
         AmbientBackground(
             dominantColor = uiState.dominantColor,
             vibrantColor = uiState.vibrantColor,
             mutedColor = uiState.mutedColor,
+            isAmoled = isAmoled,
+            showBlurLayer = showBlurLayer,
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // -- Top bar: dismiss, label, flag, like, download, save, lyrics, queue --
-            TopBar(
-                onDismiss = onDismiss,
-                onFlagWrongMatch = { showWrongMatchDialog = true },
-                onSaveClick = { showSaveSheet = true },
-                onLyricsClick = viewModel::onShowLyrics,
-                onQueueClick = { showQueue = true },
-                hasTrack = uiState.hasTrack,
-                queueSize = uiState.queueSize,
-                onLikeTap = viewModel::onLikeTap,
-                isLiked = uiState.currentTrack?.stashLikedAt != null,
-                onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
-                isDownloaded = uiState.currentTrack?.isDownloaded == true,
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // -- Album art --
-            AlbumArtSection(
-                albumArtUrl = track?.albumArtUrl,
-                albumArtPath = track?.albumArtPath,
-                accentColor = uiState.vibrantColor,
-                onBitmapLoaded = viewModel::onAlbumArtLoaded,
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // -- Track info --
+        if (isLandscape) {
+            // ── LANDSCAPE LAYOUT ──────────────────────────────────────
+            // Left half: album art. Right half: controls + info.
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = track?.title ?: "Not Playing",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (track != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    com.stash.core.ui.components.FlacBadge(
-                        fileFormat = track.fileFormat,
-                        bitsPerSample = track.bitsPerSample,
-                        sampleRateHz = track.sampleRateHz,
-                        size = 18.dp,
-                        tint = Color.White,
+                // Left: Album art (takes ~45% width)
+                Box(
+                    modifier = Modifier
+                        .weight(0.45f)
+                        .fillMaxHeight()
+                        .padding(end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AlbumArtSection(
+                        albumArtUrl = track?.albumArtUrl,
+                        albumArtPath = track?.albumArtPath,
+                        accentColor = uiState.vibrantColor,
+                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(4.dp))
+                // Right: controls + track info
+                Column(
+                    modifier = Modifier
+                        .weight(0.55f)
+                        .fillMaxHeight()
+                        .verticalScroll(scrollState)
+                        .padding(start = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    // Top bar (dismiss + like + more)
+                    TopBar(
+                        onDismiss = onDismiss,
+                        onMoreClick = { showOptionsSheet = true },
+                        hasTrack = uiState.hasTrack,
+                        onLikeTap = viewModel::onLikeTap,
+                        isLiked = uiState.currentTrack?.stashLikedAt != null,
+                    )
 
-            Text(
-                text = buildString {
-                    if (track != null) {
-                        append(track.artist)
-                        if (track.album.isNotBlank()) {
-                            append(" \u2022 ")
-                            append(track.album)
-                        }
-                    }
-                },
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
-            // Sized smaller than the artist/album line; degrades gracefully when
-            // some fields are missing (returns a partial line, not nothing).
-            // When the active MediaItem is sourced from an http(s) URI (Kennyy
-            // stream rather than a local file), a small wifi glyph prefixes
-            // the line so the user knows playback is using their connection.
-            if (track != null) {
-                val qualityText = trackQualityText(track)
-                if (qualityText != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    QualityLine(
-                        qualityText = qualityText,
+                    // Track info
+                    TrackInfoSection(
+                        track = track,
                         isStreaming = uiState.isStreaming,
                     )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Playback controls
+                    PlaybackControls(
+                        isPlaying = uiState.isPlaying,
+                        isBuffering = uiState.isBuffering,
+                        shuffleEnabled = uiState.shuffleEnabled,
+                        repeatMode = uiState.repeatMode,
+                        accentColor = uiState.vibrantColor,
+                        hasNext = hasNext,
+                        onPlayPauseClick = viewModel::onPlayPauseClick,
+                        onSkipNext = viewModel::onSkipNext,
+                        onSkipPrevious = viewModel::onSkipPrevious,
+                        onToggleShuffle = viewModel::onToggleShuffle,
+                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Progress bar
+                    GlowingProgressBar(
+                        progress = uiState.progressFraction,
+                        accentColor = uiState.vibrantColor,
+                        elapsedMs = uiState.currentPositionMs,
+                        totalMs = uiState.durationMs,
+                        onSeek = viewModel::onSeekTo,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Bottom actions
+                    if (track != null) {
+                        BottomActionsRow(
+                            onShowLyrics = viewModel::onShowLyrics,
+                            onShowQueue = { showQueue = true },
+                            queueSize = uiState.queueSize,
+                            isCasting = uiState.isCasting,
+                        )
+                    }
                 }
             }
+        } else {
+            // ── PORTRAIT LAYOUT (original) ────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // -- Top bar: dismiss, like, options sheet trigger --
+                TopBar(
+                    onDismiss = onDismiss,
+                    onMoreClick = { showOptionsSheet = true },
+                    hasTrack = uiState.hasTrack,
+                    onLikeTap = viewModel::onLikeTap,
+                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                )
 
-            Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            // -- Progress bar --
-            GlowingProgressBar(
-                progress = uiState.progressFraction,
-                accentColor = uiState.vibrantColor,
-                elapsedMs = uiState.currentPositionMs,
-                totalMs = uiState.durationMs,
-                onSeek = viewModel::onSeekTo,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                // -- Album art --
+                AlbumArtSection(
+                    albumArtUrl = track?.albumArtUrl,
+                    albumArtPath = track?.albumArtPath,
+                    accentColor = uiState.vibrantColor,
+                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
+                )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-            // -- Playback controls --
-            PlaybackControls(
-                isPlaying = uiState.isPlaying,
-                isBuffering = uiState.isBuffering,
-                shuffleEnabled = uiState.shuffleEnabled,
-                repeatMode = uiState.repeatMode,
-                accentColor = uiState.vibrantColor,
-                onPlayPauseClick = viewModel::onPlayPauseClick,
-                onSkipNext = viewModel::onSkipNext,
-                onSkipPrevious = viewModel::onSkipPrevious,
-                onToggleShuffle = viewModel::onToggleShuffle,
-                onCycleRepeatMode = viewModel::onCycleRepeatMode,
-            )
+                // -- Track info --
+                TrackInfoSection(
+                    track = track,
+                    isStreaming = uiState.isStreaming,
+                )
 
-            Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(28.dp))
+
+                // -- Playback controls --
+                PlaybackControls(
+                    isPlaying = uiState.isPlaying,
+                    isBuffering = uiState.isBuffering,
+                    shuffleEnabled = uiState.shuffleEnabled,
+                    repeatMode = uiState.repeatMode,
+                    accentColor = uiState.vibrantColor,
+                    hasNext = hasNext,
+                    onPlayPauseClick = viewModel::onPlayPauseClick,
+                    onSkipNext = viewModel::onSkipNext,
+                    onSkipPrevious = viewModel::onSkipPrevious,
+                    onToggleShuffle = viewModel::onToggleShuffle,
+                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // -- Progress bar --
+                GlowingProgressBar(
+                    progress = uiState.progressFraction,
+                    accentColor = uiState.vibrantColor,
+                    elapsedMs = uiState.currentPositionMs,
+                    totalMs = uiState.durationMs,
+                    onSeek = viewModel::onSeekTo,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Bottom actions: Lyrics (left), Cast (center), and Queue (right)
+                if (track != null) {
+                    BottomActionsRow(
+                        onShowLyrics = viewModel::onShowLyrics,
+                        onShowQueue = { showQueue = true },
+                        queueSize = uiState.queueSize,
+                        isCasting = uiState.isCasting,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(48.dp))
+            }
         }
+    }
+
+    if (showOptionsSheet && track != null) {
+        NowPlayingOptionsSheet(
+            isDownloaded = track.isDownloaded,
+            onSaveClick = { showSaveSheet = true },
+            onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
+            onFlagWrongMatch = { showWrongMatchDialog = true },
+            onDismiss = { showOptionsSheet = false },
+            sheetState = optionsSheetState,
+        )
     }
 }
 
@@ -396,19 +485,22 @@ fun NowPlayingScreen(
  * @param hasTrack     Whether a track is currently loaded (save button is hidden otherwise).
  * @param queueSize    Number of tracks in the queue, shown as a badge hint.
  */
+/**
+ * Top bar with dismiss button, heart like button, and options sheet trigger.
+ *
+ * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onMoreClick  Callback when the options menu trigger is tapped.
+ * @param hasTrack     Whether a track is currently loaded.
+ * @param onLikeTap    Callback when the heart icon is tapped.
+ * @param isLiked      Whether the current track is liked.
+ */
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
-    onFlagWrongMatch: () -> Unit,
-    onSaveClick: () -> Unit,
-    onLyricsClick: () -> Unit,
-    onQueueClick: () -> Unit,
+    onMoreClick: () -> Unit,
     hasTrack: Boolean,
-    queueSize: Int,
     onLikeTap: () -> Unit,
     isLiked: Boolean,
-    onDownloadTap: () -> Unit,
-    isDownloaded: Boolean,
 ) {
     Row(
         modifier = Modifier
@@ -427,84 +519,27 @@ private fun TopBar(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Flag as wrong match — only shown when a track is loaded. Lives
-        // here (not in the Playlist Detail row menu) because Now Playing
-        // is where the user actually realises "this isn't the right song"
-        // — their ears are the ground truth.
-        if (hasTrack) {
-            IconButton(onClick = onFlagWrongMatch) {
-                Icon(
-                    imageVector = Icons.Default.Flag,
-                    contentDescription = "Flag as wrong match",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
         // v0.9.13: Like button — Stash-only toggle. Tap on empty saves to
-        // Stash Liked Songs; tap on filled removes. Long-press is a no-op
-        // by design; the override sheet was deprecated in favor of the
-        // simpler standard like-button UX.
+        // Stash Liked Songs; tap on filled removes.
         if (hasTrack) {
             com.stash.core.ui.components.LikeButton(
                 isLiked = isLiked,
                 onTap = onLikeTap,
                 unlikedTint = Color.White,
+                size = 20.dp,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
 
-        // Download / Remove-download toggle — single button that flips
-        // based on the current track's on-disk state. Streaming-mode
-        // users use this to grab the song they're listening to right now
-        // without leaving Now Playing.
         if (hasTrack) {
-            IconButton(onClick = onDownloadTap) {
+            IconButton(onClick = onMoreClick) {
                 Icon(
-                    imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                    contentDescription = if (isDownloaded) "Remove download" else "Download",
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More actions",
                     tint = Color.White,
                     modifier = Modifier.size(24.dp),
                 )
             }
-        }
-
-        // Save to playlist — only shown when a track is loaded.
-        if (hasTrack) {
-            IconButton(onClick = onSaveClick) {
-                Icon(
-                    imageVector = Icons.Default.BookmarkBorder,
-                    contentDescription = "Save to Playlist",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // v0.9.36 Task 13 — Lyrics. Sits next to Queue because both
-        // surfaces are "playback context" — what's coming next, what
-        // the singer is saying right now. Hidden when no track is loaded
-        // (same gating as Save/Download/Like) so an empty Now Playing
-        // doesn't show a button that opens an empty sheet.
-        if (hasTrack) {
-            IconButton(onClick = onLyricsClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Lyrics,
-                    contentDescription = "Lyrics",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        IconButton(onClick = onQueueClick) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = "Queue ($queueSize tracks)",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp),
-            )
         }
     }
 }
@@ -526,14 +561,20 @@ private fun AlbumArtSection(
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .padding(horizontal = 8.dp)
+    ) {
         // Glow behind the artwork.
         Box(
             modifier = Modifier
-                .size(260.dp)
+                .fillMaxSize()
                 .shadow(
                     elevation = 40.dp,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(8.dp),
                     ambientColor = accentColor.copy(alpha = 0.25f),
                     spotColor = accentColor.copy(alpha = 0.25f),
                 ),
@@ -542,6 +583,7 @@ private fun AlbumArtSection(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(artModel)
+                .size(coil3.size.Size.ORIGINAL) // Full resolution for big player
                 .allowHardware(false) // Required for Palette bitmap extraction.
                 .build(),
             contentDescription = "Album art",
@@ -558,9 +600,179 @@ private fun AlbumArtSection(
                 }
             },
             modifier = Modifier
-                .size(280.dp)
-                .clip(RoundedCornerShape(20.dp)),
+                .fillMaxSize()
+                .clip(RoundedCornerShape(8.dp)),
         )
+    }
+}
+
+/**
+ * Track title, artist · album, FLAC badge, and quality line.
+ * Extracted so both portrait and landscape layouts reuse the same block.
+ */
+@Composable
+private fun TrackInfoSection(
+    track: com.stash.core.model.Track?,
+    isStreaming: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = track?.title ?: "Not Playing",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (track != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            com.stash.core.ui.components.FlacBadge(
+                fileFormat = track.fileFormat,
+                bitsPerSample = track.bitsPerSample,
+                sampleRateHz = track.sampleRateHz,
+                size = 18.dp,
+                tint = Color.White,
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(4.dp))
+
+    Text(
+        text = buildString {
+            if (track != null) {
+                append(track.artist)
+                if (track.album.isNotBlank()) {
+                    append(" \u2022 ")
+                    append(track.album)
+                }
+            }
+        },
+        fontSize = 14.sp,
+        color = Color.White.copy(alpha = 0.7f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (track != null) {
+        val qualityText = trackQualityText(track)
+        if (qualityText != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            QualityLine(
+                qualityText = qualityText,
+                isStreaming = isStreaming,
+            )
+        }
+    }
+}
+
+/**
+ * Bottom action row: Lyrics (left), Cast (center), Queue (right).
+ *
+ * The cast button uses a Compose [Icon] with [Icons.Filled.Cast] /
+ * [Icons.Filled.CastConnected] and launches either a chooser dialog
+ * (pick device) or a controller dialog (stop casting) depending on
+ * whether a Cast session is already active.
+ */
+@Composable
+private fun BottomActionsRow(
+    onShowLyrics: () -> Unit,
+    onShowQueue: () -> Unit,
+    queueSize: Int,
+    isCasting: Boolean = false,
+) {
+    val ctx = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onShowLyrics) {
+            Icon(
+                imageVector = Icons.Outlined.Lyrics,
+                contentDescription = "Lyrics",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        // Cast button — context-aware:
+        //   • NOT connected → MediaRouteChooserDialog (pick device)
+        //   • Connected → MediaRouteControllerDialog (stop casting / volume)
+        // Uses the async getSharedInstance(context, executor) overload for
+        // robust device support (Cast dynamic module can load lazily).
+        IconButton(
+            onClick = {
+                try {
+                    com.google.android.gms.cast.framework.CastContext
+                        .getSharedInstance(ctx, java.util.concurrent.Executors.newSingleThreadExecutor())
+                        .addOnSuccessListener { castCtx ->
+                            try {
+                                val selector = castCtx.mergedSelector
+                                    ?: androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                        .addControlCategory(
+                                            com.google.android.gms.cast.CastMediaControlIntent.categoryForCast(
+                                                com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
+                                            )
+                                        )
+                                        .build()
+
+                                val themedCtx = androidx.appcompat.view.ContextThemeWrapper(
+                                    ctx,
+                                    androidx.appcompat.R.style.Theme_AppCompat
+                                )
+
+                                if (isCasting) {
+                                    // Already connected — show controller (volume / stop)
+                                    val dialog = androidx.mediarouter.app.MediaRouteControllerDialog(themedCtx)
+                                    dialog.show()
+                                } else {
+                                    // Not connected — show chooser (pick device)
+                                    val dialog = androidx.mediarouter.app.MediaRouteChooserDialog(themedCtx)
+                                    dialog.routeSelector = selector
+                                    dialog.show()
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.w("NowPlaying", "Cast dialog failed", e)
+                                android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .addOnFailureListener { e ->
+                            android.util.Log.w("NowPlaying", "CastContext init failed", e)
+                            android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                } catch (e: Exception) {
+                    android.util.Log.w("NowPlaying", "Cast button failed", e)
+                    android.widget.Toast.makeText(ctx, "Cast unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+        ) {
+            Icon(
+                imageVector = if (isCasting) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                contentDescription = if (isCasting) "Stop casting" else "Cast to device",
+                tint = if (isCasting) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        IconButton(onClick = onShowQueue) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Queue ($queueSize tracks)",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 
@@ -574,12 +786,23 @@ private fun PlaybackControls(
     shuffleEnabled: Boolean,
     repeatMode: RepeatMode,
     accentColor: Color,
+    hasNext: Boolean,
     onPlayPauseClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
 ) {
+    // Dynamic bouncy scale spring-physics micro-animation on state change (Expressive UI)
+    val playButtonScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPlaying) 1.08f else 1.0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+        ),
+        label = "playButtonScaleAnimation"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -613,6 +836,10 @@ private fun PlaybackControls(
             enabled = !isBuffering,
             modifier = Modifier
                 .size(64.dp)
+                .graphicsLayer {
+                    scaleX = playButtonScale
+                    scaleY = playButtonScale
+                }
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(accentColor, accentColor.copy(alpha = 0.7f)),
@@ -639,8 +866,8 @@ private fun PlaybackControls(
         // Next
         IconButton(onClick = onSkipNext) {
             Icon(
-                imageVector = Icons.Default.SkipNext,
-                contentDescription = "Next",
+                imageVector = if (hasNext) Icons.Default.SkipNext else Icons.Default.Replay,
+                contentDescription = if (hasNext) "Next" else "Restart",
                 tint = Color.White,
                 modifier = Modifier.size(36.dp),
             )
@@ -792,3 +1019,77 @@ private fun PreviewQualityLineLocal() {
         )
     }
 }
+
+/**
+ * Premium track options bottom sheet that replaces the legacy dropdown menu on Now Playing.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NowPlayingOptionsSheet(
+    isDownloaded: Boolean,
+    onSaveClick: () -> Unit,
+    onDownloadTap: () -> Unit,
+    onFlagWrongMatch: () -> Unit,
+    onDismiss: () -> Unit,
+    sheetState: androidx.compose.material3.SheetState,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = extendedColors.elevatedSurface,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Text(
+                text = "Track Options",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(bottom = 20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            // Save to Playlist
+            SheetOptionRow(
+                icon = Icons.Default.BookmarkBorder,
+                label = "Save to Playlist",
+                onClick = {
+                    onSaveClick()
+                    onDismiss()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Download / Remove download
+            SheetOptionRow(
+                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                label = if (isDownloaded) "Remove download" else "Download",
+                onClick = {
+                    onDownloadTap()
+                    onDismiss()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Flag as Wrong Match
+            SheetOptionRow(
+                icon = Icons.Default.Flag,
+                label = "Flag as Wrong Match",
+                onClick = {
+                    onFlagWrongMatch()
+                    onDismiss()
+                }
+            )
+        }
+    }
+}
+
