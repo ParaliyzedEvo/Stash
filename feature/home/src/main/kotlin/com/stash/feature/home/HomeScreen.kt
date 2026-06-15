@@ -136,6 +136,7 @@ fun HomeScreen(
     onNavigateToRecentlyAdded: () -> Unit = {},
     onNavigateToLocalSongs: () -> Unit = {},
     onNavigateToMixBuilder: (Long?) -> Unit = {},
+    viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
@@ -1863,64 +1864,6 @@ private fun CreateMixCard(
     }
 }
 
-// ── Create mix card ──────────────────────────────────────────────────────
-
-/**
- * Leading tile in the Stash Mixes row. Tapping it opens the Mix Builder
- * to create a brand-new custom mix (recipeId = null). Compact (104×120 — a
- * narrow "add" affordance, not a full 180-wide mix card) with a dashed glass
- * border, mirroring the Playlists grid's [CreatePlaylistCard] affordance.
- */
-@Composable
-private fun CreateMixCard(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val extendedColors = StashTheme.extendedColors
-    val accent = MaterialTheme.colorScheme.primary
-
-    Box(
-        modifier = modifier
-            .width(104.dp)
-            .height(120.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(extendedColors.glassBackground)
-            .drawBehind {
-                val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 1.dp.toPx(),
-                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                        floatArrayOf(8.dp.toPx(), 6.dp.toPx()),
-                        0f,
-                    ),
-                )
-                drawRoundRect(
-                    color = accent.copy(alpha = 0.5f),
-                    style = stroke,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()),
-                )
-            }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = "Create\nmix",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        }
-    }
-}
 
 // ── Bottom sheet action row ──────────────────────────────────────────────
 
