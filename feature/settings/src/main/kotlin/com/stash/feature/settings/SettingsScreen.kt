@@ -534,13 +534,6 @@ private fun SettingsContent(
             )
         }
 
-        uiState.pendingMirrorWarning?.let { dest ->
-            LikeMirrorWarningDialog(
-                serviceName = if (dest == Destination.SPOTIFY) "Spotify" else "YouTube Music",
-                onConfirm = onMirrorWarningConfirmed,
-                onDismiss = onMirrorWarningDismissed,
-            )
-        }
         if (activeSubScreen == SettingsSubScreen.MAIN) {
             // -- Header --
             Text(
