@@ -78,7 +78,8 @@ layout. Each unit has one purpose and a small, testable interface.
 | `AmzApiModels` | `@Serializable` DTOs for search/track responses + lenient `Json`. | `QobuzApiModels` |
 | `AmzMatcher` | Scores search candidates against the `TrackQuery` (artist+title); picks the best ASIN; confirms via `/api/track` (ISRC match when available). | `MatchScorer` logic |
 | `AmzSource : LosslessSource` | `id="amz"`, `displayName="Amazon Music (amz.squid.wtf)"`; the resolve flow; returns `SourceResult`. | `QobuzSource` |
-| `AmzStreamResolver` | Streaming adapter: fetches the FLAC to an evictable cache file (via the shared authed-fetch seam) and returns a `file://` `StreamUrl` (cache-to-local, v1 default). | retired antra stream resolver (cache-to-local) |
+| `AmzStreamResolver` | Streaming adapter: returns `StreamUrl(url = /api/stream, origin = "amz")`; origin propagates to the MediaItem stream-origin extra. | `QobuzStreamResolver` |
+| amz routing branch | New `origin == "amz"` predicate + `amzStreamingFactory` in `StashMediaSourceFactory`; its HTTP layer is a Media3 `OkHttpDataSource` (new artifact `media3-datasource-okhttp`) on the interceptor-bearing client. Progressive, no `RefreshingDataSource`, no disk cache. | the existing YouTube routing branch |
 | `AmzModule` (Hilt) | `@Binds @IntoSet` `AmzSource` into `Set<LosslessSource>`; provides client/interceptor. | `qobuz` DI |
 
 **Wiring**
@@ -119,30 +120,54 @@ layout. Each unit has one purpose and a small, testable interface.
    the authoritative bits/sample-rate and the duration backstop validates the
    file.
 
-### Streaming (`AmzStreamResolver.resolve(track)`)
-Reality check (confirmed against the code during spec review): `StreamUrl`
-carries only `url + expiresAtMs + codec metadata + origin` (no header/auth
-field), and `StreamingMediaSourceFactory` hardcodes a single
-`DefaultHttpDataSource.Factory()` for all sources — kennyy/squid work only
-because their auth is baked into a *signed CDN URL*. amz's per-request
-`x-captcha-token` header model has no seam in that chain today.
+### Streaming (`AmzStreamResolver.resolve(track)`) — progressive, dedicated routing branch
 
-- **Approach B — cache-to-local — is the v1 default.** `AmzStreamResolver`
-  fetches the FLAC to an evictable cache file via the same authed-fetch seam the
-  download path uses (Requirement 3), then returns a `StreamUrl` pointing at the
-  local `file://` (the pattern the retired antra resolver used). This reuses the
-  one new seam, needs **no** changes to `StreamUrl` or
-  `StreamingMediaSourceFactory`, and is immune to mid-stream token expiry (the
-  token is only needed during the one-shot fetch). amz has no per-play quota, so
-  re-fetching costs only bandwidth/latency, not quota. Cost: a pre-play wait
-  while the ~56 MB file downloads (acceptable; antra did the same).
-- **Approach A — direct authed streaming — is a FUTURE optimization, out of
-  scope for v1.** It would require new plumbing: a header field on `StreamUrl`
-  (or a per-source data-source factory) and a Media3 `OkHttpDataSource.Factory`
-  built on the interceptor-bearing client so `x-captcha-token` rides every
-  range/seek request and a mid-stream 401 auto-re-mints. Only worth doing if the
-  pre-play wait proves annoying AND `/api/stream` honors Range (see
-  verify-on-device).
+`AmzStreamResolver` returns a `StreamUrl(url = "/api/stream?asin=…", origin =
+"amz", …)` — the bytes URL itself, NOT a pre-downloaded local file — and the
+resolved origin propagates to the playing `MediaItem`'s stream-origin extra
+(the same path kennyy/squid/youtube use).
+
+**Reality of the player routing (confirmed against the code):**
+`StashMediaSourceFactory.createMediaSource` routes via the `streamingTrackId`
+predicate — **only YouTube-origin** items go through the
+`StreamingMediaSourceFactory` chain (`CacheDataSource → RefreshingDataSource →
+HTTP`); **everything else, including kennyy/squid lossless, plays via the plain
+`DefaultMediaSourceFactory`** (a `DefaultHttpDataSource` GET of the *signed* CDN
+URL — progressive, no cache, no refresh). So there is no automatic cache
+pipeline to "inherit," and the `RefreshingDataSource` 403/410 URL-refresh
+trigger is YouTube-only.
+
+**amz gets its own dedicated routing branch** in `StashMediaSourceFactory`
+(net-new wiring — this is the central streaming task):
+- A new predicate detects an `origin == "amz"` streaming item (mirroring how
+  `streamingTrackId` reads the stream-origin extra), routing it to a new
+  `amzStreamingFactory`.
+- `amzStreamingFactory` is a `MediaSource.Factory` whose HTTP layer is a Media3
+  **`OkHttpDataSource` built on the `AmzCaptchaInterceptor`-bearing client**
+  (add the `androidx.media3:media3-datasource-okhttp` artifact — a genuinely new
+  dependency at the existing `media3` 1.9.x version; the base `media3-datasource`
+  is already present but the okhttp module is separate). The interceptor
+  attaches `x-captcha-token` and does re-mint-and-retry on the stale-token
+  response for **every** request ExoPlayer issues (initial + each range/seek),
+  so mid-stream token expiry is transparent and the auth logic is **shared with
+  the download path** (one interceptor, one seam).
+- amz deliberately does **not** go through `RefreshingDataSource`. That layer
+  re-resolves on 403/410 to mint a new *URL*; amz's auth is a header, not a URL,
+  so URL-refresh is wrong for it. Keeping amz on its own branch means the
+  interceptor is the *sole* re-auth mechanism and there is **no 403-vs-token
+  collision** regardless of whether amz signals stale tokens with 401 or 403
+  (Verify-on-device #2 only sets the interceptor's trigger code).
+- No disk `CacheDataSource` layer for amz: lossless files are large (~56 MB) and
+  kennyy/squid already stream lossless without disk-caching. amz matches that —
+  progressive in-memory buffering, with seeks served from the player buffer and,
+  for far-ahead seeks, a fresh Range request.
+
+Result: **instant-start progressive playback** (no full-file pre-wait),
+consistent with how kennyy/squid lossless already streams, plus authed access
+and mid-stream re-mint. Seek-ahead responsiveness beyond the buffer is bounded
+by whether `/api/stream` honors Range (server ceiling, Verify-on-device #1) —
+not by the client design. Cache-to-local-then-play is explicitly rejected (it
+would add a 56 MB pre-play wait for no benefit).
 
 ## Design requirements (folded-in critique)
 
@@ -168,8 +193,10 @@ because their auth is baked into a *signed CDN URL*. amz's per-request
    `LosslessUrlDownloader`'s fetch get the token attached and auto-re-minted on a
    stale-token response, with no header snapshot. (A host-scoped interceptor is
    safe on the shared client by construction — it never touches Spotify/YouTube/
-   Last.fm requests. This is the seam the streaming cache-to-local fetch reuses
-   too.) The plan must treat this as net-new wiring, not reuse.
+   Last.fm requests.) The streaming path reuses the *same* interceptor via a
+   Media3 `OkHttpDataSource` (see Streaming), so token-attach + re-mint logic
+   lives in exactly one place for both download and playback. The plan must
+   treat this as net-new wiring, not reuse.
 4. **Single-flight captcha mint.** Guard minting with a `Mutex` so parallel
    resolves share one PoW solve instead of stampeding (PBKDF2 cost=1000 is real
    CPU).
@@ -225,11 +252,14 @@ because their auth is baked into a *signed CDN URL*. amz's per-request
 
 ## Verify-on-device (do early in implementation — they decide details)
 
-1. **Does `/api/stream` honor HTTP Range?** Not v1-critical (v1 streaming is
-   cache-to-local, Approach B). Only informs whether the future Approach A
-   direct-streaming optimization is feasible.
+1. **Does `/api/stream` honor HTTP Range?** Progressive start + seek-from-cache
+   work regardless; Range determines how responsive *seek-ahead beyond cached
+   bytes* is. If Range is absent, a far-ahead seek re-fetches from the start
+   (cache softens it). Check early; it tunes UX, it does not gate the design.
 2. **What does a stale/invalid `x-captcha-token` return?** (401 vs 403 vs 200+
-   error body) — sets the interceptor's re-mint trigger.
+   error body) — sets the interceptor's re-mint trigger. (No collision with
+   `RefreshingDataSource` either way, since amz streams on its own routing branch
+   that doesn't use it.)
 3. **Does `/api/track` expose duration and/or the available format/tier?** —
    enables the duration backstop on match and pre-download lossy rejection
    (Requirement 5).
@@ -239,10 +269,14 @@ because their auth is baked into a *signed CDN URL*. amz's per-request
 - Token TTL is unknown; the re-mint-on-stale design tolerates any TTL, but a
   very short TTL would mean frequent PoW solves (cost=1000 PBKDF2 is ~hundreds
   of ms). Acceptable; single-flight bounds the cost.
-- v1 streaming uses cache-to-local (Approach B), which reuses the download
-  fetch seam and needs no `StreamUrl`/factory changes. The direct-streaming
-  optimization (Approach A) is deferred and would require new `StreamUrl` +
-  data-source-factory plumbing.
+- Streaming needs a NEW dedicated routing branch in `StashMediaSourceFactory`
+  (the cache/refresh pipeline is YouTube-only; lossless uses the plain default
+  factory today). amz's branch uses a Media3 `OkHttpDataSource` (new artifact
+  `media3-datasource-okhttp`) on the interceptor client — progressive, authed,
+  no `RefreshingDataSource`, no disk cache. `StreamUrl` needs no header field
+  (auth rides the interceptor; routing keys on the stream-origin extra).
+- Seek-ahead responsiveness is bounded by whether `/api/stream` honors Range
+  (server-side ceiling, verified early) — not by the client design.
 - Amazon US catalog gaps differ from Qobuz — expected and desirable (that is the
   independence), handled by failover.
 
