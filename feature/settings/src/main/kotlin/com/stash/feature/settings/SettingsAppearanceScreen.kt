@@ -1,5 +1,6 @@
 package com.stash.feature.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -115,14 +117,30 @@ fun SettingsAppearanceScreen(
         )
 
         // Blur sub-option — only visible in AMOLED mode
-        AnimatedVisibility(visible = uiState.themeMode == ThemeMode.AMOLED) {
-            SettingsToggleRow(
-                title = "Show blur effects",
-                subtitle = "Disable for strict pure-black AMOLED savings",
-                checked = showBlurLayer,
-                onCheckedChange = viewModel::onShowBlurLayerInAmoledChanged,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+        if (uiState.themeMode == ThemeMode.AMOLED) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Show blur effects",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Disable for strict pure-black AMOLED savings",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = showBlurLayer,
+                    onCheckedChange = viewModel::onShowBlurLayerInAmoledChanged,
+                )
+            }
         }
     }
 }
