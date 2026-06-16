@@ -56,38 +56,55 @@ fun SettingsAppearanceScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
         SettingsSectionLabel("Theme")
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ThemeThumbnail(
-                label = "Dark",
-                selected = uiState.themeMode == ThemeMode.DARK,
-                darkPalette = true,
-                followSystem = false,
-                onClick = { viewModel.onThemeChanged(ThemeMode.DARK) },
-                modifier = Modifier.weight(1f),
-            )
-            ThemeThumbnail(
-                label = "Light",
-                selected = uiState.themeMode == ThemeMode.LIGHT,
-                darkPalette = false,
-                followSystem = false,
-                onClick = { viewModel.onThemeChanged(ThemeMode.LIGHT) },
-                modifier = Modifier.weight(1f),
-            )
-            ThemeThumbnail(
-                label = "Follow system",
-                selected = uiState.themeMode == ThemeMode.SYSTEM,
-                darkPalette = false,
-                followSystem = true,
-                onClick = { viewModel.onThemeChanged(ThemeMode.SYSTEM) },
-                modifier = Modifier.weight(1f),
-            )
+        // 2×2 grid
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ThemeThumbnail(
+                    label = "Dark",
+                    selected = uiState.themeMode == ThemeMode.DARK,
+                    darkPalette = true,
+                    followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.DARK) },
+                    modifier = Modifier.weight(1f),
+                )
+                ThemeThumbnail(
+                    label = "Light",
+                    selected = uiState.themeMode == ThemeMode.LIGHT,
+                    darkPalette = false,
+                    followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.LIGHT) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ThemeThumbnail(
+                    label = "AMOLED",
+                    selected = uiState.themeMode == ThemeMode.AMOLED,
+                    darkPalette = true,
+                    followSystem = false,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.AMOLED) },
+                    modifier = Modifier.weight(1f),
+                )
+                ThemeThumbnail(
+                    label = "Follow system",
+                    selected = uiState.themeMode == ThemeMode.SYSTEM,
+                    darkPalette = false,
+                    followSystem = true,
+                    onClick = { viewModel.onThemeChanged(ThemeMode.SYSTEM) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         Text(
@@ -96,6 +113,17 @@ fun SettingsAppearanceScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
+
+        // Blur sub-option — only visible in AMOLED mode
+        AnimatedVisibility(visible = uiState.themeMode == ThemeMode.AMOLED) {
+            SettingsToggleRow(
+                title = "Show blur effects",
+                subtitle = "Disable for strict pure-black AMOLED savings",
+                checked = showBlurLayer,
+                onCheckedChange = viewModel::onShowBlurLayerInAmoledChanged,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
 
