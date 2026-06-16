@@ -18,7 +18,11 @@ import javax.inject.Singleton
  *   2. [QobuzStreamResolver]   — `qobuz.squid.wtf`. Same Qobuz catalog,
  *      requires a user-pasted `captcha_verified_at` cookie. Auto-skipped
  *      when no cookie is set or the current cookie has been marked stale.
- *   3. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   3. [ArcodStreamResolver]   — `dl.arcod.xyz`. Same Qobuz catalog via an
+ *      authenticated job-render queue (search → create-job → poll → open URL).
+ *      Slower per-track than the proxies, so it sits last among the lossless
+ *      sources — reached only when kennyy and squid both miss.
+ *   4. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -43,6 +47,7 @@ import javax.inject.Singleton
 class StreamSourceRegistry @Inject constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
+    private val arcod: ArcodStreamResolver,
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
 ) {
@@ -78,6 +83,7 @@ class StreamSourceRegistry @Inject constructor(
             } else {
                 add("kennyy" to kennyy::resolve)
                 add("squid" to qobuz::resolve)
+                add("arcod" to arcod::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }
