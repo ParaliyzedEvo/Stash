@@ -126,12 +126,6 @@ class DownloadManager @Inject constructor(
      */
     private val audioDurationExtractor: AudioDurationExtractor,
     private val losslessHealthGate: LosslessSourceHealthGate,
-    /**
-     * Test-only "Force antra only" outage drill. When on, antra is the sole
-     * source and NOTHING may reach yt-dlp — the stash-mix / preResolvedUrl
-     * fall-through carve-outs are suppressed so exempt tracks defer too.
-     */
-    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) {
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
@@ -203,18 +197,10 @@ class DownloadManager @Inject constructor(
         // On success we short-circuit the YouTube pipeline. On null /
         // failure we fall through to the YouTube path (or defer when
         // fallback is off, per v0.9.17 strict-FLAC).
-        val forceAntraOnly = streamingPreference.isForceAntraOnly()
         val forceLossless = isStashMixTrack(track.id)
-        if (forceLossless || losslessPrefs.enabledNow() || forceAntraOnly) {
+        if (forceLossless || losslessPrefs.enabledNow()) {
             val losslessResult = tryLosslessDownload(track, forced = forceLossless)
             if (losslessResult != null) return losslessResult
-            // Outage drill (force-antra-only): antra is the only source and
-            // NOTHING may reach yt-dlp — even the stash-mix / preResolvedUrl
-            // carve-outs below defer, so the test population stays pure antra.
-            if (forceAntraOnly) {
-                Log.i(TAG, "deferring '${track.artist} - ${track.title}': force-antra-only, antra missed")
-                return TrackDownloadResult.Deferred
-            }
             // v0.9.17 strict-FLAC: when lossless returned null AND
             // fallback is off, defer instead of falling through to
             // yt-dlp. Two exemptions:

@@ -48,6 +48,8 @@ class StreamingPreference @Inject constructor(
     private val cellularKey = booleanPreferencesKey("streaming_on_cellular")
     private val qualityKey = stringPreferencesKey("streaming_quality_tier")
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
+    // Retained only so [purgeRetiredKeys] can delete it from existing
+    // installs; the antra source was removed (see fix/remove-antra).
     private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
 
     val enabled: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
@@ -73,23 +75,9 @@ class StreamingPreference @Inject constructor(
         prefs[forceYouTubeFallbackKey] ?: false
     }
 
-    /**
-     * Test-only toggle: the outage drill for the antra fallback. When
-     * `true`, [StreamSourceRegistry] and the lossless download registry
-     * route through antra ONLY — kennyy, squid and the YouTube fallback are
-     * all removed from play, so a track either resolves via antra or fails
-     * visibly. Default `false` (normal use). Takes precedence over
-     * [forceYouTubeFallback] if both are on.
-     */
-    val forceAntraOnly: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
-        prefs[forceAntraOnlyKey] ?: false
-    }
-
     suspend fun current(): Boolean = enabled.first()
 
     suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
-
-    suspend fun isForceAntraOnly(): Boolean = forceAntraOnly.first()
 
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
@@ -103,11 +91,16 @@ class StreamingPreference @Inject constructor(
         context.streamingDataStore.edit { it[forceYouTubeFallbackKey] = value }
     }
 
-    suspend fun setForceAntraOnly(value: Boolean) {
-        context.streamingDataStore.edit { it[forceAntraOnlyKey] = value }
-    }
-
     suspend fun setStreamQuality(tier: StreamQualityTier) {
         context.streamingDataStore.edit { it[qualityKey] = tier.name }
+    }
+
+    /**
+     * One-shot cleanup for the removed antra source: deletes the retired
+     * `force_antra_only` toggle from existing installs. Called once at
+     * startup (see StashApplication). No-op when the key is already absent.
+     */
+    suspend fun purgeRetiredKeys() {
+        context.streamingDataStore.edit { it.remove(forceAntraOnlyKey) }
     }
 }

@@ -69,8 +69,6 @@ class DownloadManagerDeferTest {
         mockk(relaxed = true)
     private val losslessHealthGate: com.stash.data.download.lossless.LosslessSourceHealthGate =
         mockk(relaxed = true)
-    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference =
-        mockk(relaxed = true)
 
     private fun newSubject(): DownloadManager = DownloadManager(
         downloadExecutor = downloadExecutor,
@@ -95,7 +93,6 @@ class DownloadManagerDeferTest {
         lyricsFetchTrigger = lyricsFetchTrigger,
         audioDurationExtractor = audioDurationExtractor,
         losslessHealthGate = losslessHealthGate,
-        streamingPreference = streamingPreference,
     )
 
     private fun stubTrack(): Track = Track(
@@ -136,38 +133,6 @@ class DownloadManagerDeferTest {
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
         assertFalse("did not defer, got $result", result is TrackDownloadResult.Deferred)
-    }
-
-    @Test
-    fun `forceAntraOnly defers a Stash Mix track instead of falling to yt-dlp`() = runTest {
-        // Outage drill: under force-antra-only, NOTHING may reach yt-dlp.
-        // Even the Stash-Mix carve-out (which normally falls through) must
-        // defer when antra misses, so the test population stays pure antra.
-        coEvery { streamingPreference.isForceAntraOnly() } returns true
-        coEvery { losslessPrefs.enabledNow() } returns false
-        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
-        coEvery { losslessRegistry.resolve(any()) } returns null
-        coEvery { playlistDao.isTrackInStashMix(any()) } returns true // forceLossless = true
-
-        val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
-
-        assertTrue("expected Deferred under force-antra-only, got $result", result is TrackDownloadResult.Deferred)
-    }
-
-    @Test
-    fun `forceAntraOnly defers a preResolvedUrl track instead of falling to yt-dlp`() = runTest {
-        coEvery { streamingPreference.isForceAntraOnly() } returns true
-        coEvery { losslessPrefs.enabledNow() } returns false
-        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
-        coEvery { losslessRegistry.resolve(any()) } returns null
-        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
-
-        val result = newSubject().downloadTrack(
-            track = stubTrack(),
-            preResolvedUrl = "https://www.youtube.com/watch?v=abc",
-        )
-
-        assertTrue("expected Deferred under force-antra-only, got $result", result is TrackDownloadResult.Deferred)
     }
 
     @Test

@@ -100,7 +100,6 @@ class DownloadManagerEmbedStampTest {
         lyricsFetchTrigger = lyricsFetchTrigger,
         audioDurationExtractor = audioDurationExtractor,
         losslessHealthGate = losslessHealthGate,
-        streamingPreference = mockk(relaxed = true),
     )
 
     private fun stubTrack(): Track = Track(

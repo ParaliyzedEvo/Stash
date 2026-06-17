@@ -589,15 +589,13 @@ class PlayerRepositoryImpl @Inject constructor(
         val backward = tracks.subList(0, safeStart)
         queueBuildJob = scope.launch {
             try {
-                // allowAntra = false: the fill is speculative — an antra
-                // resolve spends 1 single + 60-120s of its exclusive job
-                // slot PER TRACK, so a playlist tap during a kennyy outage
-                // would otherwise drain the whole quota (seen on-device
-                // 2026-06-09). Antra stays available to the tapped track
-                // and to the single next-up prefetch (prefetchNextTrack /
-                // PrefetchOrchestrator), which keeps auto-advance seamless.
-                fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
-                fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+                // allowYtDlp = false: the fill is speculative, so it uses the
+                // fast InnerTube engine only — a 15-35s yt-dlp invocation must
+                // never sit on the queue's critical path. The tapped track and
+                // the single next-up prefetch (prefetchNextTrack /
+                // PrefetchOrchestrator) keep allowYtDlp = true.
+                fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
+                fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
                 Log.i(TAG, "setQueue: background fill complete (${tracks.size} tracks)")
                 // Kick the next-up prefetch for the FIRST track explicitly. The
                 // reactive watcher (playerState.currentIndex.distinctUntilChanged)
@@ -660,11 +658,10 @@ class PlayerRepositoryImpl @Inject constructor(
         streamingOn: Boolean,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        allowAntra: Boolean = true,
     ) {
         tracks.chunked(BACKGROUND_FILL_BATCH).forEach { batch ->
             if (!currentCoroutineActive()) return
-            val resolved = resolveBatchParallel(batch, semaphore, streamingOn, allowYouTube, allowYtDlp, allowAntra)
+            val resolved = resolveBatchParallel(batch, semaphore, streamingOn, allowYouTube, allowYtDlp)
             if (resolved.isNotEmpty()) controller.addMediaItems(resolved)
         }
     }
@@ -681,7 +678,6 @@ class PlayerRepositoryImpl @Inject constructor(
         streamingOn: Boolean,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        allowAntra: Boolean = true,
     ) {
         // Process from the END of [tracks] backwards in chunks. The chunk
         // closest to the current playback head is processed last so the
@@ -692,7 +688,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // Resolve the batch in original (forward) order so the
             // semaphore-bounded async fan-out doesn't reshuffle results.
             val batch = batchReversed.asReversed()
-            val resolved = resolveBatchParallel(batch, semaphore, streamingOn, allowYouTube, allowYtDlp, allowAntra)
+            val resolved = resolveBatchParallel(batch, semaphore, streamingOn, allowYouTube, allowYtDlp)
             if (resolved.isNotEmpty()) controller.addMediaItems(/* index = */ 0, resolved)
         }
     }
@@ -703,11 +699,10 @@ class PlayerRepositoryImpl @Inject constructor(
         streamingOn: Boolean,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        allowAntra: Boolean = true,
     ): List<MediaItem> = coroutineScope {
         batch.map { track ->
             async(Dispatchers.IO) {
-                resolveTrackToMediaItem(track, semaphore, streamingOn, allowYouTube, allowYtDlp, allowAntra)
+                resolveTrackToMediaItem(track, semaphore, streamingOn, allowYouTube, allowYtDlp)
             }
         }.awaitAll().filterNotNull()
     }
@@ -768,12 +763,9 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
         val entity = trackDao.getById(next.id) ?: next.toEntity()
         val resolved = try {
-            // antra ALLOWED here (unlike the queue-wide background fill):
-            // this is the single next-up track during active playback — its
-            // antra single gets spent either way the moment auto-advance
-            // reaches it (and a skip-next lands on this same track), while
-            // an antra job needs 60-120s, so prefetching it is the only way
-            // auto-advance stays seamless during a Qobuz-proxy outage.
+            // Full-fat resolve (allowYtDlp = true) for the single next-up track
+            // during active playback, so auto-advance stays seamless during a
+            // Qobuz-proxy outage even if it falls through to the YouTube path.
             streamResolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
         } catch (ce: CancellationException) {
             throw ce
@@ -882,7 +874,6 @@ class PlayerRepositoryImpl @Inject constructor(
         streamingOn: Boolean,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        allowAntra: Boolean = true,
     ): MediaItem? {
         val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
@@ -899,7 +890,6 @@ class PlayerRepositoryImpl @Inject constructor(
                 entity,
                 allowYouTube = allowYouTube,
                 allowYtDlp = allowYtDlp,
-                allowAntra = allowAntra,
             )
             (result as? StreamRoutingResult.Item)?.mediaItem
         }
@@ -1313,7 +1303,6 @@ class PlayerRepositoryImpl @Inject constructor(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
-        allowAntra: Boolean = true,
     ): StreamRoutingResult {
         val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
@@ -1359,23 +1348,21 @@ class PlayerRepositoryImpl @Inject constructor(
             track,
             allowYouTube = allowYouTube,
             allowYtDlp = allowYtDlp,
-            allowAntra = allowAntra,
         )?.also { resolved ->
             // Don't poison the shared cache with a PROVISIONAL lossy fallback.
-            // The queue-wide background fill resolves with allowAntra = false
-            // (one antra job is 60-120s + a quota single, too costly to spend
-            // across a whole queue). During a kennyy/squid outage that call
-            // falls through to a lossy YouTube URL. Caching it would make the
-            // next-up prefetch and a later foreground tap — both of which DO
-            // allow antra — defer to the cached youtube entry (prefetch's
-            // fresh-cache guard / the cache read above) and never give antra
-            // its chance, so the user hears AAC when FLAC was available. When
-            // antra WAS allowed and we still got youtube, the track is
-            // genuinely lossless-less: cache it so we don't re-run a 60-120s
-            // antra job on every play. Lossless results (kennyy/squid/antra)
-            // always cache — best available regardless of path.
+            // The queue-wide background fill resolves with allowYtDlp = false
+            // (InnerTube-only, no slow yt-dlp on the critical path). During a
+            // kennyy/squid outage that speculative call can fall through to a
+            // lossy YouTube URL. Caching it would make the next-up prefetch and
+            // a later foreground tap — both of which run with allowYtDlp = true
+            // — defer to the cached youtube entry and never re-attempt the
+            // Qobuz proxies (which may have recovered), so the user hears AAC
+            // when FLAC was available. A YouTube result from a full-fat
+            // (allowYtDlp = true) resolve means the track is genuinely
+            // lossless-less: cache it. Lossless results (kennyy/squid) always
+            // cache — best available regardless of path.
             val provisionalLossyFallback =
-                !allowAntra && resolved.origin == YouTubeStreamResolver.ORIGIN
+                !allowYtDlp && resolved.origin == YouTubeStreamResolver.ORIGIN
             if (!provisionalLossyFallback) {
                 streamUrlCache.put(track.id, resolved)
             }

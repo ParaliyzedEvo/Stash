@@ -193,13 +193,12 @@ class AggregatorRateLimiterTest {
 
     @Test
     fun `429s never trip the breaker when rateLimitTripsBreaker is false`() = runTest {
-        // antra returns 429 for "a job is already running" — an expected
-        // concurrency reply absorbed by the job gate, NOT a health signal.
-        // So 429s must apply the short backoff but never trip the breaker,
-        // however many collide.
+        // For a source whose 429 is an expected concurrency reply (a job is
+        // already running) rather than a health signal, 429s must apply the
+        // short backoff but never trip the breaker, however many collide.
         val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
         limiter.configure(
-            "antra",
+            "concurrency_capped",
             AggregatorRateLimiter.Config(
                 tokensPerSecond = 10.0,
                 burstCapacity = 10.0,
@@ -211,13 +210,13 @@ class AggregatorRateLimiterTest {
         )
         // Far more than circuitBreakAfter consecutive 429s, each past its backoff.
         repeat(8) {
-            limiter.reportRateLimited("antra")
+            limiter.reportRateLimited("concurrency_capped")
             advanceTimeBy(1_500)
         }
 
         // Breaker never tripped — once the last 429 backoff elapses we're usable.
-        assertFalse(limiter.stateOf("antra").isCircuitBroken)
-        assertTrue(limiter.acquire("antra"))
+        assertFalse(limiter.stateOf("concurrency_capped").isCircuitBroken)
+        assertTrue(limiter.acquire("concurrency_capped"))
     }
 
     @Test

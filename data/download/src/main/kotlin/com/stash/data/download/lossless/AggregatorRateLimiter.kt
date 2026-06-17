@@ -101,27 +101,6 @@ class AggregatorRateLimiter @Inject constructor() {
             circuitBreakAfter = 5,
             circuitBreakDurationMs = 30 * 60_000L, // 30 min
         )
-
-        // antra runs ONE job at a time (a 2nd POST /api/jobs while one is in
-        // flight returns 429). burst=1 stops the limiter from fanning out
-        // multiple parallel download workers onto antra's single slot; the
-        // AntraJobGate then serializes the actual job lifecycle. A 429 is a
-        // short backoff (10s), not a hard failure — AntraSource reports it
-        // via reportRateLimited, so transient collisions never trip the
-        // breaker. circuitBreak only fires on genuine failures (dead auth,
-        // 5xx) and clears in 5 min.
-        configs["antra"] = Config(
-            tokensPerSecond = 1.0 / 2.0,   // 1 token / 2 seconds
-            burstCapacity = 1.0,           // never fan out — one job at a time
-            backoff429Ms = 10_000L,        // brief pause; the gate already serializes
-            circuitBreakAfter = 5,
-            circuitBreakDurationMs = 5 * 60_000L, // 5 min
-            // antra's 429 = "a job is already running" (absorbed by
-            // AntraJobGate), not a health signal — so collisions apply the
-            // backoff but never brick the source. Only genuine failures
-            // (dead auth, 5xx via reportFailure) trip the breaker.
-            rateLimitTripsBreaker = false,
-        )
     }
 
     companion object {

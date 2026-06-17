@@ -105,12 +105,6 @@ class PrefetchOrchestrator @Inject constructor(
                 // prefetch for the whole synced library.
                 if (!track.isStreamable && track.isStreamableCheckedAt != null) return@launch
 
-                // antra ALLOWED (unlike the queue-wide background fill):
-                // this fires past 60% of the current track for the single
-                // next-up item, whose antra single gets spent either way
-                // when auto-advance reaches it. The antra resolver's
-                // track-keyed cache means a double resolve with the repo's
-                // own next-track prefetch never spends twice.
                 val resolved = streamResolver.resolve(track)
                 if (resolved != null) {
                     streamUrlCache.put(nextTrackId, resolved)

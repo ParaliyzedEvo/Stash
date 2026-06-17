@@ -65,12 +65,6 @@ data class SettingsUiState(
      */
     val losslessQualityTier: LosslessQualityTier = LosslessQualityTier.HI_RES,
     /**
-     * The connected antra account's username, or null when antra isn't
-     * connected. Drives the Settings "Connect antra" row: not-connected
-     * shows "Connect antra", connected shows "antra: <username> (Reconnect)".
-     */
-    val antraUsername: String? = null,
-    /**
      * Manually-pasted `captcha_verified_at` cookie value from
      * `qobuz.squid.wtf`. Bridges the captcha gate when the user
      * prefers manual paste over the in-app WebView solver — they

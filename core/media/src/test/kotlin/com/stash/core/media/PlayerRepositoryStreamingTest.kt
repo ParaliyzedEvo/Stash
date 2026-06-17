@@ -256,12 +256,6 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun computeIsStreaming_true_for_antra_file_uri_with_stream_origin() {
-        // antra: file:// URI but resolved by a stream resolver.
-        assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = "antra")).isTrue()
-    }
-
-    @Test
     fun computeIsStreaming_false_for_downloaded_local_file() {
         // Downloaded track: file:// and NO stream origin → not streaming.
         assertThat(repo.computeIsStreaming(scheme = "file", streamOrigin = null)).isFalse()
@@ -269,10 +263,10 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun buildMediaItem_forwards_allowAntra_false_to_resolver() = runTest {
-        // The background-fill / prefetch paths pass allowAntra = false so a
-        // speculative resolve can never spend antra quota (1 single per
-        // resolve). Verify the flag reaches the registry untouched.
+    fun buildMediaItem_forwards_allowYtDlp_false_to_resolver() = runTest {
+        // The queue-wide background fill passes allowYtDlp = false so a
+        // speculative resolve uses the fast InnerTube engine only (no slow
+        // yt-dlp on the critical path). Verify the flag reaches the registry.
         val track = streamable(id = 4L)
         every { streamingPreference.streamOnCellular } returns flowOf(true)
         coEvery { streamingPreference.current() } returns true
@@ -280,32 +274,31 @@ class PlayerRepositoryStreamingTest {
         every { connectivity.isCellular() } returns false
         every { streamUrlCache.get(4L) } returns null
         coEvery {
-            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false)
         } returns null
 
         val result = repo.buildMediaItemForTrack(
             track,
             allowYouTube = true,
             allowYtDlp = false,
-            allowAntra = false,
         )
 
         assertThat(result).isEqualTo(StreamRoutingResult.NotAvailable)
         coVerify {
-            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false)
         }
     }
 
     @Test
     fun buildMediaItem_speculativeYouTubeFallback_isNotCached() = runTest {
-        // ROOT CAUSE (antra cache poisoning): during a Qobuz outage the
-        // queue-wide background fill resolves with allowAntra = false and
-        // falls through to a LOSSY youtube URL. Persisting that into the
-        // shared StreamUrlCache poisons the track: the next-up prefetch and
-        // a later foreground tap (both allowAntra = TRUE) defer to the
-        // fresh cache entry and never give antra its chance — so the user
-        // hears YouTube AAC even though antra could serve FLAC. A youtube
-        // result from an antra-DISALLOWED call must therefore stay
+        // ROOT CAUSE (cache poisoning): during a Qobuz outage the queue-wide
+        // background fill resolves with allowYtDlp = false (speculative) and
+        // can fall through to a LOSSY youtube URL. Persisting that into the
+        // shared StreamUrlCache poisons the track: the next-up prefetch and a
+        // later foreground tap (both allowYtDlp = TRUE) defer to the fresh
+        // cache entry and never re-attempt the Qobuz proxies (which may have
+        // recovered) — so the user hears YouTube AAC even though FLAC could
+        // serve. A youtube result from a speculative call must therefore stay
         // provisional (not cached).
         val track = streamable(id = 40L)
         every { streamingPreference.streamOnCellular } returns flowOf(true)
@@ -314,7 +307,7 @@ class PlayerRepositoryStreamingTest {
         every { connectivity.isCellular() } returns false
         every { streamUrlCache.get(40L) } returns null
         coEvery {
-            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false)
         } returns StreamUrl(
             url = "https://yt.example/fallback",
             expiresAtMs = 9_999_000L,
@@ -325,21 +318,20 @@ class PlayerRepositoryStreamingTest {
             track,
             allowYouTube = true,
             allowYtDlp = false,
-            allowAntra = false,
         )
 
         // The track still plays (timeline floor), but the lossy URL is NOT
-        // cached, so an antra-allowed path can re-resolve to lossless.
+        // cached, so a full-fat path can re-resolve to lossless.
         assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
         verify(exactly = 0) { streamUrlCache.put(eq(40L), any()) }
     }
 
     @Test
     fun buildMediaItem_genuineYouTubeOnly_isCachedFromFullPermissionCall() = runTest {
-        // No regression: when antra WAS allowed (foreground tap / next-up
-        // prefetch) and youtube is still the best we found, the track is
-        // genuinely lossless-less — cache it so we don't re-attempt a
-        // 60-120s antra job on every single play.
+        // No regression: when the full-fat path (foreground tap / next-up
+        // prefetch, allowYtDlp = TRUE) still finds only youtube, the track is
+        // genuinely lossless-less — cache it so we don't re-attempt the Qobuz
+        // proxies on every single play.
         val track = streamable(id = 41L)
         every { streamingPreference.streamOnCellular } returns flowOf(true)
         coEvery { streamingPreference.current() } returns true
@@ -347,7 +339,7 @@ class PlayerRepositoryStreamingTest {
         every { connectivity.isCellular() } returns false
         every { streamUrlCache.get(41L) } returns null
         coEvery {
-            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = true, allowAntra = true)
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = true)
         } returns StreamUrl(
             url = "https://yt.example/only",
             expiresAtMs = 9_999_000L,
@@ -362,9 +354,9 @@ class PlayerRepositoryStreamingTest {
     @Test
     fun buildMediaItem_speculativeLosslessHit_isStillCached() = runTest {
         // Precision guard: the suppression is for LOSSY fallbacks only. A
-        // background-fill call (allowAntra = false) that resolves kennyy/
-        // squid lossless SHOULD warm the cache — that result is the best
-        // available and re-resolving it later is wasteful.
+        // speculative background-fill call (allowYtDlp = false) that resolves
+        // kennyy/squid lossless SHOULD warm the cache — that result is the
+        // best available and re-resolving it later is wasteful.
         val track = streamable(id = 42L)
         every { streamingPreference.streamOnCellular } returns flowOf(true)
         coEvery { streamingPreference.current() } returns true
@@ -372,7 +364,7 @@ class PlayerRepositoryStreamingTest {
         every { connectivity.isCellular() } returns false
         every { streamUrlCache.get(42L) } returns null
         coEvery {
-            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+            streamResolver.resolve(track, allowYouTube = true, allowYtDlp = false)
         } returns StreamUrl(
             url = "https://cdn.example/lossless?etsp=5",
             expiresAtMs = 5_000L,
@@ -383,7 +375,6 @@ class PlayerRepositoryStreamingTest {
             track,
             allowYouTube = true,
             allowYtDlp = false,
-            allowAntra = false,
         )
 
         verify { streamUrlCache.put(eq(42L), match { it.origin == "kennyy" }) }

@@ -3,7 +3,6 @@ package com.stash.data.download.lossless
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -53,6 +52,9 @@ class LosslessSourcePreferences @Inject constructor(
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
     private val youtubeFallbackKey = booleanPreferencesKey("youtube_fallback_enabled")
+    // Retained only so [purgeAntraCredentials] can delete the harvested
+    // antra.hoshi.cfd session from existing installs; the antra source was
+    // removed (see fix/remove-antra).
     private val antraSessionKey = stringPreferencesKey("antra_session_cookie")
     private val antraCfClearanceKey = stringPreferencesKey("antra_cf_clearance_cookie")
     private val antraUsernameKey = stringPreferencesKey("antra_username")
@@ -163,68 +165,17 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * The `session` cookie antra.hoshi.cfd issues after a successful
-     * login. Combined with [antraCfClearance] it authenticates the
-     * lossless download endpoint. Blank/absent → emits null.
-     *
-     * Stored as a plain string (same treatment as the squid captcha
-     * cookie): it's a freely-replayable session token, not a secret the
-     * prefs layer is responsible for encrypting.
+     * One-shot cleanup for the removed antra source: deletes the harvested
+     * antra.hoshi.cfd session cookie, cf_clearance cookie, and username from
+     * existing installs so no stale login session lingers on disk. Called
+     * once at startup (see StashApplication). No-op when the keys are absent.
      */
-    val antraSessionCookie: Flow<String?> = context.losslessDataStore.data.map { prefs ->
-        prefs[antraSessionKey]?.takeIf { it.isNotBlank() }
-    }
-
-    suspend fun antraSessionCookieNow(): String? = antraSessionCookie.first()
-
-    /**
-     * The `cf_clearance` cookie antra.hoshi.cfd sets after the user
-     * passes the Cloudflare challenge. Required alongside
-     * [antraSessionCookie] for authenticated requests. Blank/absent →
-     * emits null.
-     */
-    val antraCfClearance: Flow<String?> = context.losslessDataStore.data.map { prefs ->
-        prefs[antraCfClearanceKey]?.takeIf { it.isNotBlank() }
-    }
-
-    suspend fun antraCfClearanceNow(): String? = antraCfClearance.first()
-
-    /** The antra account username, for display in Settings. Blank/absent → null. */
-    val antraUsername: Flow<String?> = context.losslessDataStore.data.map { prefs ->
-        prefs[antraUsernameKey]?.takeIf { it.isNotBlank() }
-    }
-
-    suspend fun antraUsernameNow(): String? = antraUsername.first()
-
-    /**
-     * Persists the antra session + cf_clearance cookies and username in a
-     * single edit. Blank values are removed rather than stored so the
-     * `isNotBlank` reads above stay truthful.
-     */
-    suspend fun setAntraCredentials(session: String?, cfClearance: String?, username: String?) {
-        context.losslessDataStore.edit { prefs ->
-            putOrRemove(prefs, antraSessionKey, session)
-            putOrRemove(prefs, antraCfClearanceKey, cfClearance)
-            putOrRemove(prefs, antraUsernameKey, username)
-        }
-    }
-
-    /** Clears all antra credentials (e.g. when the session is detected stale). */
-    suspend fun clearAntraCredentials() {
+    suspend fun purgeAntraCredentials() {
         context.losslessDataStore.edit { prefs ->
             prefs.remove(antraSessionKey)
             prefs.remove(antraCfClearanceKey)
             prefs.remove(antraUsernameKey)
         }
-    }
-
-    private fun putOrRemove(
-        prefs: MutablePreferences,
-        key: Preferences.Key<String>,
-        value: String?,
-    ) {
-        val trimmed = value?.trim()?.takeIf { it.isNotEmpty() }
-        if (trimmed == null) prefs.remove(key) else prefs[key] = trimmed
     }
 
     /**
@@ -345,17 +296,10 @@ class LosslessSourcePreferences @Inject constructor(
          * 2. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br
          *    (added in v0.9.10; sibling Qobuz-DL proxy, different operator,
          *    no captcha gate — outages uncorrelated with squid.wtf)
-         * 3. antra — independent per-user lossless via antra.hoshi.cfd
-         *    (added in v0.9.49; own multi-source backend, structurally
-         *    independent of the shared Qobuz proxies, so it engages only
-         *    when both Qobuz proxies miss). Last by design — it's job-based
-         *    and spends the user's own quota, so it's a fallback of last
-         *    resort before YouTube.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "squid_qobuz",
             "kennyy_qobuz",
-            "antra",
         )
     }
 }

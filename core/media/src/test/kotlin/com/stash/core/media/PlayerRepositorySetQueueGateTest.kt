@@ -91,8 +91,8 @@ class PlayerRepositorySetQueueGateTest {
         every { streamUrlCache.get(any()) } returns null
         coEvery { trackDao.getById(any()) } returns null
         // Resolve never completes within the test window — simulates a slow
-        // antra job (60–120 s) holding the tapped track in limbo.
-        coEvery { streamResolver.resolve(any(), any(), any(), any()) } coAnswers {
+        // resolve (e.g. yt-dlp extraction) holding the tapped track in limbo.
+        coEvery { streamResolver.resolve(any(), any(), any()) } coAnswers {
             delay(600_000)
             null
         }

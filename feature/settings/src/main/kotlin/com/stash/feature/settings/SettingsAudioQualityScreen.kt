@@ -54,7 +54,7 @@ import com.stash.feature.settings.components.SettingsToggleRow
  * This re-homes the original "Audio Quality" + "Lossless audio card" block
  * from the monolithic `SettingsScreen.kt`: the download-tier picker (shown
  * only when lossless is off), the lossless toggle, the routing status,
- * the antra connect row, the lossless-quality picker, the YouTube-fallback
+ * the lossless-quality picker, the YouTube-fallback
  * expander, and the Advanced (captcha cookie + reset) expander — plus the
  * Equalizer nav. This is a behavior-preserving relocation + restyle: every
  * control calls the SAME [SettingsViewModel] method the old screen used; no
@@ -65,7 +65,6 @@ import com.stash.feature.settings.components.SettingsToggleRow
 fun SettingsAudioQualityScreen(
     onBack: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
-    onNavigateToAntraConnect: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -126,19 +125,6 @@ fun SettingsAudioQualityScreen(
                         LosslessRoutingStatus(
                             squidStatus = uiState.squidCaptchaStatus,
                             onSolveCaptcha = onNavigateToSquidWtfCaptcha,
-                        )
-
-                        // -- antra connect row --------------------------------
-                        // Independent per-user lossless source (antra.hoshi.cfd).
-                        // Engages only when both Qobuz proxies miss.
-                        SettingsNavRow(
-                            title = uiState.antraUsername
-                                ?.let { "antra: $it" }
-                                ?: "Connect antra",
-                            subtitle = uiState.antraUsername
-                                ?.let { "Connected — tap to reconnect" }
-                                ?: "Independent lossless fallback (own account)",
-                            onClick = onNavigateToAntraConnect,
                         )
 
                         // -- Lossless quality picker --------------------------

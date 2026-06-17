@@ -1,7 +1,6 @@
 package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.core.data.prefs.StreamingPreference
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -13,9 +12,6 @@ class LosslessSourceRegistryTest {
 
     private val prefs: LosslessSourcePreferences = mockk()
     private val healthGate: LosslessSourceHealthGate = mockk()
-    private val streamingPreference: StreamingPreference = mockk {
-        coEvery { isForceAntraOnly() } returns false
-    }
 
     private val query = TrackQuery(artist = "A", title = "B")
 
@@ -52,44 +48,12 @@ class LosslessSourceRegistryTest {
         coEvery { healthGate.isDegraded("squid_qobuz") } returns false
 
         // priorityOrder empty → registration order; ensure kennyy is tried first.
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate, streamingPreference)
+        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate)
         val result = registry.resolve(query)
 
         assertThat(result).isEqualTo(squidResult)
         coVerify(exactly = 0) { kennyy.resolve(any()) } // skipped before resolving
         coVerify(exactly = 1) { squid.resolve(any()) }
-    }
-
-    @Test
-    fun `forceAntraOnly resolves via antra and never consults the qobuz proxies`() = runTest {
-        acceptAnyQuality()
-        coEvery { streamingPreference.isForceAntraOnly() } returns true
-        coEvery { healthGate.isDegraded(any()) } returns false
-        val antraResult = flacResult("antra")
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
-        val antra = fakeSource("antra", antraResult)
-
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid, antra), prefs, healthGate, streamingPreference)
-        val result = registry.resolve(query)
-
-        assertThat(result).isEqualTo(antraResult)
-        coVerify(exactly = 0) { kennyy.resolve(any()) }
-        coVerify(exactly = 0) { squid.resolve(any()) }
-    }
-
-    @Test
-    fun `forceAntraOnly returns null when antra misses instead of falling to a qobuz proxy`() = runTest {
-        acceptAnyQuality()
-        coEvery { streamingPreference.isForceAntraOnly() } returns true
-        coEvery { healthGate.isDegraded(any()) } returns false
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val antra = fakeSource("antra", null)
-
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, antra), prefs, healthGate, streamingPreference)
-
-        assertThat(registry.resolve(query)).isNull()
-        coVerify(exactly = 0) { kennyy.resolve(any()) }
     }
 
     @Test
@@ -99,7 +63,7 @@ class LosslessSourceRegistryTest {
         val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
         coEvery { healthGate.isDegraded(any()) } returns true
 
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate, streamingPreference)
+        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate)
 
         assertThat(registry.resolve(query)).isNull()
         coVerify(exactly = 0) { kennyy.resolve(any()) }

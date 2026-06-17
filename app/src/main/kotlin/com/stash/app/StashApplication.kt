@@ -133,6 +133,12 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var losslessPrefetcher: LosslessUrlPrefetcher
 
+    @Inject
+    lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
+
+    @Inject
+    lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
+
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
      * on cookie change / lastKnownBadCookie clear / circuit-breaker
@@ -441,6 +447,7 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
+        applicationScope.launch { maybePurgeAntraArtifacts() }
         // Auto-enqueue the v0.9.35 metadata backfill once per version, plus
         // the v0.9.36 lyrics backfill. Both are idempotent (re-installing
         // the same binary does not re-enqueue) and gated by disjoint keys
@@ -507,6 +514,23 @@ class StashApplication : Application(), Configuration.Provider {
         if (stored < ARTIST_CACHE_VERSION) {
             artistProfileCacheDao.clearAll()
             prefs.edit().putInt("artist_cache_version", ARTIST_CACHE_VERSION).apply()
+        }
+    }
+
+    /**
+     * One-shot cleanup after the antra source was removed: deletes the
+     * harvested antra.hoshi.cfd session cookie / cf_clearance / username and
+     * the retired `force_antra_only` toggle from existing installs, so no
+     * stale third-party login session lingers on disk. Runs exactly once per
+     * install via a SharedPreferences version flag.
+     */
+    private suspend fun maybePurgeAntraArtifacts() {
+        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+        val stored = prefs.getInt("antra_purge_version", 0)
+        if (stored < ANTRA_PURGE_VERSION) {
+            losslessSourcePreferences.purgeAntraCredentials()
+            streamingPreference.purgeRetiredKeys()
+            prefs.edit().putInt("antra_purge_version", ANTRA_PURGE_VERSION).apply()
         }
     }
 
@@ -893,6 +917,9 @@ class StashApplication : Application(), Configuration.Provider {
          * written before the 2026-04-17 Popular-shelf title-matching fix.
          */
         private const val ARTIST_CACHE_VERSION = 1
+
+        /** Bump to re-run [maybePurgeAntraArtifacts] (one-shot antra cleanup). */
+        private const val ANTRA_PURGE_VERSION = 1
 
         /**
          * Bump when [maybeEnableYouTubePlaylistSync] needs to run again.
