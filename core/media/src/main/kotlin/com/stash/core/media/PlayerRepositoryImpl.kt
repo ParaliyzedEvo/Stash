@@ -522,8 +522,8 @@ class PlayerRepositoryImpl @Inject constructor(
             val backward = tracks.subList(0, probeIndex)
             queueBuildJob = scope.launch {
                 try {
-                    fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
-                    fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false, allowAntra = false)
+                    fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
+                    fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
                     Log.i(TAG, "setQueue: background fill complete (${tracks.size} tracks)")
                     prefetchNextTrack(controller.currentMediaItemIndex)
                 } catch (e: CancellationException) { throw e }
