@@ -76,3 +76,5 @@ node_modules/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 stash-release.jks
+
+build-logic/
