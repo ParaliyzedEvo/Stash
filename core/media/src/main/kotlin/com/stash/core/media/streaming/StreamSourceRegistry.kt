@@ -55,7 +55,6 @@ import javax.inject.Singleton
 class StreamSourceRegistry @Inject constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
-    private val antra: AntraStreamResolver,
     private val lucida: LucidaStreamResolver,
     private val saavn: SaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
@@ -97,7 +96,6 @@ class StreamSourceRegistry @Inject constructor(
                 // so it only serves when both Qobuz proxies miss. Kept out of
                 // the forceYt branch above on purpose: that toggle exists to
                 // force the YouTube path by skipping ALL lossless sources.
-                if (allowAntra) add("antra" to antra::resolve)
                 add("lucida" to lucida::resolve)
                 add("saavn" to saavn::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
