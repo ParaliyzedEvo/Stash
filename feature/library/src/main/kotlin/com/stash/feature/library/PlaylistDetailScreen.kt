@@ -81,6 +81,7 @@ import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackOptionsSheet
+import com.stash.core.ui.components.verticalScrollbar
 import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
@@ -423,8 +424,10 @@ fun PlaylistDetailScreen(
                     }
                 }
             } else {
+                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().verticalScrollbar(listState),
                     contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
                 ) {
                     item(key = "header") {

@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -99,6 +101,7 @@ import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
+import com.stash.core.ui.components.verticalScrollbar
 import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
@@ -1100,11 +1103,14 @@ private fun PlaylistsGrid(
     val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
     val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
 
+    val gridState = rememberLazyGridState()
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.verticalScrollbar(gridState),
     ) {
         items(playlists, key = { it.id }) { playlist ->
             if (playlist.artUrl != null) {
@@ -1383,11 +1389,14 @@ private fun TracksTab(
     // Track pending delete confirmation.
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
+    val listState = rememberLazyListState()
     LazyColumn(
+        state = listState,
         // While selecting, the mini-player hides (Task 7) but the bottom
         // selection bar takes its place — pad enough that the last row clears
         // it in either state.
         contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+        modifier = Modifier.verticalScrollbar(listState),
     ) {
         items(tracks, key = { it.id }) { track ->
             TrackListItem(
@@ -1606,11 +1615,14 @@ private fun ArtistsGrid(
     val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
     val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
 
+    val gridState = rememberLazyGridState()
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.verticalScrollbar(gridState),
     ) {
         items(displayList, key = { it.name }) { artist ->
             Column(
@@ -1819,11 +1831,14 @@ private fun AlbumsGrid(
     val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
     val columns = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4 else 2
 
+    val gridState = rememberLazyGridState()
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.verticalScrollbar(gridState),
     ) {
         items(displayList, key = { "${it.name}|${it.artist}" }) { album ->
             Column(
