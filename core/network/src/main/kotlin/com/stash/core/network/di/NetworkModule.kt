@@ -67,6 +67,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         @ApplicationContext context: Context
+        appInterceptors: Set<@JvmSuppressWildcards Interceptor>,
     ): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = if (com.stash.core.network.BuildConfig.DEBUG) {
