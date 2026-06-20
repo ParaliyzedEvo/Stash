@@ -66,7 +66,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
         appInterceptors: Set<@JvmSuppressWildcards Interceptor>,
     ): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
