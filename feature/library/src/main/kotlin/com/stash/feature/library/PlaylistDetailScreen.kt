@@ -564,6 +564,7 @@ fun PlaylistDetailScreen(
                 VerticalScrollbar(state = listState, thumbHeightOffset = 20f)
             }
         }
+    }
 
         // ── Selection chrome (overlaid contextual top + bottom bars) ────────
         val selectedTracks = state.tracks.filter { it.id in selection.selectedIds }
