@@ -81,7 +81,7 @@ import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackOptionsSheet
-import com.stash.core.ui.components.verticalScrollbar
+import com.stash.core.ui.components.VerticalScrollbar
 import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
@@ -425,9 +425,10 @@ fun PlaylistDetailScreen(
                 }
             } else {
                 val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().verticalScrollbar(listState),
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 120.dp),
                 ) {
                     item(key = "header") {
@@ -446,6 +447,7 @@ fun PlaylistDetailScreen(
                         )
                     }
 
+                    // ── Search filter bar ───────────────────────────────────
                     if (state.showSearch) {
                         item(key = "search") {
                             SearchFilterBar(
@@ -456,6 +458,7 @@ fun PlaylistDetailScreen(
                         }
                     }
 
+                    // ── Empty search results ───────────────────────────────
                     if (state.tracks.isEmpty() && state.searchQuery.isNotEmpty()) {
                         item(key = "no-results") {
                             Box(
@@ -473,6 +476,10 @@ fun PlaylistDetailScreen(
                         }
                     }
 
+                    // ── Custom-mix building / empty state ───────────────────
+                    // A freshly created mix populates asynchronously; show a
+                    // "Building…" state instead of a blank body, and a clear
+                    // "found nothing" state if discovery comes up empty.
                     if (state.tracks.isEmpty() && state.searchQuery.isEmpty()) {
                         when (buildState) {
                             MixBuildState.BUILDING -> item(key = "mix-building") {
@@ -524,10 +531,10 @@ fun PlaylistDetailScreen(
                         }
                     }
 
+                    // ── Track list ──────────────────────────────────────────
                     itemsIndexed(
                         items = state.tracks,
                         key = { _, track -> track.id },
-                        contentType = { _, _ -> "track" },
                     ) { index, track ->
                         DetailTrackRow(
                             track = track,
@@ -544,6 +551,7 @@ fun PlaylistDetailScreen(
                             onMoreClick = { selectedTrack = track },
                         )
 
+                        // Subtle divider between rows (skip after last item).
                         if (index < state.tracks.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 80.dp, end = 20.dp),
@@ -553,6 +561,7 @@ fun PlaylistDetailScreen(
                         }
                     }
                 }
+                VerticalScrollbar(state = listState, thumbHeightOffset = 20f)
             }
         }
 
