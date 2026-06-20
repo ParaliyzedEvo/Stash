@@ -585,8 +585,13 @@ class PlayerRepositoryImpl @Inject constructor(
         // InnerTube can't resolve is skipped from this batch and recovered
         // by prefetchNextTrack (which runs with allowYtDlp=true), so it is
         // re-resolved just-in-time before it's reached.
-        val forward = tracks.subList(safeStart + 1, tracks.size)
-        val backward = tracks.subList(0, safeStart)
+        // Bounded fill window — NOT the whole rest of the queue. The rolling
+        // single-next-up prefetch keeps auto-advance seamless; this only
+        // pre-warms a couple of skip slots. Resolving a 1000+ track queue up
+        // front is a huge waste (and for amz, which decrypts a whole FLAC per
+        // resolve, it tried to download the entire library and starved the
+        // next-up prefetch so playback couldn't advance).
+        val (forward, backward) = computeFillWindow(tracks, safeStart)
         queueBuildJob = scope.launch {
             try {
                 // allowYtDlp = false: the fill is speculative, so it uses the
@@ -1959,4 +1964,43 @@ class PlayerRepositoryImpl @Inject constructor(
             streamOrigin = streamOrigin,
         )
     }
+}
+
+/**
+ * How many tracks AHEAD of the tapped track the background fill resolves into
+ * the player timeline up front. The rolling single-next-up prefetch
+ * ([PlayerRepositoryImpl.prefetchNextTrack], re-fired on every advance) is what
+ * actually keeps auto-advance seamless — this small lookahead only pre-warms a
+ * couple of skip-next slots. Kept tiny on purpose: a streaming queue must not
+ * resolve the user's whole library up front (a 1000+ track Liked-Songs queue
+ * resolving everything is a huge data/CPU waste, and for amz — which fetches +
+ * decrypts a whole FLAC per resolve — it tried to download the entire library
+ * on one tap and starved the next-up prefetch so playback couldn't advance).
+ */
+internal const val BACKGROUND_FILL_LOOKAHEAD = 3
+
+/** How many tracks BEHIND the tapped track the fill pre-warms (for skip-back). */
+internal const val BACKGROUND_FILL_LOOKBEHIND = 1
+
+/** A bounded slice of the logical queue to background-fill around [safeStart]. */
+internal data class FillWindow(
+    val forward: List<Track>,
+    val backward: List<Track>,
+)
+
+/**
+ * Bounded background-fill window around the tapped track at [safeStart] in
+ * [tracks]: up to [BACKGROUND_FILL_LOOKAHEAD] tracks after it and
+ * [BACKGROUND_FILL_LOOKBEHIND] before it, clamped to the queue bounds. Replaces
+ * the old "fill the entire rest of the queue" behavior.
+ */
+internal fun computeFillWindow(tracks: List<Track>, safeStart: Int): FillWindow {
+    val fwdStart = safeStart + 1
+    val fwdEnd = minOf(fwdStart + BACKGROUND_FILL_LOOKAHEAD, tracks.size)
+    val forward = if (fwdStart < fwdEnd) tracks.subList(fwdStart, fwdEnd) else emptyList()
+
+    val bwdStart = maxOf(0, safeStart - BACKGROUND_FILL_LOOKBEHIND)
+    val backward = if (bwdStart < safeStart) tracks.subList(bwdStart, safeStart) else emptyList()
+
+    return FillWindow(forward, backward)
 }

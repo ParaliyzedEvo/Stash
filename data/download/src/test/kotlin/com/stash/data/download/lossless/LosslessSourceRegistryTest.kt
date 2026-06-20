@@ -12,8 +12,16 @@ class LosslessSourceRegistryTest {
 
     private val prefs: LosslessSourcePreferences = mockk()
     private val healthGate: LosslessSourceHealthGate = mockk()
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference =
+        mockk {
+            // Normal use: force-amz-only off so the full chain is consulted.
+            coEvery { isForceAmzOnly() } returns false
+        }
 
     private val query = TrackQuery(artist = "A", title = "B")
+
+    private fun registry(sources: Set<LosslessSource>) =
+        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference)
 
     private fun flacResult(srcId: String) = SourceResult(
         sourceId = srcId,
@@ -48,12 +56,52 @@ class LosslessSourceRegistryTest {
         coEvery { healthGate.isDegraded("squid_qobuz") } returns false
 
         // priorityOrder empty → registration order; ensure kennyy is tried first.
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate)
+        val registry = registry(linkedSetOf(kennyy, squid))
         val result = registry.resolve(query)
 
         assertThat(result).isEqualTo(squidResult)
         coVerify(exactly = 0) { kennyy.resolve(any()) } // skipped before resolving
         coVerify(exactly = 1) { squid.resolve(any()) }
+    }
+
+    @Test
+    fun `default priority places amz last among lossless`() = runTest {
+        // DEFAULT_PRIORITY = [squid_qobuz, kennyy_qobuz, amz]; verify the
+        // registry honours it and amz lands after both Qobuz proxies.
+        coEvery { prefs.priorityOrderNow() } returns
+            LosslessSourcePreferences.DEFAULT_PRIORITY
+
+        val amz = fakeSource("amz", flacResult("amz"))
+        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
+        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
+
+        // Pass them in a deliberately scrambled set so ordering can only
+        // come from the priority list, not registration order.
+        val registry = registry(linkedSetOf(amz, kennyy, squid))
+
+        val orderedIds = registry.orderedSources().map { it.id }
+        assertThat(orderedIds).containsExactly("squid_qobuz", "kennyy_qobuz", "amz").inOrder()
+    }
+
+    @Test
+    fun `amz wins only after both qobuz proxies miss`() = runTest {
+        coEvery { prefs.priorityOrderNow() } returns
+            LosslessSourcePreferences.DEFAULT_PRIORITY
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+
+        val amzResult = flacResult("amz")
+        val squid = fakeSource("squid_qobuz", null) // miss
+        val kennyy = fakeSource("kennyy_qobuz", null) // miss
+        val amz = fakeSource("amz", amzResult)
+
+        val registry = registry(linkedSetOf(squid, kennyy, amz))
+        val result = registry.resolve(query)
+
+        assertThat(result).isEqualTo(amzResult)
+        coVerify(exactly = 1) { squid.resolve(any()) }
+        coVerify(exactly = 1) { kennyy.resolve(any()) }
+        coVerify(exactly = 1) { amz.resolve(any()) }
     }
 
     @Test
@@ -63,10 +111,32 @@ class LosslessSourceRegistryTest {
         val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
         coEvery { healthGate.isDegraded(any()) } returns true
 
-        val registry = LosslessSourceRegistry(linkedSetOf(kennyy, squid), prefs, healthGate)
+        val registry = registry(linkedSetOf(kennyy, squid))
 
         assertThat(registry.resolve(query)).isNull()
         coVerify(exactly = 0) { kennyy.resolve(any()) }
         coVerify(exactly = 0) { squid.resolve(any()) }
+    }
+
+    @Test
+    fun `force-amz-only resolves via amz and never consults the qobuz proxies`() = runTest {
+        coEvery { streamingPreference.isForceAmzOnly() } returns true
+        coEvery { prefs.priorityOrderNow() } returns
+            LosslessSourcePreferences.DEFAULT_PRIORITY
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+
+        val amzResult = flacResult("amz")
+        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
+        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
+        val amz = fakeSource("amz", amzResult)
+
+        val registry = registry(linkedSetOf(squid, kennyy, amz))
+        val result = registry.resolve(query)
+
+        assertThat(result).isEqualTo(amzResult)
+        coVerify(exactly = 1) { amz.resolve(any()) }
+        coVerify(exactly = 0) { squid.resolve(any()) }
+        coVerify(exactly = 0) { kennyy.resolve(any()) }
     }
 }

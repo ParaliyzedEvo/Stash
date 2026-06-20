@@ -6,8 +6,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.Multibinds
 import okhttp3.Cache
 import okhttp3.ConnectionSpec
+import okhttp3.Interceptor
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -149,6 +151,24 @@ object NetworkModule {
 
             // ── Interceptors ──────────────────────────────────────────
             .addInterceptor(loggingInterceptor)
+            .apply { appInterceptors.forEach { addInterceptor(it) } }
             .build()
     }
+}
+
+/**
+ * Declares the multibinding consumed by [NetworkModule.provideOkHttpClient].
+ *
+ * Lives in a separate interface module because [NetworkModule] is an `object`
+ * and cannot host the abstract `@Multibinds` method.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+interface NetworkInterceptorsModule {
+    /**
+     * App-contributed OkHttp interceptors installed on the shared client.
+     * Resolves to an empty set when nothing contributes.
+     */
+    @Multibinds
+    fun appInterceptors(): Set<@JvmSuppressWildcards Interceptor>
 }

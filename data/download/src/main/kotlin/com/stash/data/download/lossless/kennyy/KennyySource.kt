@@ -76,7 +76,7 @@ class KennyySource @Inject constructor(
     }
 
     override suspend fun resolve(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = false)
+        resolveInternal(query, bypassRateLimit = false, requestedQuality = null)
 
     /**
      * User-initiated immediate resolve for the streaming path. Skips
@@ -91,10 +91,17 @@ class KennyySource @Inject constructor(
      * in the session. Background paths ([resolve]) still respect the
      * breaker.
      */
-    suspend fun resolveImmediate(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = true)
+    suspend fun resolveImmediate(
+        query: TrackQuery,
+        requestedQuality: Int? = null,
+    ): SourceResult? =
+        resolveInternal(query, bypassRateLimit = true, requestedQuality = requestedQuality)
 
-    private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
+    private suspend fun resolveInternal(
+        query: TrackQuery,
+        bypassRateLimit: Boolean,
+        requestedQuality: Int?,
+    ): SourceResult? {
         lastResolveFailedNetwork = false
         Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
 
@@ -154,16 +161,25 @@ class KennyySource @Inject constructor(
         // 3. Resolve to a signed download URL. kennyy.com.br returns 403
         // when the track is non-streamable; callLimited returns null so
         // we fall through to the next source cleanly.
-        Log.d(TAG, "kennyy_qobuz: requested quality=$requestedQuality (tier=${tier.name})")
+        val requestedQualityCode = requestedQuality ?: losslessPrefs.qualityTierNow().qobuzCode
+        Log.d(
+            TAG,
+            "kennyy_qobuz: requested quality=$requestedQualityCode " +
+                "(${if (requestedQuality != null) "explicit" else "download-tier"})",
+        )
         val download = callLimited(bypassRateLimit) {
-            apiClient.getFileUrl(best.first.id, requestedQuality)
+            apiClient.getFileUrl(best.first.id, requestedQualityCode)
         } ?: return null
 
         if (download.url.isNullOrEmpty()) {
             Log.d(TAG, "download-music returned empty url for ${best.first.id}")
             return null
         }
-        if (urlInspector.isDegraded(download.url, requestedQuality)) {
+        if (urlInspector.isDegraded(download.url, requestedQualityCode)) {
+            // Proxy returned a preview sample or a lossy downgrade instead of
+            // the requested lossless track. Treat as a miss so the registry
+            // fails over, and cool the source down so we stop wasting a
+            // round-trip per track until it recovers.
             Log.w(
                 TAG,
                 "degraded url for ${best.first.id} (sample/downgrade) — failing over; " +
@@ -185,7 +201,7 @@ class KennyySource @Inject constructor(
         trackIdCache.put(query.artist, query.title, best.first.id, artUrl)
 
         val format = AudioFormat(
-            codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
+            codec = if (requestedQualityCode == QobuzQuality.MP3_320) "mp3" else "flac",
             bitrateKbps = 0,
             sampleRateHz = (best.first.maximumSamplingRate * 1000f).toInt(),
             bitsPerSample = best.first.maximumBitDepth,

@@ -3,8 +3,10 @@ package com.stash.core.media.streaming
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.AudioFormat
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourceHealthGate
 import com.stash.data.download.lossless.SourceResult
+import com.stash.data.download.lossless.qobuz.QobuzQuality
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -16,6 +18,9 @@ import org.junit.Test
 class QobuzStreamResolverTest {
 
     private val source: QobuzSource = mockk(relaxed = true)
+    private val policy: StreamQualityPolicy = mockk {
+        coEvery { streamingTier() } returns LosslessQualityTier.MAX
+    }
 
     private fun gate(degraded: Boolean = false): LosslessSourceHealthGate =
         mockk { every { isDegraded(any()) } returns degraded }
@@ -42,25 +47,39 @@ class QobuzStreamResolverTest {
     @Test
     fun resolve_returnsNullWithoutNetwork_whenContentDegraded() = runTest {
         coEvery { source.isEnabledForStreaming() } returns true
-        val resolver = QobuzStreamResolver(source, gate(degraded = true))
+        val resolver = QobuzStreamResolver(source, gate(degraded = true), policy)
 
         val result = resolver.resolve(stubTrack())
 
         assertThat(result).isNull()
-        coVerify(exactly = 0) { source.resolveImmediate(any()) } // skipped before the network
+        coVerify(exactly = 0) { source.resolveImmediate(any(), any()) } // skipped before the network
     }
 
     @Test
     fun resolve_returnsStreamUrl_whenHealthyAndEnabled() = runTest {
         coEvery { source.isEnabledForStreaming() } returns true
-        coEvery { source.resolveImmediate(any()) } returns stubSourceResult(
+        coEvery { source.resolveImmediate(any(), any()) } returns stubSourceResult(
             downloadUrl = "https://streaming-qobuz-std.akamaized.net/file?uid=1&etsp=1778893323&hmac=abc",
         )
-        val resolver = QobuzStreamResolver(source, gate(degraded = false))
+        val resolver = QobuzStreamResolver(source, gate(degraded = false), policy)
 
         val result = resolver.resolve(stubTrack())
 
         assertThat(result).isNotNull()
         assertThat(result!!.expiresAtMs).isEqualTo(1_778_893_323_000L)
+    }
+
+    @Test
+    fun `passes the policy tier code to resolveImmediate`() = runTest {
+        coEvery { policy.streamingTier() } returns LosslessQualityTier.CD
+        coEvery { source.isEnabledForStreaming() } returns true
+        coEvery { source.resolveImmediate(any(), any()) } returns stubSourceResult(
+            downloadUrl = "https://cdn/x.flac?etsp=9999999999",
+        )
+        val resolver = QobuzStreamResolver(source, gate(degraded = false), policy)
+
+        resolver.resolve(stubTrack())
+
+        coVerify { source.resolveImmediate(any(), QobuzQuality.FLAC_CD) }
     }
 }

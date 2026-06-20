@@ -113,7 +113,7 @@ class QobuzSource @Inject constructor(
     }
 
     override suspend fun resolve(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = false)
+        resolveInternal(query, bypassRateLimit = false, requestedQuality = null)
 
     /**
      * User-initiated immediate resolve for the streaming path. Mirrors
@@ -122,10 +122,17 @@ class QobuzSource @Inject constructor(
      * traffic OR by a stale breaker state. Background paths ([resolve])
      * still respect both gates.
      */
-    suspend fun resolveImmediate(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = true)
+    suspend fun resolveImmediate(
+        query: TrackQuery,
+        requestedQuality: Int? = null,
+    ): SourceResult? =
+        resolveInternal(query, bypassRateLimit = true, requestedQuality = requestedQuality)
 
-    private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
+    private suspend fun resolveInternal(
+        query: TrackQuery,
+        bypassRateLimit: Boolean,
+        requestedQuality: Int?,
+    ): SourceResult? {
         Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
         // 1. Search squid.wtf for candidates. ISRC is Qobuz's best
         // index key — when we have one, send it as the query directly.
@@ -170,18 +177,21 @@ class QobuzSource @Inject constructor(
         // when the track is non-streamable in the deployment's region;
         // callLimited swallows the exception and returns null so we
         // fall through to the next source cleanly.
-        val tier = losslessPrefs.qualityTierNow()
-        val requestedQuality = tier.qobuzCode
-        Log.d(TAG, "squid_qobuz: requested quality=$requestedQuality (tier=${tier.name})")
+        val requestedQualityCode = requestedQuality ?: losslessPrefs.qualityTierNow().qobuzCode
+        Log.d(
+            TAG,
+            "squid_qobuz: requested quality=$requestedQualityCode " +
+                "(${if (requestedQuality != null) "explicit" else "download-tier"})",
+        )
         val download = callLimited(bypassRateLimit) {
-            apiClient.getFileUrl(best.first.id, requestedQuality)
+            apiClient.getFileUrl(best.first.id, requestedQualityCode)
         } ?: return null
 
         if (download.url.isNullOrEmpty()) {
             Log.d(TAG, "download-music returned empty url for ${best.first.id}")
             return null
         }
-        if (urlInspector.isDegraded(download.url, requestedQuality)) {
+        if (urlInspector.isDegraded(download.url, requestedQualityCode)) {
             // Proxy returned a preview sample or a lossy downgrade instead of
             // the requested lossless track. Treat as a miss so the registry
             // fails over, and cool the source down so we stop wasting a
@@ -209,7 +219,7 @@ class QobuzSource @Inject constructor(
             // squid.wtf strips the upstream `mime_type`; map from
             // the requested format_id since Qobuz returns the
             // matching codec for each.
-            codec = if (requestedQuality == QobuzQuality.MP3_320) "mp3" else "flac",
+            codec = if (requestedQualityCode == QobuzQuality.MP3_320) "mp3" else "flac",
             // Bitrate left at 0 — FLAC is variable; the
             // canonical value comes from AudioDurationExtractor
             // after the file's on disk.

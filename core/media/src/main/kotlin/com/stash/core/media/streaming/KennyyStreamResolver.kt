@@ -74,19 +74,13 @@ data class StreamUrl(
  *    safely refresh is one we shouldn't cache; treat it as unresolved
  *    rather than letting the player hit a non-refreshable 403 later.
  *  - The `etsp` value isn't an integer.
- *
- * v1 note: streaming quality follows the existing lossless-download
- * preference ([com.stash.data.download.lossless.LosslessSourcePreferences])
- * because [TrackQuery] has no `preferredQuality` field yet. The
- * `streamQuality` flow on [com.stash.core.media.streaming
- * .StreamingPreference] is stored but unused here until a follow-up
- * threads quality through [KennyySource.resolve].
  */
 @Singleton
 class KennyyStreamResolver @Inject constructor(
     private val source: KennyySource,
     private val healthMonitor: KennyyHealthMonitor,
     private val healthGate: LosslessSourceHealthGate,
+    private val qualityPolicy: StreamQualityPolicy,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         if (healthGate.isDegraded(KennyySource.SOURCE_ID)) {
@@ -112,8 +106,9 @@ class KennyyStreamResolver @Inject constructor(
         // is user-initiated and must not queue behind background
         // AvailabilityCheckWorker batches that hold the limiter at 1
         // req/s. See KennyySource.resolveImmediate KDoc for rationale.
+        val requestedQuality = qualityPolicy.streamingTier().qobuzCode
         val result = try {
-            withTimeout(STREAM_RESOLVE_TIMEOUT_MS) { source.resolveImmediate(query) }
+            withTimeout(STREAM_RESOLVE_TIMEOUT_MS) { source.resolveImmediate(query, requestedQuality) }
         } catch (e: TimeoutCancellationException) {
             healthMonitor.recordFailure()
             Log.w(TAG, "timeout id=${track.id} after ${STREAM_RESOLVE_TIMEOUT_MS}ms")

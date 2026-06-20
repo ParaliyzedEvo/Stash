@@ -300,6 +300,52 @@ class AggregatorRateLimiterTest {
         job.cancel()
     }
 
+    @Test
+    fun `amz config is preconfigured with conservative burst and backoff`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+
+        // burstCapacity is 2.0 — exactly two immediate acquires, then exhausted.
+        assertTrue(limiter.acquire("amz"))
+        assertTrue(limiter.acquire("amz"))
+        val state = limiter.stateOf("amz")
+        assertTrue("expected <1.0 tokens, got ${state.tokensAvailable}", state.tokensAvailable < 1.0)
+        assertTrue("expected wait > 0, got ${state.msUntilNextToken}", state.msUntilNextToken > 0)
+    }
+
+    @Test
+    fun `amz backs off for its configured 429 window`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        assertTrue(limiter.acquire("amz"))
+        limiter.reportRateLimited("amz")
+
+        // Blocked immediately after the 429.
+        assertFalse(limiter.acquire("amz"))
+
+        // Still blocked just before the 10s backoff window elapses.
+        advanceTimeBy(9_000)
+        assertFalse(limiter.acquire("amz"))
+
+        // Usable once the 10s backoff has fully elapsed.
+        advanceTimeBy(1_500)
+        assertTrue(limiter.acquire("amz"))
+    }
+
+    @Test
+    fun `amz circuit breaks after five consecutive failures`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        // Four failures — still operational.
+        repeat(4) { limiter.reportFailure("amz") }
+        assertTrue(limiter.acquire("amz"))
+
+        // Fifth failure trips the breaker (circuitBreakAfter = 5).
+        limiter.reportFailure("amz")
+        assertTrue(limiter.stateOf("amz").isCircuitBroken)
+
+        // Recovers after the configured 5-minute duration.
+        advanceTimeBy(5 * 60_000L + 1)
+        assertFalse(limiter.stateOf("amz").isCircuitBroken)
+    }
+
     private fun kotlinx.coroutines.test.TestScope.virtualClock(): AggregatorRateLimiter.Clock {
         // Read currentTime through the explicit `testScheduler` member so
         // we don't depend on the (extension-property) shortcut import,

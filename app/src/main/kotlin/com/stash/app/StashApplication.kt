@@ -128,6 +128,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
+    @Inject
+    lateinit var streamingQualityPreferences: com.stash.data.download.prefs.StreamingQualityPreferences
+
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
      * on cookie change / lastKnownBadCookie clear / circuit-breaker
@@ -373,6 +376,11 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeAntraArtifacts() }
+        // One-shot: seed the streaming Wi-Fi quality tier from the user's
+        // current download tier on first run, so existing users' streaming
+        // quality inherits their download choice instead of silently changing.
+        // migrateIfNeeded() is internally idempotent (no-op after first run).
+        applicationScope.launch { streamingQualityPreferences.migrateIfNeeded() }
         // Auto-enqueue the v0.9.35 metadata backfill once per version, plus
         // the v0.9.36 lyrics backfill. Both are idempotent (re-installing
         // the same binary does not re-enqueue) and gated by disjoint keys

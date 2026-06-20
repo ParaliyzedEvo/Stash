@@ -39,6 +39,7 @@ import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.feature.settings.components.squidCaptchaStatus
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
@@ -91,6 +92,7 @@ class SettingsViewModel @Inject constructor(
     private val youTubeHistoryScrobbler: YouTubeHistoryScrobbler,
     private val youTubeScrobblerState: YouTubeScrobblerState,
     private val losslessPrefs: LosslessSourcePreferences,
+    private val streamingQualityPrefs: StreamingQualityPreferences,
     private val losslessRateLimiter: AggregatorRateLimiter,
     private val qobuzSource: QobuzSource,
     private val likePreferences: LikePreferences,
@@ -170,6 +172,23 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.setForceYouTubeFallback(v)
     }
 
+    /**
+     * Test-only "Stream via amz" toggle. When on, BOTH the streaming and
+     * lossless-download registries route through the amz (Amazon Music)
+     * source only — used to exercise the amz source on demand.
+     */
+    val forceAmzOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        streamingPreference.forceAmzOnly.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    /** Persist the force-amz-only test toggle flip. */
+    fun setForceAmzOnly(v: Boolean) = viewModelScope.launch {
+        streamingPreference.setForceAmzOnly(v)
+    }
+
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
 
@@ -243,6 +262,9 @@ class SettingsViewModel @Inject constructor(
         stashMixPreference.enabled,
         likePreferences.mirrorLikesSpotify,
         likePreferences.mirrorLikesYtMusic,
+        streamingQualityPrefs.wifiTier,
+        streamingQualityPrefs.cellularTier,
+        streamingQualityPrefs.saveData,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val spotifyAuth = values[0] as AuthState
@@ -274,6 +296,9 @@ class SettingsViewModel @Inject constructor(
         val stashMixesEnabled = values[26] as Boolean
         val mirrorLikesSpotify = values[27] as Boolean
         val mirrorLikesYtMusic = values[28] as Boolean
+        val streamingWifiTier = values[29] as LosslessQualityTier
+        val streamingCellularTier = values[30] as LosslessQualityTier
+        val streamingSaveData = values[31] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
@@ -315,6 +340,9 @@ class SettingsViewModel @Inject constructor(
             squidWtfCaptchaCookie = squidWtfCaptchaCookie,
             squidCaptchaStatus = squidCaptchaStatus(squidWtfCaptchaCookie, lastKnownBadCookie),
             losslessQualityTier = losslessQualityTier,
+            streamingWifiTier = streamingWifiTier,
+            streamingCellularTier = streamingCellularTier,
+            streamingSaveData = streamingSaveData,
             autoSaveEnabled = autoSaveEnabled,
             autoSaveThreshold = autoSaveThreshold,
             heartDefaultStash = heartDefaultStash,
@@ -967,6 +995,20 @@ class SettingsViewModel @Inject constructor(
             losslessPrefs.setCaptchaCookieValue(value)
         }
     }
+
+    // -- Streaming quality (per-network tiers + Save Data) -------------------
+
+    /** Persist the lossless tier requested when streaming on Wi-Fi. */
+    fun onStreamingWifiTierChanged(tier: LosslessQualityTier) =
+        viewModelScope.launch { streamingQualityPrefs.setWifiTier(tier) }
+
+    /** Persist the lossless tier requested when streaming on cellular. */
+    fun onStreamingCellularTierChanged(tier: LosslessQualityTier) =
+        viewModelScope.launch { streamingQualityPrefs.setCellularTier(tier) }
+
+    /** Persist the master Save-Data streaming override. */
+    fun onStreamingSaveDataChanged(value: Boolean) =
+        viewModelScope.launch { streamingQualityPrefs.setSaveData(value) }
 
     /**
      * Clear the rate-limiter's circuit breaker for the squid.wtf

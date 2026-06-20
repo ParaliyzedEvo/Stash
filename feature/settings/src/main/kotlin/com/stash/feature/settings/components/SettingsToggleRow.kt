@@ -31,6 +31,7 @@ fun SettingsToggleRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     enabled: Boolean = true,
+    titleTrailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -40,11 +41,18 @@ fun SettingsToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            // Title with an optional trailing slot (e.g. a "Beta" pill) inline.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (titleTrailing != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    titleTrailing()
+                }
+            }
             if (subtitle != null) {
                 Text(
                     text = subtitle,

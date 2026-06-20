@@ -48,6 +48,7 @@ class StreamingPreference @Inject constructor(
     private val cellularKey = booleanPreferencesKey("streaming_on_cellular")
     private val qualityKey = stringPreferencesKey("streaming_quality_tier")
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
+    private val forceAmzOnlyKey = booleanPreferencesKey("force_amz_only")
     // Retained only so [purgeRetiredKeys] can delete it from existing
     // installs; the antra source was removed (see fix/remove-antra).
     private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
@@ -75,9 +76,24 @@ class StreamingPreference @Inject constructor(
         prefs[forceYouTubeFallbackKey] ?: false
     }
 
+    /**
+     * Test-only toggle. When `true`, BOTH the streaming registry
+     * ([StreamSourceRegistry]) and the lossless-download registry
+     * ([LosslessSourceRegistry]) route through the amz (Amazon Music)
+     * source ONLY — Kennyy, Squid, and YouTube are removed from play so a
+     * track either resolves via amz or fails visibly. Used to exercise the
+     * amz source on demand (it normally ranks last and is hard to trigger).
+     * Default `false` (normal use).
+     */
+    val forceAmzOnly: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[forceAmzOnlyKey] ?: false
+    }
+
     suspend fun current(): Boolean = enabled.first()
 
     suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
+
+    suspend fun isForceAmzOnly(): Boolean = forceAmzOnly.first()
 
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
@@ -89,6 +105,10 @@ class StreamingPreference @Inject constructor(
 
     suspend fun setForceYouTubeFallback(value: Boolean) {
         context.streamingDataStore.edit { it[forceYouTubeFallbackKey] = value }
+    }
+
+    suspend fun setForceAmzOnly(value: Boolean) {
+        context.streamingDataStore.edit { it[forceAmzOnlyKey] = value }
     }
 
     suspend fun setStreamQuality(tier: StreamQualityTier) {

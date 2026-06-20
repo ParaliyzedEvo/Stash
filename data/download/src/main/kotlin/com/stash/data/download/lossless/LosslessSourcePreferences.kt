@@ -296,10 +296,15 @@ class LosslessSourcePreferences @Inject constructor(
          * 2. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br
          *    (added in v0.9.10; sibling Qobuz-DL proxy, different operator,
          *    no captcha gate — outages uncorrelated with squid.wtf)
+         * 3. amz — Amazon Music FLAC via amz.squid.wtf (independent Amazon
+         *    catalog, different upstream from the two Qobuz proxies). Ranked
+         *    LAST among lossless: an uncorrelated fallback when both Qobuz
+         *    proxies miss, tried just before the lossy YouTube fallback.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "squid_qobuz",
             "kennyy_qobuz",
+            "amz",
         )
     }
 }

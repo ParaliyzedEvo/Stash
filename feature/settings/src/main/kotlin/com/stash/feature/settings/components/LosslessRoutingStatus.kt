@@ -31,8 +31,9 @@ import androidx.compose.ui.unit.sp
  * Replaces the legacy "Connect to squid.wtf" CTA which falsely implied
  * lossless required a captcha to function. Reality: kenny carries
  * lossless without auth or captcha; squid is an optional second source
- * that the user can unlock via captcha. When squid is down, kenny
- * silently fills in.
+ * that the user can unlock via captcha; amz.squid.wtf (Amazon Music) is a
+ * third, independent fallback that needs no setup and ranks last. When a
+ * higher source is down, the next silently fills in.
  *
  * Visual is dublab-influenced: mono caps header, indented `↳` rows,
  * small status dots (filled = configured, outlined = optional). Solve
@@ -84,9 +85,19 @@ internal fun LosslessRoutingStatus(
             actionLabel = if (showSolveLink) "solve captcha →" else null,
             onAction = if (showSolveLink) onSolveCaptcha else null,
         )
+        // amz.squid.wtf (Amazon Music) — the third, independent lossless source.
+        // No captcha/cookie to configure (auth rides the shared client), so it's
+        // always reachable; it ranks LAST and only serves when both Qobuz proxies
+        // miss, giving an uncorrelated fallback before lossy YouTube.
+        RoutingRow(
+            host = "amz.squid.wtf",
+            configured = true,
+            statusLabel = "fallback",
+        )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless works on any active source. Adding squid gives you a backup host.",
+            text = "Lossless tries kennyy.com.br, then squid.wtf, then amz.squid.wtf " +
+                "(Amazon Music) — whichever is reachable serves your track.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -208,6 +208,16 @@ data class SourceResult(
      * client-side as needed.
      */
     val coverArtUrl: String? = null,
+
+    /**
+     * AES-128 hex key for sources whose [downloadUrl] serves CENC/CMAF
+     * *encrypted* bytes that must be decrypted client-side before the file
+     * is usable (amz/Amazon Music). When non-null, the downloader fetches
+     * the encrypted body then runs `ffmpeg -decryption_key` (see
+     * `AmzDecryptor`) to produce clear FLAC. `null` for sources that serve
+     * already-clear audio (Qobuz/Kennyy) — the common case.
+     */
+    val decryptionKey: String? = null,
 )
 
 /**

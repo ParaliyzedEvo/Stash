@@ -159,18 +159,30 @@ class TrackActionsDelegate @Inject constructor(
             // AlbumDiscoveryScreen, etc.) behaves identically when streaming
             // is enabled instead of falling back to the 30s preview clip.
             if (streamingPreference.current()) {
-                val result = playerRepository.playFromStream(track)
-                when (result) {
-                    is com.stash.core.media.StreamRoutingResult.Item -> Unit
-                    com.stash.core.media.StreamRoutingResult.Deduped -> Unit
-                    com.stash.core.media.StreamRoutingResult.NotAvailable ->
-                        _userMessages.emit("Couldn't find this track.")
-                    com.stash.core.media.StreamRoutingResult.OfflineMode ->
-                        _userMessages.emit("Turn on Online mode to stream this track.")
-                    com.stash.core.media.StreamRoutingResult.CellularRefused ->
-                        _userMessages.emit("Streaming on cellular is off in Settings.")
-                    com.stash.core.media.StreamRoutingResult.NoConnectivity ->
-                        _userMessages.emit("You're offline — can't stream this track.")
+                // Drive the row-level spinner while the stream resolves. The
+                // resolve can take seconds (worst for amz, which fetch+decrypts
+                // a whole FLAC), so without this the row sits silent and looks
+                // broken. Mirrors the preview path's _previewLoadingId handling.
+                // Idempotency guard: a second tap on the same in-flight row is a
+                // no-op (matches the preview path).
+                if (_previewLoadingId.value == videoId) return@launch
+                _previewLoadingId.value = videoId
+                try {
+                    val result = playerRepository.playFromStream(track)
+                    when (result) {
+                        is com.stash.core.media.StreamRoutingResult.Item -> Unit
+                        com.stash.core.media.StreamRoutingResult.Deduped -> Unit
+                        com.stash.core.media.StreamRoutingResult.NotAvailable ->
+                            _userMessages.emit("Couldn't find this track.")
+                        com.stash.core.media.StreamRoutingResult.OfflineMode ->
+                            _userMessages.emit("Turn on Online mode to stream this track.")
+                        com.stash.core.media.StreamRoutingResult.CellularRefused ->
+                            _userMessages.emit("Streaming on cellular is off in Settings.")
+                        com.stash.core.media.StreamRoutingResult.NoConnectivity ->
+                            _userMessages.emit("You're offline — can't stream this track.")
+                    }
+                } finally {
+                    _previewLoadingId.value = null
                 }
                 return@launch
             }

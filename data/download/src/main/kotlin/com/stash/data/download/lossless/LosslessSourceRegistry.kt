@@ -25,6 +25,7 @@ class LosslessSourceRegistry @Inject constructor(
     private val sources: Set<@JvmSuppressWildcards LosslessSource>,
     private val prefs: LosslessSourcePreferences,
     private val healthGate: LosslessSourceHealthGate,
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) {
 
     /**
@@ -35,7 +36,14 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery): SourceResult? {
-        val ordered = orderedSources()
+        // Test toggle (outage drill): when force-amz-only is on, filter the
+        // chain down to amz so downloads exercise the amz source only. An amz
+        // miss falls through to a normal null return (no quota to protect).
+        val ordered = if (streamingPreference.isForceAmzOnly()) {
+            orderedSources().filter { it.id == "amz" }
+        } else {
+            orderedSources()
+        }
         val minQuality = prefs.minQualityNow()
 
         for (source in ordered) {

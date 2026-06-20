@@ -180,6 +180,32 @@ class QobuzSourceTest {
         coVerify(exactly = 1) { apiClient.search(any(), any(), any()) }
     }
 
+    // ── resolveImmediate explicit-quality threading ────────────────────
+
+    @Test fun `resolveImmediate with explicit quality requests that format_id`() = runTest {
+        stubLimiterReady()
+        coEvery { losslessPrefs.qualityTierNow() } returns LosslessQualityTier.MAX // download tier MAX (27)
+        coEvery { apiClient.search("Radiohead Karma Police", any(), any()) } returns
+            QobuzSearchData(tracks = QobuzTrackList(items = listOf(candidate())))
+        coEvery { apiClient.getFileUrl(1L, any(), any()) } returns download()
+
+        source().resolveImmediate(query(), requestedQuality = QobuzQuality.FLAC_CD)
+
+        coVerify { apiClient.getFileUrl(1L, QobuzQuality.FLAC_CD, any()) }
+    }
+
+    @Test fun `resolveImmediate without quality falls back to download tier`() = runTest {
+        stubLimiterReady()
+        coEvery { losslessPrefs.qualityTierNow() } returns LosslessQualityTier.MAX // → 27
+        coEvery { apiClient.search("Radiohead Karma Police", any(), any()) } returns
+            QobuzSearchData(tracks = QobuzTrackList(items = listOf(candidate())))
+        coEvery { apiClient.getFileUrl(1L, any(), any()) } returns download()
+
+        source().resolveImmediate(query()) // no explicit quality
+
+        coVerify { apiClient.getFileUrl(1L, QobuzQuality.FLAC_HIRES_192, any()) }
+    }
+
     // ── resolve failure paths ──────────────────────────────────────────
 
     @Test fun `resolve null when search returns no tracks`() = runTest {

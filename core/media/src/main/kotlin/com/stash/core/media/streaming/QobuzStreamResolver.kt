@@ -31,6 +31,7 @@ import javax.inject.Singleton
 class QobuzStreamResolver @Inject constructor(
     private val source: QobuzSource,
     private val healthGate: LosslessSourceHealthGate,
+    private val qualityPolicy: StreamQualityPolicy,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         if (healthGate.isDegraded(QobuzSource.SOURCE_ID)) {
@@ -52,9 +53,10 @@ class QobuzStreamResolver @Inject constructor(
             isrc = track.isrc?.takeIf { it.isNotBlank() },
             durationMs = track.durationMs,
         )
+        val requestedQuality = qualityPolicy.streamingTier().qobuzCode
         val result = try {
             kotlinx.coroutines.withTimeout(STREAM_RESOLVE_TIMEOUT_MS) {
-                source.resolveImmediate(query)
+                source.resolveImmediate(query, requestedQuality)
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             Log.w(TAG, "timeout id=${track.id} after ${STREAM_RESOLVE_TIMEOUT_MS}ms")

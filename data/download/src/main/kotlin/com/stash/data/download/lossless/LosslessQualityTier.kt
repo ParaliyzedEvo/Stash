@@ -16,12 +16,19 @@ package com.stash.data.download.lossless
 enum class LosslessQualityTier(
     /** Qobuz `format_id` code passed to `apiClient.getFileUrl(...)`. */
     val qobuzCode: Int,
+    /**
+     * amz.squid.wtf wire `tier` value (the Amazon Music proxy uses named tiers,
+     * not Qobuz codes). `ultrahd`/`hd` are lossless FLAC (24-/16-bit); `high` is
+     * 256 kbps AAC — the data-saver floor, used for CD-tier streaming where the
+     * lossy trade keeps metered data light.
+     */
+    val amzTier: String,
     /** Human-readable label for the Settings radio row. */
     val displayLabel: String,
     /** Approximate file size for a 4-minute track at this tier. */
     val sizeHint: String,
 ) {
-    CD(qobuzCode = 6, displayLabel = "CD (16-bit/44.1 kHz)", sizeHint = "~28 MB / 4 min"),
-    HI_RES(qobuzCode = 7, displayLabel = "Hi-Res (24-bit/96 kHz)", sizeHint = "~70 MB / 4 min"),
-    MAX(qobuzCode = 27, displayLabel = "Max (24-bit/192 kHz)", sizeHint = "~140 MB / 4 min");
+    CD(qobuzCode = 6, amzTier = "high", displayLabel = "CD (16-bit/44.1 kHz)", sizeHint = "~28 MB / 4 min"),
+    HI_RES(qobuzCode = 7, amzTier = "hd", displayLabel = "Hi-Res (24-bit/96 kHz)", sizeHint = "~70 MB / 4 min"),
+    MAX(qobuzCode = 27, amzTier = "ultrahd", displayLabel = "Max (24-bit/192 kHz)", sizeHint = "~140 MB / 4 min");
 }

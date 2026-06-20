@@ -10,6 +10,7 @@ import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.qobuz.QobuzDownloadData
 import com.stash.data.download.lossless.qobuz.QobuzPerformer
+import com.stash.data.download.lossless.qobuz.QobuzQuality
 import com.stash.data.download.lossless.qobuz.QobuzSearchData
 import com.stash.data.download.lossless.qobuz.QobuzTrack
 import com.stash.data.download.lossless.qobuz.QobuzTrackList
@@ -73,5 +74,25 @@ class KennyySourceTest {
         assertThat(result).isNotNull()
         assertThat(result!!.downloadUrl).contains("fmt=27")
         coVerify(exactly = 0) { healthGate.recordDegraded(any()) }
+    }
+
+    // ── resolveImmediate explicit-quality threading ────────────────────
+
+    @Test fun `resolveImmediate with explicit quality requests that format_id`() = runTest {
+        stubHappyPathTo("https://cdn/file?fmt=6&etsp=9999999999")
+        coEvery { losslessPrefs.qualityTierNow() } returns LosslessQualityTier.MAX // download tier MAX (27)
+
+        source().resolveImmediate(query, requestedQuality = QobuzQuality.FLAC_CD)
+
+        coVerify { apiClient.getFileUrl(42L, QobuzQuality.FLAC_CD) }
+    }
+
+    @Test fun `resolveImmediate without quality falls back to download tier`() = runTest {
+        stubHappyPathTo("https://cdn/file?fmt=27&etsp=9999999999")
+        coEvery { losslessPrefs.qualityTierNow() } returns LosslessQualityTier.MAX // → 27
+
+        source().resolveImmediate(query) // no explicit quality
+
+        coVerify { apiClient.getFileUrl(42L, QobuzQuality.FLAC_HIRES_192) }
     }
 }

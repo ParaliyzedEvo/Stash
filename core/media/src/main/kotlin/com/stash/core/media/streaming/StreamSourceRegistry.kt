@@ -18,18 +18,18 @@ import javax.inject.Singleton
  *   2. [QobuzStreamResolver]   — `qobuz.squid.wtf`. Same Qobuz catalog,
  *      requires a user-pasted `captcha_verified_at` cookie. Auto-skipped
  *      when no cookie is set or the current cookie has been marked stale.
- *   3. [AntraStreamResolver]   — `antra.hoshi.cfd`, independent per-user
- *      lossless (own multi-source backend). Self-gates: returns null when
- *      not connected / out of quota, so it only engages when both Qobuz
- *      proxies miss. Plays a locally-cached FLAC (no signed CDN URL).
- *   4. [LucidaStreamResolver]   — `lucida.to`, Qobuz-sourced FLAC via
+ *   3. [LucidaStreamResolver]   — `lucida.to`, Qobuz-sourced FLAC via
  *      intermediary. Self-gates via `LosslessSourceHealthGate`; returns
  *      null when the content is degraded.
- *   5. [SaavnStreamResolver]    — JioSaavn API, AAC 320 kbps. Covers
+ *   4. [SaavnStreamResolver]    — JioSaavn API, AAC 320 kbps. Covers
  *      Indian music that isn't in the Qobuz catalog and may not be on
  *      YouTube Music. Fast (~1-2 s), better quality than YT. Before
  *      YouTube because it's faster and higher quality for the tracks it
  *      covers.
+ *   5. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless
+ *      FLAC. Consulted when neither Qobuz proxy has a confident match,
+ *      so an Amazon-only track still streams lossless before dropping to
+ *      lossy YouTube. Captcha auth rides the shared client's interceptor.
  *   6. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
@@ -46,7 +46,11 @@ import javax.inject.Singleton
  * id. Subsequent plays of the same track hit the cache and bypass the
  * registry entirely until the URL's `etsp` expires.
  *
- * Test toggle (off for normal use):
+ * Test toggles (off for normal use):
+ *  - [StreamingPreference.isForceAmzOnly]: [resolve] routes through amz
+ *    ONLY — kennyy/squid/youtube removed from play so a track either streams
+ *    via amz or fails visibly. Takes precedence over force-YouTube. Used to
+ *    exercise the amz source on demand.
  *  - [StreamingPreference.isForceYouTubeFallback]: [resolve] skips Kennyy
  *    and Squid entirely and routes every track through the YouTube resolver
  *    only — reproduces the lossless-down fallback path on demand.
@@ -57,6 +61,7 @@ class StreamSourceRegistry @Inject constructor(
     private val qobuz: QobuzStreamResolver,
     private val lucida: LucidaStreamResolver,
     private val saavn: SaavnStreamResolver,
+    private val amz: AmzStreamResolver,
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
 ) {
@@ -83,7 +88,12 @@ class StreamSourceRegistry @Inject constructor(
         allowYtDlp: Boolean = true,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
-            if (streamingPreference.isForceYouTubeFallback()) {
+            if (streamingPreference.isForceAmzOnly()) {
+                // Test toggle (outage drill): amz ONLY — kennyy/squid/youtube
+                // removed from play so a track either streams via amz or fails
+                // visibly. Ignores allowYouTube/allowYtDlp — it's amz or nothing.
+                add("amz" to amz::resolve)
+            } else if (streamingPreference.isForceYouTubeFallback()) {
                 // Test toggle: skip the lossless sources, forcing the
                 // YouTube fallback path. Still gated by allowYouTube so the
                 // background-fill keeps resolving nothing (matching a genuine
@@ -98,6 +108,7 @@ class StreamSourceRegistry @Inject constructor(
                 // force the YouTube path by skipping ALL lossless sources.
                 add("lucida" to lucida::resolve)
                 add("saavn" to saavn::resolve)
+                add("amz" to amz::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }
