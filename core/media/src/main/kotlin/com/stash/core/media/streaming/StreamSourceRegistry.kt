@@ -102,13 +102,26 @@ class StreamSourceRegistry @Inject constructor(
             } else {
                 add("kennyy" to kennyy::resolve)
                 add("squid" to qobuz::resolve)
-                // antra self-gates (null when not connected / out of quota),
-                // so it only serves when both Qobuz proxies miss. Kept out of
-                // the forceYt branch above on purpose: that toggle exists to
-                // force the YouTube path by skipping ALL lossless sources.
-                add("lucida" to lucida::resolve)
-                add("saavn" to saavn::resolve)
-                add("amz" to amz::resolve)
+                // ARCOD is a slow, job-based, quota-capped source. Like the
+                // slow yt-dlp path, it must run ONLY on foreground/next-up
+                // resolves (allowYtDlp = true), NEVER on the speculative
+                // queue-wide background fill (allowYtDlp = false) — otherwise
+                // one playlist tap fans out a render job per queue track and
+                // blows the operator's hourly cap. (Reuses allowYtDlp as the
+                // "this is a real, intentional resolve" signal.)
+                if (allowYtDlp) add("arcod" to arcod::resolve)
+                // amz (Amazon Music) is the SLOWEST lossless source: its
+                // stream resolver decrypts the whole FLAC to a local cache file
+                // before returning a URL (tens of seconds), and it serializes
+                // behind a single captcha / per-asin lock. So — exactly like
+                // arcod — it must run ONLY on foreground/next-up resolves
+                // (allowYtDlp = true), NEVER on the speculative queue-wide
+                // background fill (allowYtDlp = false). Without this gate, a
+                // kennyy+squid outage routes every background track through the
+                // slow amz decrypt, which starves the fast YouTube fallback and
+                // leaves the timeline too sparse to skip through or auto-advance
+                // (observed on-device 2026-06-21: 52s to resolve one next-up).
+                if (allowYtDlp) add("amz" to amz::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }

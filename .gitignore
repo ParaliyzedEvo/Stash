@@ -75,3 +75,10 @@ node_modules/
 # Claude Code per-machine local state (the shared .claude/ config stays tracked)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Local spike/experiment artifacts — never commit (huge binaries, screenshots)
+app/src/androidTest/assets/clapspike/
+spike/*.png
+spike/*.flac
+spike/*.txt
+spike/*.xml

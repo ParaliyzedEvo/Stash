@@ -257,7 +257,9 @@ class PlayerRepositoryImpl @Inject constructor(
      * the playing track isn't in this list.
      */
     @Volatile
-    private var currentQueueTracks: List<Track> = emptyList()
+    // internal (not private) as a test seam — skip tests drive the logical
+    // queue directly to exercise the timeline-frontier routing.
+    internal var currentQueueTracks: List<Track> = emptyList()
 
     /** Serializes auto-grow operations so multiple state updates can't fan out. */
     private val growMutex = Mutex()
@@ -270,6 +272,23 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     @Volatile
     private var queueBuildJob: Job? = null
+
+    /**
+     * The in-flight skip navigation (optimistic advance + resolve). A new skip
+     * cancels the prior one so rapid Next/Prev taps don't each run a full
+     * resolve to completion (which burns a job-based source's quota) — only the
+     * settled target resolves and plays.
+     */
+    private var skipNavJob: Job? = null
+
+    /**
+     * The logical-queue index the user is optimistically navigating toward via
+     * rapid skips, before any of them has resolved+landed. Lets each tap
+     * advance one more track from the PENDING target rather than from the
+     * (not-yet-changed) currently-playing track. Cleared once a navigation
+     * lands or a fresh queue is set. internal as a test seam.
+     */
+    internal var pendingNavIndex: Int? = null
 
     /**
      * Monotonic counter incremented on every [setQueue] entry. Used as
@@ -326,6 +345,16 @@ class PlayerRepositoryImpl @Inject constructor(
     override val userMessages: kotlinx.coroutines.flow.SharedFlow<String> =
         _userMessages.asSharedFlow()
 
+    /**
+     * Track ids with a next-up prefetch resolve currently in flight. Dedups
+     * the three prefetchNextTrack call sites so a single advance can't fan out
+     * concurrent identical resolves (quota-burns a job-based source like
+     * arcod). A [java.util.concurrent.ConcurrentHashMap]-backed set so adds are
+     * atomic across the resolves running on the scope's dispatcher.
+     */
+    private val prefetchInFlight: MutableSet<Long> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     private val cascadeGuard = StreamErrorCascadeGuard()
     private val _streamingHaltedEvents = MutableSharedFlow<StreamingHaltedEvent>(
         replay = 1,
@@ -347,12 +376,83 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun skipNext() {
         cascadeGuard.onUserTransport()
-        ensureController()?.seekToNextMediaItem()
+        val controller = ensureController() ?: return
+        // Skip must ALWAYS advance — never a no-op. If the timeline can advance
+        // (the next item is materialized), seek to it instantly; this also
+        // respects Media3's shuffle order. If it can't — the timeline frontier
+        // was reached because the background fill couldn't pre-resolve the next
+        // streaming track — route the LOGICAL next through skipToQueueIndex,
+        // which resolves it (with a buffering spinner) and plays it. Either way
+        // the user moves forward.
+        if (controller.hasNextMediaItem() && pendingNavIndex == null) {
+            // The next track is already materialized in the timeline — advance
+            // instantly (this also respects Media3 shuffle order).
+            controller.seekToNextMediaItem()
+        } else {
+            // Timeline frontier (the background fill couldn't pre-resolve the
+            // next streaming track) OR a rapid-skip chain is already in flight:
+            // advance one more from the pending target, optimistically.
+            val base = pendingNavIndex ?: currentLogicalIndex(controller)
+            val target = base + 1
+            if (target in 1 until currentQueueTracks.size) navigateToLogical(target)
+        }
     }
 
     override suspend fun skipPrevious() {
         cascadeGuard.onUserTransport()
-        ensureController()?.seekToPreviousMediaItem()
+        val controller = ensureController() ?: return
+        if (controller.hasPreviousMediaItem() && pendingNavIndex == null) {
+            controller.seekToPreviousMediaItem()
+        } else {
+            val base = pendingNavIndex ?: currentLogicalIndex(controller)
+            val target = base - 1
+            if (target in 0 until currentQueueTracks.size) navigateToLogical(target)
+        }
+    }
+
+    /**
+     * Optimistic, debounced navigation to a logical-queue index — the engine
+     * behind a skip when the target isn't already playable in the timeline.
+     *
+     * Cancels any prior in-flight skip resolve (so rapid taps don't each run a
+     * full, quota-spending resolve — only the settled target does), records the
+     * [pendingNavIndex] so the next tap advances one further, then re-anchors
+     * the queue at [targetIndex] via [setQueueInternal] with `optimisticDisplay`
+     * on: Now Playing flips to the target with a spinner and the current track
+     * pauses immediately, so the skip feels instant even while the (possibly
+     * slow) resolve runs in the background. Once it lands, [pendingNavIndex]
+     * clears.
+     */
+    private fun navigateToLogical(targetIndex: Int) {
+        if (targetIndex !in currentQueueTracks.indices) return
+        pendingNavIndex = targetIndex
+        skipNavJob?.cancel()
+        skipNavJob = scope.launch {
+            setQueueInternal(
+                currentQueueTracks,
+                targetIndex,
+                startPositionMs = 0L,
+                optimisticDisplay = true,
+            )
+            // Landed (resolve applied) — unless a newer skip superseded us, in
+            // which case it owns pendingNavIndex now.
+            if (pendingNavIndex == targetIndex) pendingNavIndex = null
+        }
+    }
+
+    /**
+     * The current track's position in the LOGICAL queue ([currentQueueTracks]),
+     * matched by [EXTRA_TRACK_ID] identity rather than the timeline index — the
+     * two diverge whenever the background fill dropped unresolved entries from
+     * the timeline. Returns -1 when the current item carries no track id (can't
+     * locate it). Used by skip to find the logical neighbour when the timeline
+     * itself can't advance.
+     */
+    private fun currentLogicalIndex(controller: MediaController): Int {
+        val currentId = controller.currentMediaItem
+            ?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return -1
+        if (currentId <= 0L) return -1
+        return currentQueueTracks.indexOfFirst { it.id == currentId }
     }
 
     override suspend fun seekTo(positionMs: Long) {
@@ -370,11 +470,25 @@ class PlayerRepositoryImpl @Inject constructor(
      * argument matchers — stays unchanged. [resumeLastQueue] uses this to
      * continue from the saved position.
      */
-    private suspend fun setQueueInternal(tracks: List<Track>, startIndex: Int, startPositionMs: Long) {
+    private suspend fun setQueueInternal(
+        tracks: List<Track>,
+        startIndex: Int,
+        startPositionMs: Long,
+        optimisticDisplay: Boolean = false,
+    ) {
         // Any prior background fill belongs to a previous queue; kill it
         // so its addMediaItem calls can't pollute the new one.
         queueBuildJob?.cancel()
         queueBuildJob = null
+
+        // A real new-queue tap (NOT a skip navigation) ends any in-flight skip
+        // chain and resets its pending target. The skip path itself runs with
+        // optimisticDisplay = true, so it never cancels its own job here.
+        if (!optimisticDisplay) {
+            skipNavJob?.cancel()
+            skipNavJob = null
+            pendingNavIndex = null
+        }
 
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
@@ -400,16 +514,20 @@ class PlayerRepositoryImpl @Inject constructor(
         val myEpoch = ++setQueueEpoch
         val tappedTrack = tracks[safeStart]
 
-        // Optimistic loading state — ONLY when nothing is loaded. With an
-        // idle player the mini player is hidden, so showing the tapped track
-        // + spinner is the only feedback that the tap registered (a yt-dlp
-        // resolve takes ~11 s, antra 60-120 s). But when a track IS loaded,
-        // swapping the display to the tapped track turns the play/pause
-        // button into a disabled spinner for the whole resolve — hijacking
-        // control of still-playing audio. In that case the display stays on
-        // the current track until the resolved track actually starts
-        // (setMediaItems below).
-        if (controller.currentMediaItem == null) {
+        // Optimistic loading state. With an idle player the mini player is
+        // hidden, so showing the tapped track + spinner is the only feedback
+        // that the tap registered (a yt-dlp resolve takes ~11 s; arcod/amz can
+        // be 30-50 s on a slow link). When a track IS loaded, an arbitrary tap
+        // does NOT swap the display (that would turn the play/pause button into
+        // a disabled spinner mid-song, hijacking still-playing audio).
+        //
+        // [optimisticDisplay] = true overrides that for an explicit forward/back
+        // NAVIGATION (skip): the user asked to leave the current track, so we
+        // immediately pause it, swap Now Playing to the target, and show the
+        // spinner while it resolves — the skip feels instant even when the
+        // resolve is slow. See [navigateToLogical].
+        if (controller.currentMediaItem == null || optimisticDisplay) {
+            if (optimisticDisplay) controller.pause()
             _playerState.value = _playerState.value.copy(
                 currentTrack = tappedTrack,
                 isPlaying = false,
@@ -764,6 +882,16 @@ class PlayerRepositoryImpl @Inject constructor(
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) return
 
+        // In-flight dedup. Three call sites fire prefetchNextTrack (the
+        // currentIndex watcher + the two explicit kicks in setQueue/fill), and
+        // the fresh-cache check above can't dedup CONCURRENT resolves of the
+        // same next-up (none has cached yet). Without this guard a single
+        // advance fans out up to 3 identical resolves — for a slow, job-based,
+        // 50/hr-capped source like arcod that's 3 render jobs and 3× the quota
+        // burn (verified on-device 2026-06-21). Claim the id; a racing call for
+        // the same next-up returns immediately and lets the winner cache it.
+        if (!prefetchInFlight.add(next.id)) return
+
         val t0 = System.currentTimeMillis()
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
         val entity = trackDao.getById(next.id) ?: next.toEntity()
@@ -773,12 +901,15 @@ class PlayerRepositoryImpl @Inject constructor(
             // Qobuz-proxy outage even if it falls through to the YouTube path.
             streamResolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
         } catch (ce: CancellationException) {
+            prefetchInFlight.remove(next.id)
             throw ce
         } catch (e: Exception) {
+            prefetchInFlight.remove(next.id)
             Log.w(TAG, "prefetch-next failed for id=${next.id}: ${e.message}")
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=throw:${e.javaClass.simpleName}")
             return
         }
+        prefetchInFlight.remove(next.id)
         if (resolved == null) {
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=null")
             return
@@ -803,10 +934,15 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Swap the URI of the timeline slot matching [next] in place, preserving its
-     * mediaId / metadata / extras so listeners observe a pure URI swap. Returns
-     * `true` if the slot was found and refreshed, `false` if [next] isn't in the
-     * controller's timeline (the caller then inserts it — see [insertNextMediaItem]).
+     * Swap the timeline slot matching [next] in place to the freshly-[resolved]
+     * stream. Updates the URI AND the quality/origin extras — the slot was
+     * usually a provisional YouTube AAC item from the background fill, and the
+     * prefetch upgrades it to lossless; without refreshing
+     * [EXTRA_STREAM_ORIGIN]/codec/bit-depth Now Playing would keep showing the
+     * stale "via YT" / AAC badge even though the audio is now FLAC. Preserves
+     * mediaId and the rest of the metadata. Returns `true` if the slot was
+     * found and refreshed, `false` if [next] isn't in the controller's timeline
+     * (the caller then inserts it — see [insertNextMediaItem]).
      */
     private fun refreshControllerMediaItem(
         controller: MediaController,
@@ -818,8 +954,18 @@ class PlayerRepositoryImpl @Inject constructor(
             val item = controller.getMediaItemAt(i)
             val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: continue
             if (itemTrackId == next.id) {
+                val newExtras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
+                    resolved.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
+                    resolved.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
+                    resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
+                    resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
+                    resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+                }
                 val refreshed = item.buildUpon()
                     .setUri(resolved.url)
+                    .setMediaMetadata(
+                        item.mediaMetadata.buildUpon().setExtras(newExtras).build(),
+                    )
                     .build()
                 controller.replaceMediaItem(i, refreshed)
                 return true
