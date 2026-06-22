@@ -68,6 +68,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.core.net.toUri
@@ -333,14 +334,16 @@ class PlayerRepositoryImpl @Inject constructor(
     )
     /**
      * Snackbar-targeted messages from playback flow:
+     *   - "Loading stream..." — a cellular stream resolve has taken long
+     *     enough that the tap needs explicit feedback.
      *   - "Couldn't play this track right now." — [setQueue]'s tapped
      *     track failed every resolver, surfaced so the user knows the
      *     tap was received but the track is genuinely unavailable.
      *   - "End of offline Mix" — the auto-advance silent-skip walked off
      *     the end of the queue trying to find a playable item while the
      *     device was offline (v0.9.37).
-     * Collected by Now Playing (forwarded into its own user-messages
-     * SharedFlow for Toast display) and the playlist detail screen.
+     * Collected by the app scaffold for global playback snackbars and by
+     * Now Playing for the full-player surface.
      */
     override val userMessages: kotlinx.coroutines.flow.SharedFlow<String> =
         _userMessages.asSharedFlow()
@@ -538,6 +541,20 @@ class PlayerRepositoryImpl @Inject constructor(
             tapResolveEpoch = myEpoch
         }
 
+        val localPath = tappedTrack.filePath
+        val tappedTrackNeedsStream =
+            streamingOn &&
+                !(tappedTrack.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath))
+        val resolvePending = AtomicBoolean(tappedTrackNeedsStream)
+        if (tappedTrackNeedsStream) {
+            scope.launch {
+                delay(STREAM_LOADING_MESSAGE_DELAY_MS)
+                if (resolvePending.get() && myEpoch == setQueueEpoch && connectivity.isCellular()) {
+                    _userMessages.tryEmit("Loading stream...")
+                }
+            }
+        }
+
         // Resolve ONLY the tapped track. Earlier revisions probed forward
         // through the next few entries looking for *anything* playable,
         // but that has two real-user pathologies: (1) it silently
@@ -548,13 +565,18 @@ class PlayerRepositoryImpl @Inject constructor(
         // setMediaItems on it — restarting it from 0. Better to fail
         // visibly (snackbar + log) than to surprise-restart the user's
         // music. See #75 follow-up.
-        val startItem = resolveTrackToMediaItem(
-            tappedTrack,
-            semaphore,
-            streamingOn,
-            allowYouTube = true,
-            allowYtDlp = true,
-        )
+        val startResult = try {
+            resolveTrackToRoutingResult(
+                tappedTrack,
+                semaphore,
+                streamingOn,
+                allowYouTube = true,
+                allowYtDlp = true,
+            )
+        } finally {
+            resolvePending.set(false)
+        }
+        val startItem = (startResult as? StreamRoutingResult.Item)?.mediaItem
 
         // Race guard: if another setQueue came in while we were
         // resolving (e.g. user tapped a different track during a slow
@@ -585,7 +607,8 @@ class PlayerRepositoryImpl @Inject constructor(
                     "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
                         "resolve — preserving current playback",
                 )
-                _userMessages.tryEmit("Couldn't play this track right now.")
+                userMessageFor(startResult)?.let { _userMessages.tryEmit(it) }
+                ?: _userMessages.tryEmit("Couldn't play this track right now.")
                 tapResolveEpoch = -1L
                 _playerState.value = _playerState.value.copy(isBuffering = false)
                 return
@@ -1027,24 +1050,49 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYtDlp: Boolean = true,
     ): MediaItem? {
         val isCasting = castStateHolder.connected.value
+        return (resolveTrackToRoutingResult(
+            track = track,
+            semaphore = semaphore,
+            streamingOn = streamingOn,
+            allowYouTube = allowYouTube,
+            allowYtDlp = allowYtDlp,
+        ) as? StreamRoutingResult.Item)?.mediaItem
+    }
+
+    private suspend fun resolveTrackToRoutingResult(
+        track: Track,
+        semaphore: Semaphore,
+        streamingOn: Boolean,
+        allowYouTube: Boolean = true,
+        allowYtDlp: Boolean = true,
+    ): StreamRoutingResult {
         val localPath = track.filePath
         // Cast devices can't play local file:// URIs — skip to streaming
         // resolution when a Cast session is active.
         if (!isCasting && track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
-            return track.toMediaItem()
+            return StreamRoutingResult.Item(track.toMediaItem())
         }
-        if (!streamingOn) return null
+        if (!streamingOn) return StreamRoutingResult.OfflineMode
 
         return semaphore.withPermit {
             val entity = trackDao.getById(track.id) ?: track.toEntity()
-            val result = buildMediaItemForTrack(
+            buildMediaItemForTrack(
                 entity,
                 allowYouTube = allowYouTube,
                 allowYtDlp = allowYtDlp,
             )
-            (result as? StreamRoutingResult.Item)?.mediaItem
         }
     }
+
+    private fun userMessageFor(result: StreamRoutingResult): String? =
+        when (result) {
+            is StreamRoutingResult.Item -> null
+            StreamRoutingResult.Deduped -> null
+            StreamRoutingResult.NotAvailable -> "Couldn't find this track."
+            StreamRoutingResult.OfflineMode -> "Turn on Online mode to stream this track."
+            StreamRoutingResult.CellularRefused -> "Streaming on cellular is off in Settings."
+            StreamRoutingResult.NoConnectivity -> "You're offline — can't stream this track."
+        }
 
     override suspend fun shuffleLibrary() {
         val controller = ensureController() ?: return
@@ -2007,6 +2055,9 @@ class PlayerRepositoryImpl @Inject constructor(
          * current playback continues undisturbed.
          */
         private const val FORWARD_PROBE_LIMIT = 3
+
+        /** Delay before surfacing foreground stream resolution as user-visible loading. */
+        private const val STREAM_LOADING_MESSAGE_DELAY_MS = 1_200L
     }
 
     /**
