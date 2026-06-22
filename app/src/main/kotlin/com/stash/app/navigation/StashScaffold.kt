@@ -17,6 +17,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -33,6 +36,7 @@ import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
+import com.stash.feature.nowplaying.NowPlayingViewModel
 
 /**
  * Root scaffold for the Stash app.
@@ -48,7 +52,9 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val isNowPlayingActive = currentRoute == NowPlayingRoute::class.qualifiedName
+    val playbackViewModel: NowPlayingViewModel = hiltViewModel()
+    val playbackSnackbarHostState = remember { SnackbarHostState() }
+    val showPlaybackMessages = currentRoute != NowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -66,6 +72,13 @@ fun StashScaffold(
 
     // Android 13+ runtime permission for notifications. One-shot per install.
     RequestNotificationPermissionOnce()
+
+    LaunchedEffect(playbackViewModel, showPlaybackMessages) {
+        if (!showPlaybackMessages) return@LaunchedEffect
+        playbackViewModel.userMessages.collect { message ->
+            playbackSnackbarHostState.showSnackbar(message)
+        }
+    }
 
     // Process notification deep-link extras handed in from MainActivity.
     // Only one target right now (the captcha verifier); easy to extend
@@ -97,6 +110,7 @@ fun StashScaffold(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(playbackSnackbarHostState) },
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
         // The previous `WindowInsets(0.dp)` override was leaking content under
@@ -138,7 +152,8 @@ fun StashScaffold(
                                     }
                                 }
                             },
-                        )
+                            viewModel = playbackViewModel,
+                    )
                     }
 
                     StashBottomBar(
