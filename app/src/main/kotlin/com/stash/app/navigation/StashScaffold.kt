@@ -60,6 +60,7 @@ fun StashScaffold(
     // selection action bar owns the bottom edge instead of stacking on / being
     // crowded by it (premium multi-select pattern, avoids mis-taps).
     var selectionActive by remember { mutableStateOf(false) }
+    var isWebLoginOpen by remember { mutableStateOf(false) }
 
     // Safeguard: a selection-capable screen normally clears its selection on
     // every exit path (✕ / Back / last-deselect), which fires
@@ -117,6 +118,12 @@ fun StashScaffold(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(playbackSnackbarHostState) },
+        // Use Scaffold's default safe-drawing insets so screens automatically
+        // avoid the status bar (top) and gesture / 3-button nav (bottom).
+        // The previous `WindowInsets(0.dp)` override was leaking content under
+        // the system status bar — Pixel 6 Pro and similar devices on Android
+        // 15+ where edge-to-edge is enforced. Reported via Twitter
+        // (https://x.com/tekno_deha1/status/...).
         contentWindowInsets = if (isNowPlayingActive) WindowInsets(0.dp) else WindowInsets.statusBars,
         bottomBar = {
             val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
@@ -153,7 +160,7 @@ fun StashScaffold(
                                     launchSingleTop = true
                                 }
                             },
-                        viewModel = playbackViewModel,
+                            viewModel = playbackViewModel,
                         )
                     }
 
