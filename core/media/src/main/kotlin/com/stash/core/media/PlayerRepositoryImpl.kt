@@ -444,6 +444,32 @@ class PlayerRepositoryImpl @Inject constructor(
         return currentQueueTracks.indexOfFirst { it.id == currentId }
     }
 
+    /**
+     * Safety net for when the player runs off the end of the bounded timeline
+     * into [Player.STATE_ENDED] while the LOGICAL queue still has more tracks
+     * (the rolling buffer fell behind a slow/failing resolve). Resolves and
+     * continues the next logical track via [navigateToLogical] — turning a
+     * permanent stop into a brief re-resolve. No-op when:
+     *  - a repeat mode is active (don't override the user's repeat intent —
+     *    ExoPlayer handles repeat-one/all itself),
+     *  - the current item carries no track id (can't locate it logically),
+     *  - the current track is genuinely the last in the queue (clean stop).
+     *
+     * Re-entrancy is safe: a successful recovery plays the next track, whose
+     * own end re-fires STATE_ENDED → recovers the one after it; a failed
+     * resolve leaves the player stopped (no STATE_ENDED re-fire), so it can't
+     * spin.
+     */
+    internal fun maybeRecoverFromEnd(controller: MediaController) {
+        if (controller.repeatMode != Player.REPEAT_MODE_OFF) return
+        val currentLogical = currentLogicalIndex(controller)
+        if (currentLogical < 0) return
+        val nextLogical = currentLogical + 1
+        if (nextLogical >= currentQueueTracks.size) return // genuinely the end
+        Log.i(TAG, "end-of-timeline recovery: continuing to logical track $nextLogical")
+        navigateToLogical(nextLogical)
+    }
+
     override suspend fun seekTo(positionMs: Long) {
         cascadeGuard.onUserTransport()
         ensureController()?.seekTo(positionMs)
@@ -1596,7 +1622,19 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            controllerDeferred?.let { updateState(it) }
+            val controller = controllerDeferred
+            // End-of-timeline recovery. The background fill / rolling buffer is
+            // bounded (it must NOT resolve a 1000+ track queue up front), so a
+            // slow or failing next-up resolve during a Qobuz outage can let the
+            // player run off the end of the short timeline into STATE_ENDED.
+            // ExoPlayer has no notion of our LOGICAL queue beyond the timeline,
+            // so it stops there permanently — the "playback stops after a few
+            // tracks" bug. If the logical queue has more tracks, resolve-and-
+            // continue instead of stopping.
+            if (playbackState == Player.STATE_ENDED && controller != null) {
+                maybeRecoverFromEnd(controller)
+            }
+            controller?.let { updateState(it) }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
