@@ -111,6 +111,7 @@ class StreamSourceRegistry @Inject constructor(
             } else {
                 add("kennyy" to kennyy::resolve)
                 add("squid" to qobuz::resolve)
+                // No ARCOD streaming resolver is wired in this branch yet.
                 // ARCOD is a slow, job-based, quota-capped source. Like the
                 // slow yt-dlp path, it must run ONLY on foreground/next-up
                 // resolves (allowYtDlp = true), NEVER on the speculative
@@ -118,7 +119,6 @@ class StreamSourceRegistry @Inject constructor(
                 // one playlist tap fans out a render job per queue track and
                 // blows the operator's hourly cap. (Reuses allowYtDlp as the
                 // "this is a real, intentional resolve" signal.)
-                if (allowYtDlp) add("arcod" to arcod::resolve)
                 // amz (Amazon Music) is the SLOWEST lossless source: its
                 // stream resolver decrypts the whole FLAC to a local cache file
                 // before returning a URL (tens of seconds), and it serializes
