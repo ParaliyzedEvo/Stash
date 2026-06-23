@@ -56,4 +56,55 @@ class QueueFillWindowTest {
         assertThat(window.forward).isEmpty()
         assertThat(window.backward).isEmpty()
     }
+
+    // --- bufferTopUpSlice: the rolling buffer's append decision ---
+
+    @Test fun `shallow buffer tops up to the lookahead, skipping the immediate next`() {
+        // current=5, timeline frontier=7 (so ahead=2). Should append from 8 up
+        // to current+1+LOOKAHEAD, i.e. fill the cushion back to LOOKAHEAD deep.
+        val slice = bufferTopUpSlice(
+            tracks = tracks(1142),
+            currentLogical = 5,
+            lastLogical = 7,
+            aheadInTimeline = 2,
+            existingIds = setOf(5L, 6L, 7L),
+        )
+        assertThat(slice.first().id).isEqualTo(8L) // never re-touches the immediate next (6)
+        assertThat(slice.last().id).isEqualTo((5 + 1 + BACKGROUND_FILL_LOOKAHEAD - 1).toLong())
+        assertThat(slice.map { it.id }).doesNotContain(6L)
+    }
+
+    @Test fun `full buffer appends nothing`() {
+        val slice = bufferTopUpSlice(
+            tracks = tracks(1142),
+            currentLogical = 5,
+            lastLogical = 5 + BACKGROUND_FILL_LOOKAHEAD,
+            aheadInTimeline = BACKGROUND_FILL_LOOKAHEAD,
+            existingIds = emptySet(),
+        )
+        assertThat(slice).isEmpty()
+    }
+
+    @Test fun `near the end of the queue appends only what remains`() {
+        val slice = bufferTopUpSlice(
+            tracks = tracks(12),
+            currentLogical = 9,
+            lastLogical = 11, // frontier already at the last track
+            aheadInTimeline = 2,
+            existingIds = setOf(9L, 10L, 11L),
+        )
+        assertThat(slice).isEmpty() // nothing left to append
+    }
+
+    @Test fun `skips ids already in the timeline`() {
+        val slice = bufferTopUpSlice(
+            tracks = tracks(1142),
+            currentLogical = 0,
+            lastLogical = 0,
+            aheadInTimeline = 0,
+            existingIds = setOf(0L, 3L), // 3 already present (e.g. a prefetch insert)
+        )
+        assertThat(slice.map { it.id }).doesNotContain(3L)
+        assertThat(slice.first().id).isEqualTo(2L) // starts at current+2 (1 belongs to prefetch)
+    }
 }
