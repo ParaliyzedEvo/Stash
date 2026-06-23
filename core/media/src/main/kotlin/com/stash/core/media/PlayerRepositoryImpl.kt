@@ -542,9 +542,13 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         val localPath = tappedTrack.filePath
+        val tappedTrackHasPlayableLocal =
+            !castStateHolder.connected.value &&
+                tappedTrack.isDownloaded &&
+                !localPath.isNullOrBlank() &&
+                filePathExistsOnDisk(localPath)
         val tappedTrackNeedsStream =
-            streamingOn &&
-                !(tappedTrack.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath))
+            streamingOn && !tappedTrackHasPlayableLocal
         val resolvePending = AtomicBoolean(tappedTrackNeedsStream)
         if (tappedTrackNeedsStream) {
             scope.launch {
@@ -607,8 +611,9 @@ class PlayerRepositoryImpl @Inject constructor(
                     "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
                         "resolve — preserving current playback",
                 )
-                userMessageFor(startResult)?.let { _userMessages.tryEmit(it) }
-                ?: _userMessages.tryEmit("Couldn't play this track right now.")
+                userMessageFor(startResult)
+                    ?.let { _userMessages.tryEmit(it) }
+                    ?: _userMessages.tryEmit("Couldn't play this track right now.")
                 tapResolveEpoch = -1L
                 _playerState.value = _playerState.value.copy(isBuffering = false)
                 return
@@ -654,6 +659,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // Reassign so the rest of the method uses the probe result.
             // startItem/safeStart are val — use a new local scope to continue.
             if (myEpoch != setQueueEpoch) return
+            // Hand the optimistic spinner over to the probed playable track.
             tapResolveEpoch = -1L
             controller.setMediaItems(listOf(probeItem), 0, 0L)
             controller.prepare()
@@ -1049,7 +1055,6 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
     ): MediaItem? {
-        val isCasting = castStateHolder.connected.value
         return (resolveTrackToRoutingResult(
             track = track,
             semaphore = semaphore,
@@ -1066,6 +1071,7 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
     ): StreamRoutingResult {
+        val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
         // Cast devices can't play local file:// URIs — skip to streaming
         // resolution when a Cast session is active.
