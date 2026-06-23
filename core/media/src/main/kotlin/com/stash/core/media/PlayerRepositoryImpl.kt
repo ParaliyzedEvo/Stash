@@ -91,6 +91,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val connectivity: ConnectivityMonitor,
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
+    private val castStateHolder: CastStateHolder,
 ) : PlayerRepository {
 
     /**
