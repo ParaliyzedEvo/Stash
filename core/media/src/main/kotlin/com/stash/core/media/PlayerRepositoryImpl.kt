@@ -91,7 +91,6 @@ class PlayerRepositoryImpl @Inject constructor(
     private val connectivity: ConnectivityMonitor,
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
-    private val castStateHolder: CastStateHolder,
 ) : PlayerRepository {
 
     /**
@@ -565,7 +564,6 @@ class PlayerRepositoryImpl @Inject constructor(
 
         val localPath = tappedTrack.filePath
         val tappedTrackHasPlayableLocal =
-            !castStateHolder.connected.value &&
                 tappedTrack.isDownloaded &&
                 !localPath.isNullOrBlank() &&
                 filePathExistsOnDisk(localPath)
@@ -1072,7 +1070,6 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
     ): StreamRoutingResult {
-        val isCasting = castStateHolder.connected.value
         val localPath = track.filePath
         if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return StreamRoutingResult.Item(track.toMediaItem())
