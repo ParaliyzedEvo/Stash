@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER ARCOD logo. Replace with the operator-supplied asset before release. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M5,2 L19,2 A3,3 0 0 1 22,5 L22,19 A3,3 0 0 1 19,22 L5,22 A3,3 0 0 1 2,19 L2,5 A3,3 0 0 1 5,2 Z"
+        android:fillColor="#7C3AED" />
+    <path
+        android:pathData="M12,6 L17,18 L14.5,18 L13.6,15.6 L10.4,15.6 L9.5,18 L7,18 Z M11.1,13.6 L12.9,13.6 L12,11 Z"
+        android:fillColor="#FFFFFF" />
+</vector>
