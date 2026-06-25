@@ -34,7 +34,7 @@ class ArcodApiModelsTest {
                   "isrc": "USAT20300456",
                   "duration": 243,
                   "maximum_bit_depth": 24,
-                  "maximum_sampling_rate": 44.1,
+                  "maximum_sampling_rate": 88.2,
                   "parental_warning": true,
                   "copyright": "(C) 2003 Some Label",
                   "audio_info": { "replaygain_track_gain": -7.0 },
@@ -70,6 +70,7 @@ class ArcodApiModelsTest {
         assertEquals("USAT20300456", item.isrc)
         assertEquals(243, item.duration)
         assertEquals(24, item.maxBitDepth)
+        assertEquals(88.2, item.maxSamplingRate!!, 0.0001)
         assertEquals("Ja Rule", item.performer?.name)
         assertEquals(12345L, item.performer?.id)
 

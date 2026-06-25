@@ -36,6 +36,9 @@ class ArcodClientTest {
             authInterceptor = interceptor,
         ).apply {
             baseUrl = server.url("/api").toString().trimEnd('/')
+            // Neutral mock base — the real private base lives in BuildConfig and is
+            // never embedded here. Asserts only that trackId + quality are appended.
+            streamBaseUrl = server.url("/strm").toString().trimEnd('/')
         }
     }
 
@@ -118,6 +121,76 @@ class ArcodClientTest {
         } catch (e: ArcodRateLimitedException) {
             // expected
         }
+    }
+
+    @Test fun `streamUrl appends trackId and quality to the stream base and parses plain-text url`() = runTest {
+        val url = "https://dl.arcod.xyz/stream/abc.flac?token=xyz"
+        server.enqueue(MockResponse().setResponseCode(200).setBody(url))
+
+        val result = client.streamUrl(8767428L, 27)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/strm/8767428?quality=27", request.path)
+        assertNotNull(result)
+        assertEquals(url, result!!.url)
+        assertNull(result.expiresInSec)
+    }
+
+    @Test fun `streamUrl parses flat json url`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"url":"https://dl.arcod.xyz/s/x.flac"}"""),
+        )
+
+        val result = client.streamUrl(1L, 6)
+
+        assertEquals("https://dl.arcod.xyz/s/x.flac", result!!.url)
+        assertNull(result.expiresInSec)
+    }
+
+    @Test fun `streamUrl parses enveloped json with expiresIn`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"success":true,"data":{"url":"https://dl.arcod.xyz/s/y.flac","expiresIn":120}}"""),
+        )
+
+        val result = client.streamUrl(1L, 7)
+
+        assertEquals("https://dl.arcod.xyz/s/y.flac", result!!.url)
+        assertEquals(120, result.expiresInSec)
+    }
+
+    @Test fun `streamUrl parses enveloped json with string expiresIn`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"success":true,"data":{"url":"https://dl.arcod.xyz/s/z.flac","expiresIn":"120"}}"""),
+        )
+
+        val result = client.streamUrl(1L, 27)
+
+        assertEquals("https://dl.arcod.xyz/s/z.flac", result!!.url)
+        assertEquals(120, result.expiresInSec)
+    }
+
+    @Test fun `streamUrl throws on 429`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setBody("rate limited"))
+        try {
+            client.streamUrl(1L, 27)
+            fail("expected ArcodRateLimitedException")
+        } catch (_: ArcodRateLimitedException) {
+            // expected
+        }
+    }
+
+    @Test fun `streamUrl returns null on non-2xx`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertNull(client.streamUrl(1L, 27))
+    }
+
+    @Test fun `streamUrl returns null on unparseable body`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("not a url or json {"))
+        assertNull(client.streamUrl(1L, 27))
     }
 
     private companion object {

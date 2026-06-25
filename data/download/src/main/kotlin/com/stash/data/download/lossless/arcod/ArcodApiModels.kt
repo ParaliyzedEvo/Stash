@@ -50,6 +50,7 @@ data class ArcodTrackItem(
     val isrc: String? = null,
     val duration: Int? = null,
     @SerialName("maximum_bit_depth") val maxBitDepth: Int? = null,
+    @SerialName("maximum_sampling_rate") val maxSamplingRate: Double? = null,
     val performer: ArcodNamed? = null,
     val album: ArcodAlbum? = null,
 )
@@ -100,6 +101,17 @@ data class ArcodUrlResponse(
     val downloadUrl: String,
     val fileName: String? = null,
     val expiresIn: Int? = null,
+)
+
+/**
+ * Parsed result of the single (private) stream-URL GET.
+ * [url] is the playable, open, Range-capable link; [expiresInSec] is the
+ * server-stated lifetime in seconds when the response carried one (used to size
+ * the resolver's cache TTL), else null.
+ */
+data class ArcodStreamResult(
+    val url: String,
+    val expiresInSec: Int? = null,
 )
 
 /**

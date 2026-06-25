@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.arcod
 
 import android.util.Log
+import com.stash.data.download.BuildConfig
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -9,6 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,6 +48,16 @@ class ArcodClient @Inject constructor(
 
     /** Test seam: tests point this at a MockWebServer URL. */
     internal var baseUrl = "https://arcod.xyz/api"
+
+    /**
+     * Base URL (host + path) of the operator's **private** stream endpoint,
+     * injected at build time via [BuildConfig.ARCOD_STREAM_BASE] (sourced from
+     * `local.properties`/env) so it is never committed to the public repo. Blank
+     * when unconfigured — [streamUrl] then no-ops and the caller fails over.
+     * A separate host from [baseUrl]'s catalog/download API. Test seam: tests
+     * point this at a MockWebServer URL.
+     */
+    internal var streamBaseUrl = BuildConfig.ARCOD_STREAM_BASE
 
     /**
      * Search the proxied Qobuz catalog. Non-2xx (other than 429) or a parse
@@ -140,6 +156,67 @@ class ArcodClient @Inject constructor(
 
     /** The open, short-lived download URL carried by a completed job. */
     fun downloadUrlFrom(job: ArcodJob): String? = job.downloadUrl
+
+    /**
+     * Resolve a single playable stream URL for a Qobuz [trackId] at the given
+     * Qobuz [quality] format_id (6=CD, 7=hi-res, 27=max). One GET — no job
+     * render/poll. 429 throws [ArcodRateLimitedException]; any other failure
+     * (non-2xx or unparseable body) returns null so the caller fails over.
+     */
+    suspend fun streamUrl(trackId: Long, quality: Int): ArcodStreamResult? =
+        withContext(Dispatchers.IO) {
+            // Unconfigured build (no private base injected) → skip cleanly so the
+            // registry fails over instead of building an invalid relative URL.
+            if (streamBaseUrl.isBlank()) {
+                Log.d(TAG, "stream base not configured — skipping arcod stream")
+                return@withContext null
+            }
+            val request = arcodRequest("$streamBaseUrl/$trackId?quality=$quality")
+                .get().build()
+            try {
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.code == 429) throw ArcodRateLimitedException()
+                    if (!response.isSuccessful) return@withContext null
+                    val body = response.body?.string().orEmpty()
+                    parseStreamResult(body) ?: run {
+                        // First-run shape probe: the dev gave no sample body, so
+                        // log the raw payload once when nothing parsed.
+                        Log.d(TAG, "stream parse miss trackId=$trackId body='${body.take(200)}'")
+                        null
+                    }
+                }
+            } catch (e: ArcodRateLimitedException) {
+                throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+    /**
+     * Tolerant parse of the stream GET body. Accepts (a) a bare URL as the whole
+     * body, or (b) JSON with the URL at the top level OR one level under `data`
+     * (arcod's usual `{success,data:{…}}` envelope), in any of the `url` /
+     * `streamUrl` / `downloadUrl` keys, plus an optional `expiresIn`.
+     */
+    private fun parseStreamResult(body: String): ArcodStreamResult? {
+        val trimmed = body.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return ArcodStreamResult(url = trimmed)
+        }
+        return try {
+            val root = ArcodJson.parseToJsonElement(trimmed).jsonObject
+            val obj = (root["data"] as? JsonObject) ?: root
+            val url = (obj["url"] ?: obj["streamUrl"] ?: obj["downloadUrl"])
+                ?.jsonPrimitive?.contentOrNull ?: return null
+            val expiresIn = (obj["expiresIn"] ?: root["expiresIn"])
+                ?.jsonPrimitive?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
+            ArcodStreamResult(url = url, expiresInSec = expiresIn)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     /** Browser-y headers the arcod web app sends; Bearer is added by the interceptor. */
     private fun arcodRequest(url: String): Request.Builder =

@@ -4,40 +4,33 @@ import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.arcod.ArcodClient
-import com.stash.data.download.lossless.arcod.ArcodJobGate
-import com.stash.data.download.lossless.arcod.ArcodJobRequest
 import com.stash.data.download.lossless.arcod.ArcodMatcher
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 
 /**
- * Stream-URL resolver backed by `dl.arcod.xyz` via [ArcodClient].
+ * Stream-URL resolver backed by ARCOD's single stream-URL GET via [ArcodClient].
  *
- * ARCOD wraps the official Qobuz catalog behind a Supabase-authenticated job
- * queue: search → create-job → poll-until-completed → open download URL. Unlike
- * the kennyy/squid proxies (which hand back a signed Akamai URL with an `etsp`
- * expiry baked in), ARCOD renders the FLAC on demand and returns a short-lived,
- * open, Range-capable link that plays through the default media-source factory
- * with no custom data source.
+ * Flow: open `get-music` search → [ArcodMatcher.best] → the matched Qobuz track id
+ * → one authenticated stream GET (the operator's private endpoint, base injected
+ * via BuildConfig) that returns an open, Range-capable, short-lived FLAC URL. No
+ * job render/poll (that path is kept only for downloads). The URL plays through
+ * the default media-source factory.
  *
- * Because the job-render round-trip is slow (search + create + poll), this
- * resolver sits LAST among the lossless sources — after kennyy and squid, before
- * the YouTube lossy fallback. The registry only reaches it when both faster
- * Qobuz proxies miss.
+ * The streaming quality tier comes from [StreamQualityPolicy] (per-network /
+ * Save-Data), mirroring [AmzStreamResolver] — so ARCOD streaming respects the
+ * user's cellular/Wi-Fi tier instead of always pulling max.
  *
- * Returns null when:
- *  - ARCOD's catalog has no confident match for the track ([ArcodMatcher.best]).
- *  - The matched track has no album id (can't build a job request).
- *  - Job creation, polling, or the completed download URL fails / times out.
+ * Sits LAST among the lossless streaming sources and foreground-only (gated in
+ * [StreamSourceRegistry]); reached only when kennyy and squid both miss.
  *
- * The returned URL has no parseable expiry, so a conservative ~280s TTL is used
- * (the proxy's links are short-lived; re-resolving is cheap relative to a 403).
+ * Returns null when search has no confident match, or the stream GET fails.
  */
 @Singleton
 class ArcodStreamResolver @Inject constructor(
     private val client: ArcodClient,
-    private val jobGate: ArcodJobGate,
+    private val qualityPolicy: StreamQualityPolicy,
 ) {
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         Log.d(TAG, "resolve attempt id=${track.id} title='${track.title}'")
@@ -55,42 +48,25 @@ class ArcodStreamResolver @Inject constructor(
                 return null
             }
             val item = match.item
-            val albumId = item.album?.id ?: run {
-                Log.d(TAG, "no_album_id id=${track.id} trackId=${item.id}")
+            val code = qualityPolicy.streamingTier().qobuzCode
+            val stream = client.streamUrl(item.id, code) ?: run {
+                Log.d(TAG, "no_stream_url id=${track.id} trackId=${item.id} quality=$code")
                 return null
             }
-            val request = ArcodJobRequest(
-                albumId = albumId,
-                trackId = item.id.toString(),
-                albumTitle = item.album?.title ?: "",
-                artistName = item.performer?.name ?: item.album?.artist?.name ?: query.artist,
-                artistId = (item.album?.artist?.id ?: item.performer?.id ?: 0L).toString(),
-                coverUrl = item.album?.image?.large ?: "",
-                releaseDate = item.album?.releaseDate ?: "",
-                tracksCount = item.album?.tracksCount ?: 1,
-            )
-            // create→poll→url runs under the shared ArcodJobGate: at most ONE
-            // ARCOD render job in flight app-wide (download + stream combined),
-            // so a queue tap can't fan out dozens of concurrent jobs.
-            val url = jobGate.withJob {
-                val job = client.createJob(request) ?: run {
-                    Log.d(TAG, "createJob_null id=${track.id} trackId=${item.id}")
-                    return@withJob null
-                }
-                val completed = client.pollStatus(job.id) ?: run {
-                    Log.d(TAG, "poll_failed id=${track.id} jobId=${job.id}")
-                    return@withJob null
-                }
-                client.downloadUrlFrom(completed) ?: run {
-                    Log.d(TAG, "no_url id=${track.id} jobId=${job.id}")
-                    return@withJob null
-                }
-            } ?: return null
-            Log.d(TAG, "resolved id=${track.id} origin=$ORIGIN")
+            val ttlMs = stream.expiresInSec
+                ?.let { (it.toLong() * 1000L - EXPIRY_SAFETY_MS).coerceAtLeast(MIN_TTL_MS) }
+                ?: DEFAULT_TTL_MS
+            // The single stream GET returns only a URL, so derive the delivered
+            // bit-depth/sample-rate from the matched catalog maximums clamped to
+            // the requested tier — the deterministic Qobuz contract, no extra call.
+            val delivered = ArcodDeliveredQuality.of(code, item.maxBitDepth, item.maxSamplingRate)
+            Log.d(TAG, "resolved id=${track.id} origin=$ORIGIN quality=$code")
             StreamUrl(
-                url = url,
-                expiresAtMs = System.currentTimeMillis() + URL_TTL_MS,
+                url = stream.url,
+                expiresAtMs = System.currentTimeMillis() + ttlMs,
                 codec = "flac",
+                bitsPerSample = delivered.bitsPerSample,
+                sampleRateHz = delivered.sampleRateHz,
                 origin = ORIGIN,
                 coverArtUrl = item.album?.image?.large?.takeIf { it.isNotBlank() },
             )
@@ -105,6 +81,13 @@ class ArcodStreamResolver @Inject constructor(
     companion object {
         const val ORIGIN = "arcod"
         private const val TAG = "ArcodStreamResolver"
-        private const val URL_TTL_MS = 280_000L
+        /** No parseable expiry on the URL — conservative reuse window. */
+        private const val DEFAULT_TTL_MS = 280_000L
+        /** Re-resolve this much before a server-stated expiry to avoid a 403. */
+        private const val EXPIRY_SAFETY_MS = 20_000L
+        /** Floor for a server-stated expiry so a tiny lifetime yields a short TTL
+         *  (prompt re-resolve) rather than the 280s default — never over-cache a
+         *  short-lived URL. */
+        private const val MIN_TTL_MS = 5_000L
     }
 }
