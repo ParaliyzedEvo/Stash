@@ -118,30 +118,64 @@ fun StashScaffold(
         // (https://x.com/tekno_deha1/status/...).
         contentWindowInsets = if (isNowPlayingActive) WindowInsets(0.dp) else WindowInsets.statusBars,
         bottomBar = {
+            val hideBottomBar = currentRoute == NowPlayingRoute::class.qualifiedName ||
+                                currentRoute == SquidWtfCaptchaRoute::class.qualifiedName ||
+                                isWebLoginOpen
+            // Hide mini player only on Settings/Account sub-pages and utility-only
+            // inner pages. Content pages (playlists, artists, albums, liked songs)
+            // keep the mini player visible since music is actively playing there.
+            val innerPageRoutes = setOf(
+                SettingsRoute::class.qualifiedName,
+                AccountRoute::class.qualifiedName,
+                EqualizerRoute::class.qualifiedName,
+                LibraryHealthRoute::class.qualifiedName,
+                BlockedSongsRoute::class.qualifiedName,
+                FailedMatchesRoute::class.qualifiedName,
+                FailedDownloadsRoute::class.qualifiedName,
+            )
+            val hideMiniPlayer = hideBottomBar ||
+                                innerPageRoutes.any { currentRoute?.startsWith(it ?: "") == true }
             // While a screen is selecting, render no bottom chrome at all — the
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            val hideBottomBar = isNowPlayingActive
             if (!selectionActive && !hideBottomBar) {
-                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                    MiniPlayer(
-                        onExpand = {
-                            navController.navigate(NowPlayingRoute) {
-                                launchSingleTop = true
-                            }
-                        },
+                Column(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
+                    if (!hideMiniPlayer) {
+                        MiniPlayer(
+                            onExpand = {
+                                navController.navigate(NowPlayingRoute) {
+                                    launchSingleTop = true
+                                }
+                            },
                             viewModel = playbackViewModel,
-                    )
+                        )
+                    }
 
                     StashBottomBar(
                         currentRoute = currentRoute,
                         onNavigate = { dest ->
-                            navController.navigate(dest.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    inclusive = false
+                            val destRoute = dest.route::class.qualifiedName
+                            val isOnThisTabRoot = currentRoute == destRoute
+                            if (isOnThisTabRoot) {
+                                return@StashBottomBar
+                            }
+                            val popped = navController.popBackStack(
+                                route = dest.route,
+                                inclusive = false,
+                            )
+                            if (!popped) {
+                                navController.navigate(dest.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
                             }
                         },
                     )
@@ -151,6 +185,7 @@ fun StashScaffold(
     ) { innerPadding ->
         StashNavHost(
             navController = navController,
+            onWebLoginChanged = { isWebLoginOpen = it },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
