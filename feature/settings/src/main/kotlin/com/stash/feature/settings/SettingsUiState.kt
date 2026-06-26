@@ -106,6 +106,12 @@ data class SettingsUiState(
      * solver from the user. See `squidCaptchaStatus` mapping fn.
      */
     val squidCaptchaStatus: SquidCaptchaStatus = SquidCaptchaStatus.NotConfigured,
+    /**
+     * True when an ARCOD (arcod.xyz) Supabase session is stored — i.e. the
+     * user has connected ARCOD as a third independent lossless source.
+     * Drives the "Connect ARCOD" row's label.
+     */
+    val arcodConnected: Boolean = false,
     val totalStorageBytes: Long = 0,
     val totalTracks: Int = 0,
     val showYouTubeCookieDialog: Boolean = false,

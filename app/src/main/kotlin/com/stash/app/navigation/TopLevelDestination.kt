@@ -45,6 +45,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object LocalSongsRoute
 @Serializable data object AntraConnectRoute
 @Serializable data object DiagnosticsPreviewRoute
+@Serializable data object ArcodConnectRoute
 @Serializable data object SettingsPlaybackRoute
 @Serializable data object SettingsAudioQualityRoute
 @Serializable data object SettingsAccountsRoute

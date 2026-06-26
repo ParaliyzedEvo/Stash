@@ -260,6 +260,7 @@ fun StashNavHost(
                 onBack = { navController.popBackStack() },
                 onNavigateToEqualizer = { navController.navigate(EqualizerRoute) },
                 onNavigateToSquidWtfCaptcha = { navController.navigate(SquidWtfCaptchaRoute) },
+                onNavigateToArcodConnect = { navController.navigate(ArcodConnectRoute) },
                 viewModel = viewModel,
             )
         }
@@ -315,6 +316,21 @@ fun StashNavHost(
                 androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
             com.stash.feature.settings.components.SquidWtfCaptchaScreen(
                 onCookieCaptured = viewModel::onSquidWtfCaptchaCookieChanged,
+                onClose = { navController.popBackStack() },
+            )
+        }
+
+        composable<ArcodConnectRoute> { backStackEntry ->
+            // Reuse the Settings-scoped ViewModel so the harvested Supabase
+            // session writes to the same ArcodCredentialStore the source +
+            // interceptor read from, and survives this route's dispose.
+            val settingsEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(SettingsRoute)
+            }
+            val viewModel: com.stash.feature.settings.SettingsViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            com.stash.feature.settings.components.ArcodConnectScreen(
+                onConnected = viewModel::onArcodConnected,
                 onClose = { navController.popBackStack() },
             )
         }

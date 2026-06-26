@@ -78,6 +78,7 @@ fun SettingsAudioQualityScreen(
     onBack: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
+    onNavigateToArcodConnect: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {

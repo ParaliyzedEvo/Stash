@@ -48,6 +48,7 @@ class StreamingPreference @Inject constructor(
     private val cellularKey = booleanPreferencesKey("streaming_on_cellular")
     private val qualityKey = stringPreferencesKey("streaming_quality_tier")
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
+    private val forceArcodOnlyKey = booleanPreferencesKey("force_arcod_only")
     private val forceAmzOnlyKey = booleanPreferencesKey("force_amz_only")
     // Retained only so [purgeRetiredKeys] can delete it from existing
     // installs; the antra source was removed (see fix/remove-antra).
@@ -77,6 +78,17 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
+     * Test-only toggle. When `true`, both the streaming and download
+     * registries route through ARCOD ONLY (skip kennyy/squid/YouTube) — so
+     * the ARCOD source can be exercised on demand even when the Qobuz proxies
+     * are healthy. Default `false` (normal use). Takes precedence over
+     * [forceAmzOnly] and [forceYouTubeFallback].
+     */
+    val forceArcodOnly: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[forceArcodOnlyKey] ?: false
+    }
+
+    /**
      * Test-only toggle. When `true`, BOTH the streaming registry
      * ([StreamSourceRegistry]) and the lossless-download registry
      * ([LosslessSourceRegistry]) route through the amz (Amazon Music)
@@ -92,6 +104,8 @@ class StreamingPreference @Inject constructor(
     suspend fun current(): Boolean = enabled.first()
 
     suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
+
+    suspend fun isForceArcodOnly(): Boolean = forceArcodOnly.first()
 
     suspend fun isForceAmzOnly(): Boolean = forceAmzOnly.first()
 

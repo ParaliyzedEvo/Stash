@@ -66,6 +66,7 @@ import javax.inject.Singleton
 class StreamSourceRegistry @Inject constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
+    private val arcod: ArcodStreamResolver,
     private val lucida: LucidaStreamResolver,
     private val saavn: SaavnStreamResolver,
     private val amz: AmzStreamResolver,
