@@ -303,9 +303,9 @@ class SettingsViewModel @Inject constructor(
         val mirrorLikesSpotify = values[27] as Boolean
         val mirrorLikesYtMusic = values[28] as Boolean
         val arcodConnected = !(values[29] as String?).isNullOrBlank()
-        val streamingWifiTier = values[29] as LosslessQualityTier
-        val streamingCellularTier = values[30] as LosslessQualityTier
-        val streamingSaveData = values[31] as Boolean
+        val streamingWifiTier = values[30] as LosslessQualityTier
+        val streamingCellularTier = values[31] as LosslessQualityTier
+        val streamingSaveData = values[32] as Boolean
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
             ?: when {
