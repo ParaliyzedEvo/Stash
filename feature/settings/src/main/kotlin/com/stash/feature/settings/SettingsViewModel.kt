@@ -302,6 +302,7 @@ class SettingsViewModel @Inject constructor(
         val stashMixesEnabled = values[26] as Boolean
         val mirrorLikesSpotify = values[27] as Boolean
         val mirrorLikesYtMusic = values[28] as Boolean
+        val arcodConnected = !(values[29] as String?).isNullOrBlank()
         val streamingWifiTier = values[29] as LosslessQualityTier
         val streamingCellularTier = values[30] as LosslessQualityTier
         val streamingSaveData = values[31] as Boolean
@@ -357,6 +358,7 @@ class SettingsViewModel @Inject constructor(
             autoSavedCountLast7Days = autoSavedCount7d,
             mirrorLikesSpotify = mirrorLikesSpotify,
             mirrorLikesYtMusic = mirrorLikesYtMusic,
+            arcodConnected = arcodConnected,
             pendingMirrorWarning = local.pendingMirrorWarning,
             youtubeFallbackEnabled = youtubeFallbackEnabled,
             hasCrashReport = local.hasCrashReport,
