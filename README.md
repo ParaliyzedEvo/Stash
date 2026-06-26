@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
 [![Release](https://img.shields.io/github/v/release/rawnaldclark/Stash?color=purple&include_prereleases)](https://github.com/rawnaldclark/Stash/releases)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/tbBSMd6dR)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/vcbjEby5PC)
 
 Stash mirrors your Spotify and YouTube Music libraries to your Android phone. You connect each service once, pick the playlists and mixes you actually want, and Stash either downloads them as real FLAC files for offline playback or surfaces them as a streaming index so you can play any track without filling up your storage. Same library, two modes, one tap to switch.
 
@@ -196,7 +196,7 @@ That isn't a workaround. It's a principled choice: open-source tools that give u
 
 ## Community
 
-Bug reports and feature requests through [GitHub Issues](https://github.com/rawnaldclark/Stash/issues). For everything else — questions, requests, "is this thing on" — the [Stash Discord](https://discord.gg/tbBSMd6dR) is the place. Active dev there, fast answers.
+Bug reports and feature requests through [GitHub Issues](https://github.com/rawnaldclark/Stash/issues). For everything else — questions, requests, "is this thing on" — the [Stash Discord](https://discord.gg/vcbjEby5PC) is the place. Active dev there, fast answers.
 
 ---
 

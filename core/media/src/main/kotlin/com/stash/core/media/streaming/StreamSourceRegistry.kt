@@ -27,10 +27,17 @@ import javax.inject.Singleton
  *      YouTube because it's faster and higher quality for the tracks it
  *      covers.
  *   5. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless
+ *   6. [ArcodStreamResolver]   — ARCOD. Same Qobuz catalog via an authenticated
+ *      single stream GET (search → match → one resolve call that returns an open,
+ *      Range-capable URL; the operator's private endpoint, base injected via
+ *      BuildConfig). A per-user-account fallback, so it sits last among the
+ *      lossless sources and foreground-only — reached only when kennyy and squid
+ *      both miss.
+ *   7. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless
  *      FLAC. Consulted when neither Qobuz proxy has a confident match,
  *      so an Amazon-only track still streams lossless before dropping to
  *      lossy YouTube. Captcha auth rides the shared client's interceptor.
- *   6. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   8. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -93,7 +100,17 @@ class StreamSourceRegistry @Inject constructor(
         preferFastStartup: Boolean = false,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
-            if (streamingPreference.isForceAmzOnly()) {
+            if (streamingPreference.isForceArcodOnly()) {
+                // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
+                // ARCOD path can be exercised even when the Qobuz proxies are
+                // healthy. Takes precedence over forceAmzOnly and
+                // forceYouTubeFallback. Still gated by allowYtDlp so the
+                // speculative background fill resolves NOTHING (matching
+                // forceYt) — without this, flipping the toggle and tapping a
+                // playlist would spend a search call + the user's arcod account
+                // on every queue track speculatively, not just the ones played.
+                if (allowYtDlp) add("arcod" to arcod::resolve)
+            } else if (streamingPreference.isForceAmzOnly()) {
                 // Test toggle (outage drill): amz ONLY — kennyy/squid/youtube
                 // removed from play so a track either streams via amz or fails
                 // visibly. Ignores allowYouTube/allowYtDlp — it's amz or nothing.
@@ -107,16 +124,14 @@ class StreamSourceRegistry @Inject constructor(
             } else {
                 add("kennyy" to kennyy::resolve)
                 add("squid" to qobuz::resolve)
-                // ARCOD is a slow, job-based, quota-capped source. Like the
-                // slow yt-dlp path, it must run ONLY on foreground/next-up
-                // resolves (allowYtDlp = true), NEVER on speculative queue
-                // fill. Cellular fast-start also skips it so a tap can fall
-                // to YouTube quickly instead of waiting behind a render job.
-                if (allowYtDlp && !preferFastStartup) {
-                    add("arcod" to arcod::resolve)
-                } else if (allowYtDlp && preferFastStartup) {
-                    Log.d(TAG, "cellular fast-start: skipping arcod for ${track.id} '${track.title}'")
-                }
+                // ARCOD is an authenticated, per-user-account fallback. It must
+                // run ONLY on foreground/next-up resolves (allowYtDlp = true),
+                // NEVER on the speculative queue-wide background fill
+                // (allowYtDlp = false) — otherwise one playlist tap would spend
+                // a search call + the user's arcod account on every queue track
+                // speculatively, not just the ones actually played. (Reuses
+                // allowYtDlp as the "this is a real, intentional resolve" signal.)
+                if (allowYtDlp) add("arcod" to arcod::resolve)
                 // amz (Amazon Music) is the SLOWEST lossless source: its
                 // stream resolver decrypts the whole FLAC to a local cache file
                 // before returning a URL (tens of seconds), and it serializes

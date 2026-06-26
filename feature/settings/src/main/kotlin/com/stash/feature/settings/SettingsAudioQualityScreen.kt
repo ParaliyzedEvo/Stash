@@ -6,15 +6,21 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -31,7 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.feature.settings.components.AudioQualityPicker
 import com.stash.feature.settings.components.BetaPill
@@ -127,6 +137,42 @@ fun SettingsAudioQualityScreen(
                         LosslessRoutingStatus(
                             squidStatus = uiState.squidCaptchaStatus,
                             onSolveCaptcha = onNavigateToSquidWtfCaptcha,
+                        )
+
+                        // ARCOD — independent Qobuz lossless (3rd source).
+                        // Connect via Google login in an in-app WebView.
+                        SettingsNavRow(
+                            title = if (uiState.arcodConnected) {
+                                "ARCOD — connected"
+                            } else {
+                                "Connect ARCOD"
+                            },
+                            subtitle = "Independent Qobuz lossless (3rd source)",
+                            onClick = onNavigateToArcodConnect,
+                            leadingContent = {
+                                Image(
+                                    painter = painterResource(
+                                        id = com.stash.core.ui.R.drawable.partner_arcod,
+                                    ),
+                                    contentDescription = null, // decorative; the row title already says "ARCOD"
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(RoundedCornerShape(6.dp)),
+                                )
+                            },
+                            titleTrailing = if (uiState.arcodConnected) {
+                                {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(StashTheme.extendedColors.success),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
                         )
 
                         // -- Download quality picker --------------------------

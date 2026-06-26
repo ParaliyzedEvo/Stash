@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("stash.android.library")
     alias(libs.plugins.hilt)
@@ -5,8 +7,34 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// ── ARCOD private stream endpoint ────────────────────────────────────────────
+// The arcod operator shared a private streaming endpoint on the condition it not
+// be exposed in the public repo. Its base URL (host + path) is therefore injected
+// at build time from `local.properties` (gitignored) or an env var (CI/release),
+// never committed to source. Set it in local.properties as:
+//   arcod.streamBase=<base url including path>
+// Empty is valid — an unconfigured build simply skips ARCOD streaming and fails
+// over to the next source, exactly like a missing Last.fm key no-ops scrobbling.
+val arcodLocalProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val arcodStreamBase: String =
+    arcodLocalProperties.getProperty("arcod.streamBase") ?: System.getenv("ARCOD_STREAM_BASE").orEmpty()
+
 android {
     namespace = "com.stash.data.download"
+
+    defaultConfig {
+        // Private ARCOD stream base (host+path), injected from local.properties /
+        // env at build time so it never lives in the public repo. Empty when
+        // unconfigured — ARCOD streaming then no-ops and the registry fails over.
+        buildConfigField("String", "ARCOD_STREAM_BASE", "\"$arcodStreamBase\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     testOptions {
         unitTests {

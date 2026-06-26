@@ -74,6 +74,12 @@ jobs:
           LASTFM_PROXY_URL: ${{ secrets.LASTFM_PROXY_URL }}
           # Optional comma-separated extra read-key pool (raises the ceiling).
           LASTFM_EXTRA_API_KEYS: ${{ secrets.LASTFM_EXTRA_API_KEYS }}
+          # ARCOD private stream endpoint (host + path). Injected from a repo
+          # secret so it never lives in source; consumed by
+          # data/download BuildConfig.ARCOD_STREAM_BASE. If unset, ARCOD
+          # streaming simply no-ops and the registry fails over — so this MUST
+          # be set for shipped APKs to stream via ARCOD.
+          ARCOD_STREAM_BASE: ${{ secrets.ARCOD_STREAM_BASE }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK

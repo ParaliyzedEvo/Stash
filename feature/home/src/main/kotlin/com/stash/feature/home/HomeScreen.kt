@@ -287,6 +287,16 @@ fun HomeScreen(
             )
         }
 
+        // ── Powered-by-ARCOD strip (subordinate to the supporter pill) ────
+        item {
+            PartnerStrip(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 12.dp),
+            )
+        }
+
         // ── Last.fm connect nudge ────────────────────────────────────
         // Shown only when we have creds wired AND the user has local
         // plays accumulating locally AND the user hasn't dismissed the
@@ -1986,7 +1996,7 @@ private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issue
 // v0.9.38+: Discord invite shown as a chat-bubble icon (blurple-tinted)
 // to the left of the wrench. Tap → opens the invite in the default
 // browser. Edit when the invite rotates.
-private const val STASH_DISCORD_URL = "https://discord.gg/tbBSMd6dR"
+private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
 
 private val HOME_SUPPORTERS = listOf(
     Supporter(

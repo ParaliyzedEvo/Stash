@@ -21,9 +21,12 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * A navigation settings row: an optional leading icon, a title with an optional
- * subtitle, and a trailing chevron. Tapping anywhere on the row invokes [onClick].
- * Pure presentation — the caller owns navigation.
+ * A navigation settings row: an optional leading icon/logo, a title (with an
+ * optional trailing slot and subtitle), and a trailing chevron. Tapping anywhere
+ * on the row invokes [onClick]. Pure presentation — the caller owns navigation.
+ *
+ * Leading precedence: [leadingContent] (rendered as-is, untinted — for a color
+ * logo) wins over the monochrome tinted [leadingIcon].
  */
 @Composable
 fun SettingsNavRow(
@@ -31,6 +34,8 @@ fun SettingsNavRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
+    titleTrailing: (@Composable () -> Unit)? = null,
     subtitle: String? = null,
 ) {
     Row(
@@ -40,7 +45,10 @@ fun SettingsNavRow(
             .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (leadingIcon != null) {
+        if (leadingContent != null) {
+            leadingContent()
+            Spacer(modifier = Modifier.width(12.dp))
+        } else if (leadingIcon != null) {
             Icon(
                 imageVector = leadingIcon,
                 contentDescription = null,
@@ -50,11 +58,17 @@ fun SettingsNavRow(
             Spacer(modifier = Modifier.width(12.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (titleTrailing != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    titleTrailing()
+                }
+            }
             if (subtitle != null) {
                 Text(
                     text = subtitle,
