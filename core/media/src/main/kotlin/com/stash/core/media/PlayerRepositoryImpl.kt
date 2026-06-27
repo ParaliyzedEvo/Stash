@@ -2177,6 +2177,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Delay before surfacing foreground stream resolution as user-visible loading. */
         private const val STREAM_LOADING_MESSAGE_DELAY_MS = 1_200L
+        /**
          * Debounce before a skip actually resolves its target. Rapid skips each
          * cancel the prior [skipNavJob] during this window, so only the SETTLED
          * track runs the (cap-1, ~3s) yt-dlp resolve — without it, every skipped
