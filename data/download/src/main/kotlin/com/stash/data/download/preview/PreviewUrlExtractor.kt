@@ -493,55 +493,6 @@ class PreviewUrlExtractor @Inject constructor(
             withContext(Dispatchers.IO) {
                 prepareYtDlpForExtraction()
 
-                try {
-                    val url = "https://www.youtube.com/watch?v=$videoId"
-
-                    val request = YoutubeDLRequest(url).apply {
-                        addOption("-f", FORMAT_SELECTOR)
-                        addOption("--print", "urls")
-                        addOption("--no-download")
-                        val cacheDir = File(context.cacheDir, "yt_dlp_cache")
-                        if (!cacheDir.exists()) {
-                            cacheDir.mkdirs()
-                        }
-                        addOption("--cache-dir", cacheDir.absolutePath)
-
-                        val qjsPath = ytDlpManager.quickJsPath
-                        if (qjsPath != null) {
-                            addOption("--js-runtimes", "quickjs:$qjsPath")
-                            addOption("--remote-components", "ejs:github")
-                        }
-                    }
-
-                    val cookie = tokenManager.getYouTubeCookie()
-                    if (cookie != null) {
-                        CookieFileWriter.write(cookie, cookieFile)
-                        cookieFile.setReadable(false, false)
-                        cookieFile.setReadable(true, true)
-                        cookieFile.setWritable(false, false)
-                        cookieFile.setWritable(true, true)
-                        request.addOption("--cookies", cookieFile.absolutePath)
-                    }
-
-                    Log.d(TAG, "yt-dlp: invoking for videoId=$videoId")
-                    val response = YoutubeDL.getInstance().execute(request, url, null)
-
-                    val stdout = response.out.orEmpty()
-                    val stderr = response.err.orEmpty()
-                    Log.d(TAG, "yt-dlp: exit=${response.exitCode} stdoutLen=${stdout.length}")
-                    if (stderr.isNotBlank()) {
-                        Log.d(TAG, "yt-dlp stderr: ${stderr.take(500)}")
-                    }
-
-                    val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
-                    check(!streamUrl.isNullOrBlank()) {
-                        "yt-dlp returned no stream URL for videoId=$videoId. stderr: ${stderr.take(500)}"
-                    }
-
-                    Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
-                    streamUrl
-                } finally {
-                    if (cookieFile.exists()) cookieFile.delete()
                 // Fast path: query ONLY the android_vr client. It returns a
                 // working itag-251 URL directly — no PO token, no m3u8 manifest,
                 // no QuickJS signature/n-challenge solve — so it resolves in
