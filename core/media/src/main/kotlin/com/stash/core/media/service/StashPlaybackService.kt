@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
@@ -23,6 +24,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
@@ -79,6 +81,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
+    @Inject lateinit var crossfadePreference: CrossfadePreference
 
     /**
      * Shared, interceptor-bearing OkHttp client (carries `AmzCaptchaInterceptor`).
@@ -163,6 +166,13 @@ class StashPlaybackService : MediaLibraryService() {
          * risks crossing the threshold too late on short (<60 s) tracks.
          */
         private const val PREFETCH_POLL_INTERVAL_MS = 5_000L
+
+        /**
+         * Crossfade arm-poll cadence. Finer than the prefetch poll so the fade
+         * fires within the chosen 1–12 s window before track end; 250 ms keeps
+         * worst-case arm jitter to a quarter-second.
+         */
+        private const val CROSSFADE_POLL_INTERVAL_MS = 250L
     }
 
     private var mediaSession: MediaLibrarySession? = null
@@ -181,6 +191,19 @@ class StashPlaybackService : MediaLibraryService() {
      * required thread.
      */
     private var prefetchPollJob: Job? = null
+
+    /**
+     * Drives the auto-advance crossfade. Built in [onCreate] once player A
+     * exists; null until then. Player B is built lazily on first fade.
+     */
+    private var crossfadeController: CrossfadeController? = null
+
+    /**
+     * Dedicated ~250 ms poll feeding [crossfadeController]. Separate from
+     * [prefetchPollJob] (which ticks every 5 s — too coarse to catch a 1–12 s
+     * fade-arm window). Cheap no-op when crossfade is off.
+     */
+    private var crossfadePollJob: Job? = null
 
     /**
      * Forces playback to start when a real *play* request restores a queue
@@ -254,17 +277,32 @@ class StashPlaybackService : MediaLibraryService() {
             amzHttpClient = okHttpClient,
         )
 
-        val player = ExoPlayer.Builder(this)
-            .setRenderersFactory(StashRenderersFactory(this, eqController, loudnessController))
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setLoadControl(loadControl)
-            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
-            .build()
+        // Player A — the sole MediaSession/queue owner. Holds audio focus,
+        // becoming-noisy and wake-lock. Player B (built lazily by the crossfade
+        // controller) reuses this same builder with handleAudioFocus = false.
+        val player = buildExoPlayer(
+            handleAudioFocus = true,
+            mediaSourceFactory = mediaSourceFactory,
+            audioAttributes = audioAttributes,
+            loadControl = loadControl,
+        )
 
-        // Set the pre-generated session ID on the player
+        // Set the pre-generated session ID on the player (A only)
         player.audioSessionId = audioSessionId
+
+        crossfadeController = CrossfadeController(
+            playerA = player,
+            buildPlayerB = {
+                buildExoPlayer(
+                    handleAudioFocus = false,
+                    mediaSourceFactory = mediaSourceFactory,
+                    audioAttributes = audioAttributes,
+                    loadControl = loadControl,
+                )
+            },
+            crossfadePreference = crossfadePreference,
+            scope = serviceScope,
+        )
 
         // Set session activity so tapping the media notification opens the app.
         // The intent targets the app's launcher activity via the package's launch intent.
@@ -296,6 +334,18 @@ class StashPlaybackService : MediaLibraryService() {
         //      state and ramps to the new target via LoudnessGainProcessor.
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // A user skip (SEEK) or queue change (PLAYLIST_CHANGED) cancels an
+                // in-flight fade and hard-cuts; the controller's own fade-advance
+                // seek is exempt (consumeSelfSeek). Natural auto-advance (AUTO) and
+                // repeat (REPEAT) never cancel.
+                crossfadeController?.let { controller ->
+                    when (reason) {
+                        Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ->
+                            if (!controller.consumeSelfSeek()) controller.cancelFade()
+                        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED ->
+                            controller.cancelFade()
+                    }
+                }
                 updateCustomLayout()
                 onTrackTransitionForLoudness(mediaItem)
                 // Every transition gives the orchestrator a fresh
@@ -304,17 +354,32 @@ class StashPlaybackService : MediaLibraryService() {
                 // track id we already burned an attempt on (e.g.
                 // REPEAT_ONE loops, manual skip-back).
                 prefetchOrchestrator.resetSession()
-                // Restart the poll against the new current item.
-                if (player.isPlaying) startPrefetchPoll(player)
+                // Restart the polls against the new current item.
+                if (player.isPlaying) {
+                    startPrefetchPoll(player)
+                    startCrossfadePoll(player)
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     startPrefetchPoll(player)
+                    startCrossfadePoll(player)
+                    crossfadeController?.onResume()
                 } else {
                     prefetchPollJob?.cancel()
                     prefetchPollJob = null
+                    crossfadePollJob?.cancel()
+                    crossfadePollJob = null
+                    crossfadeController?.onPause()
                 }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                // A errored (e.g. an unresolved next URL that slipped past the
+                // arm guard) — abandon any fade so B doesn't linger and A
+                // returns to full volume for the normal error-recovery path.
+                crossfadeController?.cancelFade()
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -347,6 +412,73 @@ class StashPlaybackService : MediaLibraryService() {
             }
         })
         updateCustomLayout()
+    }
+
+    /**
+     * Builds an [ExoPlayer] with Stash's renderer/EQ chain, media-source
+     * factory and load control. Player A passes `handleAudioFocus = true` and
+     * additionally owns becoming-noisy + wake-lock; the crossfade partner B
+     * passes `false` and owns neither (only A drives the session).
+     */
+    @OptIn(UnstableApi::class)
+    private fun buildExoPlayer(
+        handleAudioFocus: Boolean,
+        mediaSourceFactory: StashMediaSourceFactory,
+        audioAttributes: AudioAttributes,
+        loadControl: DefaultLoadControl,
+    ): ExoPlayer {
+        val builder = ExoPlayer.Builder(this)
+            .setRenderersFactory(StashRenderersFactory(this, eqController, loudnessController))
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
+            .setAudioAttributes(audioAttributes, handleAudioFocus)
+        if (handleAudioFocus) {
+            builder.setHandleAudioBecomingNoisy(true).setWakeMode(C.WAKE_MODE_LOCAL)
+        }
+        return builder.build()
+    }
+
+    /**
+     * ~250 ms poll feeding [CrossfadeController.onProgress] so the fade can arm
+     * within the 1–12 s window before track end. Modeled on [startPrefetchPoll]
+     * but finer-grained; runs only while playing and no-ops cheaply when
+     * crossfade is disabled.
+     */
+    @OptIn(UnstableApi::class)
+    private fun startCrossfadePoll(player: Player) {
+        crossfadePollJob?.cancel()
+        val controller = crossfadeController ?: return
+        crossfadePollJob = serviceScope.launch {
+            while (isActive && player.isPlaying) {
+                val nextIndex = player.nextMediaItemIndex
+                val hasResolvedNext = nextIndex != C.INDEX_UNSET &&
+                    runCatching { player.getMediaItemAt(nextIndex) }
+                        .getOrNull()
+                        ?.let(::isNextResolved) == true
+                controller.onProgress(
+                    positionMs = player.currentPosition,
+                    durationMs = player.duration,
+                    hasResolvedNext = hasResolvedNext,
+                    repeatMode = player.repeatMode,
+                )
+                delay(CROSSFADE_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Whether [item] is playable right now (so a fade into it won't error).
+     * Local/downloaded items (file/content URIs) always are. A streaming item
+     * is only playable once a resolver has produced its URL, which stamps
+     * [EXTRA_STREAM_ORIGIN] — placeholder queue-fill http(s) URLs lack it.
+     */
+    private fun isNextResolved(item: MediaItem): Boolean {
+        val scheme = item.localConfiguration?.uri?.scheme?.lowercase() ?: return false
+        return if (scheme == "http" || scheme == "https") {
+            item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN) != null
+        } else {
+            true
+        }
     }
 
     /**
@@ -576,6 +708,9 @@ class StashPlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         likeObserverJob?.cancel()
         prefetchPollJob?.cancel()
+        crossfadePollJob?.cancel()
+        crossfadeController?.release()
+        crossfadeController = null
         serviceScope.cancel()
         mediaSession?.run {
             player.release()
