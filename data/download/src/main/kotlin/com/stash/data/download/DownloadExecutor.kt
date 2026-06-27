@@ -82,70 +82,91 @@ class DownloadExecutor @Inject constructor(
         // deleted in the finally block. File permissions are restricted to owner-only
         // read/write to prevent other apps on rooted devices from reading it.
         val cookieFile = File(context.noBackupFilesDir, "yt_cookies_${System.nanoTime()}.txt")
+        val cookie = tokenManager.getYouTubeCookie()
+        if (cookie != null) {
+            CookieFileWriter.write(cookie, cookieFile)
+            cookieFile.setReadable(false, false)
+            cookieFile.setReadable(true, true)
+            cookieFile.setWritable(false, false)
+            cookieFile.setWritable(true, true)
+            Log.i(TAG, "download: cookies attached (len=${cookie.length})")
+        } else {
+            Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
+        }
+        val cookiePath = if (cookie != null) cookieFile.absolutePath else null
 
         try {
+            // Fast path: pin to the android_vr client. It returns a direct
+            // download format with no player-JS fetch, no QuickJS n-sig/JS
+            // challenge solve, and no m3u8 probe — ~8s vs ~30s for the default
+            // multi-client path under 8-way parallel sync load (measured
+            // on-device 2026-06-26; the concurrent challenge solves were also
+            // thrashing the CPU). Fall back to the default client set when
+            // android_vr can't serve the track, so broad-catalog coverage —
+            // the whole reason the YouTube download path exists — never regresses.
+            val fast = runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, "android_vr", onProgress)
+            if (fast is DownloadResult.Success) fast
+            else runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, null, onProgress)
+        } finally {
+            if (cookieFile.exists()) cookieFile.delete()
+        }
+    }
+
+    /**
+     * One yt-dlp download invocation. [playerClient] pins the YouTube extractor
+     * to a single client (e.g. `android_vr`); null leaves the default client
+     * set. Returns the result for THIS attempt; the caller decides whether a
+     * non-[DownloadResult.Success] should fall back to another client.
+     */
+    private suspend fun runYtDlp(
+        url: String,
+        outputDir: File,
+        filename: String,
+        qualityArgs: List<String>,
+        cookiePath: String?,
+        playerClient: String?,
+        onProgress: (Float) -> Unit,
+    ): DownloadResult {
+        return try {
             val outputTemplate = File(outputDir, "$filename.%(ext)s").absolutePath
 
             val request = YoutubeDLRequest(url).apply {
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
+                playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
 
                 // Tell yt-dlp to use QuickJS for YouTube's JS signature challenges.
                 // Without a JS runtime, yt-dlp can't decrypt stream URLs and
-                // downloads fail with "Signature solving failed".
+                // downloads fail with "Signature solving failed". (android_vr
+                // usually needs none, but the default-client fallback does.)
                 val qjsPath = ytDlpManager.quickJsPath
                 if (qjsPath != null) {
                     addOption("--js-runtimes", "quickjs:$qjsPath")
-                    // Download EJS challenge solver scripts from GitHub on first use.
                     addOption("--remote-components", "ejs:github")
                 }
 
-                // Diagnostic: have yt-dlp print the actual selected format to
-                // stdout. Without this we can't tell whether 141 (AAC 256kbps,
-                // premium) or 140 (AAC 128kbps, free-tier) was served — both
-                // land as .m4a. Parsed back in the stdout-log below.
-                //
-                // CRITICAL: prefix with `after_video:` so the print fires
-                // AFTER the download. Bare `--print TEMPLATE` defaults to
-                // WHEN=video which implies --simulate and breaks downloads.
+                // Log the actually-selected format (140 AAC-128 vs 141 AAC-256
+                // vs 251 Opus — all land as their own ext). after_video: fires
+                // AFTER the download; bare --print implies --simulate and breaks it.
                 addOption(
                     "--print",
                     "after_video:STASHDL_FMT|id=%(format_id)s|abr=%(abr)s|" +
                         "acodec=%(acodec)s|ext=%(ext)s|height=%(height)s",
                 )
+                cookiePath?.let { addOption("--cookies", it) }
             }
 
-            // Pass cookies so YouTube doesn't bot-detect us.
-            val cookie = tokenManager.getYouTubeCookie()
-            if (cookie != null) {
-                CookieFileWriter.write(cookie, cookieFile)
-                // Restrict file permissions to owner-only (prevents access by other apps)
-                cookieFile.setReadable(false, false)
-                cookieFile.setReadable(true, true)
-                cookieFile.setWritable(false, false)
-                cookieFile.setWritable(true, true)
-                request.addOption("--cookies", cookieFile.absolutePath)
-                Log.i(TAG, "download: cookies attached (len=${cookie.length})")
-            } else {
-                Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
-            }
+            Log.d(TAG, "download: starting url=$url client=${playerClient ?: "default"} args=$qualityArgs")
 
-            Log.d(TAG, "download: starting url=$url, output=$outputTemplate, args=$qualityArgs")
-
-            val response = YoutubeDL.getInstance().execute(
-                request,
-                url,
-            ) { progress, _, _ ->
+            val response = YoutubeDL.getInstance().execute(request, url) { progress, _, _ ->
                 onProgress((progress / 100f).coerceIn(0f, 1f))
             }
 
             val stdout = response.out.orEmpty()
             val stderr = response.err.orEmpty()
-            Log.d(TAG, "download: yt-dlp exit=${response.exitCode}, " +
+            Log.d(TAG, "download: yt-dlp exit=${response.exitCode} client=${playerClient ?: "default"} " +
                 "stdoutLen=${stdout.length}, stderrLen=${stderr.length}")
-
-            // Surface the format selection diagnostic line from stdout.
             stdout.lineSequence()
                 .firstOrNull { it.startsWith("STASHDL_FMT|") }
                 ?.let { Log.i(TAG, "download: picked $it") }
@@ -162,22 +183,18 @@ class DownloadExecutor @Inject constructor(
                 // `.m4a`/`.flac`/etc.
                 DownloadResult.Success(webmRemuxer.toOpusIfWebm(result))
             } else {
-                // yt-dlp exited 0 but no file found — list what IS in the dir for debugging
                 val dirContents = outputDir.listFiles()?.map { "${it.name} (${it.length()}b)" }
-                Log.w(TAG, "download: no output file found. Dir contents: $dirContents")
-                Log.w(TAG, "download: expected filename prefix: $filename")
+                Log.w(TAG, "download: no output file (client=${playerClient ?: "default"}). Dir: $dirContents")
                 DownloadResult.NoOutput(stdout.take(2000), stderr.take(2000))
             }
         } catch (e: YoutubeDLException) {
             // yt-dlp exited with non-zero code. The exception message IS the stderr.
             val errMsg = e.message ?: "Unknown yt-dlp error"
-            Log.e(TAG, "download: YT-DLP ERROR url=$url\n$errMsg")
+            Log.e(TAG, "download: YT-DLP ERROR client=${playerClient ?: "default"} url=$url\n$errMsg")
             DownloadResult.YtDlpError(errMsg)
         } catch (e: Exception) {
             Log.e(TAG, "download: UNEXPECTED ERROR url=$url", e)
             DownloadResult.Error(e.message ?: "Unknown error", e)
-        } finally {
-            if (cookieFile.exists()) cookieFile.delete()
         }
     }
 }

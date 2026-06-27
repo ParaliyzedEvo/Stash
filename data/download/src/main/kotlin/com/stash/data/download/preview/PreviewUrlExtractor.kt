@@ -475,58 +475,87 @@ class PreviewUrlExtractor @Inject constructor(
      * Slow fallback: extract stream URL via yt-dlp with QuickJS cipher solving.
      */
     private suspend fun extractViaYtDlp(videoId: String): String {
-        val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
-
         return withTimeout(YTDLP_TIMEOUT_MS) {
             withContext(Dispatchers.IO) {
                 ytDlpManager.initialize()
 
-                try {
-                    val url = "https://www.youtube.com/watch?v=$videoId"
+                // Fast path: query ONLY the android_vr client. It returns a
+                // working itag-251 URL directly — no PO token, no m3u8 manifest,
+                // no QuickJS signature/n-challenge solve — so it resolves in
+                // ~3.6s vs ~12.8s for yt-dlp's default multi-client + m3u8 +
+                // challenge path (measured on-device 2026-06-26, flat across
+                // tracks). Swallow an android_vr-specific failure and fall back
+                // to the default clients so coverage never regresses (the broad
+                // catalog reach is the whole reason YT fallback exists).
+                val fast = try {
+                    runYtDlp(videoId, playerClient = "android_vr")
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    Log.d(TAG, "yt-dlp android_vr attempt failed for $videoId: ${e.message}")
+                    null
+                }
+                fast ?: (runYtDlp(videoId, playerClient = null)
+                    ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId"))
+            }
+        }
+    }
 
-                    val request = YoutubeDLRequest(url).apply {
-                        addOption("-f", FORMAT_SELECTOR)
-                        addOption("--print", "urls")
-                        addOption("--no-download")
+    /**
+     * One yt-dlp `execute()` for [videoId]. [playerClient] pins the YouTube
+     * extractor to a single client (e.g. `android_vr`); null leaves yt-dlp's
+     * default client set. Returns the stream URL, or null when this client set
+     * produced no URL (caller decides whether to fall back). Holds no semaphore
+     * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
+     */
+    private suspend fun runYtDlp(videoId: String, playerClient: String?): String? {
+        val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
+        return try {
+            val url = "https://www.youtube.com/watch?v=$videoId"
 
-                        val qjsPath = ytDlpManager.quickJsPath
-                        if (qjsPath != null) {
-                            addOption("--js-runtimes", "quickjs:$qjsPath")
-                            addOption("--remote-components", "ejs:github")
-                        }
-                    }
+            val request = YoutubeDLRequest(url).apply {
+                addOption("-f", FORMAT_SELECTOR)
+                addOption("--print", "urls")
+                addOption("--no-download")
+                playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
 
-                    val cookie = tokenManager.getYouTubeCookie()
-                    if (cookie != null) {
-                        CookieFileWriter.write(cookie, cookieFile)
-                        cookieFile.setReadable(false, false)
-                        cookieFile.setReadable(true, true)
-                        cookieFile.setWritable(false, false)
-                        cookieFile.setWritable(true, true)
-                        request.addOption("--cookies", cookieFile.absolutePath)
-                    }
-
-                    Log.d(TAG, "yt-dlp: invoking for videoId=$videoId")
-                    val response = YoutubeDL.getInstance().execute(request, url, null)
-
-                    val stdout = response.out.orEmpty()
-                    val stderr = response.err.orEmpty()
-                    Log.d(TAG, "yt-dlp: exit=${response.exitCode} stdoutLen=${stdout.length}")
-                    if (stderr.isNotBlank()) {
-                        Log.d(TAG, "yt-dlp stderr: ${stderr.take(500)}")
-                    }
-
-                    val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
-                    check(!streamUrl.isNullOrBlank()) {
-                        "yt-dlp returned no stream URL for videoId=$videoId. stderr: ${stderr.take(500)}"
-                    }
-
-                    Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
-                    streamUrl
-                } finally {
-                    if (cookieFile.exists()) cookieFile.delete()
+                val qjsPath = ytDlpManager.quickJsPath
+                if (qjsPath != null) {
+                    addOption("--js-runtimes", "quickjs:$qjsPath")
+                    addOption("--remote-components", "ejs:github")
                 }
             }
+
+            val cookie = tokenManager.getYouTubeCookie()
+            if (cookie != null) {
+                CookieFileWriter.write(cookie, cookieFile)
+                cookieFile.setReadable(false, false)
+                cookieFile.setReadable(true, true)
+                cookieFile.setWritable(false, false)
+                cookieFile.setWritable(true, true)
+                request.addOption("--cookies", cookieFile.absolutePath)
+            }
+
+            Log.d(TAG, "yt-dlp: invoking for videoId=$videoId client=${playerClient ?: "default"}")
+            val response = YoutubeDL.getInstance().execute(request, url, null)
+
+            val stdout = response.out.orEmpty()
+            val stderr = response.err.orEmpty()
+            Log.d(TAG, "yt-dlp: exit=${response.exitCode} client=${playerClient ?: "default"} stdoutLen=${stdout.length}")
+            if (stderr.isNotBlank()) {
+                Log.d(TAG, "yt-dlp stderr: ${stderr.take(500)}")
+            }
+
+            val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
+            if (streamUrl.isNullOrBlank()) {
+                Log.d(TAG, "yt-dlp: no URL videoId=$videoId client=${playerClient ?: "default"}")
+                null
+            } else {
+                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
+                streamUrl
+            }
+        } finally {
+            if (cookieFile.exists()) cookieFile.delete()
         }
     }
 }

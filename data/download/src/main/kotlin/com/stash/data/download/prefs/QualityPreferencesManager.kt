@@ -107,7 +107,13 @@ fun QualityTier.toYtDlpArgs(): List<String> = when (this) {
     // 140 → 251 → 250 → bestaudio so a single missing itag doesn't
     // fail the whole download.
     QualityTier.MAX -> listOf(
-        "-f", "141/140/251/250/bestaudio",
+        // 141 (AAC 256k) for premium accounts that expose it; otherwise prefer
+        // 251 (Opus 160k) over 140 (AAC 128k). The old order tried 140 before
+        // 251, so free accounts (where 141 is absent) silently downloaded AAC
+        // 128 instead of the higher-quality Opus 160 that's freely available
+        // (measured on-device 2026-06-26: 54/54 free downloads now land on 251;
+        // 774/Opus-256 was offered first but YouTube never serves it free here).
+        "-f", "141/251/140/250/bestaudio",
         "--embed-metadata",
     )
     QualityTier.BEST -> listOf(

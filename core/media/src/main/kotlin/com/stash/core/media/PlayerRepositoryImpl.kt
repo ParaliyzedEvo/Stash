@@ -423,6 +423,12 @@ class PlayerRepositoryImpl @Inject constructor(
         pendingNavIndex = targetIndex
         skipNavJob?.cancel()
         skipNavJob = scope.launch {
+            // Debounce: a rapid skip-storm cancels this job before the delay
+            // elapses, so only the settled target reaches the expensive resolve
+            // below. (Cancelling the job alone doesn't help — the resolve runs
+            // on PreviewUrlExtractor's detached scope and keeps burning the
+            // cap-1 yt-dlp slot — so we must stop it from STARTING.)
+            delay(SKIP_RESOLVE_DEBOUNCE_MS)
             setQueueInternal(
                 currentQueueTracks,
                 targetIndex,
@@ -1998,6 +2004,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Refresh prefetch if cached URL has less than this margin remaining. */
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
+
+        /**
+         * Debounce before a skip actually resolves its target. Rapid skips each
+         * cancel the prior [skipNavJob] during this window, so only the SETTLED
+         * track runs the (cap-1, ~3s) yt-dlp resolve — without it, every skipped
+         * track fires a full resolve that serializes on the single slot and the
+         * landed track waits behind the whole storm (observed on-device
+         * 2026-06-26). Short enough to feel instant on a single deliberate skip.
+         */
+        private const val SKIP_RESOLVE_DEBOUNCE_MS = 350L
     }
 
     /**
