@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.amz
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
@@ -14,11 +15,17 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Before
 import org.junit.Test
 
 class AmzCaptchaInterceptorTest {
 
     private val captchaClient: AmzCaptchaClient = mockk()
+
+    // Default: no session cookie minted yet. Individual tests override.
+    @Before fun stubSessionCookie() {
+        every { captchaClient.sessionCookie } returns null
+    }
 
     /**
      * Minimal fake [Interceptor.Chain]: returns canned response codes (queued in
@@ -85,6 +92,20 @@ class AmzCaptchaInterceptorTest {
     }
 
     @Test
+    fun `root page request is bypassed - no token, no mint (recursion guard)`() {
+        // mint() bootstraps by GETting "/" through the SAME shared client; the
+        // interceptor must NOT try to tokenize that or it recurses forever.
+        val interceptor = AmzCaptchaInterceptor(captchaClient)
+        val chain = FakeChain(req("https://amz.squid.wtf/"), ArrayDeque(listOf(200)))
+
+        interceptor.intercept(chain)
+
+        assertThat(chain.proceeded).hasSize(1)
+        assertThat(chain.proceeded[0].header("x-captcha-token")).isNull()
+        coVerify(exactly = 0) { captchaClient.mint() }
+    }
+
+    @Test
     fun `amz api request mints once and attaches token header`() {
         coEvery { captchaClient.mint() } returns "tok-1"
         val interceptor = AmzCaptchaInterceptor(captchaClient)
@@ -95,6 +116,40 @@ class AmzCaptchaInterceptorTest {
         assertThat(chain.proceeded).hasSize(1)
         assertThat(chain.proceeded[0].header("x-captcha-token")).isEqualTo("tok-1")
         coVerify(exactly = 1) { captchaClient.mint() }
+    }
+
+    @Test
+    fun `api request carries session cookie and browser fingerprint headers`() {
+        coEvery { captchaClient.mint() } returns "tok-1"
+        every { captchaClient.sessionCookie } returns "amz_web_sess=abc123"
+        val interceptor = AmzCaptchaInterceptor(captchaClient)
+        val chain = FakeChain(req("https://amz.squid.wtf/api/search"), ArrayDeque(listOf(200)))
+
+        interceptor.intercept(chain)
+
+        val sent = chain.proceeded.single()
+        // Page-session cookie is required downstream (token is bound to it).
+        assertThat(sent.header("Cookie")).isEqualTo("amz_web_sess=abc123")
+        // Browser fingerprint that the "web interface only" gate checks for.
+        assertThat(sent.header("Origin")).isEqualTo("https://amz.squid.wtf")
+        assertThat(sent.header("Accept-Language")).isNotEmpty()
+        assertThat(sent.header("Sec-Fetch-Site")).isEqualTo("same-origin")
+        assertThat(sent.header("Sec-Fetch-Mode")).isEqualTo("cors")
+        assertThat(sent.header("Sec-Fetch-Dest")).isEqualTo("empty")
+        assertThat(sent.header("sec-ch-ua")).isNotEmpty()
+        assertThat(sent.header("User-Agent")).contains("Mozilla")
+    }
+
+    @Test
+    fun `api request without a minted cookie omits the Cookie header`() {
+        coEvery { captchaClient.mint() } returns "tok-1"
+        every { captchaClient.sessionCookie } returns null
+        val interceptor = AmzCaptchaInterceptor(captchaClient)
+        val chain = FakeChain(req("https://amz.squid.wtf/api/search"), ArrayDeque(listOf(200)))
+
+        interceptor.intercept(chain)
+
+        assertThat(chain.proceeded.single().header("Cookie")).isNull()
     }
 
     @Test
