@@ -1919,7 +1919,9 @@ private fun SupporterPill(
                             fontStyle = FontStyle.Italic,
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 4,
+                        // Cap long donation messages at 2 lines so a paragraph
+                        // can't balloon the pill height; ellipsis trims the rest.
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
