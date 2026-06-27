@@ -235,18 +235,6 @@ class StashPlaybackService : MediaLibraryService() {
         val audioSessionId = audioManager.generateAudioSessionId()
         android.util.Log.i("StashPlayback", "Generated audio session ID: $audioSessionId")
 
-        // Optimised buffer for local music playback: larger buffers eliminate
-        // micro-stutters from storage I/O; lower playback thresholds keep
-        // start-up snappy.
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 30_000,
-                /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000,
-            )
-            .build()
-
         // Route ONLY YouTube-origin streaming items through the refresh chain
         // (RefreshingDataSource → yt-dlp on 403). Background queue-fill seeds
         // the timeline with cheap InnerTube/iOS placeholder URLs that 403 past
@@ -284,7 +272,6 @@ class StashPlaybackService : MediaLibraryService() {
             handleAudioFocus = true,
             mediaSourceFactory = mediaSourceFactory,
             audioAttributes = audioAttributes,
-            loadControl = loadControl,
         )
 
         // Set the pre-generated session ID on the player (A only)
@@ -297,7 +284,6 @@ class StashPlaybackService : MediaLibraryService() {
                     handleAudioFocus = false,
                     mediaSourceFactory = mediaSourceFactory,
                     audioAttributes = audioAttributes,
-                    loadControl = loadControl,
                 )
             },
             crossfadePreference = crossfadePreference,
@@ -425,8 +411,21 @@ class StashPlaybackService : MediaLibraryService() {
         handleAudioFocus: Boolean,
         mediaSourceFactory: StashMediaSourceFactory,
         audioAttributes: AudioAttributes,
-        loadControl: DefaultLoadControl,
     ): ExoPlayer {
+        // Each player gets its OWN LoadControl. Media3 forbids two players
+        // sharing a LoadControl unless they also share a playback thread —
+        // crossfade player B runs on its own thread, so a shared instance
+        // throws IllegalStateException on B.prepare(). Optimised buffer for
+        // local music: large buffers kill storage-I/O micro-stutters; low
+        // playback thresholds keep start-up snappy.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+            )
+            .build()
         val builder = ExoPlayer.Builder(this)
             .setRenderersFactory(StashRenderersFactory(this, eqController, loudnessController))
             .setMediaSourceFactory(mediaSourceFactory)
@@ -448,6 +447,7 @@ class StashPlaybackService : MediaLibraryService() {
     private fun startCrossfadePoll(player: Player) {
         crossfadePollJob?.cancel()
         val controller = crossfadeController ?: return
+        android.util.Log.i("Crossfade", "startCrossfadePoll isPlaying=${player.isPlaying}")
         crossfadePollJob = serviceScope.launch {
             while (isActive && player.isPlaying) {
                 val nextIndex = player.nextMediaItemIndex

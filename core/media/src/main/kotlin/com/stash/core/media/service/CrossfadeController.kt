@@ -1,6 +1,7 @@
 package com.stash.core.media.service
 
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -12,15 +13,18 @@ import kotlinx.coroutines.launch
 
 /**
  * Drives an equal-power crossfade on **automatic** track-end → next-track
- * transitions only ("A owns the queue, B fades the tail").
+ * transitions only ("A owns the queue, B fades the incoming in").
  *
  * Player A ([playerA]) is the existing service player and stays the sole
  * MediaSession/queue owner. Player B is a transient, controller-invisible
  * second [ExoPlayer], built lazily via [buildPlayerB] on first fade and pooled
- * thereafter. When a fade arms, B takes over the **outgoing** track's tail
- * (seeked to A's current position) and ramps down while A jumps to the
- * incoming track at volume 0 and ramps up. On completion B is stopped and
- * returned to the pool with A at full volume on the new track.
+ * thereafter. When a fade arms, A keeps playing the **outgoing** track
+ * untouched (its volume ramps down — no decoder hand-off on the audible tail,
+ * and Now Playing stays on the outgoing) while B plays the pre-buffered
+ * **incoming** track from 0 and ramps up. At the end, A advances the queue onto
+ * the incoming and seeks to where B is (Now Playing switches here); a short
+ * micro-fade B→A masks the decoders' position drift, then B returns to the
+ * pool with A at full volume on the new track.
  *
  * Every condition is re-checked each [onProgress] tick via the pure
  * [shouldArm]; the actual ramp uses the pure [equalPowerVolumes]. Any manual
@@ -51,9 +55,11 @@ class CrossfadeController(
      */
     @Volatile private var selfSeek = false
 
+    @Volatile private var lastArmLogMs = 0L
+
     init {
-        scope.launch { crossfadePreference.enabled.collect { enabled = it } }
-        scope.launch { crossfadePreference.durationMs.collect { durationMs = it } }
+        scope.launch { crossfadePreference.enabled.collect { enabled = it; android.util.Log.i("Crossfade", "enabled<-$it") } }
+        scope.launch { crossfadePreference.durationMs.collect { durationMs = it; android.util.Log.i("Crossfade", "durationMs<-$it") } }
     }
 
     /** True while a fade was started by this controller's own next-seek. Consumed once. */
@@ -69,6 +75,20 @@ class CrossfadeController(
      * already fading, so it is safe to call on every tick.
      */
     fun onProgress(positionMs: Long, durationMs: Long, hasResolvedNext: Boolean, repeatMode: Int) {
+        // TEMP instrumentation: log the arm decision near track end.
+        if (durationMs > 0) {
+            val remaining = durationMs - positionMs
+            if (remaining in 0..20_000) {
+                val now = System.currentTimeMillis()
+                if (now - lastArmLogMs > 900) {
+                    lastArmLogMs = now
+                    android.util.Log.i(
+                        "Crossfade",
+                        "onProgress enabled=$enabled fading=$fading remaining=$remaining dur=$durationMs hasNext=$hasResolvedNext repeat=$repeatMode xfadeMs=${this.durationMs}",
+                    )
+                }
+            }
+        }
         if (fading || !enabled) return
         if (durationMs <= 0) return
         val inputs = ArmInputs(
@@ -83,44 +103,80 @@ class CrossfadeController(
     }
 
     private fun startFade() {
-        val outgoing = playerA.currentMediaItem ?: return
-        val pos = playerA.currentPosition
-        val fadeMs = durationMs
+        val nextIndex = playerA.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET) return
+        val incoming = runCatching { playerA.getMediaItemAt(nextIndex) }.getOrNull() ?: return
         fading = true
         fadeJob = scope.launch {
             val b = playerB ?: buildPlayerB().also { playerB = it }
-            // Prime B on the outgoing tail and wait (bounded) for it to buffer
-            // at A's position BEFORE muting A, so the A→B hand-off doesn't gap.
-            // ponytail: poll B's state instead of wiring a one-shot listener.
-            b.volume = 1f
-            b.setMediaItem(outgoing)
-            b.seekTo(pos)
+            // Prime B on the INCOMING from 0 and buffer it before starting, so
+            // the fade-in is clean. The OUTGOING stays on A untouched — no
+            // decoder hand-off on the audible tail — and A keeps owning the
+            // MediaSession, so Now Playing stays on the outgoing for the whole
+            // fade and only switches to the incoming at the hand-off below.
+            b.volume = 0f
+            b.setMediaItem(incoming)
+            b.seekTo(0)
             b.playWhenReady = false
             b.prepare()
-            if (!awaitReady(b, timeoutMs = 1500)) {
+            if (!awaitReady(b, READY_TIMEOUT_MS)) {
                 // B couldn't buffer in time → degrade to a normal hard cut.
                 b.stop(); b.clearMediaItems()
                 fading = false
                 return@launch
             }
-            // Fire: B carries the outgoing tail at full volume; A advances the
-            // queue to the incoming track muted, then both ramp equal-power.
-            selfSeek = true
-            playerA.seekToNextMediaItem()
-            playerA.volume = 0f
+            // Fade length tracks the outgoing's remaining time (now that B has
+            // buffered), minus a margin so A doesn't reach its natural end (and
+            // auto-advance on its own) mid-hand-off.
+            val remaining = playerA.duration - playerA.currentPosition
+            val fadeMs = minOf(durationMs, remaining - HANDOFF_MARGIN_MS)
+            if (fadeMs < MIN_FADE_MS) {
+                b.stop(); b.clearMediaItems()
+                fading = false
+                return@launch
+            }
+            android.util.Log.i("Crossfade", "fire fadeMs=$fadeMs remaining=$remaining incoming=${incoming.mediaId} stateB=${b.playbackState}")
             b.playWhenReady = true
-
+            // Equal-power overlap: A (outgoing) ramps down, B (incoming) up.
             var elapsed = 0L
             while (elapsed < fadeMs) {
                 val (out, inc) = equalPowerVolumes(elapsed.toFloat() / fadeMs)
-                b.volume = out
-                playerA.volume = inc
+                playerA.volume = out
+                b.volume = inc
+                if (elapsed % 1000L < STEP_MS) {
+                    android.util.Log.i(
+                        "Crossfade",
+                        "t=$elapsed Avol=$out stateA=${playerA.playbackState} isPlayA=${playerA.isPlaying} | Bvol=$inc stateB=${b.playbackState} isPlayB=${b.isPlaying}",
+                    )
+                }
                 delay(STEP_MS)
                 elapsed += STEP_MS
             }
-            b.stop(); b.clearMediaItems()
+            playerA.volume = 0f
+            b.volume = 1f
+            // Hand back to A: advance the queue onto the incoming (Now Playing
+            // switches here — the fade is done) and seek A to where B is, kept
+            // silent until it has buffered. A short micro-fade B→A then masks
+            // the small position drift between the two decoders.
+            val handoffPos = b.currentPosition
+            selfSeek = true
+            playerA.seekToNextMediaItem()
+            playerA.seekTo(handoffPos)
+            playerA.volume = 0f
+            awaitReady(playerA, READY_TIMEOUT_MS)
+            android.util.Log.i("Crossfade", "handoff pos=$handoffPos stateA=${playerA.playbackState} item=${playerA.currentMediaItem?.mediaId}")
+            var m = 0L
+            while (m < MICRO_FADE_MS) {
+                val (bv, av) = equalPowerVolumes(m.toFloat() / MICRO_FADE_MS)
+                b.volume = bv
+                playerA.volume = av
+                delay(STEP_MS)
+                m += STEP_MS
+            }
             playerA.volume = 1f
+            b.stop(); b.clearMediaItems()
             fading = false
+            android.util.Log.i("Crossfade", "done")
         }
     }
 
@@ -164,5 +220,17 @@ class CrossfadeController(
     private companion object {
         const val STEP_MS = 50L
         const val READY_POLL_MS = 20L
+
+        /** Max wait for a player to buffer to STATE_READY before a fade/hand-off. */
+        const val READY_TIMEOUT_MS = 2000L
+
+        /** Outgoing slack left when the main ramp ends, so A can hand off before its natural end. */
+        const val HANDOFF_MARGIN_MS = 500L
+
+        /** Below this much usable outgoing tail, skip the fade (hard cut). */
+        const val MIN_FADE_MS = 800L
+
+        /** Short B→A blend on the incoming to mask the two decoders' position drift. */
+        const val MICRO_FADE_MS = 150L
     }
 }
