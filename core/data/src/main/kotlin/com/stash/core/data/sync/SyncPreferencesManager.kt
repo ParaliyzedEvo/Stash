@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.syncPrefsDataStore by preferencesDataStore(
+// internal (not private) so unit tests in this module can clear the live
+// store between runs — deleting the backing file alone doesn't reset
+// DataStore's in-memory cache.
+internal val Context.syncPrefsDataStore by preferencesDataStore(
     name = "sync_preferences",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
@@ -38,8 +41,8 @@ data class SyncPreferences(
     val syncMinute: Int = 0,
     val autoSyncEnabled: Boolean = false,
     val wifiOnly: Boolean = true,
-    val spotifySyncMode: SyncMode = SyncMode.REFRESH,
-    val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
+    val spotifySyncMode: SyncMode = SyncMode.ACCUMULATE,
+    val youtubeSyncMode: SyncMode = SyncMode.ACCUMULATE,
     /**
      * When true, the YouTube Music Liked Songs sync filters out UGC, cover,
      * live, and podcast tracks (anything that isn't ATV / OMV /
@@ -65,7 +68,7 @@ data class SyncPreferences(
  *
  * Migration note — v0.5: the old global `sync_mode` key is transparently
  * forwarded into `spotify_sync_mode` the first time the new key is read
- * without a value. YouTube defaults independently to [SyncMode.REFRESH].
+ * without a value. YouTube defaults independently to [SyncMode.ACCUMULATE].
  * The split matches the user-facing UI, which renders a separate chip
  * row in each service's Sync Preferences card.
  */
@@ -109,7 +112,7 @@ class SyncPreferencesManager @Inject constructor(
     val spotifySyncMode: Flow<SyncMode> =
         context.syncPrefsDataStore.data.map { resolveSpotifyMode(it) }
 
-    /** Reactive stream of YouTube's sync mode. Defaults to REFRESH. */
+    /** Reactive stream of YouTube's sync mode. Defaults to ACCUMULATE. */
     val youtubeSyncMode: Flow<SyncMode> =
         context.syncPrefsDataStore.data.map { resolveYoutubeMode(it) }
 
@@ -134,14 +137,15 @@ class SyncPreferencesManager @Inject constructor(
         val explicit = prefs[Keys.SPOTIFY_SYNC_MODE]?.let { parseMode(it) }
         if (explicit != null) return explicit
         // Fall back to the legacy global key so users who set a preference
-        // before the split don't silently flip to REFRESH after upgrade.
-        return prefs[Keys.LEGACY_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.REFRESH
+        // before the split keep their choice; absent that, default to the
+        // safe ACCUMULATE (never-delete) mode.
+        return prefs[Keys.LEGACY_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.ACCUMULATE
     }
 
     private fun resolveYoutubeMode(
         prefs: androidx.datastore.preferences.core.Preferences,
     ): SyncMode =
-        prefs[Keys.YOUTUBE_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.REFRESH
+        prefs[Keys.YOUTUBE_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.ACCUMULATE
 
     private fun parseMode(name: String): SyncMode? =
         runCatching { SyncMode.valueOf(name) }.getOrNull()

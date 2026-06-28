@@ -97,10 +97,10 @@ data class SyncUiState(
     /**
      * Per-source sync modes. Each service's Sync Preferences card
      * renders its own Refresh/Accumulate chip row bound to one of
-     * these. Defaults to REFRESH for both.
+     * these. Defaults to ACCUMULATE for both.
      */
-    val spotifySyncMode: SyncMode = SyncMode.REFRESH,
-    val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
+    val spotifySyncMode: SyncMode = SyncMode.ACCUMULATE,
+    val youtubeSyncMode: SyncMode = SyncMode.ACCUMULATE,
     /**
      * When true, the YT Music Liked Songs sync filters out UGC, cover,
      * live, and podcast tracks. Other YT content is unaffected. Default false.
