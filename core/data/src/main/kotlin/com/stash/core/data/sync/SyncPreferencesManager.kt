@@ -12,6 +12,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -186,6 +187,16 @@ class SyncPreferencesManager @Inject constructor(
     suspend fun setYoutubeSyncMode(mode: SyncMode) {
         context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_SYNC_MODE] = mode.name }
     }
+
+    /**
+     * True if EITHER source's mix mode is ACCUMULATE. The orphan-cleanup sweep
+     * ([com.stash.core.data.repository.MusicRepository.cleanOrphanedMixTracks])
+     * consults this and deletes nothing while any source accumulates — the
+     * library is append-only. Only when BOTH sources are REFRESH does cleanup run.
+     */
+    suspend fun anyAccumulate(): Boolean =
+        spotifySyncMode.first() == SyncMode.ACCUMULATE ||
+            youtubeSyncMode.first() == SyncMode.ACCUMULATE
 
     /** Persist the YT Music Liked Songs studio-only filter. */
     suspend fun setYoutubeLikedStudioOnly(enabled: Boolean) {
