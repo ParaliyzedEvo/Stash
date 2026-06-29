@@ -59,10 +59,16 @@ class AmzApiClient @Inject constructor(
      */
     suspend fun search(query: String, limit: Int = 25): List<AmzSearchItem> =
         withContext(Dispatchers.IO) {
+            // NOTE: no `country` field. amz.squid.wtf routes a `country` to that
+            // country's operator-side Amazon session cookie; when that session
+            // goes stale (e.g. US, 2026-06-28) the search returns an empty
+            // trackList or 503 "Suche braucht gültige Session". Omitting country
+            // uses the proxy's working default session. (Confirmed live: with
+            // country=US → empty; without → full results.)
             val body = buildString {
                 append("{\"query\":")
                 append(jsonString(query))
-                append(",\"country\":\"US\",\"content_type\":\"TRACK\",\"limit\":")
+                append(",\"content_type\":\"TRACK\",\"limit\":")
                 append(limit)
                 append("}")
             }
@@ -84,12 +90,14 @@ class AmzApiClient @Inject constructor(
      * @throws AmzRateLimitedException on HTTP 429.
      */
     suspend fun track(asin: String, tier: String = DEFAULT_TIER): AmzTrack? = withContext(Dispatchers.IO) {
+        // No `country` (see search()): the stale per-country Amazon session
+        // breaks track resolution the same way. Omit it → working default.
         val body = buildString {
             append("{\"asin\":")
             append(jsonString(asin))
             append(",\"tier\":")
             append(jsonString(tier))
-            append(",\"country\":\"US\"}")
+            append("}")
         }
         val raw = post("$baseUrl/track", body) ?: return@withContext null
         runCatching {
@@ -131,7 +139,8 @@ class AmzApiClient @Inject constructor(
     fun streamUrl(asin: String, tier: String = DEFAULT_TIER): String {
         val encoded = URLEncoder.encode(asin, "UTF-8")
         val encodedTier = URLEncoder.encode(tier, "UTF-8")
-        return "$baseUrl/stream?asin=$encoded&country=US&tier=$encodedTier"
+        // No `country` (see search()/track()): use the proxy's default session.
+        return "$baseUrl/stream?asin=$encoded&tier=$encodedTier"
     }
 
     /** JSON-encode [value] to a quoted, escaped JSON string literal. */

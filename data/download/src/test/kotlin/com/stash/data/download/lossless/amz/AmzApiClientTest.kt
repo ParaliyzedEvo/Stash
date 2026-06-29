@@ -45,6 +45,9 @@ class AmzApiClientTest {
         val body = request.body.readUtf8()
         assertThat(body).contains("Kanye West Can't Tell Me Nothing")
         assertThat(body).contains("\"content_type\":\"TRACK\"")
+        // Must NOT send `country`: it routes to a stale per-country Amazon
+        // session that returns empty results / 503 (regression guard).
+        assertThat(body).doesNotContain("country")
     }
 
     @Test fun `track returns parsed metadata`() = runTest {
@@ -78,7 +81,7 @@ class AmzApiClientTest {
     @Test fun `streamUrl encodes the requested tier`() {
         client.baseUrl = "https://amz.squid.wtf/api"
         assertThat(client.streamUrl("B07K7VJXVG", tier = "ultrahd"))
-            .isEqualTo("https://amz.squid.wtf/api/stream?asin=B07K7VJXVG&country=US&tier=ultrahd")
+            .isEqualTo("https://amz.squid.wtf/api/stream?asin=B07K7VJXVG&tier=ultrahd")
     }
 
     @Test fun `track parses drm key and resolves relative stream url to absolute`() = runTest {
@@ -128,7 +131,7 @@ class AmzApiClientTest {
     @Test fun `streamUrl returns the exact expected string`() {
         client.baseUrl = "https://amz.squid.wtf/api"
         assertThat(client.streamUrl("B07K7VJXVG"))
-            .isEqualTo("https://amz.squid.wtf/api/stream?asin=B07K7VJXVG&country=US&tier=best")
+            .isEqualTo("https://amz.squid.wtf/api/stream?asin=B07K7VJXVG&tier=best")
     }
 
     companion object {
