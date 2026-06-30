@@ -251,7 +251,7 @@ class TrackDownloadWorker @AssistedInject constructor(
             // before calling doWork(). This setForeground() call UPDATES the
             // notification to show the real track count now that we know it.
             syncStateManager.onDownloading(downloaded = 0, total = total)
-            setForeground(createForegroundInfo(downloaded = 0, total = total))
+            safeSetForeground(createForegroundInfo(downloaded = 0, total = total))
 
             // ── Parallel download loop ──────────────────────────────────
             //
@@ -677,7 +677,7 @@ class TrackDownloadWorker @AssistedInject constructor(
         // Swap the foreground notification to single-track wording so the user
         // sees "Retrying download — Artist – Title" instead of the chain-mode
         // "Syncing playlists / Preparing downloads…" copy.
-        setForeground(
+        safeSetForeground(
             createForegroundInfo(
                 title = "Retrying download",
                 text = "${track.artist} – ${track.title}",
@@ -820,6 +820,26 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
         }
         return Result.success()
+    }
+
+    /**
+     * Best-effort [setForeground]. On Android 12+ (and stricter on 14/15,
+     * which this app targets) calling `setForeground()` re-invokes
+     * `startForegroundService()`, which the OS REFUSES with
+     * [android.app.ForegroundServiceStartNotAllowedException] when the app is in
+     * the background — which it routinely is by the time this worker runs, since
+     * the PlaylistFetch + Diff phases ahead of it can take a minute on a large
+     * library (screen off / app switched away in the meantime). That exception
+     * is only a *notification update* failure, but uncaught it propagated to
+     * doWork's top-level catch and FAILED the entire sync with 0 downloads
+     * ("sync falls flat"). The actual download work doesn't need the
+     * re-promotion — the worker is already executing — so swallow the failure
+     * and continue as a normal background job. Mirrors
+     * [DiscoveryDownloadWorker.safeUpdateForeground].
+     */
+    private suspend fun safeSetForeground(info: ForegroundInfo) {
+        runCatching { setForeground(info) }
+            .onFailure { Log.w(TAG, "setForeground failed (foreground-restricted / backgrounded); continuing without notification update", it) }
     }
 
     /**
