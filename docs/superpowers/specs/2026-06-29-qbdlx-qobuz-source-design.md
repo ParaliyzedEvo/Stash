@@ -39,7 +39,7 @@ Confirmed against the real Qobuz API during brainstorming:
   - `markDead(token)` — persists a dead flag (DataStore) so cold starts don't re-probe dead tokens; cleared on a successful call. Dead = auth failure only (`UserUnauthenticated`), never region-lock or transient.
   - `allDead(): Boolean` — true when pasted + all pool tokens are dead → drives the §7 notification.
 - **`QbdlxQobuzApiClient`** (`data:download`): direct-Qobuz client (distinct from the proxy `QobuzApiClient`). Signs (MD5, **injectable `request_ts` clock** for test vectors), attaches `X-App-Id` + `X-User-Auth-Token`, calls `catalog/search` + `track/getFileUrl` on `www.qobuz.com` via a derived OkHttp client (no shared-client mutation). Classifies the response into `Ok(url, format)` / `TokenDead` / `RegionLocked` / `Transient`(throw) from the JSON `restrictions`/`sample`/`format_id` — this classification, not the URL inspector, is authoritative.
-- **`QbdlxQobuzSource : LosslessSource`** (id `"qbdlx_qobuz"`): `resolve(query)` and a `resolveImmediate(query)` bypass (mirrors `QobuzSource.resolveImmediate`) for the stream resolver. Flow: rate-limit acquire → search (ISRC-first) → match (shared matcher) → signed getFileUrl. On `TokenDead`: `markDead` + try next token (bounded); on `RegionLocked`: try `tokensForRegion` (bounded); accept downgraded-but-lossless. `SourceResult.format` is read from the **getFileUrl response**, not the search row. `isEnabled()` = not circuit-broken AND not `allDead()`.
+- **`QbdlxQobuzSource : LosslessSource`** (id `"qbdlx_qobuz"`): `resolve(query)` and a `resolveImmediate(query)` bypass (mirrors `QobuzSource.resolveImmediate`) for the stream resolver. Flow: rate-limit acquire → search (ISRC-first) → match (shared matcher) → signed getFileUrl. On `TokenDead`: `markDead` + try next token (bounded); on `RegionLocked`: try `tokensForRegion` (bounded); accept downgraded-but-lossless. `SourceResult.format` is read from the **getFileUrl response**, not the search row. **Two gating predicates** (mirroring `QobuzSource`): `isEnabled()` = not circuit-broken AND not `allDead()` for the download/chain path; `isEnabledForStreaming()` = **`!allDead()` only** (deliberately omits the breaker) so a user tap on the stream path bypasses the circuit breaker like `QobuzSource.isEnabledForStreaming()`. `resolveImmediate` uses the streaming predicate; `resolve` uses `isEnabled()`.
 - **`QbdlxStreamResolver`** (`core:media`): mirrors `QobuzStreamResolver` — **delegates to `QbdlxQobuzSource.resolveImmediate()`**, wraps the returned URL as `StreamUrl(url, origin="qbdlx", expires=etsp)`. No matching logic duplicated. Plays via the default media-source factory (plain https FLAC).
 - **All-pool-dead notification** — reuse the squid `CaptchaExpiredNotifier` pattern: when `allDead()` trips, surface a "qbdlx tokens expired — paste a fresh one" badge/notice in Settings so the redundancy doesn't silently evaporate.
 - **Settings**: a "qbdlx (Qobuz)" enable toggle + a "Paste token" field.
@@ -52,10 +52,12 @@ Confirmed against the real Qobuz API during brainstorming:
 
 ```
 resolve(TrackQuery)  [or resolveImmediate for stream]
-  ├─ if !isEnabled() return null      (circuit-broken OR allDead)
+  ├─ gate: resolve → !isEnabled() return null (breaker OR allDead);
+  │         resolveImmediate → !isEnabledForStreaming() return null (allDead only, NO breaker)
   ├─ rateLimiter.acquire("qbdlx_qobuz")
   ├─ token = credentialStore.activeToken()           (pasted > round-robin pool)
   ├─ search: catalog/search?query=<isrc | artist+title>&type=tracks   [X-User-Auth-Token]
+  │    classify search response too: 401/UserUnauthenticated → markDead(token); rotate (bounded)
   ├─ match (shared QobuzCandidateMatcher; ISRC→0.95 else fuzzy; MIN_CONFIDENCE)
   ├─ getFileUrl(track_id, format_id=27, signed)   [X-App-Id + token]
   │    classify JSON:
@@ -76,7 +78,7 @@ resolve(TrackQuery)  [or resolveImmediate for stream]
 - **Per-account load:** the limiter keys one bucket by source id, but ban risk is per-account. `activeToken()` **round-robins** across live pool tokens so steady traffic spreads, instead of pinning (and banning) one. Region-locked retries are bounded (≤3) so a locked track can't multiply request volume across all accounts.
 
 ## 7. Error handling
-- **Token dead** (`UserUnauthenticated`/`sample:true`/fmt5) → `markDead` (persisted), rotate to next live token (bounded), retry; whole pool+pasted dead → `isEnabled()` false + Settings "expired, paste token" notice.
+- **Token dead** (`UserUnauthenticated`/`sample:true`/fmt5, on **either** the search or getFileUrl response — a dead token typically fails at search first) → `markDead` (persisted), rotate to next live token (bounded), retry; whole pool+pasted dead → `isEnabled()` false + Settings "expired, paste token" notice.
 - **Region lock** (`FormatRestrictedByFormatAvailability` with no usable format, or upstream 4xx) → try country-matched then other tokens (bounded ≤3); token stays healthy.
 - **Format downgrade** (hi-res→CD, still FLAC) → accept; report real delivered format.
 - **429** → backoff via limiter, no breaker trip.
