@@ -109,8 +109,15 @@ class AmzApiClientTest {
         assertThat(track.streamUrl).isNull()
     }
 
-    @Test fun `search returns empty list on non-2xx`() = runTest {
+    @Test fun `search throws AmzApiException on non-2xx (real HTTP error, not a catalog miss)`() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThrows(AmzApiException::class.java) {
+            kotlinx.coroutines.runBlocking { client.search("anything") }
+        }
+    }
+
+    @Test fun `search returns empty list on a 2xx with no results (healthy catalog miss)`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"trackList":[]}"""))
         assertThat(client.search("anything")).isEmpty()
     }
 

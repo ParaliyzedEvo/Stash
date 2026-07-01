@@ -90,7 +90,7 @@ class AmzSourceTest {
     }
 
     @Test
-    fun `no credible match returns null and reports failure`() = runTest {
+    fun `no credible match reports SUCCESS not failure (search worked, catalog miss is not a health failure)`() = runTest {
         enabledAndAcquired()
         // Wrong artist + wrong title → matcher rejects below threshold.
         coEvery { client.search(any(), any()) } returns
@@ -99,26 +99,47 @@ class AmzSourceTest {
         val result = source().resolve(query)
 
         assertThat(result).isNull()
-        coVerify { rateLimiter.reportFailure(AmzSource.SOURCE_ID) }
+        // The search HTTP call succeeded → amz is healthy. A catalog miss must NOT
+        // trip the circuit breaker (doing so disabled amz for tracks it DOES have
+        // whenever a few uncatalogued tracks missed — observed when kennyy/squid
+        // were down and every track routed to amz).
+        coVerify { rateLimiter.reportSuccess(AmzSource.SOURCE_ID) }
+        coVerify(exactly = 0) { rateLimiter.reportFailure(AmzSource.SOURCE_ID) }
         coVerify(exactly = 0) { client.track(any()) }
     }
 
     @Test
-    fun `empty candidates returns null and reports failure`() = runTest {
+    fun `empty candidates reports SUCCESS not failure (amz answered, just no results)`() = runTest {
         enabledAndAcquired()
         coEvery { client.search(any(), any()) } returns emptyList()
 
         val result = source().resolve(query)
 
         assertThat(result).isNull()
-        coVerify { rateLimiter.reportFailure(AmzSource.SOURCE_ID) }
+        coVerify { rateLimiter.reportSuccess(AmzSource.SOURCE_ID) }
+        coVerify(exactly = 0) { rateLimiter.reportFailure(AmzSource.SOURCE_ID) }
     }
 
     @Test
-    fun `track metadata null returns null and reports failure`() = runTest {
+    fun `track metadata null returns null without tripping the breaker`() = runTest {
         enabledAndAcquired()
         coEvery { client.search(any(), any()) } returns listOf(candidate())
         coEvery { client.track("B00ABCDEFG") } returns null
+
+        val result = source().resolve(query)
+
+        assertThat(result).isNull()
+        // Search succeeded → amz reported healthy; a per-track lookup miss is not a
+        // source-health failure, so the breaker must not trip.
+        coVerify(exactly = 0) { rateLimiter.reportFailure(AmzSource.SOURCE_ID) }
+    }
+
+    @Test
+    fun `search HTTP error trips the breaker (a real failure, unlike a catalog miss)`() = runTest {
+        enabledAndAcquired()
+        // AmzApiClient.search throws on a real HTTP error (5xx / unreachable),
+        // distinct from a 2xx that simply returns no results.
+        coEvery { client.search(any(), any()) } throws AmzApiException("HTTP 502")
 
         val result = source().resolve(query)
 

@@ -72,9 +72,16 @@ class AmzApiClient @Inject constructor(
                 append(limit)
                 append("}")
             }
-            val raw = post("$baseUrl/search", body) ?: return@withContext emptyList()
+            // post() returns null on a real HTTP error (non-2xx) or network failure
+            // — throw so the caller can distinguish "amz is unhealthy" (report
+            // failure → breaker) from "amz answered with no results" (an empty 2xx
+            // list below, which is a healthy catalog miss, NOT a failure).
+            val raw = post("$baseUrl/search", body)
+                ?: throw AmzApiException("search failed: no body (HTTP error / unreachable)")
             runCatching { json.decodeFromString<AmzSearchResponse>(raw).trackList }
                 .getOrElse { e ->
+                    // 2xx body that didn't parse — treat as a (healthy) empty result
+                    // rather than a hard failure; amz still responded.
                     Log.w(TAG, "search parse failed", e)
                     emptyList()
                 }
@@ -206,3 +213,12 @@ class AmzApiClient @Inject constructor(
  * `QobuzApiException.status == 429`.
  */
 class AmzRateLimitedException : RuntimeException("amz.squid.wtf 429: rate limited")
+
+/**
+ * Thrown by [AmzApiClient.search] on a real HTTP error (non-2xx) or an
+ * unreachable host — i.e. amz is genuinely unhealthy. Distinct from a 2xx
+ * response that simply returns no results (a healthy catalog miss): the source
+ * reports a failure (→ circuit breaker) only for the former, never the latter,
+ * so a track Amazon doesn't carry can't disable amz for tracks it does.
+ */
+class AmzApiException(message: String) : RuntimeException(message)
