@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.data.download.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,7 +54,6 @@ class QbdlxCredentialStore @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val pastedTokenKey = stringPreferencesKey("pasted_token")
-    private val deadTokensKey = stringPreferencesKey("dead_tokens")
 
     /**
      * Test seam: the raw `token:country,token:country` pool. Defaults to the
@@ -62,8 +62,23 @@ class QbdlxCredentialStore @Inject constructor(
      */
     internal var poolRaw: String = BuildConfig.QBDLX_TOKEN_POOL
 
+    /** Injectable clock (epoch ms) for the dead-token cooldown; overridable in tests. */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
     /** Round-robin cursor across live pool tokens. In-memory (per process). */
     private val rrIndex = AtomicInteger(0)
+
+    /**
+     * Token → epoch-ms until which it is considered dead. IN-MEMORY and
+     * TIME-BOXED (circuit-breaker style), deliberately NOT persisted: a single
+     * transient auth failure (a cold-start network blip, or a 401 from the same
+     * shared token being used concurrently across apps/the website) must NOT
+     * permanently disable a token. It's skipped for [DEAD_COOLDOWN_MS] then
+     * auto-retried; a genuinely-dead token just re-marks. A process restart also
+     * clears it. This replaces an earlier persisted, permanent dead-set that
+     * left the whole pool stuck on one transient 401 ("token expired" forever).
+     */
+    private val deadUntil = ConcurrentHashMap<String, Long>()
 
     /** Parsed pool: (token, ISO-2 country). Split on the LAST ':' defensively. */
     private fun pool(): List<Pair<String, String>> =
@@ -74,19 +89,21 @@ class QbdlxCredentialStore @Inject constructor(
                 if (i <= 0) e to "" else e.substring(0, i) to e.substring(i + 1)
             }
 
-    private suspend fun deadSet(): Set<String> =
-        context.qbdlxCredentialsDataStore.data.first()[deadTokensKey]
-            ?.split(",")?.filter { it.isNotEmpty() }?.toSet()
-            ?: emptySet()
+    /** True when [token] is within its dead cooldown. Cleans up expired entries. */
+    private fun isDead(token: String): Boolean {
+        val until = deadUntil[token] ?: return false
+        if (clock() < until) return true
+        deadUntil.remove(token) // cooldown elapsed — give it another chance
+        return false
+    }
 
     private suspend fun pastedToken(): String? =
         context.qbdlxCredentialsDataStore.data.first()[pastedTokenKey]?.takeIf { it.isNotBlank() }
 
     /** The token to use now: pasted (if live) first, else round-robin over live pool tokens. */
     suspend fun activeToken(): String? {
-        val dead = deadSet()
-        pastedToken()?.let { if (it !in dead) return it }
-        val live = pool().map { it.first }.filter { it !in dead }
+        pastedToken()?.let { if (!isDead(it)) return it }
+        val live = pool().map { it.first }.filter { !isDead(it) }
         if (live.isEmpty()) return null
         return live[(rrIndex.getAndIncrement() % live.size + live.size) % live.size]
     }
@@ -96,8 +113,7 @@ class QbdlxCredentialStore @Inject constructor(
      * the rest, capped at [MAX_REGION_TRIES].
      */
     suspend fun tokensForRegion(country: String?): List<String> {
-        val dead = deadSet()
-        val live = pool().filter { it.first !in dead }
+        val live = pool().filter { !isDead(it.first) }
         val sorted = if (country.isNullOrBlank()) {
             live
         } else {
@@ -106,46 +122,46 @@ class QbdlxCredentialStore @Inject constructor(
         return sorted.map { it.first }.take(MAX_REGION_TRIES)
     }
 
-    /** Persist [token] as dead (auth-failed), so it's skipped until [recordAlive]. */
-    suspend fun markDead(token: String) {
-        context.qbdlxCredentialsDataStore.edit { prefs ->
-            val current = prefs[deadTokensKey]?.split(",")?.filter { it.isNotEmpty() }?.toMutableSet()
-                ?: mutableSetOf()
-            current += token
-            prefs[deadTokensKey] = current.joinToString(",")
-        }
+    /** Mark [token] dead for the cooldown window (auth failure). Auto-retried after. */
+    fun markDead(token: String) {
+        deadUntil[token] = clock() + DEAD_COOLDOWN_MS
     }
 
-    /** Clear a token's dead flag after a successful call. */
-    suspend fun recordAlive(token: String) {
-        context.qbdlxCredentialsDataStore.edit { prefs ->
-            val current = prefs[deadTokensKey]?.split(",")?.filter { it.isNotEmpty() }?.toMutableSet()
-                ?: return@edit
-            if (current.remove(token)) prefs[deadTokensKey] = current.joinToString(",")
-        }
+    /** Clear a token's dead flag (a successful call, or a fresh paste). */
+    fun recordAlive(token: String) {
+        deadUntil.remove(token)
     }
 
-    /** Set (or clear, with null) the user-pasted token. */
+    /**
+     * Set (or clear, with null) the user-pasted token. Clears any dead flag on
+     * the pasted value so pasting a token (the "expired — paste a fresh one"
+     * recovery) always gives it a clean chance, even if that same string was
+     * previously marked dead.
+     */
     suspend fun setPastedToken(token: String?) {
+        val t = token?.trim()
+        if (!t.isNullOrEmpty()) recordAlive(t)
         context.qbdlxCredentialsDataStore.edit { prefs ->
-            val t = token?.trim()
             if (t.isNullOrEmpty()) prefs.remove(pastedTokenKey) else prefs[pastedTokenKey] = t
         }
     }
 
     /** True when the pasted token (if any) is dead AND every pool token is dead. */
     suspend fun allDead(): Boolean {
-        val dead = deadSet()
-        pastedToken()?.let { if (it !in dead) return false }
-        return pool().map { it.first }.all { it in dead }
+        pastedToken()?.let { if (!isDead(it)) return false }
+        return pool().map { it.first }.all { isDead(it) }
     }
 
-    /** Test-only: wipe persisted pasted/dead state (the DataStore is per-process). */
+    /** Test-only: wipe persisted pasted state + in-memory dead flags. */
     internal suspend fun clearPersistedForTest() {
+        deadUntil.clear()
         context.qbdlxCredentialsDataStore.edit { it.clear() }
     }
 
     companion object {
         const val MAX_REGION_TRIES = 3
+
+        /** Dead-token cooldown before a token is retried (circuit-breaker style). */
+        const val DEAD_COOLDOWN_MS = 10 * 60_000L
     }
 }

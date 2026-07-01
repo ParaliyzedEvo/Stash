@@ -85,13 +85,20 @@ class QbdlxApiClient @Inject constructor(
             .get().build()
         httpClient.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
-            if (resp.code == 401) throw QbdlxAuthException(401, body.take(120))
-            if (!resp.isSuccessful) throw QbdlxApiException(resp.code, body.take(120))
+            if (resp.code == 401) {
+                android.util.Log.w(TAG, "auth 401 on ${url.substringBefore('?').substringAfterLast('/')}: ${body.take(160)}")
+                throw QbdlxAuthException(401, body.take(120))
+            }
+            if (!resp.isSuccessful) {
+                android.util.Log.w(TAG, "HTTP ${resp.code} on ${url.substringBefore('?').substringAfterLast('/')}: ${body.take(160)}")
+                throw QbdlxApiException(resp.code, body.take(120))
+            }
             return body
         }
     }
 
     private companion object {
+        const val TAG = "QbdlxApiClient"
         const val ORIGIN = "https://www.qobuz.com"
         const val UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36"
     }
