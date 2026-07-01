@@ -156,7 +156,6 @@ class QbdlxCredentialStore @Inject constructor(
         val pasted = pastedToken()
         val poolTokens = pool().map { it.first }
         val total = poolTokens.size + (if (pasted != null) 1 else 0)
-        android.util.Log.i(TAG, "allDead check: poolRawLen=${poolRaw.length} poolSize=${poolTokens.size} pasted=${pasted != null} deadInMem=${deadUntil.size}")
         if (total == 0) return false // no credentials at all — not "expired"
         pasted?.let { if (!isDead(it)) return false }
         return poolTokens.all { isDead(it) }
@@ -169,10 +168,16 @@ class QbdlxCredentialStore @Inject constructor(
     }
 
     companion object {
-        private const val TAG = "QbdlxCredentialStore"
         const val MAX_REGION_TRIES = 3
 
-        /** Dead-token cooldown before a token is retried (circuit-breaker style). */
-        const val DEAD_COOLDOWN_MS = 10 * 60_000L
+        // Dead-token cooldown before a token is retried (circuit-breaker style).
+        // 60s, deliberately SHORT: a dead token blacks out BOTH download and
+        // streaming (isEnabled + isEnabledForStreaming gate on allDead), so a
+        // TRANSIENT failure (a preview/522/timeout on the shared account under
+        // the download burst) that trips a mark-dead must not kill qbdlx for
+        // long. 60s recovers fast; a genuinely-dead token just re-marks, costing
+        // one doomed attempt per minute (negligible). Was 10min — far too long a
+        // total blackout for a transient ("completely dead" until it aged out).
+        const val DEAD_COOLDOWN_MS = 60_000L
     }
 }
