@@ -44,6 +44,7 @@ fun SettingsPlaybackScreen(
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
     val forceArcodOnly by viewModel.forceArcodOnly.collectAsStateWithLifecycle()
     val forceAmzOnly by viewModel.forceAmzOnly.collectAsStateWithLifecycle()
+    val forceQbdlxOnly by viewModel.forceQbdlxOnly.collectAsStateWithLifecycle()
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
 
@@ -89,6 +90,14 @@ fun SettingsPlaybackScreen(
                             subtitle = "Route streaming AND downloads through amz (Amazon Music) only — no Qobuz, no YouTube. For testing the amz source. Turn off after testing.",
                             checked = forceAmzOnly,
                             onCheckedChange = viewModel::setForceAmzOnly,
+                        )
+                    },
+                    {
+                        SettingsToggleRow(
+                            title = "Force qbdlx only (test)",
+                            subtitle = "Route streaming AND downloads through qbdlx (direct Qobuz) only — no other sources, no YouTube. For testing the qbdlx source. Turn off after testing.",
+                            checked = forceQbdlxOnly,
+                            onCheckedChange = viewModel::setForceQbdlxOnly,
                         )
                     },
                 ),

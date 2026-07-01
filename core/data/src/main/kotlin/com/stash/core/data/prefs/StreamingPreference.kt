@@ -50,6 +50,7 @@ class StreamingPreference @Inject constructor(
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
     private val forceArcodOnlyKey = booleanPreferencesKey("force_arcod_only")
     private val forceAmzOnlyKey = booleanPreferencesKey("force_amz_only")
+    private val forceQbdlxOnlyKey = booleanPreferencesKey("force_qbdlx_only")
     // Retained only so [purgeRetiredKeys] can delete it from existing
     // installs; the antra source was removed (see fix/remove-antra).
     private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
@@ -101,6 +102,18 @@ class StreamingPreference @Inject constructor(
         prefs[forceAmzOnlyKey] ?: false
     }
 
+    /**
+     * Test-only toggle. When `true`, BOTH the streaming ([StreamSourceRegistry])
+     * and lossless-download ([LosslessSourceRegistry]) registries route through
+     * the qbdlx (direct-Qobuz) source ONLY — kennyy/squid/arcod/amz/YouTube are
+     * removed from play so a track either resolves via qbdlx or fails visibly.
+     * Used to exercise qbdlx on demand (it normally ranks last and is hard to
+     * trigger). Default `false` (normal use).
+     */
+    val forceQbdlxOnly: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[forceQbdlxOnlyKey] ?: false
+    }
+
     suspend fun current(): Boolean = enabled.first()
 
     suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
@@ -108,6 +121,8 @@ class StreamingPreference @Inject constructor(
     suspend fun isForceArcodOnly(): Boolean = forceArcodOnly.first()
 
     suspend fun isForceAmzOnly(): Boolean = forceAmzOnly.first()
+
+    suspend fun isForceQbdlxOnly(): Boolean = forceQbdlxOnly.first()
 
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
@@ -127,6 +142,10 @@ class StreamingPreference @Inject constructor(
 
     suspend fun setForceAmzOnly(value: Boolean) {
         context.streamingDataStore.edit { it[forceAmzOnlyKey] = value }
+    }
+
+    suspend fun setForceQbdlxOnly(value: Boolean) {
+        context.streamingDataStore.edit { it[forceQbdlxOnlyKey] = value }
     }
 
     suspend fun setStreamQuality(tier: StreamQualityTier) {

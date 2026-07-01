@@ -195,6 +195,18 @@ class SettingsViewModel @Inject constructor(
             initialValue = false,
         )
 
+    val forceQbdlxOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        streamingPreference.forceQbdlxOnly.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    /** Persist the force-qbdlx-only test toggle flip. */
+    fun setForceQbdlxOnly(v: Boolean) = viewModelScope.launch {
+        streamingPreference.setForceQbdlxOnly(v)
+    }
+
     /** Persist the force-arcod-only test toggle flip. */
     fun setForceArcodOnly(v: Boolean) = viewModelScope.launch {
         streamingPreference.setForceArcodOnly(v)

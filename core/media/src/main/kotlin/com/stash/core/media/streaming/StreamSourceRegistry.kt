@@ -95,7 +95,14 @@ class StreamSourceRegistry @Inject constructor(
         allowYtDlp: Boolean = true,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
-            if (streamingPreference.isForceArcodOnly()) {
+            if (streamingPreference.isForceQbdlxOnly()) {
+                // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
+                // so qbdlx can be exercised even when the proxies are healthy.
+                // Takes precedence over the other force toggles. Gated by
+                // allowYtDlp like arcod/amz so speculative background fill spends
+                // no pool-account quota (only foreground/next-up resolves hit it).
+                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+            } else if (streamingPreference.isForceArcodOnly()) {
                 // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
                 // ARCOD path can be exercised even when the Qobuz proxies are
                 // healthy. Takes precedence over forceAmzOnly and

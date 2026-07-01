@@ -41,7 +41,9 @@ class LosslessSourceRegistry @Inject constructor(
         // amz-only: filter the chain to a single source so a forced download
         // exercises that source even when the Qobuz proxies are healthy. A
         // miss falls through to a normal null return (no quota to protect).
-        val ordered = if (streamingPreference.isForceArcodOnly()) {
+        val ordered = if (streamingPreference.isForceQbdlxOnly()) {
+            orderedSources().filter { it.id == "qbdlx_qobuz" }
+        } else if (streamingPreference.isForceArcodOnly()) {
             orderedSources().filter { it.id == "arcod" }
         } else if (streamingPreference.isForceAmzOnly()) {
             orderedSources().filter { it.id == "amz" }
