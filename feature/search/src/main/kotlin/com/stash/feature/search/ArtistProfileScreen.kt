@@ -56,6 +56,8 @@ fun ArtistProfileScreen(
     val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
+    val playlistSheetItem by vm.playlistSheetItem.collectAsStateWithLifecycle()
+    val userPlaylists by vm.userPlaylists.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
@@ -105,6 +107,9 @@ fun ArtistProfileScreen(
                         onPreview = { track -> vm.delegate.previewTrack(track) },
                         onStopPreview = vm.delegate::stopPreview,
                         onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
+                        onPlayNext = vm::onPlayNext,
+                        onAddToQueue = vm::onAddToQueue,
+                        onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                     )
@@ -120,10 +125,24 @@ fun ArtistProfileScreen(
                     onPreview = { track -> vm.delegate.previewTrack(track) },
                     onStopPreview = vm.delegate::stopPreview,
                     onDownload = { vm.delegate.downloadTrack(it.toTrackItem()) },
+                    onPlayNext = vm::onPlayNext,
+                    onAddToQueue = vm::onAddToQueue,
+                    onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
                 )
             }
+        }
+
+        if (playlistSheetItem != null) {
+            com.stash.core.ui.components.SaveToPlaylistSheet(
+                playlists = userPlaylists.map {
+                    com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
+                },
+                onSaveToPlaylist = vm::onSaveToPlaylist,
+                onCreatePlaylist = vm::onCreatePlaylistAndAdd,
+                onDismiss = vm::onDismissPlaylistSheet,
+            )
         }
     }
 }
@@ -144,6 +163,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onPreview: (TrackItem) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (SearchResultItem) -> Unit,
+    onPlayNext: (TrackItem) -> Unit,
+    onAddToQueue: (TrackItem) -> Unit,
+    onRequestAddToPlaylist: (TrackItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
 ) {
@@ -160,6 +182,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 onPreview = onPreview,
                 onStopPreview = onStopPreview,
                 onDownload = onDownload,
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onRequestAddToPlaylist = onRequestAddToPlaylist,
             )
         }
     }

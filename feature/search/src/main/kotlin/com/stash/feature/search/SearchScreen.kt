@@ -106,6 +106,8 @@ fun SearchScreen(
     val waitingForLosslessIds by viewModel.delegate.waitingForLosslessIds.collectAsStateWithLifecycle()
     val previewLoadingId by viewModel.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
+    val playlistSheetItem by viewModel.playlistSheetItem.collectAsStateWithLifecycle()
+    val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -150,11 +152,25 @@ fun SearchScreen(
                     onPreview = { track -> viewModel.onResultTap(track) },
                     onStopPreview = viewModel.delegate::stopPreview,
                     onDownload = { t -> viewModel.delegate.downloadTrack(t.toTrackItem()) },
+                    onPlayNext = viewModel::onPlayNext,
+                    onAddToQueue = viewModel::onAddToQueue,
+                    onRequestAddToPlaylist = viewModel::onRequestAddToPlaylist,
                     onVisibleSongIdsChanged = viewModel::prefetchVisible,
                 )
                 SearchStatus.Empty -> NoResultsMessage()
                 is SearchStatus.Error -> ErrorMessage(status.message)
             }
+        }
+
+        if (playlistSheetItem != null) {
+            com.stash.core.ui.components.SaveToPlaylistSheet(
+                playlists = userPlaylists.map {
+                    com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
+                },
+                onSaveToPlaylist = viewModel::onSaveToPlaylist,
+                onCreatePlaylist = viewModel::onCreatePlaylistAndAdd,
+                onDismiss = viewModel::onDismissPlaylistSheet,
+            )
         }
     }
 }
@@ -255,6 +271,9 @@ private fun SectionedResultsList(
     onPreview: (TrackItem) -> Unit,
     onStopPreview: () -> Unit,
     onDownload: (TrackSummary) -> Unit,
+    onPlayNext: (TrackItem) -> Unit = {},
+    onAddToQueue: (TrackItem) -> Unit = {},
+    onRequestAddToPlaylist: (TrackItem) -> Unit = {},
     onVisibleSongIdsChanged: (List<String>) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
@@ -339,6 +358,9 @@ private fun SectionedResultsList(
                             onPreview = { onPreview(t.toTrackItem()) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(t) },
+                            onPlayNext = { onPlayNext(t.toTrackItem()) },
+                            onAddToQueue = { onAddToQueue(t.toTrackItem()) },
+                            onAddToPlaylist = { onRequestAddToPlaylist(t.toTrackItem()) },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }

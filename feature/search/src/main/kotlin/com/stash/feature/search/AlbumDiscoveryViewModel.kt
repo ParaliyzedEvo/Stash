@@ -9,6 +9,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
+import com.stash.core.model.Playlist
 import com.stash.core.model.TrackItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -16,9 +17,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -101,6 +104,26 @@ class AlbumDiscoveryViewModel @Inject constructor(
      */
     private val _userMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
+
+    // Add-to-playlist picker: the item awaiting a playlist choice (null = sheet closed).
+    private val _playlistSheetItem = MutableStateFlow<TrackItem?>(null)
+    val playlistSheetItem: StateFlow<TrackItem?> = _playlistSheetItem.asStateFlow()
+
+    val userPlaylists: StateFlow<List<Playlist>> =
+        delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun onPlayNext(item: TrackItem) = delegate.playNext(item)
+    fun onAddToQueue(item: TrackItem) = delegate.addToQueue(item)
+    fun onRequestAddToPlaylist(item: TrackItem) { _playlistSheetItem.value = item }
+    fun onDismissPlaylistSheet() { _playlistSheetItem.value = null }
+    fun onSaveToPlaylist(playlistId: Long) {
+        _playlistSheetItem.value?.let { delegate.addToPlaylist(it, playlistId) }
+        _playlistSheetItem.value = null
+    }
+    fun onCreatePlaylistAndAdd(name: String) {
+        _playlistSheetItem.value?.let { delegate.createPlaylistAndAdd(it, name) }
+        _playlistSheetItem.value = null
+    }
 
     /**
      * Guards against kicking the preview prefetcher more than once per screen

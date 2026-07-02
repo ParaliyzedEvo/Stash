@@ -76,6 +76,8 @@ fun AlbumDiscoveryScreen(
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
+    val playlistSheetItem by vm.playlistSheetItem.collectAsStateWithLifecycle()
+    val userPlaylists by vm.userPlaylists.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm) {
@@ -192,6 +194,9 @@ fun AlbumDiscoveryScreen(
                                         ),
                                     )
                                 },
+                                onPlayNext = { vm.onPlayNext(trackItem) },
+                                onAddToQueue = { vm.onAddToQueue(trackItem) },
+                                onAddToPlaylist = { vm.onRequestAddToPlaylist(trackItem) },
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
                                     .clickable { vm.playAlbum(startIndex = index) },
@@ -237,6 +242,17 @@ fun AlbumDiscoveryScreen(
                         TextButton(onClick = vm::onDownloadAllDismissed) { Text("Cancel") }
                     }
                 },
+            )
+        }
+
+        if (playlistSheetItem != null) {
+            com.stash.core.ui.components.SaveToPlaylistSheet(
+                playlists = userPlaylists.map {
+                    com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
+                },
+                onSaveToPlaylist = vm::onSaveToPlaylist,
+                onCreatePlaylist = vm::onCreatePlaylistAndAdd,
+                onDismiss = vm::onDismissPlaylistSheet,
             )
         }
     }
