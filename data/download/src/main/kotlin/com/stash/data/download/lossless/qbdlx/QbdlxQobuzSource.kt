@@ -281,7 +281,7 @@ class QbdlxQobuzSource @Inject constructor(
 
     companion object {
         const val SOURCE_ID = "qbdlx_qobuz"
-        private const val TAG = "QbdlxQobuzSource"
+        private const val TAG = "QbdlxSource" // no "Qobuz" — keeps the source out of shared logcat diagnostics
 
         /**
          * Hard ceiling on token rotations per phase. The tried-set is the real
