@@ -2,6 +2,8 @@ package com.stash.data.download.lossless.qbdlx.di
 
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSource
+import com.stash.data.download.lossless.qbdlx.QbdlxPoolCipher
+import com.stash.data.download.lossless.qbdlx.QbdlxPoolProvider
 import com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource
 import com.stash.data.download.lossless.qbdlx.QbdlxSigner
 import dagger.Binds
@@ -39,5 +41,10 @@ abstract class QbdlxModule {
         @Provides
         @Singleton
         fun provideQbdlxSigner(): QbdlxSigner = QbdlxSigner(BuildConfig.QBDLX_APP_SECRET)
+
+        @Provides
+        @Singleton
+        fun provideQbdlxPoolProvider(): QbdlxPoolProvider =
+            QbdlxPoolProvider { QbdlxPoolCipher.decrypt(BuildConfig.QBDLX_TOKEN_POOL) }
     }
 }

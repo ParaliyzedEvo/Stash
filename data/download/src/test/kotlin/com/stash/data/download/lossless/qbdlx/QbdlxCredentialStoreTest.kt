@@ -24,11 +24,11 @@ import org.robolectric.RobolectricTestRunner
 class QbdlxCredentialStoreTest {
 
     private val ctx = ApplicationProvider.getApplicationContext<Context>()
-    private fun store(pool: String) = QbdlxCredentialStore(ctx).also { it.poolRaw = pool }
+    private fun store(pool: String) = QbdlxCredentialStore(ctx) { "" }.also { it.poolRaw = pool }
 
     @Before
     fun setUp() {
-        runBlocking { QbdlxCredentialStore(ctx).clearPersistedForTest() }
+        runBlocking { QbdlxCredentialStore(ctx) { "" }.clearPersistedForTest() }
     }
 
     @Test

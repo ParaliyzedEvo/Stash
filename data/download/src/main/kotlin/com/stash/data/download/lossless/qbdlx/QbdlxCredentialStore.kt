@@ -8,7 +8,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.stash.data.download.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -53,15 +52,15 @@ private val Context.qbdlxCredentialsDataStore: DataStore<Preferences> by prefere
 @Singleton
 class QbdlxCredentialStore @Inject constructor(
     @ApplicationContext private val context: Context,
+    poolProvider: QbdlxPoolProvider,
 ) {
     private val pastedTokenKey = stringPreferencesKey("pasted_token")
 
     /**
      * Test seam: the raw `token:country,token:country` pool. Defaults to the
-     * bundled BuildConfig value; tests override it with a known pool so they
-     * don't depend on BuildConfig.
+     * decrypted BuildConfig blob (via [QbdlxPoolProvider]); tests override it.
      */
-    internal var poolRaw: String = BuildConfig.QBDLX_TOKEN_POOL
+    internal var poolRaw: String = poolProvider.rawPool()
 
     /** Injectable clock (epoch ms) for the dead-token cooldown; overridable in tests. */
     internal var clock: () -> Long = { System.currentTimeMillis() }
