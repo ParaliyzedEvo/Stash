@@ -471,10 +471,17 @@ class PlayerRepositoryImpl @Inject constructor(
         if (next.isUnavailableForDisplay) return
         if (!streamingPreference.current()) return
 
-        // Fresh-cache check — avoid redundant work when the URL is good.
+        // Fresh-cache check — avoid redundant resolve work when the URL is
+        // good. Still upgrade the timeline slot before returning: the URL may
+        // have been cached by LazyResolvingDataSource (cold jump), which can't
+        // touch item metadata, so the placeholder would keep its unstamped
+        // extras and Now Playing would read the "opus" fallback for it.
         val cached = streamUrlCache.get(next.id)
         val nowMs = System.currentTimeMillis()
-        if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) return
+        if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
+            refreshControllerMediaItem(controller, next, cached)
+            return
+        }
 
         // In-flight dedup. Three call sites fire prefetchNextTrack (the
         // currentIndex watcher + the two explicit kicks in setQueue/fill), and
@@ -1367,7 +1374,46 @@ class PlayerRepositoryImpl @Inject constructor(
     internal fun computeIsStreaming(scheme: String?, streamOrigin: String?): Boolean =
         scheme == "http" || scheme == "https" || streamOrigin != null
 
+    /**
+     * Stamps the CURRENTLY-PLAYING item's metadata with the stream-quality
+     * extras from [streamUrlCache] once a resolve has cached them. Full-
+     * timeline placeholders enter the timeline WITHOUT codec/bit-depth/origin
+     * extras (those only exist after a resolve), and [LazyResolvingDataSource]
+     * resolves in the DataSource layer where item metadata can't be touched —
+     * without this, Now Playing shows the "opus" fallback and no streaming
+     * indicator for the playing track. Metadata-only replace with the URI left
+     * untouched, which Media3 applies in place without interrupting playback.
+     * Runs on every state refresh but is O(1) and self-disarming: once the
+     * codec extra is present (or there's nothing cached to stamp) it no-ops.
+     * Internal as a test seam.
+     */
+    internal fun maybeStampCurrentItemQuality(controller: MediaController) {
+        val item = controller.currentMediaItem ?: return
+        val extras = item.mediaMetadata.extras ?: return
+        if (extras.getString(EXTRA_STREAM_CODEC) != null) return // already stamped
+        val trackId = extras.getLong(EXTRA_TRACK_ID, -1L)
+        if (trackId <= 0L) return
+        val stream = streamUrlCache.get(trackId) ?: return // downloaded/unresolved: nothing to stamp
+        if (stream.codec == null && stream.origin == null) return
+        val newExtras = Bundle(extras).apply {
+            stream.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
+            stream.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
+            stream.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
+            stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
+            stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+        }
+        val stamped = item.buildUpon()
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(newExtras).build())
+            .build()
+        controller.replaceMediaItem(controller.currentMediaItemIndex, stamped)
+    }
+
     private fun updateState(controller: MediaController) {
+        // Quality badge for the playing track: see [maybeStampCurrentItemQuality].
+        // The replace fires onTimelineChanged, which re-runs updateState with
+        // the stamped extras — the guard inside makes the second pass a no-op.
+        maybeStampCurrentItemQuality(controller)
+
         val currentItem = controller.currentMediaItem
         val track = currentItem?.toTrack()
         // Timeline snapshot rebuilt only when the timeline actually changes
