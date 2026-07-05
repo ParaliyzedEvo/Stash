@@ -1308,6 +1308,16 @@ interface TrackDao {
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 
     /**
+     * Set the Spotify URI for a track — used by the cross-platform like
+     * resolver to persist a match it found for a previously YouTube-only
+     * track, so the next heart dedups and the URI is cached. Can throw on the
+     * `spotify_uri` UNIQUE index if another row already owns it; callers wrap
+     * this best-effort (the resolved URI is still used for the like in-memory).
+     */
+    @Query("UPDATE tracks SET spotify_uri = :spotifyUri WHERE id = :trackId")
+    suspend fun updateSpotifyUri(trackId: Long, spotifyUri: String)
+
+    /**
      * Backfill duration_ms when the existing row has 0 (no duration yet —
      * usually because the row was inserted by `ensureTrackPersisted` from
      * a streaming-engine Track whose `durationMs` wasn't yet known at

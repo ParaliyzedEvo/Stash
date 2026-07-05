@@ -61,6 +61,7 @@ class LikeCoordinator internal constructor(
     private val likePreferences: LikePreferences,
     private val dispatcher: LikeDestinationDispatcher,
     private val trackDao: TrackDao,
+    private val crossPlatformResolver: CrossPlatformLikeResolver,
     scope: CoroutineScope,
     private val minGapMs: Long,
 ) {
@@ -69,11 +70,13 @@ class LikeCoordinator internal constructor(
         likePreferences: LikePreferences,
         dispatcher: LikeDestinationDispatcher,
         trackDao: TrackDao,
+        crossPlatformResolver: CrossPlatformLikeResolver,
     ) : this(
         stashLikedRepository,
         likePreferences,
         dispatcher,
         trackDao,
+        crossPlatformResolver,
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
         MIN_GAP_MS_DEFAULT,
     )
@@ -119,7 +122,24 @@ class LikeCoordinator internal constructor(
     private suspend fun process(op: MirrorOp) {
         val mirrorSpotify = likePreferences.mirrorLikesSpotifyNow()
         val mirrorYt = likePreferences.mirrorLikesYtMusicNow()
-        val track = trackDao.getById(op.trackId)?.toDomain() ?: return
+        var track = trackDao.getById(op.trackId)?.toDomain() ?: return
+
+        // Cross-platform backfill (LIKE only): a heart should reach BOTH
+        // enabled services even when the track was only known to one. If a
+        // mirror target is on but the track lacks that platform's id, resolve
+        // it (search + confidence-gate + persist) so the destination fires.
+        // Skipped on unlike — we can't have saved to a platform we never
+        // resolved. Best-effort: a failed/ambiguous match just means that one
+        // destination is skipped this time, exactly as before.
+        if (op.liked) {
+            if (mirrorSpotify && track.spotifyUri == null) {
+                crossPlatformResolver.ensureSpotifyUri(track)?.let { track = track.copy(spotifyUri = it) }
+            }
+            if (mirrorYt && track.youtubeId == null) {
+                crossPlatformResolver.ensureYoutubeId(track)?.let { track = track.copy(youtubeId = it) }
+            }
+        }
+
         val destinations = buildSet {
             if (mirrorSpotify && track.spotifyUri != null) add(Destination.SPOTIFY)
             if (mirrorYt && track.youtubeId != null) add(Destination.YT_MUSIC)
