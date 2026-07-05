@@ -358,7 +358,55 @@ class SearchViewModelTest {
         vm.onSearchCommitted()
         advanceUntilIdle()
 
-        verifyBlocking(store) { record("beatles") }
+        verifyBlocking(store) {
+            record(RecentSearch(RecentSearch.Type.QUERY, "beatles"))
+        }
+    }
+
+    @Test
+    fun `opening an artist profile records an artist entry with avatar`() = runTest {
+        // The reported bug: search an artist, open the profile, back out —
+        // nothing was saved, because artist taps were pure navigation.
+        val store = mock<RecentSearchesStore> {
+            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+        val vm = newVm(recentSearchesStore = store)
+
+        vm.onArtistOpened(id = "UC123", name = "Lil Wayne", avatarUrl = "https://img/w.jpg")
+        advanceUntilIdle()
+
+        verifyBlocking(store) {
+            record(
+                RecentSearch(
+                    type = RecentSearch.Type.ARTIST,
+                    text = "Lil Wayne",
+                    thumbnailUrl = "https://img/w.jpg",
+                    artistId = "UC123",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `tapping a track result records a track entry with thumbnail`() = runTest {
+        val store = mock<RecentSearchesStore> {
+            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+        val vm = newVm(recentSearchesStore = store)
+
+        vm.onResultTap(sampleTrack().copy(thumbnailUrl = "https://img/t.jpg"))
+        advanceUntilIdle()
+
+        verifyBlocking(store) {
+            record(
+                RecentSearch(
+                    type = RecentSearch.Type.TRACK,
+                    text = "Hit Song",
+                    subtitle = "Hit Artist",
+                    thumbnailUrl = "https://img/t.jpg",
+                ),
+            )
+        }
     }
 
     @Test

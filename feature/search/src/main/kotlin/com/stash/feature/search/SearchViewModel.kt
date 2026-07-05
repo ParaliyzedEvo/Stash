@@ -106,9 +106,22 @@ class SearchViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun onPlayNext(item: TrackItem) = delegate.playNext(item)
-    fun onAddToQueue(item: TrackItem) = delegate.addToQueue(item)
-    fun onRequestAddToPlaylist(item: TrackItem) { _playlistSheetItem.value = item }
+    fun onPlayNext(item: TrackItem) {
+        recordTrack(item)
+        delegate.playNext(item)
+    }
+    fun onAddToQueue(item: TrackItem) {
+        recordTrack(item)
+        delegate.addToQueue(item)
+    }
+    fun onDownload(item: TrackItem) {
+        recordTrack(item)
+        delegate.downloadTrack(item)
+    }
+    fun onRequestAddToPlaylist(item: TrackItem) {
+        recordTrack(item)
+        _playlistSheetItem.value = item
+    }
     fun onDismissPlaylistSheet() { _playlistSheetItem.value = null }
     fun onSaveToPlaylist(playlistId: Long) {
         _playlistSheetItem.value?.let { delegate.addToPlaylist(it, playlistId) }
@@ -119,28 +132,69 @@ class SearchViewModel @Inject constructor(
         _playlistSheetItem.value = null
     }
 
-    /** Recent search queries (most-recent-first), shown in the empty state. */
-    val recentSearches: StateFlow<List<String>> =
+    /** Recent searches (most-recent-first), shown in the empty state. */
+    val recentSearches: StateFlow<List<RecentSearch>> =
         recentSearchesStore.recent.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * Record the current query as a recent search. Call on COMMITTED searches
-     * only — the keyboard Search action or a result tap — NOT on every
-     * keystroke (that would save every prefix: "bea", "beat", "beatl"…).
+     * only — the keyboard Search action or a result interaction — NOT on
+     * every keystroke (that would save every prefix: "bea", "beat", "beatl"…).
      */
     fun onSearchCommitted() {
         val q = _uiState.value.query.trim()
-        if (q.isNotEmpty()) viewModelScope.launch { recentSearchesStore.record(q) }
+        if (q.isNotEmpty()) {
+            viewModelScope.launch {
+                recentSearchesStore.record(RecentSearch(RecentSearch.Type.QUERY, q))
+            }
+        }
     }
 
-    /** Re-run a tapped recent search. */
-    fun onRecentSearchTapped(query: String) {
-        onQueryChanged(query)
-        onSearchCommitted()
+    /**
+     * The user opened an artist profile from results — record the ARTIST
+     * itself (name + avatar + browse id) so the recents row shows the face
+     * and taps navigate straight back. This was the missing commit: artist
+     * taps are pure navigation, so "search artist → open profile → back"
+     * saved nothing while track taps and the keyboard Search key did.
+     */
+    fun onArtistOpened(id: String, name: String, avatarUrl: String?) {
+        viewModelScope.launch {
+            recentSearchesStore.record(
+                RecentSearch(
+                    type = RecentSearch.Type.ARTIST,
+                    text = name,
+                    thumbnailUrl = avatarUrl,
+                    artistId = id,
+                ),
+            )
+        }
     }
 
-    fun removeRecentSearch(query: String) {
-        viewModelScope.launch { recentSearchesStore.remove(query) }
+    /** A track row was engaged (tap/download/queue/playlist) — record it with art. */
+    private fun recordTrack(item: TrackItem) {
+        viewModelScope.launch {
+            recentSearchesStore.record(
+                RecentSearch(
+                    type = RecentSearch.Type.TRACK,
+                    text = item.title,
+                    subtitle = item.artist,
+                    thumbnailUrl = item.thumbnailUrl,
+                ),
+            )
+        }
+    }
+
+    /** Re-run a tapped recent search (ARTIST entries navigate in the screen). */
+    fun onRecentSearchTapped(entry: RecentSearch) {
+        // Move it back to the front regardless of type.
+        viewModelScope.launch { recentSearchesStore.record(entry) }
+        if (entry.type != RecentSearch.Type.ARTIST) {
+            onQueryChanged(entry.searchText)
+        }
+    }
+
+    fun removeRecentSearch(entry: RecentSearch) {
+        viewModelScope.launch { recentSearchesStore.remove(entry.text) }
     }
 
     fun clearRecentSearches() {
@@ -234,8 +288,9 @@ class SearchViewModel @Inject constructor(
      * identically when a stream-routing refusal fires.
      */
     fun onResultTap(item: TrackItem) {
-        // Tapping a result means the current query was useful — record it.
-        onSearchCommitted()
+        // Tapping a result means the search was useful — record the TRACK
+        // itself (title + artist + thumbnail), not just the raw query text.
+        recordTrack(item)
         viewModelScope.launch {
             _tappedTrackId.value = item.syntheticId()
             try {

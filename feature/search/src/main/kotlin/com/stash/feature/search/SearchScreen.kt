@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -140,8 +141,14 @@ fun SearchScreen(
 
             when (val status = state.status) {
                 SearchStatus.Idle -> RecentSearches(
-                    queries = recentSearches,
-                    onTap = viewModel::onRecentSearchTapped,
+                    entries = recentSearches,
+                    onTap = { entry ->
+                        viewModel.onRecentSearchTapped(entry)
+                        // ARTIST recents navigate straight back to the profile.
+                        if (entry.type == RecentSearch.Type.ARTIST && entry.artistId != null) {
+                            onNavigateToArtist(entry.artistId, entry.text, entry.thumbnailUrl)
+                        }
+                    },
                     onRemove = viewModel::removeRecentSearch,
                     onClearAll = viewModel::clearRecentSearches,
                 )
@@ -155,12 +162,17 @@ fun SearchScreen(
                     previewState = previewState,
                     tappedTrackId = tappedTrackId,
                     losslessPrefetcher = viewModel.losslessPrefetcher,
-                    onArtistClick = { a -> onNavigateToArtist(a.id, a.name, a.avatarUrl) },
+                    onArtistClick = { a ->
+                        // Opening a profile IS the committed search — record the
+                        // artist (with avatar) so backing out still saved it.
+                        viewModel.onArtistOpened(a.id, a.name, a.avatarUrl)
+                        onNavigateToArtist(a.id, a.name, a.avatarUrl)
+                    },
                     onAlbumClick = onNavigateToAlbum,
                     onTopTrackClick = { t -> viewModel.onResultTap(t.toTrackItem()) },
                     onPreview = { track -> viewModel.onResultTap(track) },
                     onStopPreview = viewModel.delegate::stopPreview,
-                    onDownload = { t -> viewModel.delegate.downloadTrack(t.toTrackItem()) },
+                    onDownload = { t -> viewModel.onDownload(t.toTrackItem()) },
                     onPlayNext = viewModel::onPlayNext,
                     onAddToQueue = viewModel::onAddToQueue,
                     onRequestAddToPlaylist = viewModel::onRequestAddToPlaylist,
@@ -259,18 +271,20 @@ private fun SearchBar(
 // ---------------------------------------------------------------------------
 
 /**
- * Shown in the idle/empty state: the user's recent committed search queries,
- * most-recent-first. Tapping a row re-runs it; the ✕ removes one; "Clear all"
+ * Shown in the idle/empty state: the user's recent searches, most-recent-
+ * first. Plain queries show a clock glyph; ARTIST entries show the circular
+ * avatar and navigate straight back to the profile; TRACK entries show the
+ * square art and re-run "artist title". The ✕ removes one; "Clear all"
  * empties the list. Falls back to [EmptySearchPrompt] when there are none.
  */
 @Composable
 private fun RecentSearches(
-    queries: List<String>,
-    onTap: (String) -> Unit,
-    onRemove: (String) -> Unit,
+    entries: List<RecentSearch>,
+    onTap: (RecentSearch) -> Unit,
+    onRemove: (RecentSearch) -> Unit,
     onClearAll: () -> Unit,
 ) {
-    if (queries.isEmpty()) {
+    if (entries.isEmpty()) {
         EmptySearchPrompt()
         return
     }
@@ -291,29 +305,40 @@ private fun RecentSearches(
                 TextButton(onClick = onClearAll) { Text("Clear all") }
             }
         }
-        items(queries, key = { it }) { q ->
+        items(entries, key = { "${it.type}:${it.text.lowercase()}" }) { entry ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onTap(q) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .clickable { onTap(entry) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Schedule,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                RecentSearchThumb(entry)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = q,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = { onRemove(q) }) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val sub = when (entry.type) {
+                        RecentSearch.Type.ARTIST -> "Artist"
+                        RecentSearch.Type.TRACK -> entry.subtitle
+                        RecentSearch.Type.QUERY -> null
+                    }
+                    if (sub != null) {
+                        Text(
+                            text = sub,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = { onRemove(entry) }) {
                     Icon(
                         imageVector = Icons.Default.Clear,
                         contentDescription = "Remove",
@@ -321,6 +346,40 @@ private fun RecentSearches(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Leading visual for a recents row: circular avatar for artists, rounded-
+ * square art for tracks, and the clock glyph for plain queries (also the
+ * fallback when an entry has no thumbnail URL).
+ */
+@Composable
+private fun RecentSearchThumb(entry: RecentSearch) {
+    val size = 44.dp
+    if (entry.thumbnailUrl != null) {
+        AsyncImage(
+            model = entry.thumbnailUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(size)
+                .clip(
+                    if (entry.type == RecentSearch.Type.ARTIST) CircleShape
+                    else RoundedCornerShape(8.dp),
+                ),
+        )
+    } else {
+        Box(
+            modifier = Modifier.size(size),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
