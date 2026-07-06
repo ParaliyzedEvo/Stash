@@ -220,7 +220,9 @@ internal fun CenteredPlacard(
  * Index of the lyric line being sung at [positionMs]: the latest line whose
  * timestamp is `<= positionMs`. Before the first timestamp (intro), coerces
  * `-1` to `0` so the first line shows early and the index can never go out
- * of bounds. Single source of truth shared by [LyricsSyncedRenderer] and
+ * of bounds — for non-empty input. On an EMPTY list this still returns 0,
+ * which is not a valid index: callers must `getOrNull`/guard for empty.
+ * Single source of truth shared by [LyricsSyncedRenderer] and
  * [LiveLyricsBar] — the bar and the sheet must never disagree on the line.
  */
 internal fun currentLineIndex(lines: List<LrcLine>, positionMs: Long): Int =
