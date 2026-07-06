@@ -79,12 +79,21 @@ class SpotifyApiClient @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    private fun nowEpochSeconds(): Long = System.currentTimeMillis() / 1000
+
     companion object {
         private const val TAG = "StashSync"
         private const val DEFAULT_LIMIT = 50
 
         /** Base URL for the Spotify Web API v1 (used with client_credentials tokens). */
         private const val WEB_API_BASE = "https://api.spotify.com/v1"
+
+        /**
+         * How long the Web API playlist-tracks breaker stays open after a 429.
+         * Matches Spotify's observed `Retry-After: 86400` (24h) for
+         * client_credentials tokens on these endpoints.
+         */
+        private const val WEB_API_RATE_LIMIT_COOLDOWN_SEC = 24L * 60 * 60
 
         /** Regex pattern for identifying Spotify-generated Daily Mix playlists. */
         private val DAILY_MIX_REGEX = Regex("""Daily Mix \d+""")
@@ -117,6 +126,23 @@ class SpotifyApiClient @Inject constructor(
     /** Epoch seconds when the cached client_credentials token expires. */
     @Volatile
     private var clientCredentialsExpiry: Long = 0
+
+    /**
+     * Circuit-breaker for the public Web API playlist-tracks endpoint.
+     *
+     * `getPlaylistTracks` tries client_credentials + Web API first, then falls
+     * back to sp_dc GraphQL. For editorial (`37i9…`) playlists the Web API
+     * hard-429s with `Retry-After: 86400` (24h). Without this breaker every
+     * playlist page in a sync pays a guaranteed-to-429 round-trip before the
+     * GraphQL fallback — one affected sync logged 64 such wasted calls, a
+     * meaningful slice of the >10-min runtime WorkManager then kills.
+     *
+     * Once a 429 is seen we skip the Web API prong until this epoch-seconds
+     * deadline, going straight to GraphQL. Auto-recovers after the window so
+     * a genuine transient 429 doesn't disable the prong forever.
+     */
+    @Volatile
+    private var webApiRateLimitedUntil: Long = 0
 
     /**
      * Serializes refreshes of [clientCredentialsToken]. Concurrent callers
@@ -272,15 +298,21 @@ class SpotifyApiClient @Inject constructor(
         Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId")
 
         try {
-            // Prong 1: Try client credentials + Web API first
-            val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
-            if (webApiTracks != null) {
-                Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
-                return SyncResult.Success(webApiTracks)
+            // Prong 1: Try client credentials + Web API first — UNLESS the
+            // breaker is open (a recent 429 with a 24h Retry-After). Skipping
+            // the guaranteed-429 round-trip is the bulk of the sync speedup.
+            if (nowEpochSeconds() >= webApiRateLimitedUntil) {
+                val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
+                if (webApiTracks != null) {
+                    Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
+                    return SyncResult.Success(webApiTracks)
+                }
+            } else {
+                Log.d(TAG, "getPlaylistTracks: Web API breaker open, straight to GraphQL")
             }
 
             // Prong 2: Fall back to sp_dc GraphQL
-            Log.d(TAG, "getPlaylistTracks: Web API failed, trying GraphQL fallback")
+            Log.d(TAG, "getPlaylistTracks: trying GraphQL")
             val graphqlTracks = tryGetPlaylistTracksViaGraphQL(playlistId)
             if (graphqlTracks != null) {
                 Log.d(TAG, "getPlaylistTracks: got ${graphqlTracks.size} tracks via GraphQL")
@@ -749,6 +781,13 @@ class SpotifyApiClient @Inject constructor(
                     allTracks.addAll(parsed.first)
                     url = parsed.second
                     continue
+                }
+
+                // 429: open the breaker so the rest of this sync skips the
+                // Web API prong entirely (Retry-After is 24h for these tokens).
+                if (responseCode == 429) {
+                    webApiRateLimitedUntil = nowEpochSeconds() + WEB_API_RATE_LIMIT_COOLDOWN_SEC
+                    Log.w(TAG, "tryGetPlaylistTracksViaWebApi: 429 — Web API breaker open for 24h")
                 }
 
                 // For 429 or other errors, return null to try fallback

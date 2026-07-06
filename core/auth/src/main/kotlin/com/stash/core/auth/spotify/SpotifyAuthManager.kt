@@ -194,16 +194,28 @@ class SpotifyAuthManager @Inject constructor(
             val match = CLIENT_VERSION_REGEX.find(body)
             val version = match?.groupValues?.get(1)
 
-            if (version != null) {
+            // Cache in BOTH branches — the miss branch too. Previously only a
+            // successful scrape was cached, so a scrape MISS re-fetched the
+            // multi-100KB open.spotify.com shell on every subsequent
+            // getClientVersion() call. During one sync that meant ~55 wasted
+            // full-page fetches (each behind the client's network + any VPN),
+            // a large slice of the >10-min sync runtime that WorkManager then
+            // killed. The fallback is a known-good version (client-token
+            // acquisition succeeds with it), so caching it is safe; we scrape
+            // at most once per process.
+            cachedClientVersion = if (version != null) {
                 Log.i(TAG, "Scraped Spotify client version: $version")
-                cachedClientVersion = version
                 version
             } else {
-                Log.w(TAG, "Could not scrape client version, using fallback")
+                Log.w(TAG, "Could not scrape client version, caching fallback")
                 SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
             }
+            cachedClientVersion!!
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to scrape client version: ${e.message}")
+            // Network failure: cache the fallback too so a flaky first attempt
+            // doesn't condemn the rest of the sync to re-fetching every call.
+            Log.w(TAG, "Failed to scrape client version, caching fallback: ${e.message}")
+            cachedClientVersion = SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
             SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
         }
     }
