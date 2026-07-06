@@ -31,7 +31,10 @@ On every other screen the MiniPlayer is unchanged.
 
 - **Synced** → live bar. Single centered line = `lines[indexOfLast { timestampMs <= positionMs }]`
   — the exact rule the sheet's `LyricsSyncedRenderer` uses, extracted to one
-  shared helper so bar and sheet can never disagree.
+  shared helper so bar and sheet can never disagree. Before the first
+  timestamp `indexOfLast` returns `-1`; the helper coerces to `0` (first line
+  shows during the intro — matching the sheet's current behaviour, and
+  guaranteeing the index can never go out of bounds).
 - **Plain** → static bar: dim-white "View lyrics ♪", same backdrop, same tap target.
 - **Loading / None / Instrumental / Error** → no bar rendered. The row is absent
   (nav bar only); when a fetch lands with lyrics the bar animates in.
@@ -39,9 +42,10 @@ On every other screen the MiniPlayer is unchanged.
 ### Visual treatment
 
 - One bold centered line (~titleMedium/16sp, SemiBold), ellipsized — no marquee.
-- Line color = the same album-derived accent the transport controls and
-  `GlowingProgressBar` use, with a soft accent glow behind the text (same
-  family as the progress bar's playhead glow).
+- Line color = `uiState.vibrantColor` — the exact accent Now Playing passes to
+  `GlowingProgressBar` and the queue sheet (NOT `dominantColor`, which is what
+  the MiniPlayer's thin progress uses) — with a soft accent glow behind the
+  text (same family as the progress bar's playhead glow).
 - Backdrop = **AmbientStrip**: near-black base (`#06060C`, matching
   `AmbientBackground.BaseDark`) with two soft radial washes in the palette
   colors (dominant/vibrant/muted), slowly drifting. A slim, bar-height variant
@@ -56,8 +60,15 @@ On every other screen the MiniPlayer is unchanged.
 
 ### Interactions
 
-- Tap anywhere on the bar → `onShowLyrics()` → existing `LyricsBottomSheet`
-  (auto-scroll, tap-to-seek, Retry — all unchanged).
+- Tap anywhere on the bar → opens the existing `LyricsBottomSheet`
+  (auto-scroll, tap-to-seek, Retry — all unchanged inside the sheet).
+- **`onShowLyrics()` loses its fetch side-effect**: it only opens the sheet.
+  Today the streaming branch (`track.id == 0L`) re-fetches unconditionally on
+  every sheet open, synchronously resetting the shared state to Loading — with
+  the bar consuming that same state, a bar tap would hide the bar mid-tap,
+  and a transient failure on the redundant re-fetch would kill a working bar.
+  Fetching becomes the track-change trigger's job exclusively (plus the
+  sheet's Retry, which keeps `force` semantics).
 - No other gestures. No transport controls in the bar.
 
 ### Fetch trigger moves to screen-open
@@ -65,10 +76,13 @@ On every other screen the MiniPlayer is unchanged.
 Today the lyrics fetch fires when the sheet opens. With the button gone, the
 bar is the only entry point — but the bar needs lyrics to exist before it
 shows (chicken-and-egg). Therefore: **opening Now Playing, or the track
-changing while it is open, triggers the lyrics fetch** for tracks that have
-never had an attempt (`lyricsFetchedAt == null`), through the same
-`fetchLibraryLyrics` / `fetchStreamingLyrics` paths the sheet-open uses. The
-existing in-flight dedupe absorbs double triggers.
+changing while it is open, triggers the lyrics fetch** — for library tracks
+only when they have never had an attempt (`lyricsFetchedAt == null`), for
+streaming tracks whenever the transient state is unpopulated — through the
+same `fetchLibraryLyrics` / `fetchStreamingLyrics` paths the sheet-open uses
+today. With `onShowLyrics` no longer fetching, the track-change trigger and
+Retry are the only fetch entry points, so `fetchStreamingLyrics`'s lack of
+in-flight dedupe (unlike `fetchLibraryLyrics`) cannot double-fire.
 
 Deliberate simplification: a failed fetch leaves the bar hidden — no error
 chip. The reliability work already guarantees failures never stamp a false
@@ -89,7 +103,7 @@ instance that already owns the sheet:
 | `LiveLyricsBar.kt` (new, `:feature:nowplaying/ui`) | Stateless composable: `(LyricsViewState, currentPositionMs, dominant/vibrant/muted colors, onTap)` → live line / static / nothing. Contains the `AmbientStrip` backdrop. |
 | Current-line helper (new, small) | `indexOfLast { timestampMs <= positionMs }` extraction, shared by `LyricsSyncedRenderer` and the bar. |
 | `NowPlayingScreen` | Pin bar at the screen's bottom edge, outside the scroll area (content `weight(1f)` + bar). Remove the top-right lyrics `IconButton`. Sheet wiring untouched. |
-| `NowPlayingViewModel` | On track change (existing `trackKey`-keyed flow): if `lyricsFetchedAt == null`, trigger the existing fetch paths. The route-scoped VM only exists while Now Playing is on the stack, so this *is* the "while open" scoping. |
+| `NowPlayingViewModel` | On track change (existing `trackKey`-keyed flow): trigger the existing fetch paths (library: only when `lyricsFetchedAt == null`; streaming: when transient state unpopulated). Remove the fetch calls from `onShowLyrics` — it only opens the sheet. The route-scoped VM only exists while Now Playing is on the stack, so this *is* the "while open" scoping. |
 | `StashScaffold` (`:app`) | One conditional: skip rendering `MiniPlayer` when `currentRoute == NowPlayingRoute::class.qualifiedName` (same comparison pattern `StashBottomBar` already uses). Nav bar unaffected. |
 
 **Why not a full-screen `AmbientBackground` reuse:** it draws hard-edged
@@ -124,8 +138,10 @@ transport failure instead of faking a miss, fetches dedupe per track,
   `None` / `Instrumental` / `Error` → hidden. Follows the existing
   `LyricsViewStateTest` pattern.
 - **Device verification:** line advances in sync with playback; accent matches
-  the progress bar; tap opens the sheet; plain-only track shows the static
-  bar; lyric-less track shows no bar; bar fades in when a fresh fetch lands;
+  the progress bar; tap opens the sheet; **tapping the bar on a
+  streaming-mode track must not flicker/hide the bar** (guards the
+  `onShowLyrics` fetch-removal); plain-only track shows the static bar;
+  lyric-less track shows no bar; bar fades in when a fresh fetch lands;
   MiniPlayer behaves normally on all other screens; queue/save sheets overlay
   correctly.
 
