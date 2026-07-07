@@ -45,6 +45,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/** One-shot target for navigating from Now Playing to an artist profile. */
+data class ArtistNavTarget(
+    val artistId: String,
+    val name: String,
+    val avatarUrl: String?,
+    val focusAlbum: String?,
+)
+
 /**
  * ViewModel for the full-screen Now Playing screen.
  *
@@ -64,6 +72,9 @@ class NowPlayingViewModel @Inject constructor(
     // codebase (it's not Hilt-injectable in this project).
     private val lyricsRepository: LyricsRepository,
     @ApplicationContext private val appContext: Context,
+    // Tap-to-artist: resolves the playing track's artist NAME to a YT
+    // browseId so Now Playing can open the artist profile.
+    private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NowPlayingUiState())
@@ -88,6 +99,68 @@ class NowPlayingViewModel @Inject constructor(
      * v0.9.27: holds optimistic heart-toggle states to prevent flickering.
      */
     private val optimisticLikeState = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+
+    // ------------------------------------------------------------------
+    // Tap-to-artist — resolve the playing artist and navigate to profile
+    // ------------------------------------------------------------------
+
+    /**
+     * One-shot navigation targets emitted when the user taps the track block.
+     * The screen collects this and forwards to its `onNavigateToArtist`
+     * callback. `extraBufferCapacity = 1` so an emit that lands a hair before
+     * the screen re-subscribes (config change) isn't dropped.
+     */
+    private val _artistNavEvents = MutableSharedFlow<ArtistNavTarget>(extraBufferCapacity = 1)
+    val artistNavEvents: SharedFlow<ArtistNavTarget> = _artistNavEvents.asSharedFlow()
+
+    /**
+     * True while an artist resolve is in flight. The screen disables the
+     * track block and swaps its chevron for a spinner; also the double-tap
+     * guard in [onTrackInfoTapped].
+     */
+    private val _resolvingArtist = MutableStateFlow(false)
+    val resolvingArtist: StateFlow<Boolean> = _resolvingArtist.asStateFlow()
+
+    /**
+     * Tap on the Now Playing track block. Resolves the playing artist's NAME
+     * to a YT browseId and emits an [ArtistNavTarget] carrying the current
+     * album as `focusAlbum`. Prefers the clean `albumArtist`, falling back to
+     * `artist`. No-op when nothing is playing or a resolve is already in
+     * flight (double-tap guard). Resolve miss/failure → snackbar, no nav.
+     */
+    fun onTrackInfoTapped() {
+        val track = _uiState.value.currentTrack ?: return
+        if (_resolvingArtist.value) return
+        val name = track.albumArtist.ifBlank { track.artist }
+        if (name.isBlank()) {
+            _userMessages.tryEmit("Couldn't find this artist")
+            return
+        }
+        _resolvingArtist.value = true
+        viewModelScope.launch {
+            try {
+                val artist = ytMusicApiClient.resolveArtist(name)
+                if (artist != null) {
+                    _artistNavEvents.emit(
+                        ArtistNavTarget(
+                            artistId = artist.id,
+                            name = artist.name,
+                            avatarUrl = artist.avatarUrl,
+                            focusAlbum = track.album.ifBlank { null },
+                        ),
+                    )
+                } else {
+                    _userMessages.emit("Couldn't find this artist")
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                _userMessages.emit("Couldn't find this artist")
+            } finally {
+                _resolvingArtist.value = false
+            }
+        }
+    }
 
     // ------------------------------------------------------------------
     // v0.9.36 Task 12 — Lyrics sheet state

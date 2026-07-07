@@ -17,10 +17,12 @@ fun SinglesRow(
     singles: List<AlbumSummary>,
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
+    focusIndex: Int? = null,
 ) {
     AlbumsRow(
         albums = singles,
         onClick = onClick,
         modifier = modifier,
+        focusIndex = focusIndex,
     )
 }

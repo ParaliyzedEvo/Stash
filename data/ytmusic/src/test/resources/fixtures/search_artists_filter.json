@@ -1,0 +1,17 @@
+{
+  "contents": { "tabbedSearchResultsRenderer": { "tabs": [ { "tabRenderer": { "content": { "sectionListRenderer": { "contents": [
+    { "musicShelfRenderer": {
+      "title": { "runs": [ { "text": "Artists" } ] },
+      "contents": [
+        { "musicResponsiveListItemRenderer": {
+          "navigationEndpoint": { "browseEndpoint": { "browseId": "UCuoGeza7Dl9Ni_hmeLTPdkg" } },
+          "flexColumns": [ { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "My Bloody Valentine" } ] } } } ],
+          "thumbnail": { "musicThumbnailRenderer": { "thumbnail": { "thumbnails": [ { "url": "https://lh3.googleusercontent.com/mbv=w120", "width": 120 } ] } } }
+        } },
+        { "musicResponsiveListItemRenderer": {
+          "navigationEndpoint": { "browseEndpoint": { "browseId": "UCotherKevinShields" } },
+          "flexColumns": [ { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "Kevin Shields" } ] } } } ]
+        } }
+      ]
+    } }
+  ] } } } } ] } } }

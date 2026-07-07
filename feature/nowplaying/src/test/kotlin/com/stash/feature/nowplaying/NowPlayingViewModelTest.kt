@@ -2,6 +2,8 @@ package com.stash.feature.nowplaying
 
 import android.content.Context
 import app.cash.turbine.test
+import app.cash.turbine.testIn
+import app.cash.turbine.turbineScope
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
@@ -10,6 +12,8 @@ import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
 import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.ArtistSummary
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -205,6 +209,7 @@ class NowPlayingViewModelFindInFlacTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         appContext = appContext,
+        ytMusicApiClient = mockk(relaxed = true),
     )
 
     private val nonFlacTrack = Track(
@@ -329,6 +334,7 @@ class NowPlayingViewModelLikeRoutingTest {
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
         appContext = appContext,
+        ytMusicApiClient = mockk(relaxed = true),
     )
 
     private val unlikedTrack = Track(id = 42L, title = "song", artist = "artist", stashLikedAt = null)
@@ -358,4 +364,103 @@ class NowPlayingViewModelLikeRoutingTest {
 
         coVerify { likeCoordinator.setLiked(42L, false) }
     }
+}
+
+/**
+ * Tap on the Now Playing track block → resolve the playing artist's NAME to
+ * a YT browseId and emit a one-shot [ArtistNavTarget] carrying the current
+ * album as `focusAlbum`. Resolve miss/failure → snackbar, no nav. No-op when
+ * nothing is playing.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelTrackTapTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+    private val positionFlow = MutableStateFlow(0L)
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns positionFlow
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { getUserCreatedPlaylists() } returns flowOf(emptyList())
+    }
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
+    private val upgrader: LosslessUpgrader = mockk(relaxed = true)
+    private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
+    private val appContext: Context = mockk(relaxed = true)
+
+    private fun newViewModel(api: YTMusicApiClient): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = likeCoordinator,
+        losslessUpgrader = upgrader,
+        lyricsRepository = lyricsRepository,
+        appContext = appContext,
+        ytMusicApiClient = api,
+    )
+
+    @Test fun `onTrackInfoTapped emits nav target with focusAlbum on resolve success`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>()
+            coEvery { api.resolveArtist(any()) } returns
+                ArtistSummary(id = "UC123", name = "My Bloody Valentine", avatarUrl = "http://a")
+            playerStateFlow.value = playerStateFlow.value.copy(
+                currentTrack = Track(id = 1L, title = "Sometimes", artist = "My Bloody Valentine", album = "Loveless"),
+            )
+            val vm = newViewModel(api)
+            advanceUntilIdle()
+
+            vm.artistNavEvents.test {
+                vm.onTrackInfoTapped()
+                val target = awaitItem()
+                assertEquals("UC123", target.artistId)
+                assertEquals("My Bloody Valentine", target.name)
+                assertEquals("Loveless", target.focusAlbum)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test fun `onTrackInfoTapped emits toast and no nav on null resolve`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>()
+            coEvery { api.resolveArtist(any()) } returns null
+            playerStateFlow.value = playerStateFlow.value.copy(
+                currentTrack = Track(id = 1L, title = "x", artist = "Nobody", album = ""),
+            )
+            val vm = newViewModel(api)
+            advanceUntilIdle()
+
+            // Assert BOTH halves of this test's name: the toast fires AND no
+            // artistNavEvent is emitted on a failed resolve.
+            turbineScope {
+                val nav = vm.artistNavEvents.testIn(backgroundScope)
+                val msgs = vm.userMessages.testIn(backgroundScope)
+                vm.onTrackInfoTapped()
+                assertEquals("Couldn't find this artist", msgs.awaitItem())
+                nav.expectNoEvents()
+                nav.cancel()
+                msgs.cancel()
+            }
+        }
+
+    @Test fun `onTrackInfoTapped is a no-op when nothing is playing`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>(relaxed = true)
+            val vm = newViewModel(api)
+            advanceUntilIdle()
+
+            vm.onTrackInfoTapped()
+            advanceUntilIdle()
+
+            coVerify(exactly = 0) { api.resolveArtist(any()) }
+        }
 }

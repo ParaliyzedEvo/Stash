@@ -72,6 +72,14 @@ class YTMusicApiClient @Inject constructor(
 
         /** Backoff delays (ms) between retries on transient failures. */
         private val RETRY_BACKOFFS_MS = listOf(500L, 1500L)
+
+        /**
+         * ytmusicapi-derived filter selector constraining search to the "Artists"
+         * shelf. Forces the clean `musicShelfRenderer` shape (vs. the flat
+         * `itemSectionRenderer` variant ambiguous queries otherwise return, where
+         * no artist shelf parses). Verified live: top row = Official Artist Channel.
+         */
+        private const val ARTISTS_FILTER = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
     }
 
     /**
@@ -293,6 +301,34 @@ class YTMusicApiClient @Inject constructor(
 
         Log.d(TAG, "searchAll('$query'): ${sections.size} sections")
         return SearchAllResults(sections)
+    }
+
+    /**
+     * Resolve an artist name to its YouTube Music browse identity. Runs an
+     * artists-filtered search and returns the top [ArtistSummary] (browseId,
+     * name, avatar), or null when the name is blank / there is no artist result
+     * / on failure.
+     *
+     * Used by the Now Playing "tap track → artist profile" flow, where the
+     * playing [com.stash.core.model.Track] carries only an artist NAME, not a
+     * browseId. The name is passed raw (YT search handles multi-artist and
+     * band-name credits); parsing reuses [parseArtistsShelf].
+     */
+    suspend fun resolveArtist(name: String): ArtistSummary? {
+        if (name.isBlank()) return null
+        val response = innerTubeClient.search(name, params = ARTISTS_FILTER) ?: return null
+        val shelves = response.navigatePath(
+            "contents", "tabbedSearchResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray()
+            ?: return null
+        for (shelf in shelves) {
+            val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
+            val artists = parseArtistsShelf(renderer)
+            if (artists.isNotEmpty()) return artists.first()
+        }
+        return null
     }
 
     /**

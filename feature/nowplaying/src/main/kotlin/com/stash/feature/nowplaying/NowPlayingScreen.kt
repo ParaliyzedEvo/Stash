@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
@@ -86,10 +88,12 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 @Composable
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
+    onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
+    val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     // "This song is wrong" dialog — shown when the flag icon is tapped.
@@ -111,6 +115,14 @@ fun NowPlayingScreen(
     LaunchedEffect(Unit) {
         viewModel.userMessages.collect { msg ->
             android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Tap-to-artist: the VM resolves the artist name → browseId off the main
+    // thread and emits a one-shot nav target; forward it to the host.
+    LaunchedEffect(Unit) {
+        viewModel.artistNavEvents.collect { t ->
+            onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
         }
     }
 
@@ -289,53 +301,85 @@ fun NowPlayingScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // -- Track info --
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                // -- Track info -- (tap the title/artist to open the artist
+                // profile; the trailing chevron signals it's actionable, and
+                // swaps to a spinner while the artist name is being resolved).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (track != null) {
+                                Modifier.clickable(enabled = !resolvingArtist) {
+                                    viewModel.onTrackInfoTapped()
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = track?.title ?: "Not Playing",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (track != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            com.stash.core.ui.components.FlacBadge(
+                                fileFormat = track.fileFormat,
+                                bitsPerSample = track.bitsPerSample,
+                                sampleRateHz = track.sampleRateHz,
+                                size = 18.dp,
+                                tint = Color.White,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            if (resolvingArtist) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = "Open artist",
+                                    tint = Color.White.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Text(
-                        text = track?.title ?: "Not Playing",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        text = buildString {
+                            if (track != null) {
+                                append(track.artist)
+                                if (track.album.isNotBlank()) {
+                                    append(" \u2022 ")
+                                    append(track.album)
+                                }
+                            }
+                        },
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    if (track != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        com.stash.core.ui.components.FlacBadge(
-                            fileFormat = track.fileFormat,
-                            bitsPerSample = track.bitsPerSample,
-                            sampleRateHz = track.sampleRateHz,
-                            size = 18.dp,
-                            tint = Color.White,
-                        )
-                    }
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = buildString {
-                        if (track != null) {
-                            append(track.artist)
-                            if (track.album.isNotBlank()) {
-                                append(" \u2022 ")
-                                append(track.album)
-                            }
-                        }
-                    },
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
 
                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
                 // Sized smaller than the artist/album line; degrades gracefully when
