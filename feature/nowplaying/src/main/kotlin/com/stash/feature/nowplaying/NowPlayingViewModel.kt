@@ -875,6 +875,9 @@ class NowPlayingViewModel @Inject constructor(
     // Palette Color Extraction
     // ------------------------------------------------------------------
 
+    /** Last bitmap run through Palette — dedup key for [onAlbumArtLoaded]. */
+    private var lastPaletteBitmap: Bitmap? = null
+
     /**
      * Called when the album art [Bitmap] has been loaded (e.g. via Coil).
      *
@@ -884,6 +887,13 @@ class NowPlayingViewModel @Inject constructor(
      * Passing `null` resets colors to their defaults.
      */
     fun onAlbumArtLoaded(bitmap: Bitmap?) {
+        // Same-bitmap dedup: Coil re-fires onState Success when the image
+        // composable re-enters composition (sheet open/close, config change)
+        // with the same cached bitmap — re-running Palette.generate() then
+        // is pure waste. Identity comparison is right: a new track's art is
+        // always a new Bitmap instance.
+        if (bitmap != null && bitmap === lastPaletteBitmap) return
+        lastPaletteBitmap = bitmap
         if (bitmap == null) {
             _uiState.update {
                 it.copy(

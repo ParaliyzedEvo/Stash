@@ -119,8 +119,19 @@ fun StashScaffold(
                     ) {
                         MiniPlayer(
                             onExpand = {
-                                navController.navigate(NowPlayingRoute) {
-                                    launchSingleTop = true
+                                // Return to an existing Now Playing entry instead
+                                // of pushing a duplicate. launchSingleTop only
+                                // guards a CONSECUTIVE dup — via NP → artist
+                                // profile → mini player, each expand used to
+                                // stack another NP entry, and every buried
+                                // entry's ViewModel keeps its 4Hz player combine
+                                // running forever (observed: 6 live VMs in a
+                                // heap dump). popBackStack returns false when NP
+                                // isn't in the stack — normal push in that case.
+                                if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
+                                    navController.navigate(NowPlayingRoute) {
+                                        launchSingleTop = true
+                                    }
                                 }
                             },
                         )

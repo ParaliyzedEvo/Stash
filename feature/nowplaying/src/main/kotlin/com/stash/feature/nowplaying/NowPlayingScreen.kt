@@ -569,6 +569,15 @@ private fun AlbumArtSection(
 ) {
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
+    // remember: an inline ImageRequest.Builder is a new object every
+    // recomposition, which makes Coil re-evaluate the request each time this
+    // recomposes (and this screen recomposes on every 250ms position tick).
+    val artRequest = remember(context, artModel) {
+        ImageRequest.Builder(context)
+            .data(artModel)
+            .allowHardware(false) // Required for Palette bitmap extraction.
+            .build()
+    }
 
     Box(contentAlignment = Alignment.Center) {
         // Glow behind the artwork.
@@ -584,10 +593,7 @@ private fun AlbumArtSection(
         )
 
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(artModel)
-                .allowHardware(false) // Required for Palette bitmap extraction.
-                .build(),
+            model = artRequest,
             contentDescription = "Album art",
             contentScale = ContentScale.Crop,
             onState = { state ->
