@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import com.stash.core.data.db.dao.TrackDao
 
 /**
  * Player-wide [MediaSource.Factory] that routes **only YouTube-origin streaming
@@ -48,6 +51,9 @@ class StashMediaSourceFactory(
     private val streamingTrackId: (MediaItem) -> Long?,
     private val isAmzOrigin: (MediaItem) -> Boolean,
     amzHttpClient: okhttp3.OkHttpClient,
+    resolver: StreamSourceRegistry,
+    urlCache: StreamUrlCache,
+    trackDao: TrackDao,
 ) : MediaSource.Factory {
 
     private val localFactory = DefaultMediaSourceFactory(context)
@@ -62,11 +68,35 @@ class StashMediaSourceFactory(
         androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient),
     )
 
+    // Full-timeline placeholders: stash-resolve://track/<id> items resolve
+    // their URL inside LazyResolvingDataSource.open() on the loader thread.
+    // Cold-jump path only — the next-up prefetch upgrades the common case to
+    // a real URL in place, which then routes through the branches above.
+    private val lazyFactory = DefaultMediaSourceFactory(
+        DataSource.Factory {
+            LazyResolvingDataSource(
+                resolver = resolver,
+                urlCache = urlCache,
+                trackDao = trackDao,
+                httpDelegate = {
+                    DefaultHttpDataSource.Factory().setUserAgent("Stash/0.9.26")
+                        .setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
+                        .createDataSource()
+                },
+                amzDelegate = {
+                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient)
+                        .createDataSource()
+                },
+            )
+        },
+    )
+
     override fun setDrmSessionManagerProvider(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
         amzFactory.setDrmSessionManagerProvider(provider)
+        lazyFactory.setDrmSessionManagerProvider(provider)
         return this
     }
 
@@ -75,12 +105,19 @@ class StashMediaSourceFactory(
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
         amzFactory.setLoadErrorHandlingPolicy(policy)
+        lazyFactory.setLoadErrorHandlingPolicy(policy)
         return this
     }
 
     override fun getSupportedTypes(): IntArray = localFactory.supportedTypes
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+        // Placeholder items (full-timeline queue) resolve in the DataSource
+        // layer — checked first because they carry no http(s) scheme for the
+        // predicates below to match.
+        if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) {
+            return lazyFactory.createMediaSource(mediaItem)
+        }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then amz authed-HTTP, then local/default. youtube and amz origins are
         // mutually exclusive, so order between them is moot.

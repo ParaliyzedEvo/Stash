@@ -49,9 +49,7 @@ class InnerTubeSearchExecutorTest {
         // search(query, params = null): the executor calls search(query), which
         // the JVM expands to search(query, null) — so the params matcher must
         // accept null (anyOrNull), else Mockito sees 1 matcher for a 2-arg call.
-        val inner = mock<InnerTubeClient> {
-            onBlocking { search(any(), anyOrNull(), anyOrNull()) } doReturn parsed
-        }
+        runBlocking { whenever(inner.search(any(), anyOrNull())).thenReturn(parsed) }
         return InnerTubeSearchExecutor(inner)
     }
 

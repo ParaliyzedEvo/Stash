@@ -2,9 +2,7 @@ package com.stash.feature.home
 
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
-import com.stash.feature.home.banner.LyricsBackfillBannerState
 import com.stash.feature.home.banner.MetadataBackfillBannerState
-import com.stash.feature.home.banner.WaitingForLosslessBannerState
 
 /**
  * UI state for the Home screen, combining all observable data streams
@@ -78,18 +76,10 @@ data class HomeUiState(
     /** True while a user-initiated pull-to-refresh is in flight. */
     val isRefreshing: Boolean = false,
     /**
-     * Non-null when Last.fm creds are wired but the user hasn't
-     * connected yet AND there are local plays queued waiting to be
-     * scrobbled. Drives the Home banner nudging them into Settings.
-     */
-    val lastFmPrompt: LastFmPromptState? = null,
-    /**
      * Non-null when the user has not enabled lossless AND has not
      * dismissed the Home banner. Drives the "Try lossless audio"
-     * banner that shows below the sync card.
-     *
-     * Same shape as [lastFmPrompt] but a singleton (no varying
-     * fields like pendingCount); the banner copy is static.
+     * banner that shows below the sync card. A singleton sentinel —
+     * its mere presence signals "show the banner".
      */
     val losslessPrompt: LosslessPromptState? = null,
 
@@ -105,17 +95,6 @@ data class HomeUiState(
         com.stash.core.data.tipjar.TipJarState.EMPTY,
 
     /**
-     * v0.9.17: state of the "tracks waiting for lossless" banner. Computed
-     * by [com.stash.feature.home.banner.bannerStateFor] from four observable
-     * inputs (deferred-row count, current captcha cookie, last-known-bad
-     * cookie, kennyy circuit-breaker state). [WaitingForLosslessBannerState.Hidden]
-     * is the steady state — no banner renders. Per-session dismissal is a
-     * separate ViewModel-side flag that gates rendering at the screen level.
-     */
-    val waitingForLosslessBanner: WaitingForLosslessBannerState =
-        WaitingForLosslessBannerState.Hidden,
-
-    /**
      * v0.9.35: state of the "re-tagging library" banner. Hidden in
      * the steady state — only renders while [com.stash.data.download.backfill.MetadataBackfillWorker]
      * is actively processing rows, and for a 2-second "Done" pulse
@@ -123,17 +102,6 @@ data class HomeUiState(
      */
     val metadataBackfillBanner: MetadataBackfillBannerState =
         MetadataBackfillBannerState.Hidden,
-
-    /**
-     * v0.9.36: state of the "Fetching lyrics" banner. Hidden in the
-     * steady state — only renders while
-     * [com.stash.data.lyrics.worker.LyricsBackfillWorker] is actively
-     * processing rows, and for a 2-second "Done" pulse after
-     * completion. Independent of [metadataBackfillBanner]; both can
-     * be visible simultaneously on a v0.9.34→v0.9.36 upgrade.
-     */
-    val lyricsBackfillBanner: LyricsBackfillBannerState =
-        LyricsBackfillBannerState.Hidden,
 ) {
     /** Total liked songs across both sources. */
     val totalLikedCount: Int get() = spotifyLikedCount + youtubeLikedCount
@@ -163,9 +131,6 @@ data class HomeUiState(
             else -> null
         }
 }
-
-/** Payload for the "connect Last.fm to send plays" banner. */
-data class LastFmPromptState(val pendingCount: Int)
 
 /**
  * Sentinel for the "Try lossless audio" Home banner. Singleton

@@ -2,9 +2,11 @@ package com.stash.data.download.lossless
 
 import android.util.Log
 import java.io.File
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,9 +31,27 @@ import okio.sink
  */
 @Singleton
 class LosslessUrlDownloader @Inject constructor(
-    private val httpClient: OkHttpClient,
+    httpClient: OkHttpClient,
     private val decryptor: com.stash.data.download.lossless.amz.AmzDecryptor,
 ) {
+    // Whole-file lossless fetches are large (amz ultrahd CMAF runs 100-150 MB and
+    // must be downloaded in full before decrypt/play). The shared client's 30 s
+    // read timeout is an inter-byte stall limit — fine for small JSON, too tight
+    // when a congested/shared network pauses mid-stream on a big FLAC. Derive a
+    // client with a roomier read/write stall window (no callTimeout, so total
+    // duration stays uncapped for big files). Shares the pool/dispatcher/TLS.
+    private val fetchClient: OkHttpClient = httpClient.newBuilder()
+        .readTimeout(FETCH_STALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(FETCH_STALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+
+    // Caps concurrent ENCRYPTED (amz) whole-file fetches. The DownloadManager
+    // ceiling is 8, but 8 parallel 20-150 MB amz pulls starve each other's
+    // bandwidth (~0.86 MB/s measured vs ~2.3 MB/s at low concurrency) and widen
+    // the token-expiry 403 herd. Gating amz fetches to a few in-flight gives each
+    // real bandwidth (so tracks land sooner) and keeps the herd narrow. @Singleton,
+    // so this is a process-wide amz-fetch limit. Non-amz (Qobuz) fetches: ungated.
+    private val amzFetchGate = Semaphore(AMZ_MAX_CONCURRENT_FETCHES)
     /**
      * Fetch [source] to [destination]. Returns the file on success, or
      * a failure with the reason to log at the call site.
@@ -61,8 +81,12 @@ class LosslessUrlDownloader @Inject constructor(
         val key = source.decryptionKey?.takeIf { it.isNotBlank() }
         val fetchTarget = if (key != null) File("${destination.absolutePath}.enc") else destination
 
+        // Gate amz (encrypted) fetches to bound concurrency; non-amz fetches run
+        // ungated as before. Released in the finally so a throw/return can't leak
+        // a permit and wedge the source.
+        if (key != null) amzFetchGate.acquire()
         try {
-            httpClient.newCall(request).execute().use { response ->
+            fetchClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(
                         IllegalStateException(
@@ -126,10 +150,21 @@ class LosslessUrlDownloader @Inject constructor(
             runCatching { if (fetchTarget.exists()) fetchTarget.delete() }
             runCatching { if (destination.exists()) destination.delete() }
             Result.failure(e)
+        } finally {
+            if (key != null) amzFetchGate.release()
         }
     }
 
     private companion object {
         const val TAG = "LosslessUrlDownloader"
+
+        // Max concurrent amz whole-file fetches (see [amzFetchGate]). 3 balances
+        // per-file bandwidth against aggregate throughput; also caps the 403 herd.
+        const val AMZ_MAX_CONCURRENT_FETCHES = 3
+
+        // Inter-byte stall timeout for the big-file fetch (was 30 s on the shared
+        // client). amz ultrahd whole-file pulls stalled past 30 s on a congested
+        // hotspot; 90 s tolerates the pause without masking a truly dead socket.
+        const val FETCH_STALL_TIMEOUT_SECONDS = 90L
     }
 }

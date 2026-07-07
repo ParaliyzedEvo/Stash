@@ -53,6 +53,29 @@ jobs:
           echo "Decoded keystore to $RUNNER_TEMP/stash-release.jks"
           ls -la "$RUNNER_TEMP/stash-release.jks"
 
+      - name: Fetch qbdlx token pool
+        env:
+          QBDLX_TOKEN_POOL_SECRET: ${{ secrets.QBDLX_TOKEN_POOL }}
+        run: |
+          # Fetch the CURRENT shared pool so every release ships live tokens.
+          # Reachable from datacenter IPs (verified). Any failure → fall back to
+          # the QBDLX_TOKEN_POOL secret; the build must NEVER break on this.
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          POOL=$(curl -sf -A "$UA" \
+                   -H "Origin: https://qbdlx.launchpd.cloud" \
+                   -H "Referer: https://qbdlx.launchpd.cloud/" \
+                   https://citegptapi.f5.si/webhook/qbdlx/shared \
+                 | jq -r '[.[] | select(.token!=null and .token!="" and (.app_id|tostring)=="798273057"
+                          and .country!=null and .country!="")]
+                          | unique_by(.token) | map(.token+":"+.country) | join(",")' 2>/dev/null) || POOL=""
+          if [ -n "$POOL" ]; then
+            echo "Fetched $(echo "$POOL" | tr ',' '\n' | wc -l) qbdlx tokens from the shared pool"
+            echo "QBDLX_TOKEN_POOL=$POOL" >> "$GITHUB_ENV"
+          else
+            echo "::warning::qbdlx pool fetch failed/empty — falling back to the QBDLX_TOKEN_POOL secret"
+            echo "QBDLX_TOKEN_POOL=$QBDLX_TOKEN_POOL_SECRET" >> "$GITHUB_ENV"
+          fi
+
       - name: Assemble release APK
         env:
           STASH_KEYSTORE_FILE: ${{ runner.temp }}/stash-release.jks
@@ -80,6 +103,16 @@ jobs:
           # streaming simply no-ops and the registry fails over — so this MUST
           # be set for shipped APKs to stream via ARCOD.
           ARCOD_STREAM_BASE: ${{ secrets.ARCOD_STREAM_BASE }}
+          # qbdlx (direct-Qobuz) app credentials, consumed by data/download
+          # BuildConfig (QBDLX_*). These MUST be set: without them the shipped
+          # APK has blank credentials and qbdlx is dead on arrival — exactly what
+          # shipped in v0.9.65–v0.9.68 before this env existed. The token pool
+          # (QBDLX_TOKEN_POOL) is NOT declared here — the "Fetch qbdlx token
+          # pool" step above exports it to $GITHUB_ENV (live pool, secret
+          # fallback) and Gradle inherits it. The verify step refuses to publish
+          # an APK missing these.
+          QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
+          QBDLX_APP_SECRET: ${{ secrets.QBDLX_APP_SECRET }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK
@@ -93,6 +126,40 @@ jobs:
           echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename $APK)" >> "$GITHUB_OUTPUT"
           echo "Built: $APK ($(du -h $APK | cut -f1))"
+
+      - name: Verify bundled credentials embedded in APK
+        env:
+          QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
+          # QBDLX_TOKEN_POOL comes from $GITHUB_ENV (the fetch step) — do NOT
+          # redeclare it as the secret here, or the fingerprint would be computed
+          # over the secret while the dex carries the fetched pool → false-fail.
+        run: |
+          if [ -z "$QBDLX_APP_ID" ] || [ -z "$QBDLX_TOKEN_POOL" ]; then
+            echo "::error::QBDLX_APP_ID / QBDLX_TOKEN_POOL not available"
+            exit 1
+          fi
+          DEX_DIR="$RUNNER_TEMP/dexcheck"
+          mkdir -p "$DEX_DIR"
+          unzip -o -q "${{ steps.find_apk.outputs.apk_path }}" 'classes*.dex' -d "$DEX_DIR"
+
+          # 1. app_id must be present (BuildConfig wired; still plaintext).
+          if ! grep -a -q -F -- "$QBDLX_APP_ID" "$DEX_DIR"/classes*.dex; then
+            echo "::error::app_id missing from APK dex — blank BuildConfig?"
+            exit 1
+          fi
+          # 2. The plaintext first token must be ABSENT (encryption actually ran).
+          FIRST_TOKEN="${QBDLX_TOKEN_POOL%%:*}"
+          if grep -a -q -F -- "$FIRST_TOKEN" "$DEX_DIR"/classes*.dex; then
+            echo "::error::plaintext qbdlx token found in dex — pool was NOT encrypted"
+            exit 1
+          fi
+          # 3. The pool fingerprint must be present (current, non-blank pool shipped).
+          FP=$(printf %s "$QBDLX_TOKEN_POOL" | sha256sum | head -c 8)
+          if ! grep -a -q -F -- "$FP" "$DEX_DIR"/classes*.dex; then
+            echo "::error::QBDLX_POOL_FP ($FP) missing from dex — stale/blank/mismatched pool"
+            exit 1
+          fi
+          echo "qbdlx pool verified: app_id present, token encrypted, fp $FP embedded"
 
       - name: Rename APK for release
         id: rename_apk

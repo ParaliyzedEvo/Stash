@@ -11,6 +11,7 @@ import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.media.preview.LosslessUrlPrefetcher
+import com.stash.core.model.Playlist
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.SearchResultSection
@@ -25,6 +26,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -61,6 +64,7 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
     private val artistCache: ArtistCache,
+    private val recentSearchesStore: RecentSearchesStore,
 ) : ViewModel() {
 
     var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -101,6 +105,108 @@ class SearchViewModel @Inject constructor(
      */
     private val _userMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
+
+    // Add-to-playlist picker: the item awaiting a playlist choice (null = sheet closed).
+    private val _playlistSheetItem = MutableStateFlow<TrackItem?>(null)
+    val playlistSheetItem: StateFlow<TrackItem?> = _playlistSheetItem.asStateFlow()
+
+    val userPlaylists: StateFlow<List<Playlist>> =
+        delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun onPlayNext(item: TrackItem) {
+        recordTrack(item)
+        delegate.playNext(item)
+    }
+    fun onAddToQueue(item: TrackItem) {
+        recordTrack(item)
+        delegate.addToQueue(item)
+    }
+    fun onDownload(item: TrackItem) {
+        recordTrack(item)
+        delegate.downloadTrack(item)
+    }
+    fun onRequestAddToPlaylist(item: TrackItem) {
+        recordTrack(item)
+        _playlistSheetItem.value = item
+    }
+    fun onDismissPlaylistSheet() { _playlistSheetItem.value = null }
+    fun onSaveToPlaylist(playlistId: Long) {
+        _playlistSheetItem.value?.let { delegate.addToPlaylist(it, playlistId) }
+        _playlistSheetItem.value = null
+    }
+    fun onCreatePlaylistAndAdd(name: String) {
+        _playlistSheetItem.value?.let { delegate.createPlaylistAndAdd(it, name) }
+        _playlistSheetItem.value = null
+    }
+
+    /** Recent searches (most-recent-first), shown in the empty state. */
+    val recentSearches: StateFlow<List<RecentSearch>> =
+        recentSearchesStore.recent.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Record the current query as a recent search. Call on COMMITTED searches
+     * only — the keyboard Search action or a result interaction — NOT on
+     * every keystroke (that would save every prefix: "bea", "beat", "beatl"…).
+     */
+    fun onSearchCommitted() {
+        val q = _uiState.value.query.trim()
+        if (q.isNotEmpty()) {
+            viewModelScope.launch {
+                recentSearchesStore.record(RecentSearch(RecentSearch.Type.QUERY, q))
+            }
+        }
+    }
+
+    /**
+     * The user opened an artist profile from results — record the ARTIST
+     * itself (name + avatar + browse id) so the recents row shows the face
+     * and taps navigate straight back. This was the missing commit: artist
+     * taps are pure navigation, so "search artist → open profile → back"
+     * saved nothing while track taps and the keyboard Search key did.
+     */
+    fun onArtistOpened(id: String, name: String, avatarUrl: String?) {
+        viewModelScope.launch {
+            recentSearchesStore.record(
+                RecentSearch(
+                    type = RecentSearch.Type.ARTIST,
+                    text = name,
+                    thumbnailUrl = avatarUrl,
+                    artistId = id,
+                ),
+            )
+        }
+    }
+
+    /** A track row was engaged (tap/download/queue/playlist) — record it with art. */
+    private fun recordTrack(item: TrackItem) {
+        viewModelScope.launch {
+            recentSearchesStore.record(
+                RecentSearch(
+                    type = RecentSearch.Type.TRACK,
+                    text = item.title,
+                    subtitle = item.artist,
+                    thumbnailUrl = item.thumbnailUrl,
+                ),
+            )
+        }
+    }
+
+    /** Re-run a tapped recent search (ARTIST entries navigate in the screen). */
+    fun onRecentSearchTapped(entry: RecentSearch) {
+        // Move it back to the front regardless of type.
+        viewModelScope.launch { recentSearchesStore.record(entry) }
+        if (entry.type != RecentSearch.Type.ARTIST) {
+            onQueryChanged(entry.searchText)
+        }
+    }
+
+    fun removeRecentSearch(entry: RecentSearch) {
+        viewModelScope.launch { recentSearchesStore.remove(entry.text) }
+    }
+
+    fun clearRecentSearches() {
+        viewModelScope.launch { recentSearchesStore.clear() }
+    }
 
     /** Drives [flatMapLatest] — every keystroke replaces the value. */
     private val queryFlow = MutableStateFlow("")
@@ -190,6 +296,9 @@ class SearchViewModel @Inject constructor(
      * identically when a stream-routing refusal fires.
      */
     fun onResultTap(item: TrackItem) {
+        // Tapping a result means the search was useful — record the TRACK
+        // itself (title + artist + thumbnail), not just the raw query text.
+        recordTrack(item)
         viewModelScope.launch {
             _tappedTrackId.value = item.syntheticId()
             try {

@@ -26,42 +26,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * v0.9.13 — ROUTING status block for the lossless source chain.
+ * ROUTING status block for the lossless source chain.
  *
- * Replaces the legacy "Connect to squid.wtf" CTA which falsely implied
- * lossless required a captcha to function. Reality: kenny carries
- * lossless without auth or captcha; squid is an optional second source
- * that the user can unlock via captcha; amz.squid.wtf (Amazon Music) is a
- * third, independent fallback that needs no setup and ranks last. When a
- * higher source is down, the next silently fills in.
+ * Shows the live chain: Direct Qobuz (primary) with amz.squid.wtf (Amazon
+ * Music) as an independent fallback for tracks Qobuz doesn't carry. The older
+ * kennyy.com.br / squid.wtf proxies are parked (hosts down for us) and are no
+ * longer advertised here.
  *
- * Visual is dublab-influenced: mono caps header, indented `↳` rows,
- * small status dots (filled = configured, outlined = optional). Solve
- * link inline on the squid row when no cookie is set.
+ * Visual: mono caps header, indented `↳` rows, small status dots.
  *
- * Honesty caveat: we don't have ping/health telemetry yet, so we never
- * claim "live" — we use "active" (= configured and reachable in the
- * resolver chain). v0.9.14 can add real-time health based on the
- * AggregatorRateLimiter / source-success cache.
+ * Honesty caveat: no ping/health telemetry yet, so we never claim "live" — we
+ * use "active" (= reachable in the resolver chain) and "fallback".
  */
 @Composable
 internal fun LosslessRoutingStatus(
-    squidStatus: SquidCaptchaStatus,
-    onSolveCaptcha: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mono = FontFamily.Monospace
-    val (squidConfigured, squidLabel, showSolveLink) = when (squidStatus) {
-        SquidCaptchaStatus.NotConfigured ->
-            Triple(false, "optional", true)
-        SquidCaptchaStatus.Active ->
-            Triple(true, "active", false)
-        SquidCaptchaStatus.Expired ->
-            // Cookie present but server-rejected — keep the dot filled
-            // (user did set it up) but surface "expired" + the solver
-            // entry-point so they can re-verify in one tap.
-            Triple(true, "expired", true)
-    }
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = "ROUTING",
@@ -73,22 +54,13 @@ internal fun LosslessRoutingStatus(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(4.dp))
+        // Direct Qobuz is the primary lossless source; amz.squid.wtf (Amazon
+        // Music) is an independent fallback for tracks Qobuz doesn't carry.
         RoutingRow(
-            host = "kennyy.com.br",
+            host = "Direct Qobuz",
             configured = true,
             statusLabel = "active",
         )
-        RoutingRow(
-            host = "squid.wtf",
-            configured = squidConfigured,
-            statusLabel = squidLabel,
-            actionLabel = if (showSolveLink) "solve captcha →" else null,
-            onAction = if (showSolveLink) onSolveCaptcha else null,
-        )
-        // amz.squid.wtf (Amazon Music) — the third, independent lossless source.
-        // No captcha/cookie to configure (auth rides the shared client), so it's
-        // always reachable; it ranks LAST and only serves when both Qobuz proxies
-        // miss, giving an uncorrelated fallback before lossy YouTube.
         RoutingRow(
             host = "amz.squid.wtf",
             configured = true,
@@ -96,8 +68,8 @@ internal fun LosslessRoutingStatus(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless tries kennyy.com.br, then squid.wtf, then amz.squid.wtf " +
-                "(Amazon Music) — whichever is reachable serves your track.",
+            text = "Lossless streams from Direct Qobuz; amz.squid.wtf (Amazon Music) " +
+                "fills in when a track isn't on Qobuz.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

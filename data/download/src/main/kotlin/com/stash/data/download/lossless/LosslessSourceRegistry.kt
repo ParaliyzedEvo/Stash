@@ -39,10 +39,17 @@ class LosslessSourceRegistry @Inject constructor(
         // Test toggle (outage drill): when force-amz-only is on, filter the
         // chain down to amz so downloads exercise the amz source only. An amz
         // miss falls through to a normal null return (no quota to protect).
-        val ordered = if (streamingPreference.isForceAmzOnly()) {
+        val ordered = if (streamingPreference.isForceQbdlxOnly()) {
+            orderedSources().filter { it.id == "qbdlx_qobuz" }
+        } else if (streamingPreference.isForceArcodOnly()) {
+            orderedSources().filter { it.id == "arcod" }
+        } else if (streamingPreference.isForceAmzOnly()) {
             orderedSources().filter { it.id == "amz" }
         } else {
-            orderedSources()
+            // Normal chain skips the parked (host-down) sources. Only the
+            // normal path filters — force-X toggles above still reach a parked
+            // source on demand, and orderedSources()/Settings still list them.
+            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
         }
         val minQuality = prefs.minQualityNow()
 
@@ -119,5 +126,17 @@ class LosslessSourceRegistry @Inject constructor(
 
     companion object {
         private const val TAG = "LosslessRegistry"
+
+        /**
+         * Lossless sources parked out of the NORMAL resolve chain because their
+         * upstreams are down for us (2026-07-01): qobuz.squid.wtf needs a
+         * captcha we can't solve headless, kennyy.com.br is health-down, and
+         * arcod.xyz returns Cloudflare 403. Their code + Hilt bindings stay
+         * intact — re-enabling a source is just removing its id here (and
+         * uncommenting the matching line in
+         * [com.stash.core.media.streaming.StreamSourceRegistry] for streaming).
+         * Force-X test toggles and the Settings source list still reach them.
+         */
+        val PARKED_SOURCE_IDS = setOf("squid_qobuz", "kennyy_qobuz", "arcod")
     }
 }

@@ -111,6 +111,7 @@ class AlbumDiscoveryViewModelTest {
         on { downloadingIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
         on { this.downloadedIds } doReturn MutableStateFlow(downloadedIds).asStateFlow()
         on { previewLoadingId } doReturn MutableStateFlow<String?>(null).asStateFlow()
+        on { userPlaylists } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
     }
 
     private fun trackSummary(id: String): TrackSummary = TrackSummary(

@@ -51,7 +51,8 @@ class TrackActionsDelegate @Inject constructor(
     private val searchDownloadCoordinator: SearchDownloadCoordinator,
     private val playerRepository: com.stash.core.media.PlayerRepository,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
-    private val musicRepository: MusicRepository,
+    private val musicRepository: com.stash.core.data.repository.MusicRepository,
+    private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
 ) {
     /** Mirrors [PreviewPlayer.previewState] so consumers don't need a second dep. */
     val previewState: StateFlow<PreviewState> = previewPlayer.previewState
@@ -395,6 +396,151 @@ class TrackActionsDelegate @Inject constructor(
         }.toSet()
         _downloadedIds.update { it + downloaded }
     }
+
+    /** Insert [item] right after the current track. */
+    fun playNext(item: TrackItem) {
+        scope().launch {
+            try {
+                playerRepository.addNext(item.toDomainTrack())
+                _userMessages.tryEmit("Playing next")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "playNext failed for ${item.videoId}", e)
+                _userMessages.tryEmit("Couldn't add to queue")
+            }
+        }
+    }
+
+    /** Append [item] to the end of the queue. */
+    fun addToQueue(item: TrackItem) {
+        scope().launch {
+            try {
+                playerRepository.addToQueue(item.toDomainTrack())
+                _userMessages.tryEmit("Added to queue")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "addToQueue failed for ${item.videoId}", e)
+                _userMessages.tryEmit("Couldn't add to queue")
+            }
+        }
+    }
+
+    /**
+     * Returns the DB id for [item], inserting a stub row if absent. Runs the
+     * BlocklistGuard first (v0.9.15: insert paths that skip the guard resurrect
+     * blocked tracks). Returns null when blocked. No download columns are set —
+     * this is a streamable library entry, not a downloaded file.
+     *
+     * Mirrors [SearchDownloadCoordinator.upsertSearchTrack]'s lookup sequence
+     * and TrackEntity construction so identity-matching agrees with the
+     * download path (same row, no duplicate).
+     */
+    private suspend fun ensureTrackPersisted(item: TrackItem): Long? {
+        if (blocklistGuard.isBlocked(
+                artist = item.artist, title = item.title,
+                spotifyUri = null, youtubeId = item.videoId,
+            )
+        ) {
+            Log.d(TAG, "addToPlaylist refused blocked: ${item.artist} - ${item.title}")
+            return null
+        }
+        val existing = trackDao.findByYoutubeId(item.videoId)
+            ?: trackDao.findByCanonicalIdentity(
+                title = canonicalize(item.title),
+                artist = canonicalize(item.artist),
+            )
+        return existing?.id ?: trackDao.insert(
+            com.stash.core.data.db.entity.TrackEntity(
+                title = item.title,
+                artist = item.artist,
+                album = item.album.orEmpty(),
+                albumArtist = item.albumArtist.orEmpty(),
+                youtubeId = item.videoId,
+                canonicalTitle = canonicalize(item.title),
+                canonicalArtist = canonicalize(item.artist),
+                durationMs = (item.durationSeconds * 1000).toLong(),
+                source = com.stash.core.model.MusicSource.YOUTUBE,
+                albumArtUrl = item.thumbnailUrl,
+            )
+        )
+    }
+
+    /**
+     * Normalises a string for DB identity matching. MUST stay byte-identical
+     * to [SearchDownloadCoordinator.canonicalize] or the delegate's insert-if-
+     * absent lookup disagrees with the download path and creates duplicate rows.
+     */
+    private fun canonicalize(s: String): String =
+        s.lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+    /** Add [item] to an existing playlist. Inserts a streamable stub if the
+     *  track isn't in the library yet (NOT downloaded). */
+    fun addToPlaylist(item: TrackItem, playlistId: Long) {
+        scope().launch {
+            try {
+                val trackId = ensureTrackPersisted(item) ?: run {
+                    _userMessages.tryEmit("Can't add a blocked track")
+                    return@launch
+                }
+                musicRepository.addTrackToPlaylist(trackId, playlistId)
+                _userMessages.tryEmit("Added to playlist")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "addToPlaylist failed for ${item.videoId}", e)
+                _userMessages.tryEmit("Couldn't add to playlist")
+            }
+        }
+    }
+
+    /** Create a new playlist named [name] and add [item] to it. */
+    fun createPlaylistAndAdd(item: TrackItem, name: String) {
+        scope().launch {
+            try {
+                val trackId = ensureTrackPersisted(item) ?: run {
+                    _userMessages.tryEmit("Can't add a blocked track")
+                    return@launch
+                }
+                val playlistId = musicRepository.createPlaylist(name)
+                musicRepository.addTrackToPlaylist(trackId, playlistId)
+                _userMessages.tryEmit("Added to playlist")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "createPlaylistAndAdd failed for ${item.videoId}", e)
+                _userMessages.tryEmit("Couldn't add to playlist")
+            }
+        }
+    }
+
+    /** User-created playlists for the picker. */
+    val userPlaylists: kotlinx.coroutines.flow.Flow<List<com.stash.core.model.Playlist>> =
+        musicRepository.getUserCreatedPlaylists()
+
+    /**
+     * Maps a search-surface [TrackItem] to a domain [Track] for the queue.
+     * No existing mapper fits — preview/download pass TrackItem through
+     * untouched. Mirrors ArtistProfileViewModel.toDomainTrack: the synthetic
+     * id + youtubeId let PlayerRepositoryImpl.resolveTrackToMediaItem's
+     * toEntity() fallback stream-resolve a track that isn't in the DB.
+     */
+    private fun TrackItem.toDomainTrack(): com.stash.core.model.Track =
+        com.stash.core.model.Track(
+            id = videoId.hashCode().toLong(),
+            title = title,
+            artist = artist,
+            album = album.orEmpty(),
+            durationMs = (durationSeconds * 1000).toLong(),
+            albumArtUrl = thumbnailUrl,
+            youtubeId = videoId,
+            source = com.stash.core.model.MusicSource.YOUTUBE,
+            isStreamable = true,
+        )
 
     /**
      * Called from the owning VM's `onCleared`. Stops any active preview so

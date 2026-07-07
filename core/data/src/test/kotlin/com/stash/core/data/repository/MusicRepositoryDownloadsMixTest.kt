@@ -7,12 +7,18 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
+import com.stash.core.data.sync.SyncPreferencesManager
+import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.flow.flowOf
@@ -105,6 +111,10 @@ class MusicRepositoryDownloadsMixTest {
         syncHistoryDao: SyncHistoryDao = mockk(relaxed = true),
         downloadQueueDao: DownloadQueueDao = mockk(relaxed = true),
         discoveryQueueDao: DiscoveryQueueDao = mockk(relaxed = true),
+        // Default: a relaxed mock returns false for the anyAccumulate() Boolean
+        // suspend fun, so the gate is open for pre-existing tests with no stub.
+        syncPreferencesManager: SyncPreferencesManager = mockk(relaxed = true),
+        singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer = mockk(relaxed = true),
     ): MusicRepositoryImpl = MusicRepositoryImpl(
         context = context,
         trackDao = trackDao,
@@ -118,5 +128,119 @@ class MusicRepositoryDownloadsMixTest {
         downloadNetworkPreference = mockk(relaxed = true),
         streamingPreference = mockk(relaxed = true),
         localFileOps = mockk(relaxed = true),
+        syncPreferencesManager = syncPreferencesManager,
+        singleTrackDownloadEnqueuer = singleTrackDownloadEnqueuer,
     )
+
+    private fun downloadedTrack(id: Long, filePath: String = "/music/$id.flac") = TrackEntity(
+        id = id,
+        title = "T$id",
+        artist = "A$id",
+        durationMs = 1000L,
+        source = MusicSource.SPOTIFY,
+        isDownloaded = true,
+        filePath = filePath,
+        canonicalTitle = "t$id",
+        canonicalArtist = "a$id",
+    )
+
+    private fun notDownloadedTrack(id: Long) = TrackEntity(
+        id = id,
+        title = "T$id",
+        artist = "A$id",
+        durationMs = 1000L,
+        source = MusicSource.SPOTIFY,
+        isDownloaded = false,
+        filePath = null,
+        canonicalTitle = "t$id",
+        canonicalArtist = "a$id",
+    )
+
+    @Test
+    fun `queueDownload requeues an existing non-terminal row instead of refusing`() = runTest {
+        // The bug: a stuck non-terminal row (streaming-mode PENDING or deferred
+        // WAITING_FOR_LOSSLESS) made queueDownload a silent no-op — "Couldn't
+        // queue download" for every already-synced track. It must now reset the
+        // row and drive a single-track download instead.
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.getById(5L) } returns notDownloadedTrack(5L)
+        val dq = mockk<DownloadQueueDao>(relaxed = true)
+        val existing = mockk<DownloadQueueEntity>(relaxed = true)
+        every { existing.id } returns 88L
+        every { existing.status } returns DownloadStatus.WAITING_FOR_LOSSLESS
+        coEvery { dq.getByTrackId(5L) } returns existing
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        val repo = buildRepo(trackDao = trackDao, downloadQueueDao = dq, singleTrackDownloadEnqueuer = enqueuer)
+        val result = repo.queueDownload(5L)
+
+        assertEquals(true, result)
+        coVerify { dq.resetToPending(listOf(88L)) }
+        coVerify { enqueuer.enqueue(88L) }
+        coVerify(exactly = 0) { dq.insert(any()) }
+    }
+
+    @Test
+    fun `queueDownload inserts a new row when none exists then enqueues it`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.getById(5L) } returns notDownloadedTrack(5L)
+        val dq = mockk<DownloadQueueDao>(relaxed = true)
+        coEvery { dq.getByTrackId(5L) } returns null
+        coEvery { dq.insert(any()) } returns 77L
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        val repo = buildRepo(trackDao = trackDao, downloadQueueDao = dq, singleTrackDownloadEnqueuer = enqueuer)
+        val result = repo.queueDownload(5L)
+
+        assertEquals(true, result)
+        coVerify { enqueuer.enqueue(77L) }
+    }
+
+    @Test
+    fun `queueDownload returns false when the track is already downloaded`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.getById(5L) } returns downloadedTrack(5L)
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        val repo = buildRepo(trackDao = trackDao, singleTrackDownloadEnqueuer = enqueuer)
+
+        assertEquals(false, repo.queueDownload(5L))
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+    }
+
+    @Test
+    fun `cleanOrphanedMixTracks deletes nothing when any source accumulates`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val prefs = mockk<SyncPreferencesManager>(relaxed = true)
+        coEvery { prefs.anyAccumulate() } returns true
+        coEvery { trackDao.getOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
+        val repo = buildRepo(trackDao = trackDao, syncPreferencesManager = prefs)
+
+        val cleaned = repo.cleanOrphanedMixTracks()
+
+        assertEquals(0, cleaned)
+        coVerify(exactly = 0) { trackDao.delete(any()) }
+        // Gate short-circuits BEFORE the DAO read.
+        coVerify(exactly = 0) { trackDao.getOrphanedDownloadedTracks() }
+    }
+
+    @Test
+    fun `cleanOrphanedMixTracks deletes orphans when all sources refresh`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val discoveryQueueDao = mockk<DiscoveryQueueDao>(relaxed = true)
+        val prefs = mockk<SyncPreferencesManager>(relaxed = true)
+        coEvery { prefs.anyAccumulate() } returns false
+        coEvery { trackDao.getOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
+        coEvery { discoveryQueueDao.getActiveTrackIds() } returns emptyList()
+        val repo = buildRepo(
+            trackDao = trackDao,
+            discoveryQueueDao = discoveryQueueDao,
+            syncPreferencesManager = prefs,
+        )
+
+        val cleaned = repo.cleanOrphanedMixTracks()
+
+        assertEquals(1, cleaned)
+        coVerify(exactly = 1) { trackDao.delete(any()) }
+    }
 }

@@ -9,6 +9,7 @@ import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,9 +26,14 @@ import javax.inject.Singleton
  *
  * Sentinel rules (see `LyricsDao` docs):
  * - Successful fetch -> upsert lyrics row + stamp `lyrics_fetched_at = clock.now()`.
- * - Complete miss across all sources -> no row + stamp `lyrics_fetched_at = 0L`.
+ * - Definitive miss across all sources -> no row + stamp `lyrics_fetched_at = 0L`.
  *   The 0L sentinel keeps the backfill worker's `WHERE lyrics_fetched_at IS NULL`
  *   predicate honest so it terminates.
+ * - Source FAILURE (network/HTTP/parse — the source threw) with no hit from a
+ *   later source -> THROWS and leaves the stamp untouched, so the track stays
+ *   retryable (worker backoff, next sheet open). Failures must never write the
+ *   0L sentinel: conflating them permanently miss-stamped ~72% of the library's
+ *   "No lyrics found" tracks (2026-07-05 forensics).
  *
  * Sidecar-write failure is logged but does NOT unwind the Room state.
  * The Room row + stamp are the source of truth; the sidecar is a best-effort
@@ -45,6 +51,15 @@ class LyricsRepository @Inject constructor(
     /** Observe the lyrics row for [trackId]. Emits null when no row exists yet. */
     fun observe(trackId: Long): Flow<LyricsEntity?> = lyricsDao.observe(trackId)
 
+    /**
+     * Observe the parent track's `lyrics_fetched_at` stamp. The sheet pairs this
+     * with [observe] so it reacts the moment a fetch finishes — the stamp is what
+     * distinguishes "never tried" (null → Loading) from "tried and missed"
+     * (0L → None), and watching it live is what stops the sheet sticking on
+     * Loading until a close+reopen re-queries the track.
+     */
+    fun observeFetchedAt(trackId: Long): Flow<Long?> = trackDao.observeLyricsFetchedAt(trackId)
+
     /** One-shot read of the lyrics row for [trackId], or null when absent. */
     suspend fun get(trackId: Long): LyricsEntity? = lyricsDao.get(trackId)
 
@@ -54,11 +69,13 @@ class LyricsRepository @Inject constructor(
      * stamps `tracks.lyrics_fetched_at`, and (for non-instrumental hits)
      * triggers a sidecar `.lrc` write.
      *
-     * On a complete miss, stamps `tracks.lyrics_fetched_at = 0L` and
-     * returns null without writing a row.
+     * On a definitive all-source miss, stamps `tracks.lyrics_fetched_at = 0L`
+     * and returns null without writing a row. If any source FAILED and no
+     * later source hit, rethrows that failure without stamping — the caller
+     * decides retry policy (worker backoff / sheet Error state).
      */
     suspend fun resolveAndStore(query: LyricsQuery): LyricsEntity? {
-        val result = sources.firstNotNullOfOrNull { it.resolve(query) }
+        val result = walkSources(query)
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
@@ -98,9 +115,42 @@ class LyricsRepository @Inject constructor(
      * source chain (no cache). LRCLIB is fast (~200ms typical) so the
      * UX cost is acceptable, and avoiding Room means we don't have to
      * invent a fake parent row for the FK CASCADE.
+     *
+     * Same failure contract as [resolveAndStore]: null = definitive miss,
+     * throws when a source failed and nothing hit.
      */
-    suspend fun resolveTransient(query: LyricsQuery): LyricsResult? =
-        sources.firstNotNullOfOrNull { it.resolve(query) }
+    suspend fun resolveTransient(query: LyricsQuery): LyricsResult? = walkSources(query)
+
+    /**
+     * Clears `tracks.lyrics_fetched_at` back to NULL (never tried). The
+     * Retry path calls this before re-resolving so the sheet's stamp
+     * observer flips to Loading immediately — the visible feedback that
+     * was missing when Retry left the 0L sentinel in place.
+     */
+    suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
+
+    /**
+     * Priority-ordered source walk distinguishing miss from failure: a
+     * throwing source is logged and the walk continues (LRCLIB down must
+     * not block the InnerTube fallback), but if nothing hits and at least
+     * one source failed, the first failure is rethrown — "no lyrics" may
+     * only be concluded from sources that actually answered.
+     */
+    private suspend fun walkSources(query: LyricsQuery): LyricsResult? {
+        var firstFailure: Exception? = null
+        for (source in sources) {
+            try {
+                source.resolve(query)?.let { return it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Lyrics source ${source.id} failed for trackId=${query.trackId}", e)
+                if (firstFailure == null) firstFailure = e
+            }
+        }
+        firstFailure?.let { throw it }
+        return null
+    }
 
     private companion object {
         private const val TAG = "LyricsRepository"

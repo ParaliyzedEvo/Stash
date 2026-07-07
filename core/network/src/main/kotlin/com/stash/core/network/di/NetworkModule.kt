@@ -151,6 +151,15 @@ object NetworkModule {
             )
 
             // ── Interceptors ──────────────────────────────────────────
+            .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))
+            // Survive the device resolver failing under the sync's 8-way download
+            // burst (UnknownHostException for several simultaneous lookups of the
+            // same host, while single requests resolve fine — the reason downloads
+            // "fell flat" while streaming worked). Caches + coalesces + retries.
+            .dns(com.stash.core.network.dns.ResilientDns())
+            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .addInterceptor(loggingInterceptor)
             .apply { appInterceptors.forEach { addInterceptor(it) } }
             .build()

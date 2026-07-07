@@ -50,6 +50,8 @@ class TrackActionsDelegateStreamSpinnerTest {
         searchDownloadCoordinator = mockk(relaxed = true),
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
+        musicRepository = mockk(relaxed = true),
+        blocklistGuard = mockk(relaxed = true),
     )
 
     private fun track(id: String): TrackItem = mockk { every { videoId } returns id }

@@ -201,32 +201,17 @@ class DownloadManager @Inject constructor(
         if (forceLossless || losslessPrefs.enabledNow()) {
             val losslessResult = tryLosslessDownload(track, forced = forceLossless)
             if (losslessResult != null) return losslessResult
-            // v0.9.17 strict-FLAC: when lossless returned null AND
-            // fallback is off, defer instead of falling through to
-            // yt-dlp. Two exemptions:
-            //  - Stash-mix tracks (forceLossless=true) — small curated
-            //    rotating playlist would silently empty if stuck in
-            //    deferral, so they keep legacy fall-through semantics.
-            //  - GENUINELY YouTube-sourced tracks with a preResolvedUrl
-            //    (YT-Music direct sync) — YouTube is their source of
-            //    truth, so a lossless miss has no lossless original to
-            //    wait for; falling through is correct. Without this an
-            //    entire YT-Music playlist would defer en-masse the first
-            //    time lossless can't match (2026-05-12).
-            //
-            // The carve-out is gated on track.source == YOUTUBE, NOT on
-            // preResolvedUrl alone. A SPOTIFY/BOTH track acquires a
-            // youtube_id from match-for-playback, which the queue turns
-            // into a youtubeUrl/preResolvedUrl — that is a MATCH, not a
-            // user opt-in to YouTube. Keying the carve-out on the URL
-            // leaked lossy downloads for every matched Spotify track when
-            // fallback was off (observed 2026-06: 671 Spotify tracks came
-            // down as lossy mp4 on-device). Such tracks must defer.
-            val youtubeOptIn = preResolvedUrl != null &&
-                track.source == com.stash.core.model.MusicSource.YOUTUBE
-            if (!youtubeOptIn && !forceLossless &&
-                !losslessPrefs.youtubeFallbackEnabledNow()
-            ) {
+            // strict-FLAC: lossless returned null AND yt-dlp fallback is off,
+            // so defer instead of pulling a lossy opus/m4a from the YouTube
+            // path. Applies to EVERY track — including genuinely YouTube-
+            // sourced ones — so "fallback off" means no YouTube downloads at
+            // all, matching SearchDownloadCoordinator's unconditional gate.
+            // (Earlier a track.source==YOUTUBE carve-out let YT-native tracks
+            // fall through to yt-dlp here; that leaked opus/m4a downloads with
+            // fallback off, so it's removed.) The lone exemption is Stash-Mix
+            // tracks (forceLossless=true): the small curated rotating playlist
+            // would silently empty if its tracks got stuck in deferral.
+            if (!forceLossless && !losslessPrefs.youtubeFallbackEnabledNow()) {
                 Log.i(
                     TAG,
                     "deferring '${track.artist} - ${track.title}': lossless unavailable, fallback off",

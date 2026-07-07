@@ -33,6 +33,9 @@ fun SettingsPlaybackScreen(
     val streamOnCellular by viewModel.streamOnCellular.collectAsStateWithLifecycle()
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
     val forceAmzOnly by viewModel.forceAmzOnly.collectAsStateWithLifecycle()
+    val forceQbdlxOnly by viewModel.forceQbdlxOnly.collectAsStateWithLifecycle()
+    val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
+    val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Playback", onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
@@ -62,12 +65,24 @@ fun SettingsPlaybackScreen(
                             onCheckedChange = viewModel::setForceYouTubeFallback,
                         )
                     },
+                    // Force-ARCOD toggle row: removed 2026-07-01 while ARCOD is
+                    // parked (host down). The pref + registry branch stay; restore
+                    // this row (checked = forceArcodOnly,
+                    // onCheckedChange = viewModel::setForceArcodOnly) to re-enable.
                     {
                         SettingsToggleRow(
                             title = "Stream via amz (test)",
                             subtitle = "Route streaming AND downloads through amz (Amazon Music) only — no Qobuz, no YouTube. For testing the amz source. Turn off after testing.",
                             checked = forceAmzOnly,
                             onCheckedChange = viewModel::setForceAmzOnly,
+                        )
+                    },
+                    {
+                        SettingsToggleRow(
+                            title = "Force Direct Qobuz only (test)",
+                            subtitle = "Route streaming AND downloads through Direct Qobuz only — no other sources, no YouTube. For testing the Direct Qobuz source. Turn off after testing.",
+                            checked = forceQbdlxOnly,
+                            onCheckedChange = viewModel::setForceQbdlxOnly,
                         )
                     },
                 ),

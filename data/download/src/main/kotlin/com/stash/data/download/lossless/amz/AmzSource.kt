@@ -63,17 +63,24 @@ class AmzSource @Inject constructor(
             Log.d(TAG, "resolve attempt artist='${query.artist}' title='${query.title}' isrc=${query.isrc ?: "none"}")
 
             val candidates = client.search(searchText)
+            // The search HTTP call succeeded (it throws AmzApiException on a real
+            // error) → amz is healthy. Report success NOW so that a catalog miss
+            // below (no_match / track-null) does NOT trip the circuit breaker: a
+            // track Amazon simply doesn't carry is not a source-health failure.
+            // (Previously every miss called reportFailure, so a handful of
+            // uncatalogued tracks disabled amz for 5 min for tracks it DOES have —
+            // visible whenever kennyy/squid were down and everything routed to amz.)
+            rateLimiter.reportSuccess(id)
+
             val match = AmzMatcher.best(query, candidates)
             if (match == null) {
                 Log.d(TAG, "no_match for '$searchText' (${candidates.size} candidates)")
-                rateLimiter.reportFailure(id)
                 return null
             }
 
             val track = client.track(match.item.asin)
             if (track == null) {
                 Log.d(TAG, "track() returned no metadata for asin=${match.item.asin}")
-                rateLimiter.reportFailure(id)
                 return null
             }
             val meta = track.meta
@@ -91,7 +98,7 @@ class AmzSource @Inject constructor(
                     match.confidence
                 }
 
-            rateLimiter.reportSuccess(id)
+            // (Success already reported right after the search call.)
             val result = SourceResult(
                 sourceId = id,
                 // Encrypted-CMAF URL from /api/track (the authoritative stream

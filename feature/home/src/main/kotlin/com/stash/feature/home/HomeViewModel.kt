@@ -5,13 +5,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.DiscoveryQueueDao
-import com.stash.core.data.db.dao.DownloadQueueDao
-import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
-import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -23,18 +19,9 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
-import com.stash.data.download.lossless.AggregatorRateLimiter
-import com.stash.data.download.lossless.LosslessRetryWorker
 import com.stash.data.download.lossless.LosslessSourcePreferences
-import com.stash.data.download.lossless.kennyy.KennyySource
-import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.backfill.MetadataBackfillState
-import com.stash.data.lyrics.backfill.LyricsBackfillState
-import com.stash.feature.home.banner.LyricsBackfillBannerState
 import com.stash.feature.home.banner.MetadataBackfillBannerState
-import com.stash.feature.home.banner.WaitingForLosslessBannerState
-import com.stash.feature.home.banner.bannerStateFor
-import com.stash.feature.home.banner.lyricsBackfillBannerStateFor
 import com.stash.feature.home.banner.metadataBackfillBannerStateFor
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -56,11 +43,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -89,17 +73,11 @@ private const val TAG = "HomeViewModel"
 class HomeViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
-    private val lastFmSessionPreference: LastFmSessionPreference,
-    private val lastFmCredentials: LastFmCredentials,
-    private val listeningEventDao: ListeningEventDao,
     private val losslessPrefs: LosslessSourcePreferences,
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
     private val tipJarRepository: com.stash.core.data.tipjar.TipJarRepository,
     private val recipeDao: StashMixRecipeDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
-    private val downloadQueueDao: DownloadQueueDao,
-    private val qobuzSource: QobuzSource,
-    private val aggregatorRateLimiter: AggregatorRateLimiter,
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
@@ -290,100 +268,16 @@ class HomeViewModel @Inject constructor(
     private val _playlistSortOrder = MutableStateFlow(PlaylistSortOrder.RECENT)
 
     /**
-     * Last.fm banner prompt: only visible when the app has creds wired
-     * (so it's meaningful to connect), the user hasn't completed auth,
-     * AND there are local plays already queued — otherwise there's
-     * nothing to nudge about. Once a session is saved, the Flow re-emits
-     * null and the banner disappears on its own.
-     */
-    private val lastFmPromptFlow =
-        if (!lastFmCredentials.isConfigured) {
-            kotlinx.coroutines.flow.flowOf<LastFmPromptState?>(null)
-        } else {
-            combine(
-                lastFmSessionPreference.session,
-                listeningEventDao.pendingScrobbleCount(),
-                lastFmSessionPreference.bannerDismissed,
-            ) { session, pending, dismissed ->
-                if (session == null && pending > 0 && !dismissed) {
-                    LastFmPromptState(pendingCount = pending)
-                } else {
-                    null
-                }
-            }
-        }
-
-    /**
      * Lossless connect nudge: only visible when the user has not
-     * enabled lossless AND has not dismissed the banner. Mirrors
-     * [lastFmPromptFlow]'s shape and lifecycle — once dismissed,
-     * the DataStore write makes the Flow re-emit null and the
-     * banner disappears on its own.
-     *
-     * No `isConfigured` guard (unlike [lastFmPromptFlow]) because
-     * lossless ships unconditionally — every install has the
-     * feature. Last.fm's guard exists because that feature is
-     * gated on app-level API credentials.
+     * enabled lossless AND has not dismissed the banner. Once dismissed,
+     * the DataStore write makes the Flow re-emit null and the banner
+     * disappears on its own.
      */
     private val losslessPromptFlow = combine(
         losslessPrefs.enabled,
         losslessPrefs.bannerDismissed,
     ) { enabled, dismissed ->
         if (!enabled && !dismissed) LosslessPromptState else null
-    }
-
-    /**
-     * Per-session dismissal flag for the "tracks waiting for lossless"
-     * banner. Deliberately NOT DataStore-persisted: this banner surfaces
-     * a transient remediation hint, not a long-term opt-out. Cleared on
-     * process restart (the ViewModel dies with `viewModelScope`).
-     */
-    private val _waitingBannerDismissed = MutableStateFlow(false)
-
-    /**
-     * v0.9.17: kennyy circuit-breaker state, expressed as a Flow so the
-     * banner picker can react to outage transitions.
-     *
-     * `AggregatorRateLimiter.stateOf` is suspending and not a Flow today,
-     * so we re-read it whenever the circuit-reset SharedFlow signals a
-     * transition. The `flow { }` builder seeds the initial value with a
-     * one-shot suspending read so the banner picks the right state on
-     * first emission. `distinctUntilChanged` collapses no-op re-emissions
-     * (the SharedFlow can fire spuriously on stateOf reads — see the
-     * `_circuitResetEvents.tryEmit(sourceId)` inside `stateOf` itself).
-     */
-    private val kennyyBrokenFlow: Flow<Boolean> = flow {
-        emit(aggregatorRateLimiter.stateOf(KennyySource.SOURCE_ID).isCircuitBroken)
-        aggregatorRateLimiter.circuitResetEvents
-            .filter { it == KennyySource.SOURCE_ID }
-            .collect {
-                emit(aggregatorRateLimiter.stateOf(KennyySource.SOURCE_ID).isCircuitBroken)
-            }
-    }.distinctUntilChanged()
-
-    /**
-     * Combined banner state for the "tracks waiting for lossless" Home
-     * banner. Drives [HomeUiState.waitingForLosslessBanner]. The
-     * per-session dismissal flag is applied here so the rest of the UI
-     * sees [WaitingForLosslessBannerState.Hidden] uniformly when dismissed.
-     */
-    private val bannerStateFlow: Flow<WaitingForLosslessBannerState> = combine(
-        downloadQueueDao.waitingForLosslessCount(),
-        losslessPrefs.captchaCookieValue,
-        qobuzSource.lastKnownBadCookie,
-        kennyyBrokenFlow,
-        _waitingBannerDismissed,
-    ) { count, cookie, lastBad, kennyyBroken, dismissed ->
-        if (dismissed) {
-            WaitingForLosslessBannerState.Hidden
-        } else {
-            bannerStateFor(
-                count = count,
-                currentCookie = cookie.orEmpty(),
-                lastBadCookie = lastBad,
-                kennyyBroken = kennyyBroken,
-            )
-        }
     }
 
     /**
@@ -396,20 +290,10 @@ class HomeViewModel @Inject constructor(
         metadataBackfillState.snapshot.map { metadataBackfillBannerStateFor(it) }
 
     /**
-     * v0.9.36: drives [HomeUiState.lyricsBackfillBanner]. Pure-mapped
-     * from [LyricsBackfillState.snapshot]. Independent of
-     * [metadataBackfillBannerFlow]; both can fire concurrently on a
-     * v0.9.34→v0.9.36 upgrade — the screen renders them stacked.
-     */
-    private val lyricsBackfillBannerFlow: Flow<LyricsBackfillBannerState> =
-        lyricsBackfillState.snapshot.map { lyricsBackfillBannerStateFor(it) }
-
-    /**
-     * Bundles the three Home-banner flows ([bannerStateFlow] +
-     * [metadataBackfillBannerFlow] + [lyricsBackfillBannerFlow]) into a
-     * single emission so the top-level [uiState] combine stays at its
-     * non-vararg-friendly arg count. Mirrors the [authStateFlow]
-     * precedent.
+     * Bundles the Home-banner flows ([bannerStateFlow] +
+     * [metadataBackfillBannerFlow]) into a single emission so the top-level
+     * [uiState] combine stays at its non-vararg-friendly arg count. Mirrors
+     * the [authStateFlow] precedent.
      */
     private val bannersInfoFlow: StateFlow<BannersInfo> = combine(
         bannerStateFlow,
@@ -452,14 +336,11 @@ class HomeViewModel @Inject constructor(
 
     private val _baseUiState: Flow<HomeUiState> = combine(
         musicDataFlow,
-        promptsFlow,
+        losslessPromptFlow,
         _playlistSortOrder,
         tipJarRepository.state,
-        bannersInfoFlow,
-    ) { musicData, prompts, playlistSortOrder, tipJar, banners ->
-        val bannerState = banners.waitingForLossless
-        val metadataBackfillBanner = banners.metadataBackfill
-        val lyricsBackfillBanner = banners.lyricsBackfill
+        metadataBackfillBannerFlow,
+    ) { musicData, losslessPrompt, playlistSortOrder, tipJar, metadataBackfillBanner ->
         // Stash Mixes — recipe-driven, generated locally. Separate from
         // sync-imported Daily Mixes so the UI can label them distinctly.
         val stashMixes = musicData.playlists.filter {
@@ -515,10 +396,8 @@ class HomeViewModel @Inject constructor(
             emptyMixIds = musicData.emptyMixIds,
             playlistSortOrder = playlistSortOrder,
             isLoading = false,
-            lastFmPrompt = prompts.lastFmPrompt,
-            losslessPrompt = prompts.losslessPrompt,
+            losslessPrompt = losslessPrompt,
             tipJar = tipJar,
-            waitingForLosslessBanner = bannerState,
             metadataBackfillBanner = metadataBackfillBanner,
             lyricsBackfillBanner = lyricsBackfillBanner,
         )
@@ -545,17 +424,6 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Hide the Last.fm connect nudge on Home forever (until the user
-     * connects then disconnects, which resets the flag). Writes through
-     * to DataStore; the prompt Flow re-emits null on the next tick.
-     */
-    fun dismissLastFmBanner() {
-        viewModelScope.launch {
-            lastFmSessionPreference.setBannerDismissed(true)
-        }
-    }
-
-    /**
      * Hide the "Try lossless audio" Home banner forever. Writes
      * through to DataStore; the prompt Flow re-emits null on the
      * next tick and the banner disappears.
@@ -564,18 +432,6 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             losslessPrefs.setBannerDismissed(true)
         }
-    }
-
-    /**
-     * v0.9.17: dismiss the "tracks waiting for lossless" banner for
-     * this session only. Cleared on process restart (the flag lives
-     * on a `MutableStateFlow` inside `viewModelScope`, not DataStore).
-     * Persistent dismissal would let users hide a real failure
-     * indefinitely — that's the wrong default for a transient outage
-     * surface.
-     */
-    fun dismissWaitingForLosslessBanner() {
-        _waitingBannerDismissed.value = true
     }
 
     /**
@@ -590,95 +446,6 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * v0.9.36: counterpart to [onMetadataBackfillFinishedAcknowledged]
-     * for the lyrics-backfill banner. Called by the banner's
-     * `LaunchedEffect` after the 2-second "Done" pulse expires; flips
-     * [LyricsBackfillState] back to IDLE so the snapshot Flow emits a
-     * [LyricsBackfillBannerState.Hidden] mapping and the banner
-     * disappears from Home.
-     */
-    fun onLyricsBackfillFinishedAcknowledged() {
-        viewModelScope.launch { lyricsBackfillState.markFinishedAcknowledged() }
-    }
-
-    /**
-     * v0.9.17: kick off a one-shot retry sweep for any rows currently
-     * stuck in `WAITING_FOR_LOSSLESS`. Mirrors
-     * [com.stash.data.download.lossless.LosslessRetryScheduler.enqueue]
-     * exactly — same unique work name + KEEP policy, so a manual press
-     * coalesces with any in-flight automatic sweep instead of doubling
-     * the work.
-     */
-    fun onRetryDeferredRequested() {
-        viewModelScope.launch {
-            // Snapshot the current count before we kick the worker so the
-            // start message has a number to show. This is an approximation:
-            // a concurrent TrackDownloadWorker flipping rows out of
-            // WAITING_FOR_LOSSLESS between this read and the sweep can make
-            // countAtStart drift from the worker's own KEY_TOTAL. The result
-            // message below uses the worker-authoritative total, so the math
-            // stays consistent — only the start-message N can be stale.
-            val countAtStart = downloadQueueDao.waitingForLosslessCount().first()
-            if (countAtStart <= 0) return@launch  // banner shouldn't be visible
-
-            _userMessages.tryEmit("Looking for FLAC versions of $countAtStart tracks\u2026")
-
-            val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>().build()
-            // KEEP policy: a rapid double-tap coalesces. Suspend on the
-            // Operation's await() (work-runtime-ktx) so we don't block the
-            // viewModelScope's Main.immediate dispatcher.
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                LosslessRetryWorker.UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                request,
-            ).await()
-
-            // Under KEEP policy a coalesced tap means WorkManager kept the
-            // existing work's id and dropped our request.id entirely. Filtering
-            // on request.id would hang forever waiting for an id that never
-            // gets enqueued. So we take a snapshot of the current WorkInfo list
-            // for this unique name and lock in whichever is most relevant:
-            //   1) the in-flight (non-terminal) WorkInfo if one exists
-            //   2) else the most-recent WorkInfo in the list (already terminal,
-            //      e.g. the sweep finished between await() and our snapshot —
-            //      fire its result immediately)
-            //   3) else our own request.id as a defensive fallback (truly nothing
-            //      yet — the Flow will emit again when our work materializes).
-            val initial = WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWorkFlow(LosslessRetryWorker.UNIQUE_WORK_NAME)
-                .first()
-            val targetId = initial.firstOrNull { !it.state.isFinished }?.id
-                ?: initial.firstOrNull()?.id
-                ?: request.id
-
-            WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWorkFlow(LosslessRetryWorker.UNIQUE_WORK_NAME)
-                .firstOrNull { infos ->
-                    val ours = infos.firstOrNull { it.id == targetId } ?: return@firstOrNull false
-                    when (ours.state) {
-                        WorkInfo.State.SUCCEEDED -> {
-                            val resolved = ours.outputData.getInt(LosslessRetryWorker.KEY_RESOLVED, 0)
-                            val total = ours.outputData.getInt(LosslessRetryWorker.KEY_TOTAL, 0)
-                            val message = if (resolved == 0) {
-                                "None resolved this time \u2014 we'll keep trying."
-                            } else {
-                                val remaining = total - resolved
-                                "Resolved $resolved/$total. $remaining still waiting."
-                            }
-                            _userMessages.tryEmit(message)
-                            true
-                        }
-                        WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
-                            _userMessages.tryEmit("Sweep failed \u2014 try again later")
-                            true
-                        }
-                        else -> false
-                    }
-                }
-        }
-    }
-
-    /**
      * v0.9.13: Queue a Settings deep-link to the Lossless / Audio Quality
      * card. The Settings screen reads + clears this on entry and scrolls
      * the targeted card into view. Called by [LosslessConnectBanner]'s
@@ -687,11 +454,6 @@ class HomeViewModel @Inject constructor(
      */
     fun requestSettingsLosslessFocus() {
         settingsDeepLinkController.request(com.stash.core.data.navigation.SettingsFocus.LOSSLESS)
-    }
-
-    /** v0.9.13: Counterpart for the Last.fm connect nudge. */
-    fun requestSettingsLastFmFocus() {
-        settingsDeepLinkController.request(com.stash.core.data.navigation.SettingsFocus.LASTFM)
     }
 
     /**
@@ -1070,25 +832,3 @@ private data class MusicData(
     val emptyMixIds: Set<Long>,
 )
 
-/**
- * Internal holder for the two prompt-banner flows so the top-level
- * combine treats them as a single positional arg. Previously also
- * carried per-source connection booleans for the SyncStatusCard —
- * those moved to `:feature:sync` along with the card.
- */
-private data class PromptsInfo(
-    val lastFmPrompt: LastFmPromptState?,
-    val losslessPrompt: LosslessPromptState?,
-)
-
-/**
- * Internal holder bundling the three Home-banner flows so the top-level
- * combine can treat them as one positional arg (mirrors [AuthInfo]).
- * v0.9.36 added [lyricsBackfill] alongside the existing waiting-for-
- * lossless + metadata-backfill banners.
- */
-private data class BannersInfo(
-    val waitingForLossless: WaitingForLosslessBannerState,
-    val metadataBackfill: MetadataBackfillBannerState,
-    val lyricsBackfill: LyricsBackfillBannerState,
-)

@@ -56,30 +56,11 @@ fun SpotifyCookieDialog(
         text = {
             Column {
                 Text(
-                    text = "Enter your Spotify username and sp_dc cookie to connect.",
+                    text = "Log into Spotify in a real browser and paste your " +
+                        "sp_dc cookie. This works even when in-app sign-in is " +
+                        "blocked by Spotify's bot check.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Spotify username") },
-                    placeholder = { Text("Your Spotify username") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isValidating,
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "Find at spotify.com/account under 'Username'",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp),
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -93,11 +74,12 @@ fun SpotifyCookieDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "1. Go to open.spotify.com in your browser\n" +
-                        "2. Log in to your Spotify account\n" +
-                        "3. Press F12 to open DevTools\n" +
-                        "4. Go to Application > Cookies\n" +
-                        "5. Copy the value of 'sp_dc'",
+                    text = "Easiest on a computer:\n" +
+                        "1. Open open.spotify.com and log in\n" +
+                        "2. Press F12 → Application → Cookies\n" +
+                        "3. Copy the value of 'sp_dc'\n\n" +
+                        "On a phone: use a browser that can show cookies " +
+                        "(e.g. Firefox add-ons, or a cookie-viewer app).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -127,6 +109,32 @@ fun SpotifyCookieDialog(
                         modifier = Modifier.padding(start = 4.dp),
                     )
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Username is optional: the sp_dc exchange resolves the account
+                // server-side, and library/playlist sync runs over the cookie
+                // session (not the username). Offered only for a nicer
+                // "Connected as …" label and as a fallback for the newer
+                // opaque access tokens that carry no username.
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Spotify username (optional)") },
+                    placeholder = { Text("Your Spotify username") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isValidating,
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Find at spotify.com/account under 'Username'",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
             }
         },
         confirmButton = {
@@ -138,7 +146,8 @@ fun SpotifyCookieDialog(
             } else {
                 Button(
                     onClick = { onConnect(cookieValue.trim(), username.trim()) },
-                    enabled = cookieValue.isNotBlank() && username.isNotBlank(),
+                    // Cookie is the only requirement; username is optional.
+                    enabled = cookieValue.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),

@@ -84,6 +84,8 @@ fun AlbumDiscoveryScreen(
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
+    val playlistSheetItem by vm.playlistSheetItem.collectAsStateWithLifecycle()
+    val userPlaylists by vm.userPlaylists.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     var trackToRemove by remember { mutableStateOf<SearchResultItem?>(null) }
@@ -203,6 +205,9 @@ fun AlbumDiscoveryScreen(
                                         ),
                                     )
                                 },
+                                onPlayNext = { vm.onPlayNext(trackItem) },
+                                onAddToQueue = { vm.onAddToQueue(trackItem) },
+                                onAddToPlaylist = { vm.onRequestAddToPlaylist(trackItem) },
                                 onRemoveDownload = { trackToRemove = track.toSearchResultItem() },
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -262,6 +267,17 @@ fun AlbumDiscoveryScreen(
                 },
                 onDismiss = { trackToRemove = null },
                 sheetState = sheetState,
+            )
+        }
+
+        if (playlistSheetItem != null) {
+            com.stash.core.ui.components.SaveToPlaylistSheet(
+                playlists = userPlaylists.map {
+                    com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
+                },
+                onSaveToPlaylist = vm::onSaveToPlaylist,
+                onCreatePlaylist = vm::onCreatePlaylistAndAdd,
+                onDismiss = vm::onDismissPlaylistSheet,
             )
         }
     }

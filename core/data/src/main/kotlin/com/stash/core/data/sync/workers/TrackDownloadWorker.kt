@@ -811,6 +811,29 @@ class TrackDownloadWorker @AssistedInject constructor(
 
         when (outcome) {
             is TrackDownloadOutcome.Success -> {
+                // Persist the downloaded state on the TRACK row, mirroring chain
+                // mode (doWork). Without this the file lands on disk but
+                // tracks.is_downloaded / file_path stay unset, so the UI keeps
+                // showing the track as not-downloaded and it isn't playable from
+                // disk. (Pre-v0.9.63 single-track mode skipped this entirely.)
+                val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
+                val meta = audioDurationExtractor.extract(outcome.filePath)
+                trackDao.markAsDownloaded(
+                    trackId = entry.trackId,
+                    filePath = outcome.filePath,
+                    fileSizeBytes = fileSize,
+                    sampleRateHz = meta?.sampleRateHz,
+                    bitsPerSample = meta?.bitsPerSample,
+                )
+                if (meta != null && meta.format != "unknown") {
+                    runCatching {
+                        trackDao.setFormatAndQuality(
+                            trackId = entry.trackId,
+                            fileFormat = meta.format,
+                            qualityKbps = meta.bitrateKbps,
+                        )
+                    }.onFailure { e -> Log.w(TAG, "setFormatAndQuality failed for ${entry.trackId}", e) }
+                }
                 downloadQueueDao.updateStatus(
                     id = entry.id,
                     status = DownloadStatus.COMPLETED,
@@ -866,6 +889,26 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
         }
         return Result.success()
+    }
+
+    /**
+     * Best-effort [setForeground]. On Android 12+ (and stricter on 14/15,
+     * which this app targets) calling `setForeground()` re-invokes
+     * `startForegroundService()`, which the OS REFUSES with
+     * [android.app.ForegroundServiceStartNotAllowedException] when the app is in
+     * the background — which it routinely is by the time this worker runs, since
+     * the PlaylistFetch + Diff phases ahead of it can take a minute on a large
+     * library (screen off / app switched away in the meantime). That exception
+     * is only a *notification update* failure, but uncaught it propagated to
+     * doWork's top-level catch and FAILED the entire sync with 0 downloads
+     * ("sync falls flat"). The actual download work doesn't need the
+     * re-promotion — the worker is already executing — so swallow the failure
+     * and continue as a normal background job. Mirrors
+     * [DiscoveryDownloadWorker.safeUpdateForeground].
+     */
+    private suspend fun safeSetForeground(info: ForegroundInfo) {
+        runCatching { setForeground(info) }
+            .onFailure { Log.w(TAG, "setForeground failed (foreground-restricted / backgrounded); continuing without notification update", it) }
     }
 
     /**

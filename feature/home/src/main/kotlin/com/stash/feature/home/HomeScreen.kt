@@ -287,37 +287,8 @@ fun HomeScreen(
             )
         }
 
-        // ── Powered-by-ARCOD strip (subordinate to the supporter pill) ────
-        item {
-            PartnerStrip(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 12.dp),
-            )
-        }
-
-        // ── Last.fm connect nudge ────────────────────────────────────
-        // Shown only when we have creds wired AND the user has local
-        // plays accumulating locally AND the user hasn't dismissed the
-        // banner. Taps route into Settings; the X dismisses permanently.
-        uiState.lastFmPrompt?.let { prompt ->
-            item {
-                Spacer(Modifier.height(6.dp))
-                LastFmConnectBanner(
-                    pendingCount = prompt.pendingCount,
-                    onConnect = {
-                        // v0.9.13: queue the Settings focus target THEN navigate.
-                        // The Settings VM reads + clears the focus on entry and
-                        // scrolls the Last.fm card into view.
-                        viewModel.requestSettingsLastFmFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLastFmBanner,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
+        // ── Powered-by-ARCOD strip: removed 2026-07-01 while ARCOD is parked
+        // (host down for us). PartnerStrip + ArcodPartner kept for re-enabling.
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
@@ -332,35 +303,6 @@ fun HomeScreen(
                         onNavigateToSettings()
                     },
                     onDismiss = viewModel::dismissLosslessBanner,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Tracks waiting for lossless (FLAC-only deferred set) ─────
-        // v0.9.17: surfaces WAITING_FOR_LOSSLESS rows with one-tap
-        // recovery. State picker is in the ViewModel; this only renders
-        // when [WaitingForLosslessBannerState] is non-Hidden. All four
-        // action callbacks route through existing nav surfaces — no new
-        // nav graph entries.
-        if (uiState.waitingForLosslessBanner !is com.stash.feature.home.banner.WaitingForLosslessBannerState.Hidden) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                com.stash.feature.home.banner.WaitingForLosslessBanner(
-                    state = uiState.waitingForLosslessBanner,
-                    onSolveCaptcha = {
-                        // The captcha WebView is reachable via Settings →
-                        // Audio Quality card. Mirror LosslessConnectBanner's
-                        // path: queue the focus target then navigate.
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onConnect = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onRetry = viewModel::onRetryDeferredRequested,
-                    onDismiss = viewModel::dismissWaitingForLosslessBanner,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -1921,8 +1863,7 @@ private fun LastFmConnectBanner(
  * lossless turned off (explicit save, since v0.9.8 fresh installs
  * default to ON) and hasn't dismissed. Tapping routes to Settings,
  * where the existing Audio Quality card hosts the toggle + captcha
- * setup flow. Mirrors [LastFmConnectBanner]'s visual treatment so
- * both Home prompts feel consistent.
+ * setup flow.
  */
 @Composable
 private fun LosslessConnectBanner(

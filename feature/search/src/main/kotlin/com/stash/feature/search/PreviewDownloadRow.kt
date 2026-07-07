@@ -16,16 +16,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +92,9 @@ fun PreviewDownloadRow(
      * checkmark.
      */
     onRemoveDownload: (() -> Unit)? = null,
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+    onAddToPlaylist: () -> Unit = {},
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -232,6 +245,35 @@ fun PreviewDownloadRow(
                         )
                     }
                 }
+            }
+        }
+
+        // Overflow: Play next / Add to queue / Add to playlist
+        Box {
+            var menuOpen by remember { mutableStateOf(false) }
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More actions",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Play next") },
+                    leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
+                    onClick = { menuOpen = false; onPlayNext() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                    onClick = { menuOpen = false; onAddToQueue() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to playlist") },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
+                    onClick = { menuOpen = false; onAddToPlaylist() },
+                )
             }
         }
     }

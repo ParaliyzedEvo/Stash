@@ -166,28 +166,24 @@ class DownloadManagerDeferTest {
     }
 
     @Test
-    fun `fallback-off + YouTube-source track WITH preResolvedUrl does NOT defer`() = runTest {
-        // Preserve the YT-Music carve-out: a genuinely YouTube-sourced track
-        // (source = YOUTUBE) has YouTube as its source of truth, so a lossless
-        // miss legitimately falls through to yt-dlp even with fallback off —
-        // there is no lossless original to wait for.
+    fun `fallback-off + YouTube-source track WITH preResolvedUrl now defers (no lossy YouTube download)`() = runTest {
+        // Fallback off means NO opus/m4a from the YouTube path — period. A
+        // genuinely YouTube-sourced track (source = YOUTUBE) used to fall
+        // through to yt-dlp here via the youtubeOptIn carve-out; that carve-out
+        // is removed so it defers like every other non-Stash-Mix track,
+        // matching SearchDownloadCoordinator's unconditional gate.
         coEvery { losslessPrefs.enabledNow() } returns true
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
         coEvery { losslessRegistry.resolve(any()) } returns null
         coEvery { playlistDao.isTrackInStashMix(any()) } returns false
-        // preResolvedUrl is set, so resolveUrl is skipped; stub the tier flow
-        // and the download so the pipeline exits cleanly (non-Deferred).
-        every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
-        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } returns
-            DownloadResult.Error("test-stop")
 
         val result = newSubject().downloadTrack(
             track = stubTrack().copy(source = MusicSource.YOUTUBE),
             preResolvedUrl = "https://music.youtube.com/watch?v=abc",
         )
 
-        assertFalse(
-            "YouTube-source track must fall through to yt-dlp, got $result",
+        assertTrue(
+            "YouTube-source track must defer when fallback off, got $result",
             result is TrackDownloadResult.Deferred,
         )
     }

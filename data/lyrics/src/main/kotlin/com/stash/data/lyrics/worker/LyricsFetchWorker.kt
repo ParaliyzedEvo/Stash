@@ -10,6 +10,7 @@ import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.source.LyricsQuery
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 /**
  * Per-track lyrics fetch — runs in two enqueue contexts:
@@ -35,11 +36,11 @@ import dagger.assisted.AssistedInject
  *    [Result.retry] (WorkManager applies its own backoff).
  *  - `resolveAndStore` throws + `runAttemptCount >= MAX_ATTEMPTS` ->
  *    [Result.success] leaving `tracks.lyrics_fetched_at = NULL`. We do
- *    NOT return [Result.failure] here — the row stays NULL on purpose
- *    so the once-per-version `LyricsBackfillWorker` (Task 9) re-picks it
- *    up after the next binary bump. Returning `success` matches the
- *    actual on-disk state more honestly (we did not write a 0L sentinel
- *    — that's the repository's job on a *confirmed* miss).
+ *    NOT return [Result.failure] here — the row stays NULL on purpose so
+ *    a later on-open priority fetch (or a re-download) can retry it.
+ *    Returning `success` matches the actual on-disk state more honestly
+ *    (we did not write a 0L sentinel — that's the repository's job on a
+ *    *confirmed* miss).
  */
 @HiltWorker
 class LyricsFetchWorker @AssistedInject constructor(
@@ -63,13 +64,17 @@ class LyricsFetchWorker @AssistedInject constructor(
             durationMs = track.durationMs.takeIf { it > 0L },
             youtubeVideoId = extractYoutubeVideoId(track),
         )
-        return runCatching { lyricsRepository.resolveAndStore(query) }
-            .fold(
-                onSuccess = { Result.success() },
-                onFailure = {
-                    if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.success()
-                },
-            )
+        return try {
+            lyricsRepository.resolveAndStore(query)
+            Result.success()
+        } catch (e: CancellationException) {
+            // Must escape before the generic catch: WorkManager cancellation
+            // (e.g. a priority REPLACE enqueue for the same track) is not a
+            // fetch failure and must not consume a retry attempt.
+            throw e
+        } catch (e: Exception) {
+            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.success()
+        }
     }
 
     /**

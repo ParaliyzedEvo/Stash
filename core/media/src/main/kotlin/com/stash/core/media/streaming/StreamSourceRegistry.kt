@@ -13,31 +13,20 @@ import javax.inject.Singleton
  * — null from one resolver just means "try the next one".
  *
  * Current order:
- *   1. [KennyyStreamResolver]  — `kennyy.com.br`, Qobuz lossless. No
- *      captcha gate; almost always usable. Primary source.
- *   2. [QobuzStreamResolver]   — `qobuz.squid.wtf`. Same Qobuz catalog,
- *      requires a user-pasted `captcha_verified_at` cookie. Auto-skipped
- *      when no cookie is set or the current cookie has been marked stale.
- *   3. [LucidaStreamResolver]   — `lucida.to`, Qobuz-sourced FLAC via
- *      intermediary. Self-gates via `LosslessSourceHealthGate`; returns
- *      null when the content is degraded.
- *   4. [SaavnStreamResolver]    — JioSaavn API, AAC 320 kbps. Covers
- *      Indian music that isn't in the Qobuz catalog and may not be on
- *      YouTube Music. Fast (~1-2 s), better quality than YT. Before
- *      YouTube because it's faster and higher quality for the tracks it
- *      covers.
- *   5. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless
- *   6. [ArcodStreamResolver]   — ARCOD. Same Qobuz catalog via an authenticated
- *      single stream GET (search → match → one resolve call that returns an open,
- *      Range-capable URL; the operator's private endpoint, base injected via
- *      BuildConfig). A per-user-account fallback, so it sits last among the
- *      lossless sources and foreground-only — reached only when kennyy and squid
- *      both miss.
- *   7. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless
- *      FLAC. Consulted when neither Qobuz proxy has a confident match,
- *      so an Amazon-only track still streams lossless before dropping to
- *      lossy YouTube. Captcha auth rides the shared client's interceptor.
- *   8. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   1. [QbdlxStreamResolver]   — `qbdlx`, the DIRECT Qobuz API (signed
+ *      requests + a rotating per-account token pool). Primary lossless source:
+ *      plain Range-seekable FLAC, no proxy operator and no client-side decrypt,
+ *      so it's the fastest path. Foreground-only (allowYtDlp) since it spends
+ *      pool-account quota.
+ *   2. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless FLAC.
+ *      Consulted when qbdlx has no confident match, so an Amazon-only track
+ *      still streams lossless before dropping to lossy YouTube. Its resolver
+ *      decrypts the whole file client-side (slow), so it sits LAST among the
+ *      lossless sources and is foreground-only too.
+ *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
+ *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
+ *   [QobuzStreamResolver] (`qobuz.squid.wtf`), [ArcodStreamResolver] (ARCOD).
+ *   3. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -70,6 +59,7 @@ class StreamSourceRegistry @Inject constructor(
     private val lucida: LucidaStreamResolver,
     private val saavn: SaavnStreamResolver,
     private val amz: AmzStreamResolver,
+    private val qbdlx: QbdlxStreamResolver,
     private val youtube: YouTubeStreamResolver,
     private val streamingPreference: StreamingPreference,
 ) {
@@ -101,7 +91,14 @@ class StreamSourceRegistry @Inject constructor(
         preferFastStartup: Boolean = false,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
-            if (streamingPreference.isForceArcodOnly()) {
+            if (streamingPreference.isForceQbdlxOnly()) {
+                // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
+                // so qbdlx can be exercised even when the proxies are healthy.
+                // Takes precedence over the other force toggles. Gated by
+                // allowYtDlp like arcod/amz so speculative background fill spends
+                // no pool-account quota (only foreground/next-up resolves hit it).
+                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+            } else if (streamingPreference.isForceArcodOnly()) {
                 // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
                 // ARCOD path can be exercised even when the Qobuz proxies are
                 // healthy. Takes precedence over forceAmzOnly and
@@ -123,6 +120,33 @@ class StreamSourceRegistry @Inject constructor(
                 // both-sources-down outage).
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             } else {
+                // PARKED 2026-07-01: kennyy/squid/arcod hosts are down for us,
+                // so they're commented out of the normal chain (re-enabling is
+                // uncommenting). Kept in sync with
+                // LosslessSourceRegistry.PARKED_SOURCE_IDS (download side).
+                // add("kennyy" to kennyy::resolve)
+                // add("squid" to qobuz::resolve)
+                // if (allowYtDlp) add("arcod" to arcod::resolve)
+
+                // qbdlx (direct Qobuz API, per-account token pool) is now the
+                // primary lossless source: plain Range-seekable FLAC, no proxy,
+                // no client-side decrypt — the fastest path, so it's tried FIRST
+                // (ahead of amz). Like the parked per-account/slow sources it runs
+                // ONLY on foreground/next-up resolves (allowYtDlp = true), NEVER
+                // on the speculative queue-wide background fill — otherwise one
+                // playlist tap spends a search + the pool account's quota on every
+                // queue track speculatively, not just the ones actually played.
+                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+                // amz (Amazon Music) is the SLOWEST lossless source: its stream
+                // resolver decrypts the whole FLAC to a local cache file before
+                // returning a URL (tens of seconds), serialized behind a single
+                // captcha / per-asin lock. So it sits LAST among lossless and,
+                // like qbdlx, runs ONLY on foreground/next-up resolves
+                // (allowYtDlp = true), NEVER on the speculative background fill —
+                // routing background tracks through the slow decrypt starves the
+                // fast YouTube fallback and leaves the timeline too sparse to skip
+                // (observed on-device 2026-06-21: 52s to resolve one next-up).
+                if (allowYtDlp) add("amz" to amz::resolve)
                 add("kennyy" to kennyy::resolve)
                 add("squid" to qobuz::resolve)
                 // ARCOD is an authenticated, per-user-account fallback. It must
@@ -145,6 +169,14 @@ class StreamSourceRegistry @Inject constructor(
                 } else if (allowYtDlp && preferFastStartup) {
                     Log.d(TAG, "cellular fast-start: skipping amz for ${track.id} '${track.title}'")
                 }
+                // qbdlx (direct Qobuz API, per-account token pool) is the same
+                // kind of authenticated per-user-account fallback as arcod, so it
+                // must run ONLY on foreground/next-up resolves (allowYtDlp = true),
+                // NEVER on the speculative queue-wide background fill
+                // (allowYtDlp = false) — otherwise one playlist tap would spend a
+                // search call + the pool account's quota on every queue track
+                // speculatively, not just the ones actually played.
+                if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }
@@ -162,13 +194,9 @@ class StreamSourceRegistry @Inject constructor(
                 .getOrNull()
             val dt = System.currentTimeMillis() - t0
             if (result != null) {
-                Log.d("LATDIAG", "registry: '$name' HIT dt=${dt}ms id=${track.id} origin=${result.origin}")
-                if (name != "kennyy") {
-                    // Diagnostic: anything other than the primary source is
-                    // a fallback path worth noticing. Helps explain "this
-                    // track played but at lower quality" reports.
-                    Log.i(TAG, "$name served ${track.id} '${track.title}' (kennyy missed)")
-                }
+                // Diagnostic: which source actually served the stream. Helps
+                // explain "this track played but at lower quality" reports.
+                Log.i(TAG, "$name served ${track.id} '${track.title}'")
                 return result
             }
             Log.d("LATDIAG", "registry: '$name' MISS dt=${dt}ms id=${track.id}")

@@ -105,6 +105,7 @@ class ArtistProfileViewModelTest {
         on { downloadingIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
         on { downloadedIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
         on { previewLoadingId } doReturn MutableStateFlow<String?>(null).asStateFlow()
+        on { userPlaylists } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
     }
 
     @Test

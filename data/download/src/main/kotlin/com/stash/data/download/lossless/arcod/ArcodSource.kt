@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.AudioFormat
 import com.stash.data.download.lossless.LosslessSource
+import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
@@ -13,15 +14,17 @@ import kotlinx.coroutines.CancellationException
 
 /**
  * [LosslessSource] backed by the Qobuz catalog via the ARCOD (arcod.xyz)
- * Qobuz-DL proxy. Unlike [com.stash.data.download.lossless.qobuz.QobuzSource]
- * (squid.wtf, which signs a CDN URL synchronously), ARCOD is a *job-based*
- * proxy: a download is enqueued, polled to completion, and only then yields a
- * short-lived open `.flac` URL.
+ * Qobuz-DL proxy. Resolves a FLAC URL two ways: the **fast single-GET stream
+ * endpoint** ([ArcodClient.streamUrl] — same full Range-capable FLAC the
+ * streaming path uses, no server-side render) is tried first; the legacy
+ * **job-render lifecycle** (enqueue → poll → URL) is the fallback for builds
+ * where the private stream base isn't configured. Both run under the shared
+ * [ArcodJobGate] (one ARCOD op app-wide) to protect the operator's account.
  *
  * Auth is a per-user Supabase session ([ArcodCredentialStore]); the Bearer
  * token is attached by [ArcodAuthInterceptor] inside [ArcodClient], so the
- * download URL itself ([SourceResult.downloadUrl]) is served by an open
- * `dl.arcod.xyz` host that needs no headers.
+ * resolved download URL ([SourceResult.downloadUrl]) is served by an open
+ * host that needs no headers.
  *
  * Every network call is gated behind [AggregatorRateLimiter] for [id]. ARCOD
  * runs on one operator-paid Qobuz account, so the conservative `"arcod"`
@@ -34,6 +37,7 @@ class ArcodSource @Inject constructor(
     private val credentialStore: ArcodCredentialStore,
     private val rateLimiter: AggregatorRateLimiter,
     private val jobGate: ArcodJobGate,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) : LosslessSource {
 
     override val id: String = SOURCE_ID
@@ -76,64 +80,28 @@ class ArcodSource @Inject constructor(
             }
             val item = match.item
 
-            // 3. The album id is the job-create key. Catalog rows occasionally
-            // omit it; without it we can't enqueue, so fail over cleanly.
-            val album = item.album
-            val albumId = album?.id
-            if (album == null || albumId == null) {
-                // Like a no-match: the catalog row simply can't be enqueued.
-                // Not a source failure — don't count it toward the breaker.
-                Log.d(TAG, "no_album_id for track ${item.id} '${item.title}'")
-                return null
-            }
-
-            // 4. Enqueue the FLAC render job.
-            val request = ArcodJobRequest(
-                albumId = albumId,
-                trackId = item.id.toString(),
-                albumTitle = album.title ?: "",
-                artistName = item.performer?.name ?: album.artist?.name ?: query.artist,
-                artistId = (album.artist?.id ?: item.performer?.id ?: 0L).toString(),
-                coverUrl = album.image?.large ?: "",
-                releaseDate = album.releaseDate ?: "",
-                tracksCount = album.tracksCount ?: 1,
-            )
-
-            // The create→poll→url render lifecycle runs under the shared
-            // ArcodJobGate so at most ONE ARCOD job is in flight app-wide (a
-            // library sync's parallel download workers would otherwise fire
-            // dozens at once and blow the operator's hourly cap).
+            // 3. Acquire a FLAC URL under the shared ArcodJobGate (at most ONE
+            // ARCOD op in flight app-wide so a sync's parallel workers can't
+            // hammer the operator's single Qobuz account). Prefer the FAST
+            // single-GET stream endpoint — same full Range-capable FLAC the
+            // streaming path uses, with NO server-side render/poll. Fall back to
+            // the legacy job-render lifecycle only when the single GET can't run
+            // (stream base unconfigured) or returns nothing.
             val resolved = jobGate.withJob {
-                val job = client.createJob(request) ?: run {
-                    Log.d(TAG, "createJob returned null for track ${item.id}")
-                    rateLimiter.reportFailure(id)
-                    return@withJob null
-                }
-                val completed = client.pollStatus(job.id) ?: run {
-                    Log.d(TAG, "pollStatus returned null for job ${job.id}")
-                    rateLimiter.reportFailure(id)
-                    return@withJob null
-                }
-                val dl = client.downloadUrlFrom(completed) ?: run {
-                    Log.d(TAG, "completed job ${job.id} had no download url")
-                    rateLimiter.reportFailure(id)
-                    return@withJob null
-                }
-                rateLimiter.reportSuccess(id)
-                ResolvedJob(dl, job.id)
+                resolveViaStream(item) ?: resolveViaJob(query, item)
             } ?: return null
 
             SourceResult(
                 sourceId = id,
                 downloadUrl = resolved.url,
-                // dl.arcod.xyz serves the file openly (no auth) — no headers.
+                // The FLAC host serves the file openly (no auth) — no headers.
                 downloadHeaders = emptyMap(),
                 // Codec is FLAC; the real bit-depth/sample-rate is filled by the
                 // post-download probe (AudioDurationExtractor), so leave 0s here.
                 format = AudioFormat(codec = "flac", bitrateKbps = 0, sampleRateHz = 0, bitsPerSample = 0),
                 confidence = match.confidence,
-                sourceTrackId = resolved.jobId,
-                coverArtUrl = album.image?.large,
+                sourceTrackId = resolved.trackId,
+                coverArtUrl = item.album?.image?.large,
             )
         } catch (e: ArcodRateLimitedException) {
             // Genuine over-rate — let the limiter apply the configured backoff
@@ -151,8 +119,65 @@ class ArcodSource @Inject constructor(
         }
     }
 
-    /** The completed-job outcome carried out of the [ArcodJobGate] block. */
-    private data class ResolvedJob(val url: String, val jobId: String)
+    /**
+     * Fast path: one stream-URL GET (no job render/poll), at the user's
+     * configured download quality tier. Returns null — so the caller falls back
+     * to [resolveViaJob] — when the stream base is unconfigured or the GET
+     * fails. Mirrors [com.stash.core.media.streaming.ArcodStreamResolver], which
+     * needs only the matched track id (never the album id).
+     */
+    private suspend fun resolveViaStream(item: ArcodTrackItem): ResolvedDownload? {
+        val code = losslessPrefs.qualityTierNow().qobuzCode
+        val stream = client.streamUrl(item.id, code) ?: return null
+        rateLimiter.reportSuccess(id)
+        Log.d(TAG, "resolved via single-GET stream track=${item.id} quality=$code")
+        return ResolvedDownload(stream.url, item.id.toString())
+    }
+
+    /**
+     * Fallback: the legacy job-render lifecycle (create → poll → url). Needs the
+     * album id as the job-create key; catalog rows occasionally omit it, in
+     * which case the track simply can't be enqueued (treated like a no-match —
+     * not a source failure).
+     */
+    private suspend fun resolveViaJob(query: TrackQuery, item: ArcodTrackItem): ResolvedDownload? {
+        val album = item.album
+        val albumId = album?.id
+        if (album == null || albumId == null) {
+            Log.d(TAG, "no_album_id for track ${item.id} '${item.title}'")
+            return null
+        }
+        val request = ArcodJobRequest(
+            albumId = albumId,
+            trackId = item.id.toString(),
+            albumTitle = album.title ?: "",
+            artistName = item.performer?.name ?: album.artist?.name ?: query.artist,
+            artistId = (album.artist?.id ?: item.performer?.id ?: 0L).toString(),
+            coverUrl = album.image?.large ?: "",
+            releaseDate = album.releaseDate ?: "",
+            tracksCount = album.tracksCount ?: 1,
+        )
+        val job = client.createJob(request) ?: run {
+            Log.d(TAG, "createJob returned null for track ${item.id}")
+            rateLimiter.reportFailure(id)
+            return null
+        }
+        val completed = client.pollStatus(job.id) ?: run {
+            Log.d(TAG, "pollStatus returned null for job ${job.id}")
+            rateLimiter.reportFailure(id)
+            return null
+        }
+        val dl = client.downloadUrlFrom(completed) ?: run {
+            Log.d(TAG, "completed job ${job.id} had no download url")
+            rateLimiter.reportFailure(id)
+            return null
+        }
+        rateLimiter.reportSuccess(id)
+        return ResolvedDownload(dl, job.id)
+    }
+
+    /** A resolved FLAC URL + its source-side id (track id or job id, logging only). */
+    private data class ResolvedDownload(val url: String, val trackId: String)
 
     companion object {
         const val SOURCE_ID = "arcod"

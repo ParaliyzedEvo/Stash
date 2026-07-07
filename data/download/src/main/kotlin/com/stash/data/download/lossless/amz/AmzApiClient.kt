@@ -59,16 +59,29 @@ class AmzApiClient @Inject constructor(
      */
     suspend fun search(query: String, limit: Int = 25): List<AmzSearchItem> =
         withContext(Dispatchers.IO) {
+            // NOTE: no `country` field. amz.squid.wtf routes a `country` to that
+            // country's operator-side Amazon session cookie; when that session
+            // goes stale (e.g. US, 2026-06-28) the search returns an empty
+            // trackList or 503 "Suche braucht gültige Session". Omitting country
+            // uses the proxy's working default session. (Confirmed live: with
+            // country=US → empty; without → full results.)
             val body = buildString {
                 append("{\"query\":")
                 append(jsonString(query))
-                append(",\"country\":\"US\",\"content_type\":\"TRACK\",\"limit\":")
+                append(",\"content_type\":\"TRACK\",\"limit\":")
                 append(limit)
                 append("}")
             }
-            val raw = post("$baseUrl/search", body) ?: return@withContext emptyList()
+            // post() returns null on a real HTTP error (non-2xx) or network failure
+            // — throw so the caller can distinguish "amz is unhealthy" (report
+            // failure → breaker) from "amz answered with no results" (an empty 2xx
+            // list below, which is a healthy catalog miss, NOT a failure).
+            val raw = post("$baseUrl/search", body)
+                ?: throw AmzApiException("search failed: no body (HTTP error / unreachable)")
             runCatching { json.decodeFromString<AmzSearchResponse>(raw).trackList }
                 .getOrElse { e ->
+                    // 2xx body that didn't parse — treat as a (healthy) empty result
+                    // rather than a hard failure; amz still responded.
                     Log.w(TAG, "search parse failed", e)
                     emptyList()
                 }
@@ -84,12 +97,14 @@ class AmzApiClient @Inject constructor(
      * @throws AmzRateLimitedException on HTTP 429.
      */
     suspend fun track(asin: String, tier: String = DEFAULT_TIER): AmzTrack? = withContext(Dispatchers.IO) {
+        // No `country` (see search()): the stale per-country Amazon session
+        // breaks track resolution the same way. Omit it → working default.
         val body = buildString {
             append("{\"asin\":")
             append(jsonString(asin))
             append(",\"tier\":")
             append(jsonString(tier))
-            append(",\"country\":\"US\"}")
+            append("}")
         }
         val raw = post("$baseUrl/track", body) ?: return@withContext null
         runCatching {
@@ -131,7 +146,8 @@ class AmzApiClient @Inject constructor(
     fun streamUrl(asin: String, tier: String = DEFAULT_TIER): String {
         val encoded = URLEncoder.encode(asin, "UTF-8")
         val encodedTier = URLEncoder.encode(tier, "UTF-8")
-        return "$baseUrl/stream?asin=$encoded&country=US&tier=$encodedTier"
+        // No `country` (see search()/track()): use the proxy's default session.
+        return "$baseUrl/stream?asin=$encoded&tier=$encodedTier"
     }
 
     /** JSON-encode [value] to a quoted, escaped JSON string literal. */
@@ -197,3 +213,12 @@ class AmzApiClient @Inject constructor(
  * `QobuzApiException.status == 429`.
  */
 class AmzRateLimitedException : RuntimeException("amz.squid.wtf 429: rate limited")
+
+/**
+ * Thrown by [AmzApiClient.search] on a real HTTP error (non-2xx) or an
+ * unreachable host — i.e. amz is genuinely unhealthy. Distinct from a 2xx
+ * response that simply returns no results (a healthy catalog miss): the source
+ * reports a failure (→ circuit breaker) only for the former, never the latter,
+ * so a track Amazon doesn't carry can't disable amz for tracks it does.
+ */
+class AmzApiException(message: String) : RuntimeException(message)

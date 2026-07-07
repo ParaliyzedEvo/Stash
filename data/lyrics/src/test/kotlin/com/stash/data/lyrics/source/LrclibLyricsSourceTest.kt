@@ -1,14 +1,19 @@
 package com.stash.data.lyrics.source
 
 import com.stash.core.common.AppVersionProvider
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -47,12 +52,44 @@ class LrclibLyricsSourceTest {
         assertEquals("I been off the grid", result.plainText)
         assertEquals(false, result.instrumental)
         assertEquals("42", result.sourceLyricsId)
-        // Verify User-Agent
         val request = server.takeRequest()
         val ua = request.getHeader("User-Agent")
         assertTrue("User-Agent header should mention Stash + version", ua!!.contains("Stash/0.9.36"))
-        // Verify exact endpoint
         assertTrue(request.path!!.startsWith("/api/get"))
+    }
+
+    @Test fun `get omits album_name — album-strictness causes false misses`() = runTest {
+        // Including album_name forces LRCLIB /api/get to 404 whenever our album
+        // string differs even slightly from theirs. We deliberately drop it so a
+        // good artist+title+duration still matches.
+        server.enqueue(MockResponse().setBody("""
+            {"id": 1, "trackName": "T", "artistName": "A", "albumName": "AL",
+             "duration": 200, "instrumental": false, "plainLyrics": "x", "syncedLyrics": null}
+        """.trimIndent()))
+        source.resolve(query(durationMs = 200_000)) // query carries album="?"
+        val getReq = server.takeRequest()
+        assertTrue(getReq.path!!.startsWith("/api/get"))
+        assertFalse("album_name must not be sent on /api/get", getReq.path!!.contains("album_name"))
+    }
+
+    @Test fun `single get attempt — no duration ladder`() = runTest {
+        // One exact get, then straight to search on miss. No multi-rung ladder.
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path!!.startsWith("/api/get") -> MockResponse().setResponseCode(404)
+                request.path!!.startsWith("/api/search") -> MockResponse().setBody("""
+                    [{"id": 99, "trackName": "Random", "artistName": "Random",
+                      "albumName": "?", "duration": 234, "instrumental": false,
+                      "plainLyrics": "fallback", "syncedLyrics": null}]
+                """.trimIndent())
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val result = source.resolve(query(durationMs = 234_000))
+        assertNotNull(result)
+        assertEquals("fallback", result!!.plainText)
+        // Exactly two calls: one get (404) + one search. The old code made 11 gets.
+        assertEquals(2, server.requestCount)
     }
 
     @Test fun `instrumental flag preserved`() = runTest {
@@ -68,60 +105,55 @@ class LrclibLyricsSourceTest {
         assertNull(result.syncedLrc)
     }
 
-    @Test fun `duration ladder — exact misses, minus-one hits`() = runTest {
-        // Exact fails (404), -1 succeeds, no further requests
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setBody("""{"id": 1, "trackName": "T", "artistName": "A",
-            "albumName": "AL", "duration": 233, "instrumental": false, "plainLyrics": "x",
-            "syncedLyrics": null}"""))
-        val result = source.resolve(query(durationMs = 234_000))
-        assertNotNull(result)
+    @Test fun `complete miss returns null — one get plus one search`() = runTest {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path!!.startsWith("/api/search") -> MockResponse().setBody("[]")
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        assertNull(source.resolve(query(durationMs = 234_000)))
         assertEquals(2, server.requestCount)
-        val first = server.takeRequest().path
-        val second = server.takeRequest().path
-        assertTrue("exact duration first", first!!.contains("duration=234"))
-        assertTrue("-1 second", second!!.contains("duration=233"))
     }
 
-    @Test fun `all rungs miss — search fallback used`() = runTest {
-        // Exact + ±2 + ±5 all 404; then /api/search returns a hit
-        repeat(11) { server.enqueue(MockResponse().setResponseCode(404)) }
-        server.enqueue(MockResponse().setBody("""
-            [{"id": 99, "trackName": "Random", "artistName": "Random",
-              "albumName": "?", "duration": 234, "instrumental": false,
-              "plainLyrics": "fallback", "syncedLyrics": null}]
-        """.trimIndent()))
-        val result = source.resolve(query(durationMs = 234_000))
-        // Lyrics returned only if similarity + duration within ±5s
-        // For this stub artist/title equal query, similarity passes; duration 234 vs 234 passes
-        assertNotNull(result)
-    }
-
-    @Test fun `complete miss returns null`() = runTest {
-        repeat(12) { server.enqueue(MockResponse().setResponseCode(404)) }
-        // /api/search returns empty list
-        server.enqueue(MockResponse().setBody("[]"))
-        assertNull(source.resolve(query(durationMs = 234_000)))
-    }
-
-    @Test fun `network exception returns null`() = runTest {
+    @Test fun `network exception THROWS — must not read as a definitive miss`() = runTest {
+        // Pre-fix this returned null, which the repository stamped as a
+        // permanent 0L miss. Forensics (2026-07-05) showed ~72% of the
+        // library's "No lyrics found" tracks were poisoned exactly this way.
         server.shutdown()
-        assertNull(source.resolve(query(durationMs = 234_000)))
+        assertThrows(IOException::class.java) {
+            kotlinx.coroutines.runBlocking { source.resolve(query(durationMs = 234_000)) }
+        }
     }
 
-    @Test fun `null duration skips ladder, goes straight to search`() = runTest {
+    @Test fun `get 5xx THROWS — server trouble is not a miss`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertThrows(IOException::class.java) {
+            kotlinx.coroutines.runBlocking { source.resolve(query(durationMs = 234_000)) }
+        }
+        assertEquals("no search fallback after a failing get", 1, server.requestCount)
+    }
+
+    @Test fun `search 5xx after get 404 THROWS`() = runTest {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path!!.startsWith("/api/get") -> MockResponse().setResponseCode(404)
+                else -> MockResponse().setResponseCode(503)
+            }
+        }
+        assertThrows(IOException::class.java) {
+            kotlinx.coroutines.runBlocking { source.resolve(query(durationMs = 234_000)) }
+        }
+    }
+
+    @Test fun `null duration skips get, goes straight to search`() = runTest {
         server.enqueue(MockResponse().setBody("[]"))
         assertNull(source.resolve(query(durationMs = null)))
-        // Only one request (search), not 12
+        // Only one request (search), no get without a duration.
         assertEquals(1, server.requestCount)
     }
 
     @Test fun `regression — LRCLIB returns duration as JSON Number with decimal`() = runTest {
-        // Real LRCLIB responses come back as `"duration":265.0` (Number with a decimal),
-        // NOT `"duration":265` (bare int). Strict kotlinx.serialization throws when an
-        // Int? field tries to deserialize a fractional JSON Number, the runCatching in
-        // tryGet swallows the throw, and every successful fetch silently becomes a miss.
-        // Pinning here so we never regress: the DTO must accept Double for `duration`.
         server.enqueue(MockResponse().setBody("""
             {"id": 4578472, "trackName": "Carry On", "artistName": "Crosby, Stills, Nash & Young",
              "albumName": "Deja Vu", "duration": 265.0, "instrumental": false,

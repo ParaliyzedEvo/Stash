@@ -97,6 +97,70 @@ class SpotifyAuthManager @Inject constructor(
 
         /** Regex to extract clientVersion from the Spotify web player HTML/config. */
         private val CLIENT_VERSION_REGEX = Regex(""""clientVersion"\s*:\s*"([^"]+)"""")
+
+        /** Web-player JS bundle URLs referenced by the open.spotify.com shell. */
+        private val WEBPLAYER_BUNDLE_REGEX =
+            Regex("""src="(https://[^"]*/web-player/web-player\.[a-f0-9]+\.js)"""")
+
+        /**
+         * Pulls the `addToLibrary` mutation's persisted-query hash out of the
+         * web-player bundle: `new X("addToLibrary","mutation","<64hex>",null)`.
+         * Pure + internal so it's unit-testable without a network fetch.
+         */
+        internal fun extractLibraryMutationHash(bundleJs: String): String? =
+            Regex(""""addToLibrary","mutation","([0-9a-f]{64})"""")
+                .find(bundleJs)?.groupValues?.get(1)
+
+        private const val WEB_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+    }
+
+    /** Cached library-mutation hash re-scraped after a PersistedQueryNotFound. */
+    @Volatile
+    private var cachedLibraryMutationHash: String? = null
+
+    /**
+     * Re-scrapes the CURRENT `addToLibrary`/`removeFromLibrary` persisted-query
+     * hash from the live web player, for when the seeded
+     * [SpotifyAuthConfig.HASH_LIBRARY_MUTATION] has rotated (the mutation
+     * returns `PersistedQueryNotFound`). Fetches the open.spotify.com shell,
+     * finds the `web-player.<hash>.js` bundle, downloads it, and regexes the
+     * hash out. Result is cached for the process. Returns null if any step
+     * fails (caller keeps using the seed).
+     *
+     * Deliberately lazy: only called on a rotation miss, not per-write — the
+     * bundle is multi-MB, so we never pay for it on the happy path.
+     */
+    fun scrapeLibraryMutationHash(): String? {
+        cachedLibraryMutationHash?.let { return it }
+        return try {
+            val shell = okHttpClient.newCall(
+                Request.Builder().url("https://open.spotify.com")
+                    .header("User-Agent", WEB_UA).get().build(),
+            ).execute().use { it.body?.string() } ?: return null
+
+            val bundleUrl = WEBPLAYER_BUNDLE_REGEX.find(shell)?.groupValues?.get(1) ?: run {
+                Log.w(TAG, "scrapeLibraryMutationHash: no web-player bundle in shell")
+                return null
+            }
+
+            val bundle = okHttpClient.newCall(
+                Request.Builder().url(bundleUrl)
+                    .header("User-Agent", WEB_UA).get().build(),
+            ).execute().use { it.body?.string() } ?: return null
+
+            extractLibraryMutationHash(bundle)?.also {
+                cachedLibraryMutationHash = it
+                Log.i(TAG, "scrapeLibraryMutationHash: refreshed library-mutation hash")
+            } ?: run {
+                Log.w(TAG, "scrapeLibraryMutationHash: hash not found in bundle")
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "scrapeLibraryMutationHash failed: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -151,16 +215,28 @@ class SpotifyAuthManager @Inject constructor(
             val match = CLIENT_VERSION_REGEX.find(body)
             val version = match?.groupValues?.get(1)
 
-            if (version != null) {
+            // Cache in BOTH branches — the miss branch too. Previously only a
+            // successful scrape was cached, so a scrape MISS re-fetched the
+            // multi-100KB open.spotify.com shell on every subsequent
+            // getClientVersion() call. During one sync that meant ~55 wasted
+            // full-page fetches (each behind the client's network + any VPN),
+            // a large slice of the >10-min sync runtime that WorkManager then
+            // killed. The fallback is a known-good version (client-token
+            // acquisition succeeds with it), so caching it is safe; we scrape
+            // at most once per process.
+            cachedClientVersion = if (version != null) {
                 Log.i(TAG, "Scraped Spotify client version: $version")
-                cachedClientVersion = version
                 version
             } else {
-                Log.w(TAG, "Could not scrape client version, using fallback (cached for 30min)")
+                Log.w(TAG, "Could not scrape client version, caching fallback")
                 SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
             }
+            cachedClientVersion!!
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to scrape client version: ${e.message}")
+            // Network failure: cache the fallback too so a flaky first attempt
+            // doesn't condemn the rest of the sync to re-fetching every call.
+            Log.w(TAG, "Failed to scrape client version, caching fallback: ${e.message}")
+            cachedClientVersion = SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
             SpotifyAuthConfig.CLIENT_VERSION_FALLBACK
         }
     }

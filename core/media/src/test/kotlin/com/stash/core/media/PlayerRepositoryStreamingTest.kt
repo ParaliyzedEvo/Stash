@@ -201,45 +201,13 @@ class PlayerRepositoryStreamingTest {
     }
 
     /**
-     * The optimistic "tapped track is resolving" spinner must survive
-     * controller state emissions. setQueue emits isBuffering=true before a
-     * resolve that can take 60-120s (antra job), during which the previous
-     * queue keeps playing — every controller event recomputes state, and
-     * pre-fix that stomped isBuffering back to false (player looked frozen
-     * for the rest of the resolve). computeIsBuffering ORs the controller's
-     * real buffering with the epoch-keyed "tap resolve in flight" flag.
+     * Full-timeline queue: buffering is purely the controller's own state —
+     * the tapped track "resolves" inside LazyResolvingDataSource while
+     * ExoPlayer sits in STATE_BUFFERING, so no custom spinner flag exists.
      */
     @Test
-    fun computeIsBuffering_passesThroughControllerBuffering_whenNoTapResolve() {
-        repo.tapResolveEpoch = -1L
-
+    fun computeIsBuffering_passesThroughControllerBuffering() {
         assertThat(repo.computeIsBuffering(controllerBuffering = true)).isTrue()
-        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
-    }
-
-    @Test
-    fun computeIsBuffering_true_whileTapResolveInFlight_evenWhenControllerIdle() {
-        repo.setQueueEpoch = 5L
-        repo.tapResolveEpoch = 5L
-
-        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isTrue()
-    }
-
-    @Test
-    fun computeIsBuffering_false_afterTapResolveCleared() {
-        repo.setQueueEpoch = 5L
-        repo.tapResolveEpoch = -1L
-
-        assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
-    }
-
-    @Test
-    fun computeIsBuffering_false_whenTapResolveSuperseded_byNewerSetQueue() {
-        // A stale in-flight resolve (epoch 5) must not keep the spinner on
-        // once a newer setQueue (epoch 6) owns the player state.
-        repo.setQueueEpoch = 6L
-        repo.tapResolveEpoch = 5L
-
         assertThat(repo.computeIsBuffering(controllerBuffering = false)).isFalse()
     }
 

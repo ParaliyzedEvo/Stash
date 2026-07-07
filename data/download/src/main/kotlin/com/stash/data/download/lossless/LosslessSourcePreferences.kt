@@ -47,6 +47,7 @@ class LosslessSourcePreferences @Inject constructor(
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
+    private val qbdlxEnabledKey = booleanPreferencesKey("qbdlx_enabled")
     private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
     private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
@@ -80,6 +81,24 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     suspend fun enabledNow(): Boolean = enabled.first()
+
+    /**
+     * Per-source enable toggle for the qbdlx direct-Qobuz source. Defaults
+     * to true — fresh installs land it ready (it has a bundled token pool).
+     * Gates BOTH download ([QbdlxQobuzSource.isEnabled]) and streaming
+     * ([QbdlxQobuzSource.isEnabledForStreaming]); turning it off blocks the
+     * source everywhere. Mirrors [enabled]/[enabledNow]; no requeue side
+     * effect (it's one source among several, not the master switch).
+     */
+    val qbdlxEnabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
+        prefs[qbdlxEnabledKey] ?: true
+    }
+
+    suspend fun qbdlxEnabledNow(): Boolean = qbdlxEnabled.first()
+
+    suspend fun setQbdlxEnabled(value: Boolean) {
+        context.losslessDataStore.edit { prefs -> prefs[qbdlxEnabledKey] = value }
+    }
 
     suspend fun setEnabled(value: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[enabledKey] = value }
@@ -291,17 +310,22 @@ class LosslessSourcePreferences @Inject constructor(
          * preserve their value.
          *
          * Order:
-         * 1. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf (existing
-         *    integration since v0.9.0; proven matching, well-known catalog)
-         * 2. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br
-         *    (added in v0.9.10; sibling Qobuz-DL proxy, different operator,
-         *    no captcha gate — outages uncorrelated with squid.wtf)
-         * 3. amz — Amazon Music FLAC via amz.squid.wtf (independent Amazon
-         *    catalog, different upstream from the two Qobuz proxies). Ranked
-         *    LAST among lossless: an uncorrelated fallback when both Qobuz
-         *    proxies miss, tried just before the lossy YouTube fallback.
+         * 1. qbdlx_qobuz — Qobuz Hi-Res FLAC via a direct www.qobuz.com call
+         *    (MD5 request signing + a rotating token pool). Ranked FIRST: it's
+         *    the fastest lossless path — plain Range-seekable FLAC, no proxy
+         *    operator and no client-side decryption (unlike amz).
+         * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
+         * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
+         * 4. arcod — Qobuz Hi-Res FLAC via arcod.xyz (per-user Supabase session).
+         *    2–4 are currently PARKED (hosts down for us) — see
+         *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
+         *    stay so re-enabling is a one-line change when they recover.
+         * 5. amz — Amazon Music FLAC via amz.squid.wtf. Ranked LAST: its stream
+         *    path decrypts the whole file client-side (tens of seconds), so it's
+         *    the slow, different-catalog fallback after every Qobuz source.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
+            "qbdlx_qobuz",
             "squid_qobuz",
             "kennyy_qobuz",
             "amz",

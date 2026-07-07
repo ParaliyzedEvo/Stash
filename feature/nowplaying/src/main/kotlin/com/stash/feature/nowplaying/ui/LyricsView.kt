@@ -76,7 +76,7 @@ fun LyricsSyncedRenderer(
     // every position tick (~250ms) — cheap (single O(n) scan over the line list)
     // and reactive without needing derivedStateOf.
     val currentIndex = remember(lines, currentPositionMs) {
-        lines.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
+        currentLineIndex(lines, currentPositionMs)
     }
 
     // User-drag guard: any time the user manually scrolls, freeze the
@@ -215,6 +215,18 @@ internal fun CenteredPlacard(
         }
     }
 }
+
+/**
+ * Index of the lyric line being sung at [positionMs]: the latest line whose
+ * timestamp is `<= positionMs`. Before the first timestamp (intro), coerces
+ * `-1` to `0` so the first line shows early and the index can never go out
+ * of bounds — for non-empty input. On an EMPTY list this still returns 0,
+ * which is not a valid index: callers must `getOrNull`/guard for empty.
+ * Single source of truth shared by [LyricsSyncedRenderer] and
+ * [LiveLyricsBar] — the bar and the sheet must never disagree on the line.
+ */
+internal fun currentLineIndex(lines: List<LrcLine>, positionMs: Long): Int =
+    lines.indexOfLast { it.timestampMs <= positionMs }.coerceAtLeast(0)
 
 /**
  * Auto-scroll grace window after a user drag. Long enough that a quick

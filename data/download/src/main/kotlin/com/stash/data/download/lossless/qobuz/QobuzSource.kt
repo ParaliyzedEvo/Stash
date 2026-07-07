@@ -14,7 +14,6 @@ import com.stash.data.download.lossless.searchTerms
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,7 +151,8 @@ class QobuzSource @Inject constructor(
 
             // Score and pick the best candidate that crosses the threshold.
             val scored = candidates.map { it to confidence(query, it) }
-            val match = scored.filter { it.second >= MIN_CONFIDENCE }.maxByOrNull { it.second }
+            val match = scored.filter { it.second >= QobuzCandidateMatcher.MIN_CONFIDENCE }
+                .maxByOrNull { it.second }
             if (match != null) {
                 found = match
                 break
@@ -162,7 +162,7 @@ class QobuzSource @Inject constructor(
             val top = scored.sortedByDescending { it.second }.take(3)
             Log.d(
                 TAG,
-                "below_confidence (<$MIN_CONFIDENCE) term='$term' for '${query.artist} - ${query.title}': " +
+                "below_confidence (<${QobuzCandidateMatcher.MIN_CONFIDENCE}) term='$term' for '${query.artist} - ${query.title}': " +
                     top.joinToString(", ") { (c, s) ->
                         "[${"%.2f".format(s)} '${c.title}' by '${c.performer?.name}']"
                     },
@@ -298,154 +298,33 @@ class QobuzSource @Inject constructor(
     }
 
     /**
-     * Confidence score on [0.0, 1.0]. ISRC equality short-circuits to
-     * 0.95 — same recording, same master, by definition. Otherwise
-     * combines token-overlap on title and artist with a duration
-     * penalty that downweights mismatched cuts (live, extended,
-     * edits) without hard-rejecting them.
+     * Confidence score on [0.0, 1.0]. Delegates to the shared
+     * [QobuzCandidateMatcher] (extracted so the qbdlx direct-API source reuses
+     * the exact same scoring); maps this source's [QobuzTrack] wire type onto
+     * the matcher's neutral fields.
      */
-    private fun confidence(query: TrackQuery, candidate: QobuzTrack): Float {
-        if (!candidate.streamable) return 0f
-
-        // ISRC match → highest possible non-1.0 score.
-        val queryIsrc = query.isrc?.takeIf { it.isNotBlank() }
-        val candidateIsrc = candidate.isrc?.takeIf { it.isNotBlank() }
-        if (queryIsrc != null && candidateIsrc != null &&
-            queryIsrc.equals(candidateIsrc, ignoreCase = true)
-        ) {
-            return 0.95f
-        }
-
-        val titleSim = jaccard(normalize(query.title), normalize(candidate.title))
-        // Spotify often expands artist names with collaborators/eras
-        // ("Diana Ross and the Supremes", "Joey Bada$$ feat. Jay
-        // Electronica") while Qobuz indexes the canonical short form
-        // ("The Supremes", "Joey Bada$$"). Plain jaccard penalises
-        // these subset matches harshly — so we take the higher of
-        // jaccard and subset-coverage. Subset coverage is gated on a
-        // minimum smaller-set size to avoid spurious 1-word matches
-        // (e.g. an artist named "Love" matching every track with
-        // "Love" in the artist string).
-        val artistSim = artistSimilarity(
-            normalize(query.artist),
-            normalize(candidate.performer?.name.orEmpty()),
+    private fun confidence(query: TrackQuery, candidate: QobuzTrack): Float =
+        QobuzCandidateMatcher.confidence(
+            query = query,
+            candTitle = candidate.title,
+            candArtist = candidate.performer?.name.orEmpty(),
+            candIsrc = candidate.isrc,
+            candDurationSec = candidate.duration,
+            candStreamable = candidate.streamable,
         )
-
-        // Duration similarity. Skip the penalty when query duration is
-        // unknown (Stash sometimes lacks duration for stub tracks).
-        val durationFactor: Float = run {
-            val queryMs = query.durationMs ?: return@run 1.0f
-            if (queryMs <= 0 || candidate.duration <= 0) return@run 1.0f
-            val candidateMs = candidate.duration * 1000L
-            val drift = abs(queryMs - candidateMs).toDouble() / queryMs.toDouble()
-            when {
-                drift < 0.05 -> 1.0f      // <5% off — same recording almost certainly
-                drift < 0.10 -> 0.85f     // 5-10% — typical compression-vs-original variance
-                drift < 0.20 -> 0.6f      // 10-20% — possibly different cut
-                else -> 0.3f              // dramatic mismatch (live vs studio etc.)
-            }
-        }
-
-        return (titleSim * artistSim * durationFactor)
-    }
 
     companion object {
         /** Per LosslessSource KDoc convention: `squid_<catalog>`. */
         const val SOURCE_ID = "squid_qobuz"
         private const val TAG = "QobuzSource"
 
-        /** Threshold below which a candidate is rejected outright. */
-        private const val MIN_CONFIDENCE = 0.5f
-
-        // ── Pure-function helpers (kept package-internal for testing) ─
-
-        /**
-         * Lowercase + strip parenthetical content, "feat./featuring"
-         * suffixes, and non-alphanumeric characters; collapse whitespace.
-         * Keeps Unicode letters/digits so non-Latin titles still tokenize
-         * sensibly.
-         */
-        internal fun normalize(s: String): String =
-            s.lowercase()
-                .replace(Regex("\\([^)]*\\)"), " ")
-                .replace(Regex("\\[[^]]*\\]"), " ")
-                .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*"), " ")
-                // Elide within-word marks (straight + curly apostrophes)
-                // BEFORE the punctuation-to-space pass, otherwise
-                // contractions like "don't" tokenize as "don t" instead
-                // of "dont" and pollute the Jaccard set.
-                .replace(Regex("[''`]"), "")
-                // v0.9.x: include \p{S} (Symbols, incl. Currency) so stylized artist
-                // names like "¥$" (Kanye+Ty Dolla $ign), "$NOT", "+44", "!!!" survive
-                // normalization. Without this they stripped to empty string and
-                // artistSimilarity returned 0 for every catalog match, even when the
-                // title was an exact hit. Punctuation (\p{P}) still gets stripped, so
-                // commas/dashes/parens still tokenize correctly.
-                .replace(Regex("[^\\p{L}\\p{N}\\p{S}\\s]"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-
-        /** Jaccard similarity on whitespace-tokenized strings. */
-        internal fun jaccard(a: String, b: String): Float {
-            val setA = a.split(" ").filter { it.isNotEmpty() }.toSet()
-            val setB = b.split(" ").filter { it.isNotEmpty() }.toSet()
-            if (setA.isEmpty() || setB.isEmpty()) return 0f
-            val intersection = setA.intersect(setB).size.toFloat()
-            val union = setA.union(setB).size.toFloat()
-            return intersection / union
-        }
-
-        /**
-         * Artist-aware similarity: max of plain jaccard and
-         * subset-coverage. Returns 1.0 when the smaller artist string
-         * is fully contained in the larger AND at least one shared
-         * token is "distinctive" (length > 3). This is the common
-         * Spotify-expansion vs Qobuz-canonical pattern:
-         *
-         *  - Spotify: "Diana Ross and the Supremes" → Qobuz: "The Supremes"
-         *  - Spotify: "Joey Bada$$ feat. Jay Electronica" → Qobuz: "Joey Bada$$"
-         *  - Spotify: "Ghostemane, Shakewell, Pouya" → Qobuz: "Ghostemane"
-         *  - Spotify: "¥$, Kanye West, Ty Dolla $ign" → Qobuz: "¥$"
-         *
-         * Includes the single-canonical-artist case (Qobuz indexes
-         * one lead artist where Spotify expands to a featuring list).
-         * "Distinctive" gating guards against generic 1-3 char tokens
-         * ("Air", "U2") spuriously matching unrelated acts that
-         * happen to share that token.
-         * Stylized short names with symbols (¥$, $NOT, +44) bypass the
-         * length-only check via the non-alphanumeric clause — they're rare
-         * enough to be safe matches.
-         *
-         * Final fallback is plain jaccard, so unrelated artists with
-         * partial token overlap still score reasonably.
-         */
-        internal fun artistSimilarity(a: String, b: String): Float {
-            val setA = a.split(" ").filter { it.isNotEmpty() }.toSet()
-            val setB = b.split(" ").filter { it.isNotEmpty() }.toSet()
-            if (setA.isEmpty() || setB.isEmpty()) return 0f
-
-            val intersection = setA.intersect(setB)
-            val union = setA.union(setB)
-            val jaccardScore = intersection.size.toFloat() / union.size.toFloat()
-
-            val smallerSize = minOf(setA.size, setB.size)
-            val smallerFullyCovered = intersection.size == smallerSize
-            // Distinctive = length > 3 OR contains a non-alphanumeric character.
-            // The second clause catches stylized short artist names like "¥$",
-            // "$NOT", "+44" — they're unique enough not to spuriously match.
-            // Common short generic tokens ("the", "u2") remain non-distinctive
-            // since they're pure alphanumeric and short.
-            val hasDistinctiveOverlap = intersection.any { token ->
-                token.length > 3 || token.any { ch -> !ch.isLetterOrDigit() }
-            }
-
-            val coverageScore = if (smallerFullyCovered && hasDistinctiveOverlap) {
-                1.0f
-            } else {
-                0f
-            }
-
-            return maxOf(jaccardScore, coverageScore)
-        }
+        // ── Delegating shims ──────────────────────────────────────────────
+        // The matching primitives moved into [QobuzCandidateMatcher]. These
+        // thin shims stay so [QobuzSourceTest] (which exercises them directly)
+        // keeps compiling against QobuzSource's companion.
+        internal fun normalize(s: String): String = QobuzCandidateMatcher.normalize(s)
+        internal fun jaccard(a: String, b: String): Float = QobuzCandidateMatcher.jaccard(a, b)
+        internal fun artistSimilarity(a: String, b: String): Float =
+            QobuzCandidateMatcher.artistSimilarity(a, b)
     }
 }

@@ -70,6 +70,48 @@ class LyricsRepositoryTest {
         coVerify { trackDao.setLyricsFetchedAt(1L, 0L) }
     }
 
+    @Test fun `source failure with no hit - THROWS and does NOT stamp 0L`() = runTest {
+        // The poisoning bug: a transient failure must never be recorded as a
+        // permanent miss. The stamp stays untouched so the track is retryable.
+        val failing = throwingSource("lrclib", java.io.IOException("lrclib get HTTP 429"))
+        val miss = fakeSource("innertube", null)
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
+        val repo = LyricsRepository(listOf(failing, miss), lyricsDao, trackDao, sidecar, clock)
+        try {
+            repo.resolveAndStore(query(1L))
+            org.junit.Assert.fail("expected the source failure to propagate")
+        } catch (e: java.io.IOException) {
+            assertEquals("lrclib get HTTP 429", e.message)
+        }
+        coVerify(exactly = 0) { trackDao.setLyricsFetchedAt(any(), any()) }
+        coVerify(exactly = 0) { lyricsDao.upsert(any()) }
+    }
+
+    @Test fun `source failure does not block a later source hit`() = runTest {
+        val failing = throwingSource("lrclib", java.io.IOException("timeout"))
+        val hit = fakeSource("innertube", LyricsResult("innertube", "plain", null, false, null, null))
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
+        val repo = LyricsRepository(listOf(failing, hit), lyricsDao, trackDao, sidecar, clock)
+        assertNotNull(repo.resolveAndStore(query(1L)))
+        coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
+    }
+
+    @Test fun `resolveTransient propagates failure instead of null`() = runTest {
+        val failing = throwingSource("lrclib", java.io.IOException("timeout"))
+        val repo = LyricsRepository(
+            listOf(failing), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), clock,
+        )
+        try {
+            repo.resolveTransient(query(0L))
+            org.junit.Assert.fail("expected the source failure to propagate")
+        } catch (expected: java.io.IOException) {
+        }
+    }
+
     @Test fun `source-chain order - first non-null wins`() = runTest {
         val a = fakeSource("lrclib", LyricsResult("lrclib", "p", null, false, null, "1"))
         val b = mockk<LyricsSource>(relaxed = true)
@@ -98,6 +140,12 @@ class LyricsRepositoryTest {
         override val id = sourceId
         override val displayName = sourceId
         override suspend fun resolve(query: LyricsQuery): LyricsResult? = result
+    }
+
+    private fun throwingSource(sourceId: String, e: Exception): LyricsSource = object : LyricsSource {
+        override val id = sourceId
+        override val displayName = sourceId
+        override suspend fun resolve(query: LyricsQuery): LyricsResult? = throw e
     }
 
     private fun query(id: Long) = LyricsQuery(

@@ -21,16 +21,18 @@ import com.stash.data.lyrics.source.LyricsResult
  *                   and there's a plain-text body to fall back to).
  *  - [Instrumental] Source confirmed the track has no lyrics. Distinct
  *                   from [None] because it's a positive answer, not a miss.
- *  - [None]         Either the worker tried and missed (`lyricsFetchedAt == 0L`),
- *                   or the row has no usable text. Sheet shows a Retry CTA
- *                   wired to [LyricsBottomSheet]'s `onRetry`.
- *  - [Error]        Reserved for future surfaces (HTTP failure UX, etc.);
- *                   not currently emitted by the mapper — the post-download
- *                   and on-open paths both fall through to NULL/0L sentinels
- *                   handled by Loading/None, so a true Error state would
- *                   require the worker to expose a separate signal. Kept
- *                   here so the sheet renderer's `when` exhausts the surface
- *                   the spec defines.
+ *  - [None]         Either the fetch ran and every source definitively
+ *                   answered "no lyrics" (`lyricsFetchedAt == 0L`), or the
+ *                   row has no usable text. Sheet shows a Retry CTA wired
+ *                   to [LyricsBottomSheet]'s `onRetry`.
+ *  - [Error]        The fetch FAILED (network/HTTP/parse — sources threw)
+ *                   rather than missed. Not produced by these mappers: the
+ *                   ViewModel emits it directly — for library tracks via the
+ *                   failed-fetch overlay (stamp stays NULL so the track
+ *                   remains retryable), for streaming tracks when
+ *                   `resolveTransient` throws. Distinct from [None] so a
+ *                   flaky connection reads "Couldn't load" + Retry, not the
+ *                   false-permanent "No lyrics found".
  */
 sealed interface LyricsViewState {
     object Loading : LyricsViewState

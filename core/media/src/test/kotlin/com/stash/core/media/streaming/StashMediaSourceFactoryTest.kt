@@ -44,7 +44,23 @@ class StashMediaSourceFactoryTest {
         streamingTrackId = streamingTrackId,
         isAmzOrigin = isAmzOrigin,
         amzHttpClient = OkHttpClient(),
+        resolver = mockk(relaxed = true),
+        urlCache = mockk(relaxed = true),
+        trackDao = mockk(relaxed = true),
     )
+
+    @Test
+    fun placeholderItem_routesToLazyResolvingChain() {
+        val lazy = item("stash-resolve://track/42")
+        val factory = newFactory(streamingTrackId = { null }, isAmzOrigin = { false })
+
+        val source: MediaSource = factory.createMediaSource(lazy)
+
+        // Placeholder must not enter the eager YouTube chain, and must produce a
+        // progressive source backed by the lazy factory.
+        verify(exactly = 0) { streamingFactory.create(any()) }
+        assertThat(source).isInstanceOf(ProgressiveMediaSource::class.java)
+    }
 
     @Test
     fun amzItem_routesToProgressiveOkHttpSource_notStreamingChain() {

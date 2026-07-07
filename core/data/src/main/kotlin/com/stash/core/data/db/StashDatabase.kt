@@ -755,12 +755,10 @@ abstract class StashDatabase : RoomDatabase() {
          * track id with FK cascade on delete.
          *
          * Sentinel semantics on `tracks.lyrics_fetched_at`: NULL =
-         * never tried; 0L = backfill tried and produced no hit
-         * (LRCLIB miss + YT-Music fallback miss); non-null non-zero =
-         * success epoch-millis (a `lyrics` row exists for this
-         * track). The `LyricsBackfillWorker` queries
-         * `WHERE lyrics_fetched_at IS NULL`, so both stamps remove
-         * the row from its result set and the worker terminates.
+         * never tried; 0L = a fetch tried and produced no hit (LRCLIB
+         * miss + YT-Music fallback miss); non-null non-zero = success
+         * epoch-millis (a `lyrics` row exists for this track). NULL means
+         * the on-open priority fetch (or a re-download) may still retry.
          */
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {

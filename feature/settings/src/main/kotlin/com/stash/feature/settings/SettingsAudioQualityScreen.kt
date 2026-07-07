@@ -6,10 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -39,8 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -49,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.GlassCard
-import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.feature.settings.components.AudioQualityPicker
 import com.stash.feature.settings.components.BetaPill
@@ -83,6 +75,10 @@ fun SettingsAudioQualityScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val qbdlxEnabled by viewModel.qbdlxEnabled.collectAsStateWithLifecycle()
+    val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
+    val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
+    val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -132,49 +128,79 @@ fun SettingsAudioQualityScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // v0.9.13 ROUTING block — kenny carries lossless on its
-                        // own; squid is an optional second source the user can
-                        // unlock inline if they want the redundancy.
-                        LosslessRoutingStatus(
-                            squidStatus = uiState.squidCaptchaStatus,
-                            onSolveCaptcha = onNavigateToSquidWtfCaptcha,
-                        )
+                        // ROUTING block — Direct Qobuz (primary) + amz fallback.
+                        // kennyy/squid proxies are parked and no longer shown.
+                        LosslessRoutingStatus()
 
-                        // ARCOD — independent Qobuz lossless (3rd source).
-                        // Connect via Google login in an in-app WebView.
-                        SettingsNavRow(
-                            title = if (uiState.arcodConnected) {
-                                "ARCOD — connected"
-                            } else {
-                                "Connect ARCOD"
-                            },
-                            subtitle = "Independent Qobuz lossless (3rd source)",
-                            onClick = onNavigateToArcodConnect,
-                            leadingContent = {
-                                Image(
-                                    painter = painterResource(
-                                        id = com.stash.core.ui.R.drawable.partner_arcod,
-                                    ),
-                                    contentDescription = null, // decorative; the row title already says "ARCOD"
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(RoundedCornerShape(6.dp)),
-                                )
-                            },
-                            titleTrailing = if (uiState.arcodConnected) {
-                                {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(StashTheme.extendedColors.success),
+                        // ARCOD connect row: removed 2026-07-01 while ARCOD is
+                        // parked (host down for us). ArcodConnectScreen + the
+                        // onNavigateToArcodConnect route stay wired for re-enabling.
+
+                        // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
+                        // primary lossless source. Per-source enable toggle gates
+                        // BOTH download and streaming; the token field is the
+                        // refresh path when the bundled pool ages out, and the
+                        // badge surfaces all-dead.
+                        SettingsToggleRow(
+                            title = "Direct Qobuz",
+                            subtitle = "Hi-Res FLAC, straight from Qobuz.",
+                            checked = qbdlxEnabled,
+                            onCheckedChange = viewModel::onQbdlxEnabledChange,
+                        )
+                        AnimatedVisibility(
+                            visible = qbdlxEnabled,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                if (qbdlxExpired) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "No working token — paste a fresh one",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
                                     )
                                 }
-                            } else {
-                                null
-                            },
-                        )
+                                if (qbdlxTokenChoices.size > 1) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Account",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Column(modifier = Modifier.selectableGroup()) {
+                                        SettingsPickerRow(
+                                            selected = qbdlxPinnedToken == null,
+                                            title = "Auto",
+                                            subtitle = "Recommended — uses a working account and fails over",
+                                            onClick = { viewModel.onQbdlxTokenPinned(null) },
+                                        )
+                                        qbdlxTokenChoices.forEach { choice ->
+                                            SettingsPickerRow(
+                                                selected = qbdlxPinnedToken == choice.token,
+                                                title = choice.label,
+                                                subtitle = choice.country +
+                                                    if (choice.live) "" else " · offline",
+                                                onClick = { viewModel.onQbdlxTokenPinned(choice.token) },
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                var qbdlxToken by remember { mutableStateOf("") }
+                                OutlinedTextField(
+                                    value = qbdlxToken,
+                                    onValueChange = {
+                                        qbdlxToken = it
+                                        viewModel.onQbdlxTokenPaste(it)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Paste token") },
+                                    singleLine = true,
+                                    placeholder = { Text("user_auth_token") },
+                                )
+                            }
+                        }
 
                         // -- Download quality picker --------------------------
                         Spacer(modifier = Modifier.height(8.dp))

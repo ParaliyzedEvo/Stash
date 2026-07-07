@@ -27,7 +27,6 @@ import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.data.download.backfill.MetadataBackfillScheduler
 import com.stash.data.download.ytdlp.YtDlpManager
-import com.stash.data.lyrics.backfill.LyricsBackfillScheduler
 import com.stash.core.data.sync.workers.ArtBackfillWorker
 import com.stash.core.data.sync.workers.AutoSaveScrobbler
 import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
@@ -184,15 +183,6 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var metadataBackfillScheduler: MetadataBackfillScheduler
 
-    /**
-     * v0.9.36: once-per-version auto-enqueue gate for `LyricsBackfillWorker`.
-     * Same idempotency contract as [metadataBackfillScheduler] — gated by a
-     * disjoint key on the shared `BackfillVersionTracker` so the two
-     * backfills fire independently on first launch after each upgrade.
-     */
-    @Inject
-    lateinit var lyricsBackfillScheduler: LyricsBackfillScheduler
-
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -233,13 +223,19 @@ class StashApplication : Application(), Configuration.Provider {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    squidCookieAutoRefresher.start()
-                    kennyyHealthProbe.start() // immediate probe sets Kennyy health before first play
+                    // PARKED 2026-07-01: kennyy + squid are out of the lossless
+                    // chain (hosts down for us — see
+                    // LosslessSourceRegistry.PARKED_SOURCE_IDS), so their
+                    // background keep-alives are parked too: no point probing
+                    // kennyy health or refreshing the squid captcha cookie for
+                    // sources nothing consults. Uncomment on re-enable.
+                    // squidCookieAutoRefresher.start()
+                    // kennyyHealthProbe.start()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    squidCookieAutoRefresher.stop()
-                    kennyyHealthProbe.stop()
+                    // squidCookieAutoRefresher.stop()
+                    // kennyyHealthProbe.stop()
                 }
             },
         )
@@ -261,6 +257,22 @@ class StashApplication : Application(), Configuration.Provider {
         }
         applicationScope.launch {
             musicRepository.ensureDownloadsMixSeeded()
+        }
+        // One-shot repair (2026-07-05): pre-v0.9.73 lyrics fetches stamped
+        // transient failures (timeouts/429s/DNS during bulk bursts) as
+        // permanent 0L misses — forensics showed ~72% of "No lyrics found"
+        // tracks have lyrics available. Reset those stamps to NULL once so
+        // each track re-fetches on its next sheet open. Post-fix 0L stamps
+        // are trustworthy, hence the never-again preference gate.
+        applicationScope.launch {
+            runCatching {
+                val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+                if (!prefs.getBoolean(LYRICS_MISS_RESET_KEY, false)) {
+                    val reset = trackDao.resetMissedLyricsStamps()
+                    prefs.edit().putBoolean(LYRICS_MISS_RESET_KEY, true).apply()
+                    Log.i("StashStartup", "reset $reset poisoned lyrics miss-stamps -> NULL")
+                }
+            }.onFailure { Log.w("StashStartup", "lyrics miss-stamp reset failed", it) }
         }
         // Prune stale lossless prefetch entries every 60s. Bounded
         // memory growth across long browse sessions.
@@ -381,14 +393,10 @@ class StashApplication : Application(), Configuration.Provider {
         // quality inherits their download choice instead of silently changing.
         // migrateIfNeeded() is internally idempotent (no-op after first run).
         applicationScope.launch { streamingQualityPreferences.migrateIfNeeded() }
-        // Auto-enqueue the v0.9.35 metadata backfill once per version, plus
-        // the v0.9.36 lyrics backfill. Both are idempotent (re-installing
-        // the same binary does not re-enqueue) and gated by disjoint keys
-        // on the shared BackfillVersionTracker, so they fire independently
-        // on first launch after each upgrade.
+        // Auto-enqueue the v0.9.35 metadata backfill once per version.
+        // Idempotent (re-installing the same binary does not re-enqueue).
         applicationScope.launch {
             metadataBackfillScheduler.scheduleIfNeeded()
-            lyricsBackfillScheduler.scheduleIfNeeded()
         }
 
         // v0.9.30 Path A: AvailabilityCheckWorker + AvailabilityRecheckWorker
@@ -824,6 +832,14 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     companion object {
+        /**
+         * Never-again gate for the one-shot lyrics miss-stamp repair. NOT
+         * version-keyed on purpose: post-fix 0L stamps are genuine misses
+         * and re-wiping them on every release would refetch known-absent
+         * tracks forever.
+         */
+        private const val LYRICS_MISS_RESET_KEY = "lyrics_miss_reset_done"
+
         /**
          * Bump whenever a parser change makes existing cached rows produce
          * a worse UX than a fresh fetch. Current bump (v1) invalidates rows

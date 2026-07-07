@@ -8,8 +8,10 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,8 +20,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -29,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -36,11 +41,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 /**
  * Full-screen Spotify login via WebView.
  *
- * Loads Spotify's standard login page with a desktop Chrome user-agent so
- * the full login form renders (email/password, Google SSO, Apple SSO, etc.).
- * After the user successfully authenticates, Spotify sets the `sp_dc` cookie
- * on the `.spotify.com` domain. This composable monitors the cookie jar on
- * every page load and extracts `sp_dc` as soon as it appears.
+ * Loads Spotify's standard login page. After the user successfully
+ * authenticates, Spotify sets the `sp_dc` cookie on the `.spotify.com`
+ * domain. This composable monitors the cookie jar on every page load and
+ * extracts `sp_dc` as soon as it appears.
+ *
+ * The login page runs invisible reCAPTCHA v3 (issue #231): a low bot-score
+ * makes Spotify reject the email→Continue step with "Oops! Something went
+ * wrong." Two things here are tuned to keep that score up: (1) a consistent
+ * mobile Chrome user-agent that matches the WebView's actual engine (a
+ * desktop-UA spoof on a mobile WebView is a fingerprint inconsistency
+ * reCAPTCHA penalises), and (2) clearing only Spotify's session cookies on
+ * launch rather than ALL cookies, so Google's `_GRECAPTCHA` reputation
+ * cookie survives across attempts. Devices that still can't pass (no GMS,
+ * old WebView) have the manual "Paste cookie" path, which bypasses the
+ * in-WebView challenge entirely.
  *
  * The extracted cookie value is passed to [onCookieExtracted] which feeds it
  * into the existing [TokenManager.connectSpotifyWithCookie] validation flow.
@@ -52,10 +67,27 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 private const val TAG = "SpotifyLogin"
 
-/** Desktop Chrome user-agent so Spotify shows the full login form. */
-private const val DESKTOP_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+/**
+ * Mobile Chrome user-agent that MATCHES the WebView's real Blink engine and
+ * form factor (and omits the "wv" WebView token). Consistency is what keeps
+ * the invisible reCAPTCHA v3 score up — the previous desktop-Windows spoof on
+ * an Android WebView was a fingerprint mismatch that dragged the score toward
+ * "bot" and helped trigger the #231 login failures. Spotify's responsive
+ * login still renders email + Continue + Google/Apple SSO under this UA.
+ */
+private const val MOBILE_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36"
+
+/** Spotify session cookies to clear on launch (so a fresh login form shows). */
+private val SPOTIFY_SESSION_COOKIES = listOf("sp_dc", "sp_key", "sp_t", "sp_ac", "sp_landing")
+
+/** Spotify domains those cookies live on. */
+private val SPOTIFY_COOKIE_DOMAINS = listOf(
+    "https://open.spotify.com",
+    "https://accounts.spotify.com",
+    "https://www.spotify.com",
+)
 
 /** The URL that loads Spotify's login page. */
 private const val LOGIN_URL = "https://accounts.spotify.com/login"
@@ -115,10 +147,20 @@ fun SpotifyLoginWebView(
         Box(modifier = Modifier.weight(1f)) {
             AndroidView(
                 factory = { context ->
-                    // Clear any stale Spotify cookies from previous sessions so
-                    // the user gets a fresh login form every time.
+                    // Clear ONLY Spotify's session cookies so the user gets a
+                    // fresh login form, while preserving everything else — in
+                    // particular Google's `_GRECAPTCHA` reputation cookie, which
+                    // the old `removeAllCookies` wiped on every launch, hurting
+                    // the invisible reCAPTCHA v3 score (issue #231).
                     CookieManager.getInstance().apply {
-                        removeAllCookies(null)
+                        SPOTIFY_COOKIE_DOMAINS.forEach { domain ->
+                            SPOTIFY_SESSION_COOKIES.forEach { name ->
+                                setCookie(
+                                    domain,
+                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/",
+                                )
+                            }
+                        }
                         flush()
                     }
 
@@ -128,12 +170,19 @@ fun SpotifyLoginWebView(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                         )
 
+                        // reCAPTCHA runs in a cross-origin google.com iframe;
+                        // its `_GRECAPTCHA` reputation cookie is a third-party
+                        // cookie relative to the spotify.com page. Without this
+                        // the WebView blocks it, so reCAPTCHA can't build/read
+                        // reputation and scores the session as a bot (#231).
+                        CookieManager.getInstance()
+                            .setAcceptThirdPartyCookies(this, true)
+
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            userAgentString = DESKTOP_USER_AGENT
-                            // These help the desktop Spotify page render properly
-                            // on a mobile viewport:
+                            userAgentString = MOBILE_USER_AGENT
+                            // Mobile viewport rendering for the responsive login page.
                             useWideViewPort = true
                             loadWithOverviewMode = true
                             setSupportZoom(true)
@@ -178,6 +227,32 @@ fun SpotifyLoginWebView(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+
+        // Persistent escape hatch. Spotify's login runs invisible reCAPTCHA v3
+        // that some devices (no GMS, old WebView) can't pass, showing "Oops!
+        // Something went wrong" (issue #231). Keep the manual-cookie path
+        // visible at all times — not buried in the top bar — so a user who
+        // hits that wall has an obvious way through instead of a dead end.
+        HorizontalDivider()
+        Surface(color = MaterialTheme.colorScheme.surface) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Sign-in blocked or not working?",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onManualFallback) {
+                    Text("Paste cookie instead")
+                }
+            }
         }
     }
 }

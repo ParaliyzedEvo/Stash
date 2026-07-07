@@ -40,6 +40,8 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
+import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.data.download.lossless.qbdlx.QbdlxTokenChoice
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.feature.settings.components.squidCaptchaStatus
@@ -100,6 +102,7 @@ class SettingsViewModel @Inject constructor(
     private val losslessSources: Set<@JvmSuppressWildcards LosslessSource>,
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
+    private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val likePreferences: LikePreferences,
     private val trackDao: TrackDao,
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
@@ -189,6 +192,50 @@ class SettingsViewModel @Inject constructor(
             initialValue = false,
         )
 
+    val forceQbdlxOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        streamingPreference.forceQbdlxOnly.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    /** Persist the force-qbdlx-only test toggle flip. */
+    fun setForceQbdlxOnly(v: Boolean) = viewModelScope.launch {
+        streamingPreference.setForceQbdlxOnly(v)
+    }
+
+    /** Persist the force-arcod-only test toggle flip. */
+    fun setForceArcodOnly(v: Boolean) = viewModelScope.launch {
+        streamingPreference.setForceArcodOnly(v)
+    }
+
+    /** Crossfade on/off — drives the Playback section toggle. Off by default. */
+    val crossfadeEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        crossfadePreference.enabled.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    /** Crossfade fade duration in ms (clamped 1000–12000); drives the slider. */
+    val crossfadeDurationMs: kotlinx.coroutines.flow.StateFlow<Long> =
+        crossfadePreference.durationMs.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = 6000L,
+        )
+
+    /** Persist the crossfade on/off flip. */
+    fun onCrossfadeToggle(enabled: Boolean) {
+        if (enabled == crossfadeEnabled.value) return
+        viewModelScope.launch { crossfadePreference.setEnabled(enabled) }
+    }
+
+    /** Persist the crossfade duration (clamped on write). */
+    fun onCrossfadeDurationChange(ms: Long) = viewModelScope.launch {
+        crossfadePreference.setDurationMs(ms)
+    }
+
     /** Persist the force-amz-only test toggle flip. */
     fun setForceAmzOnly(v: Boolean) = viewModelScope.launch {
         streamingPreference.setForceAmzOnly(v)
@@ -197,6 +244,27 @@ class SettingsViewModel @Inject constructor(
     /** Internal mutable UI state that is combined with token-manager flows. */
     private val _localState = MutableStateFlow(LocalState())
 
+    /**
+     * True when every qbdlx token (pasted + pool) is dead — drives the
+     * Settings "expired, paste a fresh token" badge. The store exposes only a
+     * suspend `allDead()`, so we poll it on construction and after each paste
+     * (the only events that flip it). ponytail: poll-on-change, add a store
+     * Flow if another surface needs live updates.
+     *
+     * MUST be declared above the [init] block: Kotlin initializes properties
+     * top-to-bottom, and `init`'s refreshQbdlxExpired() writes to this field
+     * (synchronously, when allDead()'s DataStore read hits its cache) — a
+     * below-init declaration left it null → NPE opening Settings.
+     */
+    private val _qbdlxExpired = MutableStateFlow(false)
+    val qbdlxExpired: StateFlow<Boolean> = _qbdlxExpired
+
+    private val _qbdlxTokenChoices = MutableStateFlow<List<QbdlxTokenChoice>>(emptyList())
+    val qbdlxTokenChoices: StateFlow<List<QbdlxTokenChoice>> = _qbdlxTokenChoices
+
+    private val _qbdlxPinnedToken = MutableStateFlow<String?>(null)
+    val qbdlxPinnedToken: StateFlow<String?> = _qbdlxPinnedToken
+
     init {
         // Refresh on construction so the Diagnostics card shows the
         // correct enabled/disabled state on first frame. Cheap (a
@@ -204,6 +272,8 @@ class SettingsViewModel @Inject constructor(
         // Must follow _localState declaration: Kotlin initializes properties
         // top-to-bottom and refreshDiagnostics() writes to _localState.
         refreshDiagnostics()
+        refreshQbdlxExpired()
+        refreshQbdlxTokens()
     }
 
     /**
@@ -1030,6 +1100,54 @@ class SettingsViewModel @Inject constructor(
     fun onSquidWtfCaptchaCookieChanged(value: String) {
         viewModelScope.launch {
             losslessPrefs.setCaptchaCookieValue(value)
+        }
+    }
+
+    // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
+
+    /**
+     * Per-source enable toggle for qbdlx. Gates BOTH download and streaming
+     * (the source reads `qbdlxEnabledNow()` in both `isEnabled()` and
+     * `isEnabledForStreaming()`). Default true.
+     */
+    val qbdlxEnabled: StateFlow<Boolean> =
+        losslessPrefs.qbdlxEnabled.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = true,
+        )
+
+    /** Persist the qbdlx enable flip. */
+    fun onQbdlxEnabledChange(enabled: Boolean) {
+        viewModelScope.launch { losslessPrefs.setQbdlxEnabled(enabled) }
+    }
+
+    /** Store (or clear, on blank) the user-pasted qbdlx token, then re-check expiry. */
+    fun onQbdlxTokenPaste(token: String) {
+        viewModelScope.launch {
+            qbdlxCredentialStore.setPastedToken(token.ifBlank { null })
+            _qbdlxExpired.value = qbdlxCredentialStore.allDead()
+            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
+        }
+    }
+
+    private fun refreshQbdlxExpired() {
+        viewModelScope.launch { _qbdlxExpired.value = qbdlxCredentialStore.allDead() }
+    }
+
+    private fun refreshQbdlxTokens() {
+        viewModelScope.launch {
+            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
+            _qbdlxPinnedToken.value = qbdlxCredentialStore.pinnedToken()
+        }
+    }
+
+    /** Pin a specific pool token (or null = Auto), then refresh the picker state. */
+    fun onQbdlxTokenPinned(token: String?) {
+        viewModelScope.launch {
+            qbdlxCredentialStore.setPinnedToken(token)
+            _qbdlxPinnedToken.value = qbdlxCredentialStore.pinnedToken()
+            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
         }
     }
 

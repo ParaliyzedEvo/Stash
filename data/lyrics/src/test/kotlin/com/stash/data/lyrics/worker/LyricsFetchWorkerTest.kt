@@ -37,8 +37,8 @@ import org.robolectric.annotation.Config
  *  - Happy path -> calls `resolveAndStore` exactly once and returns success.
  *  - Transient throw with `runAttemptCount < MAX_ATTEMPTS` -> `Result.retry`.
  *  - Transient throw with `runAttemptCount >= MAX_ATTEMPTS` -> `Result.success`
- *    so we leave the row's `lyrics_fetched_at` as NULL; the next once-per-
- *    version `LyricsBackfillWorker` picks it up on the next binary bump.
+ *    so we leave the row's `lyrics_fetched_at` as NULL; a later on-open
+ *    priority fetch (or a re-download) can retry it.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])

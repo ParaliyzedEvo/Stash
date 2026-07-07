@@ -11,6 +11,7 @@ import com.stash.core.data.sync.AuthExpiryState
 import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
+import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
 import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncScheduler
@@ -97,10 +98,17 @@ data class SyncUiState(
     /**
      * Per-source sync modes. Each service's Sync Preferences card
      * renders its own Refresh/Accumulate chip row bound to one of
-     * these. Defaults to REFRESH for both.
+     * these. Defaults to ACCUMULATE for both.
      */
-    val spotifySyncMode: SyncMode = SyncMode.REFRESH,
-    val youtubeSyncMode: SyncMode = SyncMode.REFRESH,
+    val spotifySyncMode: SyncMode = SyncMode.ACCUMULATE,
+    val youtubeSyncMode: SyncMode = SyncMode.ACCUMULATE,
+    /**
+     * Non-null while the Refresh-confirm dialog is shown for that source.
+     * Set when the user taps Refresh on a source currently in ACCUMULATE
+     * (Refresh deletes rotated-out downloads, so we ask first); cleared on
+     * confirm/cancel. null = no dialog.
+     */
+    val pendingRefreshSource: MusicSource? = null,
     /**
      * When true, the YT Music Liked Songs sync filters out UGC, cover,
      * live, and podcast tracks. Other YT content is unaffected. Default false.
@@ -370,6 +378,39 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.setYoutubeSyncMode(mode)
         }
+    }
+
+    /** Refresh chip tapped for Spotify. If currently ACCUMULATE, confirm first
+     *  (Refresh deletes rotated-out downloads); if already REFRESH, no-op. */
+    fun onRequestSpotifyRefresh() {
+        if (_uiState.value.spotifySyncMode == SyncMode.ACCUMULATE) {
+            _uiState.update { it.copy(pendingRefreshSource = MusicSource.SPOTIFY) }
+        }
+    }
+
+    /** Refresh chip tapped for YouTube — see [onRequestSpotifyRefresh]. */
+    fun onRequestYoutubeRefresh() {
+        if (_uiState.value.youtubeSyncMode == SyncMode.ACCUMULATE) {
+            _uiState.update { it.copy(pendingRefreshSource = MusicSource.YOUTUBE) }
+        }
+    }
+
+    /** Confirm the pending Refresh switch — applies REFRESH to that source. */
+    fun confirmRefreshMode() {
+        val source = _uiState.value.pendingRefreshSource ?: return
+        viewModelScope.launch {
+            when (source) {
+                MusicSource.YOUTUBE -> syncPreferencesManager.setYoutubeSyncMode(SyncMode.REFRESH)
+                MusicSource.SPOTIFY -> syncPreferencesManager.setSpotifySyncMode(SyncMode.REFRESH)
+                MusicSource.LOCAL, MusicSource.BOTH -> Unit
+            }
+        }
+        _uiState.update { it.copy(pendingRefreshSource = null) }
+    }
+
+    /** Dismiss the dialog — keep the current (Accumulate) mode. */
+    fun cancelRefreshMode() {
+        _uiState.update { it.copy(pendingRefreshSource = null) }
     }
 
     /** Persists the user's choice for the studio-only Liked Songs filter. */
