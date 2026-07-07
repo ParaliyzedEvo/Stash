@@ -133,7 +133,7 @@ class NowPlayingViewModel @Inject constructor(
         if (_resolvingArtist.value) return
         val name = track.albumArtist.ifBlank { track.artist }
         if (name.isBlank()) {
-            viewModelScope.launch { _userMessages.emit("Couldn't find this artist") }
+            _userMessages.tryEmit("Couldn't find this artist")
             return
         }
         _resolvingArtist.value = true

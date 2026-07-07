@@ -2,6 +2,8 @@ package com.stash.feature.nowplaying
 
 import android.content.Context
 import app.cash.turbine.test
+import app.cash.turbine.testIn
+import app.cash.turbine.turbineScope
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
@@ -437,10 +439,16 @@ class NowPlayingViewModelTrackTapTest {
             val vm = newViewModel(api)
             advanceUntilIdle()
 
-            vm.userMessages.test {
+            // Assert BOTH halves of this test's name: the toast fires AND no
+            // artistNavEvent is emitted on a failed resolve.
+            turbineScope {
+                val nav = vm.artistNavEvents.testIn(backgroundScope)
+                val msgs = vm.userMessages.testIn(backgroundScope)
                 vm.onTrackInfoTapped()
-                assertEquals("Couldn't find this artist", awaitItem())
-                cancelAndIgnoreRemainingEvents()
+                assertEquals("Couldn't find this artist", msgs.awaitItem())
+                nav.expectNoEvents()
+                nav.cancel()
+                msgs.cancel()
             }
         }
 
