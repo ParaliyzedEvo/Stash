@@ -58,7 +58,7 @@ APP_ID=$(grep '^qbdlx.appId=' local.properties | cut -d= -f2)
 TOKEN=$(grep '^qbdlx.tokenPool=' local.properties | cut -d= -f2 | tr ',' '\n' | head -1 | cut -d: -f1)
 echo "app_id=${APP_ID:0:4}… token=${TOKEN:0:6}…"
 ```
-**Fallback if no live token/network:** hand-author the three fixtures directly from the DTO shapes in Task 3 Step 1 (include a Loveless album row with a couple of tracks that have positive `id`/`duration`, plus an `isn't anything` row). Tasks 3/7 then still run; only Task 13's on-device check exercises the true live shape.
+**Fallback if no live token/network:** hand-author the three fixtures directly from the DTO shapes in Task 3 Step 1 (include a Loveless album row with a couple of tracks that have positive `id`/`duration`, plus an `isn't anything` row). Tasks 3/7 then still run; only Task 14's on-device check exercises the true live shape.
 
 - [ ] **Step 2: Hit the three endpoints and save bodies**
 
@@ -808,7 +808,7 @@ git commit -m "feat(discography): ArtistCache merges the Qobuz supplement at bot
 
 **Files:**
 - Modify: `core/data/src/main/kotlin/com/stash/core/data/cache/AlbumCache.kt`
-- Modify (keep green): `core/data/src/test/kotlin/com/stash/core/data/cache/AlbumCacheTest.kt` — the three `AlbumCache(api)` / `object : AlbumCache(api)` construction sites (~L64/L81/L96) need a fake `QobuzAlbumFetcher`, and the `invalidate` test (~L75-88) must call `invalidate(id, source)` (see Step 3).
+- Modify (keep green): `core/data/src/test/kotlin/com/stash/core/data/cache/AlbumCacheTest.kt` — **all FIVE** `AlbumCache(api)` / `object : AlbumCache(api)` construction sites (L32, L45, L64, L81, L96) need a fake `QobuzAlbumFetcher` (miscounted as 3 in an earlier draft — there are 5). The `invalidate` test (~L76-88) uses the default source for both `get`/`invalidate`, so it passes unchanged under the new keying.
 - Test: `core/data/src/test/kotlin/com/stash/core/data/cache/AlbumCacheRoutingTest.kt`
 
 - [ ] **Step 1: Failing tests** (fake `YTMusicApiClient` + fake `QobuzAlbumFetcher`)
@@ -829,9 +829,14 @@ Run: `./gradlew :core:data:testDebugUnitTest --tests "*AlbumCacheRoutingTest"`
 
 - [ ] **Step 3: Implement + repair the existing test's constructor and invalidate calls**
 
-In `AlbumCache.kt`: inject `private val qobuzFetcher: QobuzAlbumFetcher` (single `@Inject` constructor — this is a required new param). Change the signature to `suspend fun get(id: String, source: AlbumSource = AlbumSource.YOUTUBE)`. Key the cache map by `"$source:$id"` (so a numeric Qobuz id can never collide with a YT browseId). Because the key changed, `invalidate` must match: `fun invalidate(id: String, source: AlbumSource = AlbumSource.YOUTUBE) = entries.remove("$source:$id")`. Fetch body branch: `if (source == AlbumSource.QOBUZ) qobuzFetcher.getAlbum(id) else api.getAlbum(id)`.
+In `AlbumCache.kt`: inject `private val qobuzFetcher: QobuzAlbumFetcher` (single `@Inject` constructor — required new param). Change the signature to `suspend fun get(id: String, source: AlbumSource = AlbumSource.YOUTUBE)`. Key the cache map by `"$source:$id"` (so a numeric Qobuz id can never collide with a YT browseId). Because the key changed, `invalidate` must match: `fun invalidate(id: String, source: AlbumSource = AlbumSource.YOUTUBE) = entries.remove("$source:$id")`. Fetch body branch: `if (source == AlbumSource.QOBUZ) qobuzFetcher.getAlbum(id) else api.getAlbum(id)`. (`keyLocks` may stay keyed by raw id — harmless.)
 
-In `AlbumCacheTest.kt` (same commit — the new ctor param and the re-key otherwise fail *compilation* and the `invalidate` test): pass a trivial fake fetcher to all three constructions (`object : QobuzAlbumFetcher { override suspend fun getAlbum(id: String) = error("unused") }`), and change the `invalidate("X")` call to `invalidate("X")` (default source matches the default-source `get("X")` key — no change needed IF that test uses the default source; if it stubs a source, align them). Verify the `invalidate evicts` test still passes under `"$source:$id"` keying.
+In `AlbumCacheTest.kt` (same commit — the required ctor param otherwise fails *compilation* of the whole file): pass a trivial fake fetcher to **all five** constructions (L32, L45, L64, L81, L96):
+```kotlin
+private val noFetcher = object : QobuzAlbumFetcher { override suspend fun getAlbum(id: String) = error("unused") }
+// AlbumCache(api, noFetcher)  and  object : AlbumCache(api, noFetcher) { override fun now() = clock }
+```
+The `invalidate evicts` test needs no logic change (default source on both `get`/`invalidate` → same `"YOUTUBE:X"` key).
 
 - [ ] **Step 4: Run — expect PASS.** Same command as Step 2. Existing AlbumCache tests: `./gradlew :core:data:testDebugUnitTest --tests "*AlbumCache*"` — must be green (compilation + `invalidate` behavior).
 
@@ -1000,8 +1005,11 @@ git commit -m "feat(discography): AlbumDiscoveryVM Qobuz branch — persist-for-
 The artist-header **Play** button fills its queue by iterating `state.albums + state.singles` and calling `albumCache.get(album.id)` (single-arg → YOUTUBE) at `ArtistProfileViewModel.kt:242`, then mapping via `toDomainTrack` (hardcoded `youtubeId = videoId`, `source = YOUTUBE`, `id = videoId.hashCode()`). A merged Qobuz album (numeric id, `source = QOBUZ`) routes to the YT `getAlbum`, throws, is caught by `runCatching{…}.getOrNull() ?: continue`, and is **silently dropped** — so "Play" omits exactly the Qobuz albums this feature adds. Thread source + persist, mirroring Task 12.
 
 **Files:**
-- Modify: `feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileViewModel.kt` (`playArtist` ~L218-264, `toDomainTrack` ~L266)
+- Modify: `feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileViewModel.kt` (constructor ~L60-68, `playArtist` ~L218-264, `toDomainTrack` ~L266)
+- Modify (keep green): `feature/search/src/test/kotlin/com/stash/feature/search/ArtistProfileViewModelTest.kt` — the `vmWith(...)` helper (~L79-93) constructs the VM with its current arg list; adding a ctor param below breaks it until updated.
 - Test: `feature/search/src/test/kotlin/com/stash/feature/search/ArtistProfileViewModelQobuzTest.kt`
+
+**Constructor gap (do this first):** `ArtistProfileViewModel` does NOT currently inject `MusicRepository` (unlike `AlbumDiscoveryViewModel`, which already has it at its L69). Task 13's persist step needs it. Add `private val musicRepository: MusicRepository` to the `@Inject` constructor, then update the existing test's `vmWith` helper to pass a `mock<MusicRepository>()` (default-answer mocks are fine — the existing YT `playArtist` tests never hit `ensureTrackPersisted`, which is only called on the QOBUZ branch).
 
 - [ ] **Step 1: Failing test** (mockito-kotlin; a profile whose `albums` includes a `source = QOBUZ` entry; fake `AlbumCache` + `MusicRepository`)
 
@@ -1034,13 +1042,15 @@ val albumTracks = detail.tracks.filter { seen.add(trackKey(it)) }.take(remaining
 val persisted = if (album.source == AlbumSource.QOBUZ)
     albumTracks.map { it.copy(id = musicRepository.ensureTrackPersisted(it)) } else albumTracks
 ```
-where `domainTrackFor` returns, for QOBUZ, a `Track(id = 0L, youtubeId = null, source = MusicSource.YOUTUBE, isStreamable = true, …)` and for YOUTUBE the existing `toDomainTrack` mapping. Note the popular-tracks seed (top of `playArtist`) stays YT — only the album-catalog fill gains the branch. The `seen` set must key on something stable for Qobuz (blank videoId collides) — key album-catalog tracks by `title|artist` for the QOBUZ branch.
+where `domainTrackFor` returns, for QOBUZ, a `Track(id = 0L, youtubeId = null, source = MusicSource.YOUTUBE, isStreamable = true, …)` and for YOUTUBE the existing `toDomainTrack` mapping. Note the popular-tracks seed (top of `playArtist`) stays YT — only the album-catalog fill gains the branch.
+
+**`seen`-key collision (must fix):** the loop dedups via `seen.add(it.videoId)` (L226/L245). Every Qobuz track carries `videoId = ""`, so `seen.add("")` succeeds once then drops **every** subsequent Qobuz track across all albums. Introduce `fun trackKey(t: TrackSummary) = t.videoId.ifBlank { "${'$'}{t.title}|${'$'}{t.artist}" }` and use it for BOTH `seen` calls. The **YT branch must still key on videoId** (blank never happens there, so `ifBlank` is a no-op) — verify the existing `playArtist appends album tracks deduped by videoId` test (~L234) stays green.
 
 - [ ] **Step 4: Run — expect PASS.** Same command as Step 2; regression: `./gradlew :feature:search:testDebugUnitTest --tests "*ArtistProfileViewModel*"`
 
 - [ ] **Step 5: Commit**
 ```bash
-git add feature/search/src/main/kotlin/.../ArtistProfileViewModel.kt feature/search/src/test/kotlin/.../ArtistProfileViewModelQobuzTest.kt
+git add feature/search/src/main/kotlin/.../ArtistProfileViewModel.kt feature/search/src/test/kotlin/.../ArtistProfileViewModelQobuzTest.kt feature/search/src/test/kotlin/.../ArtistProfileViewModelTest.kt
 git commit -m "feat(discography): artist-header Play includes Qobuz albums (source-threaded fill + persist)"
 ```
 
