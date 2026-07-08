@@ -109,6 +109,7 @@ fun AlbumDiscoveryScreen(
                     onDownloadAll = vm::onDownloadAllClicked,
                     onPlayAlbum = { vm.playAlbum(startIndex = 0) },
                     onAddToQueue = vm::addAlbumToQueue,
+                    downloadSupported = vm.downloadSupported,
                 )
             }
 
