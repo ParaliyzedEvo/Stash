@@ -2,11 +2,16 @@ package com.stash.core.data.cache
 
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
+import com.stash.core.data.discography.DiscographySupplement
+import com.stash.core.data.discography.MergedDiscography
+import com.stash.core.data.discography.NoopDiscographySupplement
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.ArtistProfile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -64,6 +69,10 @@ class ArtistCache(
     private val dao: ArtistProfileCacheDao,
     private val api: YTMusicApiClient,
     private val now: () -> Long = System::currentTimeMillis,
+    // Defaulted to the no-op so the existing test constructions (which pass
+    // only dao/api/now) keep compiling; production injects the real Qobuz
+    // supplement via the @Inject secondary constructor below.
+    private val supplement: DiscographySupplement = NoopDiscographySupplement(),
 ) {
 
     /**
@@ -75,8 +84,11 @@ class ArtistCache(
      * resolve a `Function0<Long>` binding for the default.
      */
     @Inject
-    constructor(dao: ArtistProfileCacheDao, api: YTMusicApiClient) :
-        this(dao, api, System::currentTimeMillis)
+    constructor(
+        dao: ArtistProfileCacheDao,
+        api: YTMusicApiClient,
+        supplement: DiscographySupplement,
+    ) : this(dao, api, System::currentTimeMillis, supplement)
 
     /**
      * Lenient JSON codec — matches the one in [ArtistCacheEntityFixtures]
@@ -131,7 +143,7 @@ class ArtistCache(
             // Past TTL — surface stale data first, then try to refresh.
             emit(CachedProfile.Stale(cachedProfile))
             try {
-                val refreshed = api.getArtist(artistId)
+                val refreshed = fetchAndMerge(artistId)
                 persist(refreshed)
                 emit(CachedProfile.Fresh(refreshed))
             } catch (t: Throwable) {
@@ -147,9 +159,35 @@ class ArtistCache(
         }
 
         // Cold miss: no memory or disk tier hit — network is the source of truth.
-        val profile = api.getArtist(artistId)
+        val profile = fetchAndMerge(artistId)
         persist(profile)
         emit(CachedProfile.Fresh(profile))
+    }
+
+    /**
+     * Fetch the YT artist profile and merge in the Qobuz discography supplement.
+     *
+     * `api.getArtist` is deliberately OUTSIDE the try: a real YT/network failure
+     * must still propagate to the caller's existing handling (cold-miss error
+     * channel, or the stale-refresh `refreshFailed = true` path). Only the
+     * SUPPLEMENT is best-effort — any timeout or failure degrades to the YT-only
+     * lists, never escaping. Bounded by [SUPPLEMENT_TIMEOUT_MS] because the qbdlx
+     * token pool can hang and must not stall the artist page.
+     */
+    private suspend fun fetchAndMerge(artistId: String): ArtistProfile {
+        val yt = api.getArtist(artistId)
+        val merged = try {
+            withTimeout(SUPPLEMENT_TIMEOUT_MS) {
+                supplement.mergeInto(yt.name, yt.albums, yt.singles)
+            }
+        } catch (e: TimeoutCancellationException) {
+            MergedDiscography(yt.albums, yt.singles)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            MergedDiscography(yt.albums, yt.singles)
+        }
+        return yt.copy(albums = merged.albums, singles = merged.singles)
     }
 
     /**
@@ -174,5 +212,8 @@ class ArtistCache(
 
         /** Shared bound for the memory LRU and the disk-tier `evictOldest`. */
         private const val MEMORY_LRU_MAX = 20
+
+        /** Ceiling on the Qobuz supplement merge; past this we serve YT-only. */
+        private const val SUPPLEMENT_TIMEOUT_MS = 4_000L
     }
 }
