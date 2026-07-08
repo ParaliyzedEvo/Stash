@@ -325,24 +325,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Fetching lyrics (lyrics backfill progress) ────────────────
-        // v0.9.36: surfaces LyricsBackfillWorker progress on upgrade so
-        // users know why background network activity is happening. The
-        // banner renders Hidden in the steady state (post-backfill); the
-        // 2-second "Done" pulse self-acks via LaunchedEffect inside the
-        // composable. Independent of the metadata backfill above; both
-        // may be visible simultaneously on a v0.9.34→v0.9.36 jump.
-        if (uiState.lyricsBackfillBanner !is com.stash.feature.home.banner.LyricsBackfillBannerState.Hidden) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                com.stash.feature.home.banner.LyricsBackfillBanner(
-                    state = uiState.lyricsBackfillBanner,
-                    onFinishedAcknowledged = viewModel::onLyricsBackfillFinishedAcknowledged,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
         // ── Loading skeleton — shown while the first DB emission hasn't arrived ──
         // AnimatedContent crossfades from skeleton → real content using Material
         // expressive spring motion. The skeleton maintains the same layout

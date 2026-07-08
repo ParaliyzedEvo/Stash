@@ -108,6 +108,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
     private val crashFileStore: CrashFileStore,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val crossfadePreference: com.stash.core.data.prefs.CrossfadePreference,
     private val databaseBackupManager: DatabaseBackupManager,
     private val previewUrlExtractor: com.stash.data.download.preview.PreviewUrlExtractor,
     private val ytDlpManager: com.stash.data.download.ytdlp.YtDlpManager,

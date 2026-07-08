@@ -64,6 +64,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -190,7 +192,6 @@ class PlayerRepositoryImpl @Inject constructor(
                     // chain (arcod/amz FLAC) so the common auto-advance never
                     // falls back to the cold LazyResolvingDataSource path.
                     prefetchNextTrack(idx)
-                    topUpBuffer()
                 }
         }
 
@@ -395,171 +396,6 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (items.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
-        val semaphore = Semaphore(STREAM_RESOLVE_PARALLELISM)
-        // Record this call's epoch so the resolve below can refuse to
-        // apply its result if a newer setQueue has come in meanwhile.
-        val myEpoch = ++setQueueEpoch
-        val tappedTrack = tracks[safeStart]
-
-        // Optimistic loading state. With an idle player the mini player is
-        // hidden, so showing the tapped track + spinner is the only feedback
-        // that the tap registered (a yt-dlp resolve takes ~11 s; arcod/amz can
-        // be 30-50 s on a slow link). When a track IS loaded, an arbitrary tap
-        // does NOT swap the display (that would turn the play/pause button into
-        // a disabled spinner mid-song, hijacking still-playing audio).
-        //
-        // [optimisticDisplay] = true overrides that for an explicit forward/back
-        // NAVIGATION (skip): the user asked to leave the current track, so we
-        // immediately pause it, swap Now Playing to the target, and show the
-        // spinner while it resolves — the skip feels instant even when the
-        // resolve is slow. See [navigateToLogical].
-        if (controller.currentMediaItem == null || optimisticDisplay) {
-            if (optimisticDisplay) controller.pause()
-            _playerState.value = _playerState.value.copy(
-                currentTrack = tappedTrack,
-                isPlaying = false,
-                isBuffering = true,
-            )
-            // Keep the spinner alive across updateState() calls for the whole
-            // resolve — see [tapResolveEpoch].
-            tapResolveEpoch = myEpoch
-        }
-
-        val localPath = tappedTrack.filePath
-        val tappedTrackHasPlayableLocal =
-            !castStateHolder.connected.value &&
-                tappedTrack.isDownloaded &&
-                !localPath.isNullOrBlank() &&
-                filePathExistsOnDisk(localPath)
-        val tappedTrackNeedsStream =
-            streamingOn && !tappedTrackHasPlayableLocal
-        val resolvePending = AtomicBoolean(tappedTrackNeedsStream)
-        if (tappedTrackNeedsStream) {
-            scope.launch {
-                delay(STREAM_LOADING_MESSAGE_DELAY_MS)
-                if (resolvePending.get() && myEpoch == setQueueEpoch && connectivity.isCellular()) {
-                    _userMessages.tryEmit("Loading stream on mobile data...")
-                }
-            }
-        }
-
-        // Resolve ONLY the tapped track. Earlier revisions probed forward
-        // through the next few entries looking for *anything* playable,
-        // but that has two real-user pathologies: (1) it silently
-        // substitutes the track the user actually picked, and worse,
-        // (2) when the user is already playing a track from this queue
-        // and taps a different one that fails to resolve, the probe
-        // falls forward into the currently-playing track and calls
-        // setMediaItems on it — restarting it from 0. Better to fail
-        // visibly (snackbar + log) than to surprise-restart the user's
-        // music. See #75 follow-up.
-        val startResult = try {
-            resolveTrackToRoutingResult(
-                tappedTrack,
-                semaphore,
-                streamingOn,
-                allowYouTube = true,
-                allowYtDlp = true,
-            )
-        } finally {
-            resolvePending.set(false)
-        }
-        val startItem = (startResult as? StreamRoutingResult.Item)?.mediaItem
-
-        // Race guard: if another setQueue came in while we were
-        // resolving (e.g. user tapped a different track during a slow
-        // yt-dlp fallback), don't clobber the newer playback intent.
-        if (myEpoch != setQueueEpoch) {
-            Log.d(
-                TAG,
-                "setQueue[epoch=$myEpoch]: superseded by newer call (now=$setQueueEpoch); " +
-                    "discarding result for track[$safeStart] '${tappedTrack.title}'",
-            )
-            return
-        }
-
-        if (startItem == null) {
-            // When the player IS idle (nothing playing), forward-probe up to
-            // FORWARD_PROBE_LIMIT tracks to find *something* playable. During
-            // server outages (kennyy+squid both 502), some tracks resolve via
-            // YouTube and some don't — probing finds the first one that does
-            // so the user hears music instead of staring at a dead spinner.
-            //
-            // When the player IS ALREADY playing, we do NOT probe: the old
-            // track keeps playing and a snackbar tells the user why the tapped
-            // track didn't start. Probing in this case would surprise-restart
-            // audio (see #75 follow-up rationale above).
-            if (controller.currentMediaItem != null) {
-                Log.w(
-                    TAG,
-                    "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' failed to " +
-                        "resolve — preserving current playback",
-                )
-                userMessageFor(startResult)
-                    ?.let { _userMessages.tryEmit(it) }
-                    ?: _userMessages.tryEmit("Couldn't play this track right now.")
-                tapResolveEpoch = -1L
-                _playerState.value = _playerState.value.copy(isBuffering = false)
-                return
-            }
-
-            // Idle player: probe forward to find something playable.
-            var probeItem: MediaItem? = null
-            var probeTrack: Track? = null
-            var probeIndex = safeStart
-            for (offset in 1..FORWARD_PROBE_LIMIT) {
-                val candidate = safeStart + offset
-                if (candidate >= tracks.size) break
-                if (myEpoch != setQueueEpoch) return // superseded
-                val t = tracks[candidate]
-                Log.d(TAG, "setQueue[epoch=$myEpoch]: probing track[$candidate] '${t.title}'")
-                val item = resolveTrackToMediaItem(t, semaphore, streamingOn, allowYouTube = true, allowYtDlp = true)
-                if (item != null) {
-                    probeItem = item
-                    probeTrack = t
-                    probeIndex = candidate
-                    break
-                }
-            }
-            if (probeItem == null || probeTrack == null) {
-                Log.w(
-                    TAG,
-                    "setQueue[epoch=$myEpoch]: track[$safeStart] '${tappedTrack.title}' and " +
-                        "$FORWARD_PROBE_LIMIT forward probes all failed — giving up",
-                )
-                _userMessages.tryEmit("Couldn't play this track right now.")
-                tapResolveEpoch = -1L
-                _playerState.value = _playerState.value.copy(isBuffering = false)
-                return
-            }
-            // Forward probe hit — update the display to show the track we're
-            // actually starting with, then fall through to the normal play path.
-            Log.i(
-                TAG,
-                "setQueue[epoch=$myEpoch]: tapped track failed, forward-probed to " +
-                    "track[$probeIndex] '${probeTrack.title}'",
-            )
-            _userMessages.tryEmit("'${tappedTrack.title}' unavailable — playing '${probeTrack.title}'")
-            // Reassign so the rest of the method uses the probe result.
-            // startItem/safeStart are val — use a new local scope to continue.
-            if (myEpoch != setQueueEpoch) return
-            // Hand the optimistic spinner over to the probed playable track.
-            tapResolveEpoch = -1L
-            controller.setMediaItems(listOf(probeItem), 0, 0L)
-            controller.prepare()
-            controller.play()
-            scope.launch { prefetchNextTrack(0) }
-            val forward = tracks.subList(probeIndex + 1, tracks.size)
-            val backward = tracks.subList(0, probeIndex)
-            queueBuildJob = scope.launch {
-                try {
-                    fillQueueAppend(controller, forward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
-                    fillQueuePrepend(controller, backward, semaphore, streamingOn, allowYouTube = true, allowYtDlp = false)
-                    Log.i(TAG, "setQueue: background fill complete (${tracks.size} tracks)")
-                    prefetchNextTrack(controller.currentMediaItemIndex)
-                } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { Log.w(TAG, "setQueue: background fill failed", e) }
-            }
             return
         }
         // startIndex maps through the playable filter by track id.
@@ -1822,22 +1658,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Refresh prefetch if cached URL has less than this margin remaining. */
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
+        private const val SKIP_RESOLVE_DEBOUNCE_MS = 350L
+        private const val FORWARD_PROBE_LIMIT = 3
+        private const val STREAM_LOADING_MESSAGE_DELAY_MS = 1_200L
     }
 
-    /**
-     * Queue-time MediaItem: downloaded-and-on-disk → the eager file:// item;
-     * otherwise a stash-resolve:// placeholder that [LazyResolvingDataSource]
-     * resolves at play time. Carries the SAME identity extras as [toMediaItem]
-     * so every downstream consumer (offline silent-skip, scrobbler, likes,
-     * resume, prefetch matching) keeps working unchanged.
-     */
     private fun Track.toQueueMediaItem(): MediaItem {
         val localPath = filePath
         if (isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return toMediaItem()
         }
-        // Resolver inputs ride the URI's query params so even a track with no
-        // Room row (search-surface synthetic id) can resolve at open() time.
         val placeholder = stashResolveUri(
             trackId = id,
             youtubeId = youtubeId,
@@ -1848,38 +1678,6 @@ class PlayerRepositoryImpl @Inject constructor(
             isrc = isrc,
         )
         return toMediaItem().buildUpon().setUri(placeholder).build()
-
-        /**
-         * Debounce before a skip actually resolves its target. Rapid skips each
-         * cancel the prior [skipNavJob] during this window, so only the SETTLED
-         * track runs the (cap-1, ~3s) yt-dlp resolve — without it, every skipped
-         * track fires a full resolve that serializes on the single slot and the
-         * landed track waits behind the whole storm (observed on-device
-         * 2026-06-26). Short enough to feel instant on a single deliberate skip.
-         */
-        private const val SKIP_RESOLVE_DEBOUNCE_MS = 350L
-
-        /**
-         * Max number of tracks to probe forward when the tapped track fails
-         * to resolve and no other track is currently playing. Low to keep
-         * the latency acceptable (~7s per probe in the worst-case yt-dlp
-         * path). Only applies to the idle-player path; when music IS
-         * playing, the tapped-track failure is surfaced as a snackbar and
-         * current playback continues undisturbed.
-         */
-        private const val FORWARD_PROBE_LIMIT = 3
-
-        /** Delay before surfacing foreground stream resolution as user-visible loading. */
-        private const val STREAM_LOADING_MESSAGE_DELAY_MS = 1_200L
-        /**
-         * Debounce before a skip actually resolves its target. Rapid skips each
-         * cancel the prior [skipNavJob] during this window, so only the SETTLED
-         * track runs the (cap-1, ~3s) yt-dlp resolve — without it, every skipped
-         * track fires a full resolve that serializes on the single slot and the
-         * landed track waits behind the whole storm (observed on-device
-         * 2026-06-26). Short enough to feel instant on a single deliberate skip.
-         */
-        private const val SKIP_RESOLVE_DEBOUNCE_MS = 350L
     }
 
     /**

@@ -81,7 +81,6 @@ class HomeViewModel @Inject constructor(
     private val downloadNetworkPreference: DownloadNetworkPreference,
     private val streamingPreference: StreamingPreference,
     private val metadataBackfillState: MetadataBackfillState,
-    private val lyricsBackfillState: LyricsBackfillState,
     private val networkAwareStreamingManager: com.stash.core.media.streaming.NetworkAwareStreamingManager,
     private val syncScheduler: com.stash.core.data.sync.SyncScheduler,
     @ApplicationContext private val context: Context,
@@ -289,48 +288,6 @@ class HomeViewModel @Inject constructor(
     private val metadataBackfillBannerFlow: Flow<MetadataBackfillBannerState> =
         metadataBackfillState.snapshot.map { metadataBackfillBannerStateFor(it) }
 
-    /**
-     * Bundles the Home-banner flows ([bannerStateFlow] +
-     * [metadataBackfillBannerFlow]) into a single emission so the top-level
-     * [uiState] combine stays at its non-vararg-friendly arg count. Mirrors
-     * the [authStateFlow] precedent.
-     */
-    private val bannersInfoFlow: StateFlow<BannersInfo> = combine(
-        bannerStateFlow,
-        metadataBackfillBannerFlow,
-        lyricsBackfillBannerFlow,
-    ) { lossless, backfill, lyrics -> BannersInfo(lossless, backfill, lyrics) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = BannersInfo(
-                WaitingForLosslessBannerState.Hidden,
-                MetadataBackfillBannerState.Hidden,
-                LyricsBackfillBannerState.Hidden,
-            ),
-        )
-
-    /**
-     * Bundles the two prompt-banner flows so the top-level combine
-     * treats them as a single positional arg. Previously also carried
-     * Spotify / YouTube auth state for the SyncStatusCard's "Connect
-     * Spotify or YouTube Music" prompt — that responsibility moved
-     * to `:feature:sync` along with the card itself.
-     */
-    private val promptsFlow: StateFlow<PromptsInfo> = combine(
-        lastFmPromptFlow,
-        losslessPromptFlow,
-    ) { lastFmPrompt, losslessPrompt ->
-        PromptsInfo(
-            lastFmPrompt = lastFmPrompt,
-            losslessPrompt = losslessPrompt,
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = PromptsInfo(lastFmPrompt = null, losslessPrompt = null),
-    )
-
     /** Pull-to-refresh state — set by [onRefresh], cleared after the refresh completes. */
     private val _isRefreshing = MutableStateFlow(false)
 
@@ -399,7 +356,6 @@ class HomeViewModel @Inject constructor(
             losslessPrompt = losslessPrompt,
             tipJar = tipJar,
             metadataBackfillBanner = metadataBackfillBanner,
-            lyricsBackfillBanner = lyricsBackfillBanner,
         )
     }
 

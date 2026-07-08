@@ -136,6 +136,10 @@ class StreamingPreference @Inject constructor(
         context.streamingDataStore.edit { it[forceYouTubeFallbackKey] = value }
     }
 
+    suspend fun setForceArcodOnly(value: Boolean) {
+        context.streamingDataStore.edit { it[forceArcodOnlyKey] = value }
+    }
+
     suspend fun setForceAmzOnly(value: Boolean) {
         context.streamingDataStore.edit { it[forceAmzOnlyKey] = value }
     }

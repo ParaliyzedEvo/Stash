@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
@@ -28,6 +29,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.social.LikeCoordinator
+import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
@@ -84,13 +86,13 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
+    @Inject lateinit var crossfadePreference: CrossfadePreference
     @Inject lateinit var castStateHolder: com.stash.core.media.CastStateHolder
     @Inject lateinit var streamUrlCache: com.stash.core.media.streaming.StreamUrlCache
     @Inject lateinit var streamSourceRegistry: com.stash.core.media.streaming.StreamSourceRegistry
 
     /** Deps for the full-timeline lazy-resolve chain (LazyResolvingDataSource). */
     @Inject lateinit var streamResolver: com.stash.core.media.streaming.StreamSourceRegistry
-    @Inject lateinit var streamUrlCache: com.stash.core.media.streaming.StreamUrlCache
 
 
     /**

@@ -44,8 +44,6 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lyrics
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
@@ -113,7 +111,7 @@ fun NowPlayingScreen(
     val isAmoled = MaterialTheme.colorScheme.background == Color.Black
     // Safe collection with default value to prevent crashes
     val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
-    
+
     val track = uiState.currentTrack
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -169,8 +167,6 @@ fun NowPlayingScreen(
     val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
     val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
     if (showLyrics) {
-        val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
-        val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
         LyricsBottomSheet(
             state = lyricsState,
             currentPositionMs = lyricsPositionMs,
@@ -288,78 +284,115 @@ fun NowPlayingScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .statusBarsPadding()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // -- Top bar: dismiss, label, flag, like, download, save, queue --
-                TopBar(
-                    onDismiss = onDismiss,
-                    onFlagWrongMatch = { showWrongMatchDialog = true },
-                    onSaveClick = { showSaveSheet = true },
-                    onQueueClick = { showQueue = true },
-                    hasTrack = uiState.hasTrack,
-                    queueSize = uiState.queueSize,
-                    onLikeTap = viewModel::onLikeTap,
-                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                    onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
-                    isDownloaded = uiState.currentTrack?.isDownloaded == true,
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // -- Album art --
-                AlbumArtSection(
-                    albumArtUrl = track?.albumArtUrl,
-                    albumArtPath = track?.albumArtPath,
-                    accentColor = uiState.vibrantColor,
-                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
-        if (isLandscape) {
-            // ── LANDSCAPE LAYOUT ──────────────────────────────────────
-            // Left half: album art. Right half: controls + info.
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Left: Album art (takes ~45% width)
-                Box(
+            if (isLandscape) {
+                // ── LANDSCAPE LAYOUT ──────────────────────────────────────
+                // Left half: album art. Right half: controls + info.
+                Row(
                     modifier = Modifier
-                        .weight(0.45f)
-                        .fillMaxHeight()
-                        .padding(end = 16.dp, top = 8.dp, bottom = 8.dp),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AlbumArtSection(
-                        albumArtUrl = track?.albumArtUrl,
-                        albumArtPath = track?.albumArtPath,
-                        accentColor = uiState.vibrantColor,
-                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                    )
-                }
+                    // Left: Album art (takes ~45% width)
+                    Box(
+                        modifier = Modifier
+                            .weight(0.45f)
+                            .fillMaxHeight()
+                            .padding(end = 16.dp, top = 8.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AlbumArtSection(
+                            albumArtUrl = track?.albumArtUrl,
+                            albumArtPath = track?.albumArtPath,
+                            accentColor = uiState.vibrantColor,
+                            onBitmapLoaded = viewModel::onAlbumArtLoaded,
+                        )
+                    }
 
-                // Right: controls + track info
+                    // Right: controls + track info
+                    Column(
+                        modifier = Modifier
+                            .weight(0.55f)
+                            .fillMaxHeight()
+                            .verticalScroll(scrollState)
+                            .padding(start = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        // Top bar (dismiss + like + more)
+                        TopBar(
+                            onDismiss = onDismiss,
+                            onMoreClick = { showOptionsSheet = true },
+                            hasTrack = uiState.hasTrack,
+                            onLikeTap = viewModel::onLikeTap,
+                            isLiked = uiState.currentTrack?.stashLikedAt != null,
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Track info
+                        TrackInfoSection(
+                            track = track,
+                            isStreaming = uiState.isStreaming,
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Playback controls
+                        PlaybackControls(
+                            isPlaying = uiState.isPlaying,
+                            isBuffering = uiState.isBuffering,
+                            shuffleEnabled = uiState.shuffleEnabled,
+                            repeatMode = uiState.repeatMode,
+                            accentColor = uiState.vibrantColor,
+                            hasNext = hasNext,
+                            onPlayPauseClick = viewModel::onPlayPauseClick,
+                            onSkipNext = viewModel::onSkipNext,
+                            onSkipPrevious = viewModel::onSkipPrevious,
+                            onToggleShuffle = viewModel::onToggleShuffle,
+                            onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Progress bar
+                        GlowingProgressBar(
+                            progress = uiState.progressFraction,
+                            accentColor = uiState.vibrantColor,
+                            elapsedMs = uiState.currentPositionMs,
+                            totalMs = uiState.durationMs,
+                            onSeek = viewModel::onSeekTo,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Bottom actions
+                        if (track != null) {
+                            BottomActionsRow(
+                                onShowLyrics = viewModel::onShowLyrics,
+                                onShowQueue = { showQueue = true },
+                                queueSize = uiState.queueSize,
+                                isCasting = uiState.isCasting,
+                            )
+                        }
+                    }
+                }
+            } else {
+                // ── PORTRAIT LAYOUT ────────────────────────────────────────
                 Column(
                     modifier = Modifier
-                        .weight(0.55f)
-                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .statusBarsPadding()
                         .verticalScroll(scrollState)
-                        .padding(start = 8.dp),
+                        .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
                 ) {
-                    // Top bar (dismiss + like + more)
+                    // -- Top bar: dismiss, like, more --
                     TopBar(
                         onDismiss = onDismiss,
                         onMoreClick = { showOptionsSheet = true },
@@ -368,64 +401,27 @@ fun NowPlayingScreen(
                         isLiked = uiState.currentTrack?.stashLikedAt != null,
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                    // Track info
+                    // -- Album art --
+                    AlbumArtSection(
+                        albumArtUrl = track?.albumArtUrl,
+                        albumArtPath = track?.albumArtPath,
+                        accentColor = uiState.vibrantColor,
+                        onBitmapLoaded = viewModel::onAlbumArtLoaded,
+                    )
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // -- Track info --
                     TrackInfoSection(
                         track = track,
                         isStreaming = uiState.isStreaming,
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
-                // -- Track info --
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = track?.title ?: "Not Playing",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (track != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        com.stash.core.ui.components.FlacBadge(
-                            fileFormat = track.fileFormat,
-                            bitsPerSample = track.bitsPerSample,
-                            sampleRateHz = track.sampleRateHz,
-                            size = 18.dp,
-                            tint = Color.White,
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = buildString {
-                        if (track != null) {
-                            append(track.artist)
-                            if (track.album.isNotBlank()) {
-                                append(" \u2022 ")
-                                append(track.album)
-                            }
-                        }
-                    },
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                    // Playback controls
+                    // -- Playback controls --
                     PlaybackControls(
                         isPlaying = uiState.isPlaying,
                         isBuffering = uiState.isBuffering,
@@ -440,9 +436,9 @@ fun NowPlayingScreen(
                         onCycleRepeatMode = viewModel::onCycleRepeatMode,
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Progress bar
+                    // -- Progress bar --
                     GlowingProgressBar(
                         progress = uiState.progressFraction,
                         accentColor = uiState.vibrantColor,
@@ -452,27 +448,9 @@ fun NowPlayingScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
-                // Sized smaller than the artist/album line; degrades gracefully when
-                // some fields are missing (returns a partial line, not nothing).
-                // When the active MediaItem is sourced from an http(s) URI (Kennyy
-                // stream rather than a local file), a small wifi glyph prefixes
-                // the line so the user knows playback is using their connection.
-                if (track != null) {
-                    val qualityText = trackQualityText(track)
-                    if (qualityText != null) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        QualityLine(
-                            qualityText = qualityText,
-                            isStreaming = uiState.isStreaming,
-                        )
-                    }
-                }
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                Spacer(modifier = Modifier.height(28.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Bottom actions
+                    // Bottom actions: Lyrics (left), Cast (center), Queue (right)
                     if (track != null) {
                         BottomActionsRow(
                             onShowLyrics = viewModel::onShowLyrics,
@@ -481,99 +459,10 @@ fun NowPlayingScreen(
                             isCasting = uiState.isCasting,
                         )
                     }
-                }
-            }
-        } else {
-            // ── PORTRAIT LAYOUT (original) ────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // -- Top bar: dismiss, like, options sheet trigger --
-                TopBar(
-                    onDismiss = onDismiss,
-                    onMoreClick = { showOptionsSheet = true },
-                    hasTrack = uiState.hasTrack,
-                    onLikeTap = viewModel::onLikeTap,
-                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // -- Progress bar --
-                GlowingProgressBar(
-                    progress = uiState.progressFraction,
-                    accentColor = uiState.vibrantColor,
-                    elapsedMs = uiState.currentPositionMs,
-                    totalMs = uiState.durationMs,
-                    onSeek = viewModel::onSeekTo,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-                // -- Album art --
-                AlbumArtSection(
-                    albumArtUrl = track?.albumArtUrl,
-                    albumArtPath = track?.albumArtPath,
-                    accentColor = uiState.vibrantColor,
-                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // -- Track info --
-                TrackInfoSection(
-                    track = track,
-                    isStreaming = uiState.isStreaming,
-                )
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                    // -- Playback controls --
-                    PlaybackControls(
-                        isPlaying = uiState.isPlaying,
-                        isBuffering = uiState.isBuffering,
-                        shuffleEnabled = uiState.shuffleEnabled,
-                        repeatMode = uiState.repeatMode,
-                        accentColor = uiState.vibrantColor,
-                    hasNext = hasNext,
-                        onPlayPauseClick = viewModel::onPlayPauseClick,
-                        onSkipNext = viewModel::onSkipNext,
-                        onSkipPrevious = viewModel::onSkipPrevious,
-                        onToggleShuffle = viewModel::onToggleShuffle,
-                        onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                    )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // -- Progress bar --
-                GlowingProgressBar(
-                    progress = uiState.progressFraction,
-                    accentColor = uiState.vibrantColor,
-                    elapsedMs = uiState.currentPositionMs,
-                    totalMs = uiState.durationMs,
-                    onSeek = viewModel::onSeekTo,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Bottom actions: Lyrics (left), Cast (center), and Queue (right)
-                if (track != null) {
-                    BottomActionsRow(
-                        onShowLyrics = viewModel::onShowLyrics,
-                        onShowQueue = { showQueue = true },
-                        queueSize = uiState.queueSize,
-                        isCasting = uiState.isCasting,
-                    )
-                }
 
                     Spacer(modifier = Modifier.height(48.dp))
                 }
+            }
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
             // screens (the scaffold hides MiniPlayer on this route), directly
@@ -585,7 +474,6 @@ fun NowPlayingScreen(
                 accentColor = uiState.vibrantColor,
                 onTap = viewModel::onShowLyrics,
             )
-        }
         }
     }
 
@@ -606,16 +494,6 @@ fun NowPlayingScreen(
 // ---------------------------------------------------------------------------
 
 /**
- * Top bar with dismiss button, "NOW PLAYING" label, save-to-playlist button,
- * and queue button.
- *
- * @param onDismiss    Callback when the down-arrow is tapped.
- * @param onSaveClick  Callback when the save/bookmark icon is tapped.
- * @param onQueueClick Callback when the queue icon is tapped.
- * @param hasTrack     Whether a track is currently loaded (save button is hidden otherwise).
- * @param queueSize    Number of tracks in the queue, shown as a badge hint.
- */
-/**
  * Top bar with dismiss button, heart like button, and options sheet trigger.
  *
  * @param onDismiss    Callback when the down-arrow is tapped.
@@ -627,9 +505,6 @@ fun NowPlayingScreen(
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
-    onFlagWrongMatch: () -> Unit,
-    onSaveClick: () -> Unit,
-    onQueueClick: () -> Unit,
     onMoreClick: () -> Unit,
     hasTrack: Boolean,
     onLikeTap: () -> Unit,
@@ -664,6 +539,8 @@ private fun TopBar(
             )
         }
 
+        // "More" trigger — opens the NowPlayingOptionsSheet (Save to
+        // Playlist / Download / Flag as Wrong Match).
         if (hasTrack) {
             IconButton(onClick = onMoreClick) {
                 Icon(
@@ -673,27 +550,6 @@ private fun TopBar(
                     modifier = Modifier.size(24.dp),
                 )
             }
-        }
-
-        // Save to playlist — only shown when a track is loaded.
-        if (hasTrack) {
-            IconButton(onClick = onSaveClick) {
-                Icon(
-                    imageVector = Icons.Default.BookmarkBorder,
-                    contentDescription = "Save to Playlist",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        IconButton(onClick = onQueueClick) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = "Queue ($queueSize tracks)",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp),
-            )
         }
     }
 }
@@ -1247,4 +1103,3 @@ private fun NowPlayingOptionsSheet(
         }
     }
 }
-
