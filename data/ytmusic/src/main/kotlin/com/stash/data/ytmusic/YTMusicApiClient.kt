@@ -45,7 +45,6 @@ class YTMusicApiClient @Inject constructor(
 
     companion object {
         private const val TAG = "StashYTApi"
-        private const val CLASSIFY_SAMPLE_SIZE = 3
 
         /** InnerTube browse ID for the YouTube Music home feed. */
         private const val BROWSE_HOME = "FEmusic_home"
@@ -349,14 +348,10 @@ class YTMusicApiClient @Inject constructor(
 
             // Title-based matching: accept English titles and common localized variants.
             val shelfType = when {
-                title != null && SONGS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Songs"
-                title != null && ARTISTS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Artists"
-                title != null && ALBUMS_TITLES.any { it.equals(title, ignoreCase = true) } -> "Albums"
-                else -> {
-                    // Structural fallback: inspect up to 3 items to classify the shelf.
-                    val contentsArray = renderer["contents"]?.asArray()
-                    classifyShelfStructurally(contentsArray)
-                }
+                title.equals("Songs", ignoreCase = true) -> "Songs"
+                title.equals("Artists", ignoreCase = true) -> "Artists"
+                title.equals("Albums", ignoreCase = true) -> "Albums"
+                else -> null
             }
 
             // Parsers live in SearchResponseParser.kt as top-level internal funcs.
