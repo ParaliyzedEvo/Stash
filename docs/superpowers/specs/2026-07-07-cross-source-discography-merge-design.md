@@ -240,6 +240,39 @@ No visible "Qobuz" source badge — **deliberate**. The playable-at-cache-time
 invariant means the user needn't distinguish sources; a badge would be confusing
 and off-brand. Stated so nobody adds one later.
 
+## Plan-time must-address (from confirmation review)
+
+These are localized to `feature:search` / `data:download`, all fail safe, and
+none reopen the `core:media` boundary — but the plan must resolve them:
+
+1. **Pin the artist-match threshold and define "candidate" as distinct artists
+   only.** `artistSimilarity` returns 1.0 for any token-superset with one
+   distinctive token, so a superstring pseudo-artist ("…performed by My Bloody
+   Valentine", tribute/compilation entities) or the artist's own variant rows
+   would trip the zero-album ambiguity-abort and kill the supplement for the
+   flagship case. Dedup the artist's own variants and exclude superstring
+   pseudo-entities from the candidate set before counting ambiguity; state the
+   concrete threshold.
+2. **Guard `observeAlbum`'s videoId-keyed side-effects for `source == QOBUZ`.**
+   The revision reuses `AlbumDiscoveryViewModel`, but `observeAlbum` runs
+   `prefetcher.prefetch(videoIds)`, `delegate.refreshDownloadedIds(videoIds)`,
+   and `backfillAlbumForTracks(videoIds, …)` on `TrackSummary.videoId` (a
+   non-null YouTube field). Qobuz tracks have blank videoIds — the first two are
+   wasteful no-ops, but `backfillAlbumForTracks` keyed on `youtube_id = ""`
+   could mis-key against other blank-youtubeId rows. Branch these for QOBUZ.
+3. **State eager persist-on-play timing + its interactions.** Phase 1's
+   resume/heart depends on a *new* eager-persist step in the ViewModel (YT
+   albums today use synthetic ids and do **not** persist or resume — so "resume
+   and heart like any streaming track" is the intended new behavior, not
+   parity). With `MusicSource.QOBUZ` deferred to Phase 2, these rows persist as
+   `source = YOUTUBE, youtubeId = null` (harmless to qbdlx resolution, a latent
+   mislabel). Unlinked stub rows are subject to the existing orphan-cleanup (the
+   "search-tab downloads vanish on relaunch" reaper) — the plan must confirm
+   resume survives cleanup or accept YT-album parity (no resume).
+4. **(nice-to-have)** Two tracks in one Qobuz album that collapse to the same
+   canonical identity share a PK via `ensureTrackPersisted`, so a start-index
+   `indexOfFirst { it.id == startId }` could land on the wrong row. Edge case.
+
 ---
 
 # Phase 2 — Native playback by Qobuz track id (separate spec)
