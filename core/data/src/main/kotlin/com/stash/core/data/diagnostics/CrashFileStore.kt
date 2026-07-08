@@ -108,11 +108,42 @@ open class CrashFileStore @Inject constructor(
             append(deviceMetadataBlock())
             appendLine("Thread:         ${thread.name}")
             appendLine()
+            appendLine("Memory")
+            appendLine("------")
+            append(memoryBlock())
+            append(CrashDiagnostics.snapshot())
+            appendLine()
             appendLine("Stack trace")
             appendLine("-----------")
             append(sw.toString())
         }
     }
+
+    /**
+     * Java-heap fill level + the Java/native/graphics PSS split. The split is
+     * the OOM discriminator: the 256MB growth limit is the JAVA heap, so a
+     * report showing java-heap ≈ heapMax names a live-object leak, while a
+     * fat native/graphics number with a small Java heap points at
+     * bitmaps/buffers instead (issues #238/#239 triage). Wrapped because it
+     * runs post-OOM — losing this block must never lose the stack trace.
+     */
+    internal fun memoryBlock(): String = runCatching {
+        val rt = Runtime.getRuntime()
+        val mi = android.os.Debug.MemoryInfo()
+        android.os.Debug.getMemoryInfo(mi)
+        buildString {
+            appendLine(
+                "heap: used=${(rt.totalMemory() - rt.freeMemory()) / MB}MB " +
+                    "committed=${rt.totalMemory() / MB}MB max=${rt.maxMemory() / MB}MB",
+            )
+            appendLine(
+                "pss(KB): java=${mi.getMemoryStat("summary.java-heap")} " +
+                    "native=${mi.getMemoryStat("summary.native-heap")} " +
+                    "graphics=${mi.getMemoryStat("summary.graphics")} " +
+                    "total=${mi.getMemoryStat("summary.total-pss")}",
+            )
+        }
+    }.getOrElse { "memory stats unavailable (${it.javaClass.simpleName})\n" }
 
     /**
      * Single source for the device/app metadata header (Time → Build).
@@ -153,6 +184,7 @@ open class CrashFileStore @Inject constructor(
 
     companion object {
         private const val TAG = "CrashFileStore"
+        private const val MB = 1024L * 1024L
         const val MAX_FILES = 10
         const val FILE_PROVIDER_SUFFIX = ".fileprovider"
         const val SHARE_MIME_TYPE = "text/plain"

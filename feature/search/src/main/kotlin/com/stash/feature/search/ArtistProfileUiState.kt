@@ -51,4 +51,5 @@ data class ArtistProfileUiState(
     val singles: List<AlbumSummary> = emptyList(),
     val related: List<ArtistSummary> = emptyList(),
     val status: ArtistProfileStatus = ArtistProfileStatus.Loading,
+    val focusAlbum: String? = null,
 )

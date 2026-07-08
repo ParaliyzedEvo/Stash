@@ -136,7 +136,28 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /**
+     * Last-known queue/timeline sizes, mirrored out of [updateState] for
+     * [CrashDiagnostics]. Plain volatiles (not controller reads) because the
+     * crash handler samples them from an arbitrary thread with the heap
+     * possibly exhausted — MediaController is main-thread-only.
+     */
+    @Volatile private var lastKnownQueueSize = 0
+    @Volatile private var lastKnownTimelineSize = 0
+
+    // savePosition gate state — see the comment at the persist site in
+    // [updateState]. Main-thread only (updateState runs on Main).
+    private var lastSavedPosTrackId = Long.MIN_VALUE
+    private var lastSavedPosQueueIndex = -1
+    private var lastSavedPositionMs = Long.MIN_VALUE / 2
+    private var lastObservedIsPlaying = false
+
     init {
+        // OOM triage (#238/#239): stamp player scale into every crash report.
+        com.stash.core.data.diagnostics.CrashDiagnostics.register("player") {
+            "queue=$lastKnownQueueSize timeline=$lastKnownTimelineSize"
+        }
+
         // v0.9.27: Connect the controller immediately on init so we can
         // provide live state even if the app was cold-started while
         // music was already playing (e.g. via Android Auto).
@@ -1613,9 +1634,28 @@ class PlayerRepositoryImpl @Inject constructor(
             isCasting = castStateHolder.connected.value,
         )
         _playerState.value = newState
+        lastKnownQueueSize = newState.queue.size
+        lastKnownTimelineSize = timelineQueue.size
 
-        // Persist position for resume-on-restart (fire and forget)
-        if (track != null) {
+        // Persist position for resume-on-restart (fire and forget). Gated:
+        // updateState fires on EVERY player event, and each DataStore edit is
+        // a full read-parse-serialize-fsync cycle — a buffering flap storm
+        // (STATE_BUFFERING↔READY on a bad stream) was rewriting the same
+        // position dozens of times. Persist only on meaningful change: track/
+        // index switch, a pause edge (exact resume position), or ≥5s drift.
+        val pauseEdge = lastObservedIsPlaying && !newState.isPlaying
+        lastObservedIsPlaying = newState.isPlaying
+        if (track != null &&
+            shouldPersistPosition(
+                trackChanged = track.id != lastSavedPosTrackId,
+                indexChanged = newState.currentIndex != lastSavedPosQueueIndex,
+                pauseEdge = pauseEdge,
+                positionDeltaMs = newState.positionMs - lastSavedPositionMs,
+            )
+        ) {
+            lastSavedPosTrackId = track.id
+            lastSavedPosQueueIndex = newState.currentIndex
+            lastSavedPositionMs = newState.positionMs
             scope.launch {
                 playbackStateStore.savePosition(
                     trackId = track.id,
@@ -1782,4 +1822,24 @@ class PlayerRepositoryImpl @Inject constructor(
         )
     }
 }
+
+/**
+ * Whether a position-persist DataStore write is worth issuing. True on a
+ * track/index switch, on a play→pause edge (resume must land exactly where
+ * the user paused), or once the position has drifted at least
+ * [POSITION_PERSIST_MIN_DELTA_MS] from the last write — everything else
+ * (buffering flaps, shuffle/repeat toggles, timeline stamps) re-reports a
+ * position the store already has. Top-level + `internal` so the unit test
+ * can exercise it without booting the repository.
+ */
+internal fun shouldPersistPosition(
+    trackChanged: Boolean,
+    indexChanged: Boolean,
+    pauseEdge: Boolean,
+    positionDeltaMs: Long,
+): Boolean = trackChanged || indexChanged || pauseEdge ||
+    kotlin.math.abs(positionDeltaMs) >= POSITION_PERSIST_MIN_DELTA_MS
+
+/** Minimum position drift before an unforced persist write. */
+internal const val POSITION_PERSIST_MIN_DELTA_MS = 5_000L
 

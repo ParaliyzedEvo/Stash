@@ -59,6 +59,7 @@ data class SearchArtistRoute(
     val artistId: String,
     val name: String,
     val avatarUrl: String? = null,
+    val focusAlbum: String? = null,
 )
 
 @Serializable

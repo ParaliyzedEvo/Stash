@@ -2,6 +2,8 @@ package com.stash.feature.nowplaying
 
 import android.content.Context
 import app.cash.turbine.test
+import app.cash.turbine.testIn
+import app.cash.turbine.turbineScope
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
@@ -10,6 +12,8 @@ import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
 import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.ArtistSummary
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -209,6 +213,7 @@ class NowPlayingViewModelFindInFlacTest {
         lyricsRepository = lyricsRepository,
         themePreference = themePreference,
         appContext = appContext,
+        ytMusicApiClient = mockk(relaxed = true),
     )
 
     private val nonFlacTrack = Track(
@@ -337,6 +342,7 @@ class NowPlayingViewModelLikeRoutingTest {
         lyricsRepository = lyricsRepository,
         themePreference = themePreference,
         appContext = appContext,
+        ytMusicApiClient = mockk(relaxed = true),
     )
 
     private val unlikedTrack = Track(id = 42L, title = "song", artist = "artist", stashLikedAt = null)
@@ -368,8 +374,14 @@ class NowPlayingViewModelLikeRoutingTest {
     }
 }
 
+/**
+ * Tap on the Now Playing track block → resolve the playing artist's NAME to
+ * a YT browseId and emit a one-shot [ArtistNavTarget] carrying the current
+ * album as `focusAlbum`. Resolve miss/failure → snackbar, no nav. No-op when
+ * nothing is playing.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
-class NowPlayingViewModelSkipNextTest {
+class NowPlayingViewModelTrackTapTest {
 
     private val dispatcher = UnconfinedTestDispatcher()
 
@@ -392,70 +404,72 @@ class NowPlayingViewModelSkipNextTest {
     }
     private val upgrader: LosslessUpgrader = mockk(relaxed = true)
     private val lyricsRepository: LyricsRepository = mockk(relaxed = true)
-    private val themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true) {
-        every { showBlurLayerInAmoled } returns flowOf(true)
-    }
     private val appContext: Context = mockk(relaxed = true)
 
-    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+    private fun newViewModel(api: YTMusicApiClient): NowPlayingViewModel = NowPlayingViewModel(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = upgrader,
         lyricsRepository = lyricsRepository,
-        themePreference = themePreference,
         appContext = appContext,
+        ytMusicApiClient = api,
     )
 
-    private val track1 = Track(id = 1L, title = "song 1", artist = "artist 1")
-    private val track2 = Track(id = 2L, title = "song 2", artist = "artist 2")
+    @Test fun `onTrackInfoTapped emits nav target with focusAlbum on resolve success`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>()
+            coEvery { api.resolveArtist(any()) } returns
+                ArtistSummary(id = "UC123", name = "My Bloody Valentine", avatarUrl = "http://a")
+            playerStateFlow.value = playerStateFlow.value.copy(
+                currentTrack = Track(id = 1L, title = "Sometimes", artist = "My Bloody Valentine", album = "Loveless"),
+            )
+            val vm = newViewModel(api)
+            advanceUntilIdle()
 
-    @Test fun `onSkipNext when hasNext is true calls skipNext`() = runTest(dispatcher) {
-        playerStateFlow.value = PlayerState(
-            queue = listOf(track1, track2),
-            currentIndex = 0,
-            repeatMode = com.stash.core.model.RepeatMode.OFF
-        )
-        val vm = newViewModel()
-        advanceUntilIdle()
+            vm.artistNavEvents.test {
+                vm.onTrackInfoTapped()
+                val target = awaitItem()
+                assertEquals("UC123", target.artistId)
+                assertEquals("My Bloody Valentine", target.name)
+                assertEquals("Loveless", target.focusAlbum)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
 
-        vm.onSkipNext()
-        advanceUntilIdle()
+    @Test fun `onTrackInfoTapped emits toast and no nav on null resolve`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>()
+            coEvery { api.resolveArtist(any()) } returns null
+            playerStateFlow.value = playerStateFlow.value.copy(
+                currentTrack = Track(id = 1L, title = "x", artist = "Nobody", album = ""),
+            )
+            val vm = newViewModel(api)
+            advanceUntilIdle()
 
-        coVerify { playerRepository.skipNext() }
-        coVerify(exactly = 0) { playerRepository.skipToQueueIndex(any()) }
-    }
+            // Assert BOTH halves of this test's name: the toast fires AND no
+            // artistNavEvent is emitted on a failed resolve.
+            turbineScope {
+                val nav = vm.artistNavEvents.testIn(backgroundScope)
+                val msgs = vm.userMessages.testIn(backgroundScope)
+                vm.onTrackInfoTapped()
+                assertEquals("Couldn't find this artist", msgs.awaitItem())
+                nav.expectNoEvents()
+                nav.cancel()
+                msgs.cancel()
+            }
+        }
 
-    @Test fun `onSkipNext when hasNext is false and repeatMode is ALL calls skipNext`() = runTest(dispatcher) {
-        playerStateFlow.value = PlayerState(
-            queue = listOf(track1, track2),
-            currentIndex = 1,
-            repeatMode = com.stash.core.model.RepeatMode.ALL
-        )
-        val vm = newViewModel()
-        advanceUntilIdle()
+    @Test fun `onTrackInfoTapped is a no-op when nothing is playing`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>(relaxed = true)
+            val vm = newViewModel(api)
+            advanceUntilIdle()
 
-        vm.onSkipNext()
-        advanceUntilIdle()
+            vm.onTrackInfoTapped()
+            advanceUntilIdle()
 
-        coVerify { playerRepository.skipNext() }
-        coVerify(exactly = 0) { playerRepository.skipToQueueIndex(any()) }
-    }
-
-    @Test fun `onSkipNext when hasNext is false and repeatMode is OFF calls skipToQueueIndex 0`() = runTest(dispatcher) {
-        playerStateFlow.value = PlayerState(
-            queue = listOf(track1, track2),
-            currentIndex = 1,
-            repeatMode = com.stash.core.model.RepeatMode.OFF
-        )
-        val vm = newViewModel()
-        advanceUntilIdle()
-
-        vm.onSkipNext()
-        advanceUntilIdle()
-
-        coVerify(exactly = 0) { playerRepository.skipNext() }
-        coVerify { playerRepository.skipToQueueIndex(0) }
-    }
+            coVerify(exactly = 0) { api.resolveArtist(any()) }
+        }
 }
 

@@ -478,9 +478,9 @@ fun StashNavHost(
         ) {
             NowPlayingScreen(
                 onDismiss = { navController.popBackStack() },
-                onNavigateToArtist = { artistName ->
-                    navController.navigate(ArtistDetailRoute(artistName))
-                }
+                onNavigateToArtist = { id, name, avatar, focusAlbum ->
+                    navController.navigate(SearchArtistRoute(id, name, avatar, focusAlbum))
+                },
             )
         }
     }

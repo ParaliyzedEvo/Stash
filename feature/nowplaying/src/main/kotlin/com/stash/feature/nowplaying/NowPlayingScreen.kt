@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Cast
@@ -103,7 +105,7 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 @Composable
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
-    onNavigateToArtist: (String) -> Unit,
+    onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -113,6 +115,7 @@ fun NowPlayingScreen(
     val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
 
     val track = uiState.currentTrack
+    val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
@@ -136,6 +139,14 @@ fun NowPlayingScreen(
     LaunchedEffect(Unit) {
         viewModel.userMessages.collect { msg ->
             android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Tap-to-artist: the VM resolves the artist name → browseId off the main
+    // thread and emits a one-shot nav target; forward it to the host.
+    LaunchedEffect(Unit) {
+        viewModel.artistNavEvents.collect { t ->
+            onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
         }
     }
 
@@ -341,32 +352,85 @@ fun NowPlayingScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Playback controls
-                        PlaybackControls(
-                            isPlaying = uiState.isPlaying,
-                            isBuffering = uiState.isBuffering,
-                            shuffleEnabled = uiState.shuffleEnabled,
-                            repeatMode = uiState.repeatMode,
-                            accentColor = uiState.vibrantColor,
-                            hasNext = hasNext,
-                            onPlayPauseClick = viewModel::onPlayPauseClick,
-                            onSkipNext = viewModel::onSkipNext,
-                            onSkipPrevious = viewModel::onSkipPrevious,
-                            onToggleShuffle = viewModel::onToggleShuffle,
-                            onCycleRepeatMode = viewModel::onCycleRepeatMode,
+                // -- Track info -- (tap the title/artist to open the artist
+                // profile; the trailing chevron signals it's actionable, and
+                // swaps to a spinner while the artist name is being resolved).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (track != null) {
+                                Modifier.clickable(enabled = !resolvingArtist) {
+                                    viewModel.onTrackInfoTapped()
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = track?.title ?: "Not Playing",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
+                        if (track != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            com.stash.core.ui.components.FlacBadge(
+                                fileFormat = track.fileFormat,
+                                bitsPerSample = track.bitsPerSample,
+                                sampleRateHz = track.sampleRateHz,
+                                size = 18.dp,
+                                tint = Color.White,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            if (resolvingArtist) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = "Open artist",
+                                    tint = Color.White.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                        // Progress bar
-                        GlowingProgressBar(
-                            progress = uiState.progressFraction,
-                            accentColor = uiState.vibrantColor,
-                            elapsedMs = uiState.currentPositionMs,
-                            totalMs = uiState.durationMs,
-                            onSeek = viewModel::onSeekTo,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                    Text(
+                        text = buildString {
+                            if (track != null) {
+                                append(track.artist)
+                                if (track.album.isNotBlank()) {
+                                    append(" \u2022 ")
+                                    append(track.album)
+                                }
+                            }
+                        },
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -570,6 +634,15 @@ private fun AlbumArtSection(
 ) {
     val context = LocalContext.current
     val artModel = albumArtPath ?: albumArtUrl
+    // remember: an inline ImageRequest.Builder is a new object every
+    // recomposition, which makes Coil re-evaluate the request each time this
+    // recomposes (and this screen recomposes on every 250ms position tick).
+    val artRequest = remember(context, artModel) {
+        ImageRequest.Builder(context)
+            .data(artModel)
+            .allowHardware(false) // Required for Palette bitmap extraction.
+            .build()
+    }
 
     Box(
         contentAlignment = Alignment.Center,
@@ -591,11 +664,7 @@ private fun AlbumArtSection(
         )
 
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(artModel)
-                .size(coil3.size.Size.ORIGINAL) // Full resolution for big player
-                .allowHardware(false) // Required for Palette bitmap extraction.
-                .build(),
+            model = artRequest,
             contentDescription = "Album art",
             contentScale = ContentScale.Crop,
             onState = { state ->

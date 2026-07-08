@@ -79,22 +79,13 @@ class YTMusicApiClient @Inject constructor(
         /** Backoff delays (ms) between retries on transient failures. */
         private val RETRY_BACKOFFS_MS = listOf(500L, 1500L)
 
-        // Localized shelf title variants. InnerTube sends titles in the user's
-        // device language; these cover the most common locales seen in the wild.
-        private val SONGS_TITLES = setOf(
-            "Songs", "Canciones", "Chansons", "Lieder", "Brani", "Músicas",
-            "Lagu", "गाने", "曲", "歌曲", "노래", "Песни", "เพลง", "Şarkılar",
-            "Piosenki", "Låtar", "Sange", "Liedjes", "Skladby",
-        )
-        private val ARTISTS_TITLES = setOf(
-            "Artists", "Artistas", "Artistes", "Künstler", "Artisti", "Artiesten",
-            "Sanatçılar", "Nghệ sĩ", "कलाकार", "アーティスト", "艺术家", "아티스트",
-            "Исполнители", "ศิลปิน", "Wykonawcy", "Artister", "Kunstnere", "Umělci",
-        )
-        private val ALBUMS_TITLES = setOf(
-            "Albums", "Álbumes", "Alben", "アルバム", "专辑", "앨범",
-            "Альбомы", "อัลบั้ม", "Albumy", "Albüm",
-        )
+        /**
+         * ytmusicapi-derived filter selector constraining search to the "Artists"
+         * shelf. Forces the clean `musicShelfRenderer` shape (vs. the flat
+         * `itemSectionRenderer` variant ambiguous queries otherwise return, where
+         * no artist shelf parses). Verified live: top row = Official Artist Channel.
+         */
+        private const val ARTISTS_FILTER = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
     }
 
     /**
@@ -391,35 +382,29 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
-     * Structurally classifies a music shelf by inspecting up to [CLASSIFY_SAMPLE_SIZE]
-     * items. Checks for `musicTwoRowItemRenderer` (Albums), then inspects
-     * `musicResponsiveListItemRenderer` items for song-like traits (videoId + flex
-     * columns) or artist-like traits (browseId starting with UC/MPLAUC).
+     * Resolve an artist name to its YouTube Music browse identity. Runs an
+     * artists-filtered search and returns the top [ArtistSummary] (browseId,
+     * name, avatar), or null when the name is blank / there is no artist result
+     * / on failure.
+     *
+     * Used by the Now Playing "tap track → artist profile" flow, where the
+     * playing [com.stash.core.model.Track] carries only an artist NAME, not a
+     * browseId. The name is passed raw (YT search handles multi-artist and
+     * band-name credits); parsing reuses [parseArtistsShelf].
      */
-    private fun classifyShelfStructurally(contentsArray: kotlinx.serialization.json.JsonArray?): String? {
-        if (contentsArray == null || contentsArray.isEmpty()) return null
-        val sampleSize = minOf(contentsArray.size, CLASSIFY_SAMPLE_SIZE)
-        for (i in 0 until sampleSize) {
-            val itemObj = contentsArray[i].asObject() ?: continue
-            // musicTwoRowItemRenderer → Albums
-            if (itemObj.containsKey("musicTwoRowItemRenderer")) return "Albums"
-            val itemRenderer = itemObj["musicResponsiveListItemRenderer"]?.asObject() ?: continue
-            // Check for song traits: has a videoId
-            val hasVideoId = itemRenderer["playlistItemData"]?.asObject()
-                ?.get("videoId")?.asString() != null ||
-                itemRenderer.navigatePath(
-                    "overlay", "musicItemThumbnailOverlayRenderer", "content",
-                    "musicPlayButtonRenderer", "playNavigationEndpoint",
-                    "watchEndpoint", "videoId",
-                )?.asString() != null
-            if (hasVideoId) return "Songs"
-            // Check for artist traits: browseId starting with UC or MPLAUC
-            val browseId = itemRenderer.navigatePath(
-                "navigationEndpoint", "browseEndpoint", "browseId",
-            )?.asString()
-            if (browseId != null && (browseId.startsWith("UC") || browseId.startsWith("MPLAUC"))) {
-                return "Artists"
-            }
+    suspend fun resolveArtist(name: String): ArtistSummary? {
+        if (name.isBlank()) return null
+        val response = innerTubeClient.search(name, params = ARTISTS_FILTER) ?: return null
+        val shelves = response.navigatePath(
+            "contents", "tabbedSearchResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray()
+            ?: return null
+        for (shelf in shelves) {
+            val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
+            val artists = parseArtistsShelf(renderer)
+            if (artists.isNotEmpty()) return artists.first()
         }
         return null
     }

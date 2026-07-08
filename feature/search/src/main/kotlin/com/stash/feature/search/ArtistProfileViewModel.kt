@@ -72,6 +72,7 @@ class ArtistProfileViewModel @Inject constructor(
     }
     private val initialName: String = savedStateHandle["name"] ?: ""
     private val initialAvatar: String? = savedStateHandle["avatarUrl"]
+    private val initialFocusAlbum: String? = savedStateHandle["focusAlbum"]
 
     private val _uiState = MutableStateFlow(
         ArtistProfileUiState(
@@ -81,6 +82,7 @@ class ArtistProfileViewModel @Inject constructor(
                 subscribersText = null,
             ),
             status = ArtistProfileStatus.Loading,
+            focusAlbum = initialFocusAlbum,
         ),
     )
     val uiState: StateFlow<ArtistProfileUiState> = _uiState.asStateFlow()

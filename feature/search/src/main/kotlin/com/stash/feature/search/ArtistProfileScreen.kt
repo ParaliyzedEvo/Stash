@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -13,7 +14,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -76,10 +79,42 @@ fun ArtistProfileScreen(
         ).collect { message -> snackbar.showSnackbar(message) }
     }
 
+    // Tap-to-album focus: when the Now Playing screen navigated here with a
+    // focusAlbum, locate it in the Albums/Singles shelves and bring it into
+    // view. Two-axis: the outer LazyColumn scrolls to the section (below the
+    // hero + Popular, i.e. off-screen on landing) so the inner rail's own
+    // scroll + highlight (see AlbumsRow) is actually visible.
+    val listState = rememberLazyListState()
+    val focus = remember(state.focusAlbum, state.albums, state.singles) {
+        findAlbumFocus(state.focusAlbum, state.albums, state.singles)
+    }
+    // Outer LazyColumn item index of the section header to reveal. Section
+    // order is fixed: hero(0); Popular header+row (if popular); Albums
+    // header+row; Singles header+row.
+    val sectionOuterIndex = remember(focus, state.popular, state.albums) {
+        if (focus == null) return@remember null
+        var idx = 1 // hero occupies index 0
+        if (state.popular.isNotEmpty()) idx += 2 // Popular header + row
+        when (focus.shelf) {
+            AlbumShelf.ALBUMS -> idx
+            AlbumShelf.SINGLES -> idx + if (state.albums.isNotEmpty()) 2 else 0
+        }
+    }
+    var focusHandled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(sectionOuterIndex, state.status) {
+        val target = sectionOuterIndex ?: return@LaunchedEffect
+        if (focusHandled) return@LaunchedEffect
+        if (state.status is ArtistProfileStatus.Fresh || state.status is ArtistProfileStatus.Stale) {
+            focusHandled = true
+            listState.animateScrollToItem(target)
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { inner ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(bottom = 96.dp),
             modifier = Modifier
                 .fillMaxSize()
@@ -122,6 +157,7 @@ fun ArtistProfileScreen(
                         onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
+                        focus = focus,
                     )
                 }
                 ArtistProfileStatus.Fresh,
@@ -141,6 +177,7 @@ fun ArtistProfileScreen(
                     onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
+                    focus = focus,
                 )
             }
         }
@@ -193,6 +230,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onRequestAddToPlaylist: (TrackItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
+    focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
         item { SectionHeader(title = "Popular") }
@@ -220,6 +258,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             AlbumsRow(
                 albums = state.albums,
                 onClick = onNavigateToAlbum,
+                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index,
             )
         }
     }
@@ -229,6 +268,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             SinglesRow(
                 singles = state.singles,
                 onClick = onNavigateToAlbum,
+                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.SINGLES }?.index,
             )
         }
     }

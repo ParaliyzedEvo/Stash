@@ -81,6 +81,29 @@ class CrashFileStoreTest {
         assertFalse(block.contains("Stack trace"))
     }
 
+    @Test fun `report body contains the memory section with heap and pss lines`() {
+        val report = store.formatReport(Thread.currentThread(), RuntimeException("boom"))
+
+        assertTrue("expected Memory header", report.contains("Memory"))
+        assertTrue("expected heap line", report.contains("heap: used="))
+        assertTrue("expected pss line", report.contains("pss(KB):"))
+    }
+
+    @Test fun `registered diagnostics appear in the report and a throwing supplier degrades`() {
+        CrashDiagnostics.register("player") { "queue=42 timeline=42" }
+        CrashDiagnostics.register("broken") { error("nope") }
+
+        val report = store.formatReport(Thread.currentThread(), RuntimeException("boom"))
+
+        assertTrue("expected player line", report.contains("player: queue=42 timeline=42"))
+        assertTrue(
+            "expected broken supplier to degrade, not vanish",
+            report.contains("broken: unavailable"),
+        )
+        // Stack trace must survive regardless of supplier behaviour.
+        assertTrue(report.contains("Stack trace"))
+    }
+
     @Test fun `caused-by chain is preserved in the dump`() {
         val root = IllegalStateException("root-cause-msg")
         val wrapped = RuntimeException("wrapper-msg", root)
