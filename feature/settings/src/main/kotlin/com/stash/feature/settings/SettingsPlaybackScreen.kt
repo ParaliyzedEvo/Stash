@@ -94,5 +94,74 @@ fun SettingsPlaybackScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        // Crossfade applies to both streamed and downloaded tracks, so it sits
+        // outside the streaming-engine gate.
+        SettingsSectionLabel("Crossfade")
+        SettingsGroupCard(
+            rows = buildList {
+                add {
+                    SettingsToggleRow(
+                        title = "Crossfade",
+                        subtitle = "Fade the ending track into the next on auto-advance. Manual skips still cut instantly.",
+                        checked = crossfadeEnabled,
+                        onCheckedChange = viewModel::onCrossfadeToggle,
+                    )
+                }
+                if (crossfadeEnabled) {
+                    add {
+                        CrossfadeDurationRow(
+                            seconds = (crossfadeDurationMs / 1000L).toInt().coerceIn(1, 12),
+                            onSecondsChange = { viewModel.onCrossfadeDurationChange(it * 1000L) },
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Duration slider row for the Crossfade section: 1–12 s in whole-second steps
+ * (Material [Slider] `steps` counts internal stops, so 10 → 12 positions).
+ * Stateless; the caller owns persistence.
+ */
+@Composable
+private fun CrossfadeDurationRow(
+    seconds: Int,
+    onSecondsChange: (Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Duration",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "$seconds sec",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = seconds.toFloat(),
+            onValueChange = { onSecondsChange(it.roundToInt()) },
+            valueRange = 1f..12f,
+            steps = 10,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        )
     }
 }
