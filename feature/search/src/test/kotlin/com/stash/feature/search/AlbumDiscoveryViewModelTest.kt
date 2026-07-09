@@ -140,7 +140,7 @@ class AlbumDiscoveryViewModelTest {
     fun `initial state paints hero from nav args before cache emits`() = runTest {
         val cache = mock<AlbumCache>()
         // Never emits — mimic slow fetch so we catch the pre-cache frame.
-        whenever(cache.get(any())).doSuspendableAnswer { awaitCancellation() }
+        whenever(cache.get(any(), any())).doSuspendableAnswer { awaitCancellation() }
 
         val vm = vmWith(cache = cache)
 
@@ -159,7 +159,7 @@ class AlbumDiscoveryViewModelTest {
     fun `cache emit transitions to Fresh and kicks prefetch`() = runTest {
         val detail = albumDetail(tracks = (1..3).map { trackSummary("v$it") })
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(eq("MPREb_xxx"))).thenReturn(detail)
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(detail)
         }
         val prefetcher = mock<PreviewPrefetcher>()
 
@@ -178,7 +178,7 @@ class AlbumDiscoveryViewModelTest {
     @Test
     fun `cache failure transitions to Error and emits user message`() = runTest {
         val cache = mock<AlbumCache>()
-        whenever(cache.get(eq("MPREb_xxx")))
+        whenever(cache.get(eq("MPREb_xxx"), any()))
             .doSuspendableAnswer { throw RuntimeException("network down") }
 
         val vm = vmWith(cache = cache)
@@ -196,7 +196,7 @@ class AlbumDiscoveryViewModelTest {
     fun `retry flips status to Loading and re-fetches cache`() = runTest {
         val detail = albumDetail()
         val cache = mock<AlbumCache>()
-        whenever(cache.get(eq("MPREb_xxx"))).thenReturn(detail)
+        whenever(cache.get(eq("MPREb_xxx"), any())).thenReturn(detail)
 
         val vm = vmWith(cache = cache)
         advanceUntilIdle()
@@ -209,14 +209,14 @@ class AlbumDiscoveryViewModelTest {
 
         advanceUntilIdle()
         assertTrue(vm.uiState.value.status is AlbumDiscoveryStatus.Fresh)
-        verify(cache, times(2)).get(eq("MPREb_xxx"))
+        verify(cache, times(2)).get(eq("MPREb_xxx"), any())
     }
 
     @Test
     fun `onDownloadAllClicked snapshots non-downloaded tracks`() = runTest {
         val detail = albumDetail(tracks = listOf("v1", "v2", "v3").map(::trackSummary))
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(any())).thenReturn(detail)
+            whenever(it.get(any(), any())).thenReturn(detail)
         }
         // v2 is already downloaded — snapshot should exclude it.
         val delegate = stubDelegate(downloadedIds = setOf("v2"))
@@ -238,7 +238,7 @@ class AlbumDiscoveryViewModelTest {
     fun `onDownloadAllConfirmed enqueues snapshot into delegate`() = runTest {
         val detail = albumDetail(tracks = listOf("v1", "v2").map(::trackSummary))
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(any())).thenReturn(detail)
+            whenever(it.get(any(), any())).thenReturn(detail)
         }
         val delegate = stubDelegate()
 
@@ -265,7 +265,7 @@ class AlbumDiscoveryViewModelTest {
             tracks = listOf("v1", "v2", "v3").map(::trackSummary),
         )
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(any())).thenReturn(detail)
+            whenever(it.get(any(), any())).thenReturn(detail)
         }
         val player = mock<PlayerRepository>()
 
@@ -289,7 +289,7 @@ class AlbumDiscoveryViewModelTest {
             tracks = listOf("v1", "v2", "v3").map(::trackSummary),
         )
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(any())).thenReturn(detail)
+            whenever(it.get(any(), any())).thenReturn(detail)
         }
         val player = mock<PlayerRepository>()
 
@@ -308,7 +308,7 @@ class AlbumDiscoveryViewModelTest {
     fun `addAlbumToQueue no-ops when album not loaded`() = runTest {
         val cache = mock<AlbumCache>()
         // Never resolves — album stays in Loading, tracks stays empty.
-        whenever(cache.get(any())).doSuspendableAnswer { awaitCancellation() }
+        whenever(cache.get(any(), any())).doSuspendableAnswer { awaitCancellation() }
         val player = mock<PlayerRepository>()
 
         val vm = vmWith(cache = cache, playerRepository = player)
@@ -325,7 +325,7 @@ class AlbumDiscoveryViewModelTest {
             tracks = listOf("v1", "v2", "v3").map(::trackSummary),
         )
         val cache = mock<AlbumCache>().also {
-            whenever(it.get(any())).thenReturn(detail)
+            whenever(it.get(any(), any())).thenReturn(detail)
         }
         // Downloaded set includes v1 and v3 from this album, plus v99 from
         // another album that must be filtered out by the album-tracks

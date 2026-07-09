@@ -216,11 +216,14 @@ class InnerTubeClient @Inject constructor(
      * @param browseId The InnerTube browse ID.
      * @return The parsed JSON response, or null on failure.
      */
-    suspend fun browse(browseId: String): JsonObject? = withContext(Dispatchers.IO) {
+    suspend fun browse(browseId: String, params: String? = null): JsonObject? = withContext(Dispatchers.IO) {
         val variant = InnerTubeVariant.WEB_REMIX
         val body = buildJsonObject {
             put("context", buildContext(variant))
             put("browseId", browseId)
+            // params scopes a browse (e.g. an artist-discography "View all" grid
+            // to albums-only vs singles-only). Omitted → unfiltered/default view.
+            if (!params.isNullOrBlank()) put("params", params)
         }
         executeRequest("$BASE_URL/browse", body, null, variant)
     }

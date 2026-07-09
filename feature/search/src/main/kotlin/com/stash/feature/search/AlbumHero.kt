@@ -90,6 +90,9 @@ fun AlbumHero(
     onPlayAlbum: () -> Unit,
     onAddToQueue: () -> Unit,
     modifier: Modifier = Modifier,
+    // Qobuz albums have no per-track videoId, so download-by-id isn't available
+    // (Phase 1) — the chip is hidden for them. Defaults true for YT callers.
+    downloadSupported: Boolean = true,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -265,21 +268,23 @@ fun AlbumHero(
                         )
                     }
                 }
-                OutlinedButton(
-                    onClick = onDownloadAll,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Download all",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                if (downloadSupported) {
+                    OutlinedButton(
+                        onClick = onDownloadAll,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Download all",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
             }
 

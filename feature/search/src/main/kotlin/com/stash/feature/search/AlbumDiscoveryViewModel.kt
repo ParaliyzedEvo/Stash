@@ -10,7 +10,9 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.model.Playlist
+import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
+import com.stash.data.ytmusic.model.AlbumSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -78,6 +80,10 @@ class AlbumDiscoveryViewModel @Inject constructor(
     private val initialArtist: String = savedStateHandle["artist"] ?: ""
     private val initialThumb: String? = savedStateHandle["thumbnailUrl"]
     private val initialYear: String? = savedStateHandle["year"]
+
+    /** Which catalog this album came from — routes the cache load + play path. */
+    private val albumSource: AlbumSource =
+        savedStateHandle["source"] ?: AlbumSource.YOUTUBE
 
     private val _uiState = MutableStateFlow(
         AlbumDiscoveryUiState(
@@ -166,11 +172,26 @@ class AlbumDiscoveryViewModel @Inject constructor(
      * downloads from skewing the batch.
      */
     fun onDownloadAllClicked() {
+        // Download keys on videoId, which Qobuz tracks lack — download-by-id is
+        // out of scope for Phase 1, so the action is a no-op for QOBUZ albums
+        // (the screen also hides the button; this is the defensive guard).
+        if (albumSource == AlbumSource.QOBUZ) return
         val snapshot = _uiState.value.tracks.filter {
             it.videoId !in delegate.downloadedIds.value
         }
         _uiState.update { it.copy(showDownloadConfirm = true, downloadConfirmQueue = snapshot) }
     }
+
+    /** Whether download affordances should show — false for Qobuz albums (no videoId). */
+    val downloadSupported: Boolean get() = albumSource == AlbumSource.YOUTUBE
+
+    /**
+     * True for a native Qobuz album. Its tracks carry no videoId, so the screen
+     * must NOT render the videoId-keyed preview/download row (all rows would
+     * share the blank-videoId identity — one preview would light up every row
+     * and play the same track). A simpler play-on-tap row is used instead.
+     */
+    val isNativeAlbum: Boolean get() = albumSource == AlbumSource.QOBUZ
 
     /** User cancelled the download-all confirm dialog — reset both flags. */
     fun onDownloadAllDismissed() {
@@ -236,7 +257,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
      */
     fun playAlbum(startIndex: Int = 0) {
         viewModelScope.launch {
-            val tracks = synthesizeDomainTracks()
+            val tracks = buildQueueTracks()
             if (tracks.isEmpty()) return@launch
             val safeStart = startIndex.coerceIn(0, tracks.size - 1)
             playerRepository.setQueue(tracks, safeStart)
@@ -250,7 +271,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
      */
     fun addAlbumToQueue() {
         viewModelScope.launch {
-            val tracks = synthesizeDomainTracks()
+            val tracks = buildQueueTracks()
             if (tracks.isEmpty()) return@launch
             // Emit immediately — URL resolution can take ~20-30s for 15
             // streaming tracks against a degraded Kennyy/Squid. Without this
@@ -261,26 +282,49 @@ class AlbumDiscoveryViewModel @Inject constructor(
     }
 
     /**
-     * Synthesize [Track] domain objects from the loaded album's tracklist.
-     * Shared between [playAlbum] and [addAlbumToQueue]. Empty when the
-     * album hasn't loaded yet.
+     * Build the playable queue for [playAlbum]/[addAlbumToQueue].
+     *
+     * YouTube tracks keep the existing `videoId.hashCode()` synthetic id and
+     * stream via the videoId. Qobuz tracks have no videoId, so they are
+     * persisted by canonical identity ([MusicRepository.ensureTrackPersisted])
+     * to obtain a REAL `tracks.id` before entering the queue — the persisted
+     * queue is a list of track ids, so without a real row a Qobuz-native queue
+     * would resume as nothing after a process kill, and the Now Playing heart
+     * (which observes by id) couldn't reflect state. These streaming stubs are
+     * `is_downloaded = 0`, so the downloaded-only orphan reaper never touches
+     * them and the resume survives.
      */
-    private fun synthesizeDomainTracks(): List<com.stash.core.model.Track> {
+    private suspend fun buildQueueTracks(): List<Track> {
+        val base = synthesizeDomainTracks()
+        if (albumSource != AlbumSource.QOBUZ) return base
+        return base.map { it.copy(id = musicRepository.ensureTrackPersisted(it)) }
+    }
+
+    /**
+     * Synthesize [Track] domain objects from the loaded album's tracklist.
+     * Empty when the album hasn't loaded yet. YouTube tracks carry the videoId
+     * (+ synthetic hashCode id); Qobuz tracks carry `youtubeId = null` and
+     * `id = 0` (a real PK is assigned by [buildQueueTracks] via persistence).
+     * Both use `MusicSource.YOUTUBE` in Phase 1 — `MusicSource.QOBUZ` is a
+     * Phase-2 concern; the label is inert for qbdlx metadata resolution.
+     */
+    private fun synthesizeDomainTracks(): List<Track> {
         val state = _uiState.value
         val tracks = state.tracks
         if (tracks.isEmpty()) return emptyList()
         val albumTitle = state.hero.title
         val albumArtist = state.hero.artist
         val albumArt = state.hero.thumbnailUrl
+        val qobuz = albumSource == AlbumSource.QOBUZ
         return tracks.map { t ->
-            com.stash.core.model.Track(
-                id = t.videoId.hashCode().toLong(),
+            Track(
+                id = if (qobuz) 0L else t.videoId.hashCode().toLong(),
                 title = t.title,
                 artist = t.artist.ifBlank { albumArtist },
                 album = albumTitle,
                 durationMs = (t.durationSeconds * 1000L).toLong(),
                 albumArtUrl = t.thumbnailUrl ?: albumArt,
-                youtubeId = t.videoId,
+                youtubeId = if (qobuz) null else t.videoId,
                 source = com.stash.core.model.MusicSource.YOUTUBE,
                 isStreamable = true,
             )
@@ -295,7 +339,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
 
     private suspend fun observeAlbum() {
         try {
-            val detail = albumCache.get(browseId)
+            val detail = albumCache.get(browseId, albumSource)
             val totalMs = detail.tracks.sumOf { (it.durationSeconds * 1000).toLong() }
             _uiState.update {
                 it.copy(
@@ -312,33 +356,41 @@ class AlbumDiscoveryViewModel @Inject constructor(
                     status = AlbumDiscoveryStatus.Fresh,
                 )
             }
-            if (!prefetchKicked && detail.tracks.isNotEmpty()) {
-                prefetchKicked = true
-                prefetcher.prefetch(detail.tracks.take(6).map { it.videoId })
-            }
-            delegate.refreshDownloadedIds(detail.tracks.map { it.videoId })
+            // These are all keyed on `videoId`, which is blank ("") for Qobuz
+            // tracks (they resolve by title/artist metadata, not a YouTube id).
+            // Running them for a QOBUZ album would prefetch/refresh/backfill
+            // against empty ids — at best wasted work, at worst mis-keying the
+            // album backfill against other blank-youtubeId library rows. So the
+            // videoId-keyed side-effects run for YouTube albums only.
+            if (albumSource == AlbumSource.YOUTUBE) {
+                if (!prefetchKicked && detail.tracks.isNotEmpty()) {
+                    prefetchKicked = true
+                    prefetcher.prefetch(detail.tracks.take(6).map { it.videoId })
+                }
+                delegate.refreshDownloadedIds(detail.tracks.map { it.videoId })
 
-            // Backfill the `album` column on any of this album's tracks
-            // that are already in the local library with an empty album.
-            // This covers the case where the user previously downloaded a
-            // track via a non-album-context path (loose search row, sync
-            // from a service that didn't carry album metadata, an earlier
-            // build that dropped the field) and is now visiting the album
-            // page — we now know the album name, so the Library Albums
-            // tab can group these tracks correctly without requiring a
-            // re-download.
-            val knownAlbum = detail.title
-            val knownAlbumArtist = detail.artist
-            if (knownAlbum.isNotBlank() || knownAlbumArtist.isNotBlank()) {
-                viewModelScope.launch {
-                    runCatching {
-                        musicRepository.backfillAlbumForTracks(
-                            videoIds = detail.tracks.map { it.videoId },
-                            album = knownAlbum,
-                            albumArtist = knownAlbumArtist,
-                        )
-                    }.onFailure { e ->
-                        Log.w(TAG, "backfillAlbumForTracks failed: ${e.message}")
+                // Backfill the `album` column on any of this album's tracks
+                // that are already in the local library with an empty album.
+                // This covers the case where the user previously downloaded a
+                // track via a non-album-context path (loose search row, sync
+                // from a service that didn't carry album metadata, an earlier
+                // build that dropped the field) and is now visiting the album
+                // page — we now know the album name, so the Library Albums
+                // tab can group these tracks correctly without requiring a
+                // re-download.
+                val knownAlbum = detail.title
+                val knownAlbumArtist = detail.artist
+                if (knownAlbum.isNotBlank() || knownAlbumArtist.isNotBlank()) {
+                    viewModelScope.launch {
+                        runCatching {
+                            musicRepository.backfillAlbumForTracks(
+                                videoIds = detail.tracks.map { it.videoId },
+                                album = knownAlbum,
+                                albumArtist = knownAlbumArtist,
+                            )
+                        }.onFailure { e ->
+                            Log.w(TAG, "backfillAlbumForTracks failed: ${e.message}")
+                        }
                     }
                 }
             }

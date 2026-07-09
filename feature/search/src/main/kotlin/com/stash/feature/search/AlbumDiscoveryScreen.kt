@@ -1,17 +1,25 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -24,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -109,6 +118,7 @@ fun AlbumDiscoveryScreen(
                     onDownloadAll = vm::onDownloadAllClicked,
                     onPlayAlbum = { vm.playAlbum(startIndex = 0) },
                     onAddToQueue = vm::addAlbumToQueue,
+                    downloadSupported = vm.downloadSupported,
                 )
             }
 
@@ -149,8 +159,26 @@ fun AlbumDiscoveryScreen(
                     } else {
                         itemsIndexed(
                             items = state.tracks,
-                            key = { _, t -> "album_track_" + t.videoId },
+                            // Include the index: Qobuz tracks all carry a blank
+                            // videoId, so keying on videoId alone collides (Compose
+                            // requires unique keys). The album tracklist is static
+                            // (never reordered), so the index is a stable key.
+                            key = { index, t -> "album_track_${index}_${t.videoId}" },
                         ) { index, track ->
+                            // Qobuz tracks have no videoId, so the videoId-keyed
+                            // preview/download row can't represent them (every row
+                            // would share the blank identity). Render a simple
+                            // play-on-tap row instead.
+                            if (vm.isNativeAlbum) {
+                                NativeAlbumTrackRow(
+                                    title = track.title,
+                                    artist = track.artist,
+                                    durationSeconds = track.durationSeconds,
+                                    onPlay = { vm.playAlbum(startIndex = index) },
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                )
+                                return@itemsIndexed
+                            }
                             val currentPreviewState = previewState
                             val isPreviewPlaying = currentPreviewState is PreviewState.Playing &&
                                 currentPreviewState.videoId == track.videoId
@@ -256,4 +284,62 @@ fun AlbumDiscoveryScreen(
             )
         }
     }
+}
+
+/**
+ * Minimal track row for a native (Qobuz) album. These tracks have no videoId,
+ * so the videoId-keyed [PreviewDownloadRow] (preview = 30s YouTube clip,
+ * download = by videoId) can't represent them. Tap plays the track natively —
+ * the whole row is the play affordance.
+ */
+@Composable
+private fun NativeAlbumTrackRow(
+    title: String,
+    artist: String,
+    durationSeconds: Double,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "Play",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = formatTrackDuration(durationSeconds),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Seconds → `m:ss`. */
+private fun formatTrackDuration(seconds: Double): String {
+    val total = seconds.toInt()
+    return "%d:%02d".format(total / 60, total % 60)
 }

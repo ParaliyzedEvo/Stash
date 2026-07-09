@@ -395,8 +395,8 @@ class YTMusicApiClient @Inject constructor(
         // those ids during the carousel walk and follow them in a
         // second pass (post-loop) to replace truncated carousels with
         // the full discography.
-        var albumsMoreBrowseId: String? = null
-        var singlesMoreBrowseId: String? = null
+        var albumsMore: CarouselMore? = null
+        var singlesMore: CarouselMore? = null
 
         // Parsers live in ArtistResponseParser.kt as top-level internal funcs.
         for (section in sections) {
@@ -420,7 +420,7 @@ class YTMusicApiClient @Inject constructor(
                 when {
                     title.equals("Albums", ignoreCase = true) -> {
                         albums = parseAlbumsCarousel(carousel)
-                        albumsMoreBrowseId = parseCarouselMoreBrowseId(carousel)
+                        albumsMore = parseCarouselMore(carousel)
                     }
                     // `contains("Singles")` subsumes both the stand-alone
                     // "Singles" shelf and the combined "Singles and EPs"
@@ -431,8 +431,8 @@ class YTMusicApiClient @Inject constructor(
                     title.contains("Singles", ignoreCase = true) ||
                         title.contains("EPs", ignoreCase = true) -> {
                         singles = singles + parseAlbumsCarousel(carousel)
-                        if (singlesMoreBrowseId == null) {
-                            singlesMoreBrowseId = parseCarouselMoreBrowseId(carousel)
+                        if (singlesMore == null) {
+                            singlesMore = parseCarouselMore(carousel)
                         }
                     }
                     title.contains("Fans also like", ignoreCase = true) ->
@@ -452,23 +452,23 @@ class YTMusicApiClient @Inject constructor(
         // each take their own browse call (~50KB each), so the cost is
         // ~2 extra HTTP requests per artist page load. Worth it: this is
         // the only way to surface artists with > 10 albums (Drake, etc).
-        albumsMoreBrowseId?.let { moreId ->
+        albumsMore?.let { more ->
             runCatching {
-                innerTubeClient.browse(moreId)?.let { gridResponse ->
+                innerTubeClient.browse(more.browseId, more.params)?.let { gridResponse ->
                     val full = parseAlbumsGridResponse(gridResponse)
                     if (full.isNotEmpty()) {
-                        Log.d(TAG, "getArtist: albums grid expanded ${albums.size} -> ${full.size}")
+                        Log.d(TAG, "getArtist: albums grid expanded ${albums.size} -> ${full.size} (params=${more.params != null})")
                         albums = full
                     }
                 }
             }.onFailure { Log.w(TAG, "getArtist: albums-more fetch failed: ${it.message}") }
         }
-        singlesMoreBrowseId?.let { moreId ->
+        singlesMore?.let { more ->
             runCatching {
-                innerTubeClient.browse(moreId)?.let { gridResponse ->
+                innerTubeClient.browse(more.browseId, more.params)?.let { gridResponse ->
                     val full = parseAlbumsGridResponse(gridResponse)
                     if (full.isNotEmpty()) {
-                        Log.d(TAG, "getArtist: singles grid expanded ${singles.size} -> ${full.size}")
+                        Log.d(TAG, "getArtist: singles grid expanded ${singles.size} -> ${full.size} (params=${more.params != null})")
                         singles = full
                     }
                 }

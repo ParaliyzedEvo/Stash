@@ -1,11 +1,15 @@
 package com.stash.data.download.lossless.qbdlx.di
 
+import com.stash.core.data.discography.DiscographySupplement
+import com.stash.core.data.discography.QobuzAlbumFetcher
 import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.qbdlx.QbdlxPoolCipher
 import com.stash.data.download.lossless.qbdlx.QbdlxPoolProvider
 import com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource
 import com.stash.data.download.lossless.qbdlx.QbdlxSigner
+import com.stash.data.download.lossless.qbdlx.QobuzAlbumFetcherImpl
+import com.stash.data.download.lossless.qbdlx.QobuzDiscographyProvider
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -36,6 +40,12 @@ abstract class QbdlxModule {
     @Binds
     @IntoSet
     abstract fun bindQbdlxAsLosslessSource(impl: QbdlxQobuzSource): LosslessSource
+
+    @Binds
+    abstract fun bindDiscographySupplement(impl: QobuzDiscographyProvider): DiscographySupplement
+
+    @Binds
+    abstract fun bindQobuzAlbumFetcher(impl: QobuzAlbumFetcherImpl): QobuzAlbumFetcher
 
     companion object {
         @Provides

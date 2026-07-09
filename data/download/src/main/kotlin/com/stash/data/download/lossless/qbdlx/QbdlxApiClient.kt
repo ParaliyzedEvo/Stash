@@ -49,6 +49,44 @@ class QbdlxApiClient @Inject constructor(
             runCatching { json.decodeFromString<QbdlxSearchResponse>(body).tracks.items }.getOrDefault(emptyList())
         }
 
+    /** Search the Qobuz catalog for artists (read-only metadata). */
+    suspend fun searchArtists(query: String, token: String, limit: Int = 10): List<QbdlxArtistItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/catalog/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", query)
+                .addQueryParameter("type", "artists")
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            runCatching { json.decodeFromString<QbdlxArtistSearchResponse>(body).artists.items }.getOrDefault(emptyList())
+        }
+
+    /** Fetch an artist's albums (read-only discography metadata). */
+    suspend fun getArtistAlbums(artistId: Long, token: String, limit: Int = 100): List<QbdlxAlbumItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/artist/get".toHttpUrl().newBuilder()
+                .addQueryParameter("artist_id", artistId.toString())
+                .addQueryParameter("extra", "albums")
+                .addQueryParameter("limit", limit.toString())
+                .addQueryParameter("offset", "0")
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
+        }
+
+    /** Fetch an album's detail incl. its tracks (read-only metadata). */
+    suspend fun getAlbum(albumId: String, token: String): QbdlxAlbumDetailResponse =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api.json/0.2/album/get".toHttpUrl().newBuilder()
+                .addQueryParameter("album_id", albumId)
+                .addQueryParameter("app_id", appId)
+                .build()
+            val body = get(url.toString(), token)
+            json.decodeFromString<QbdlxAlbumDetailResponse>(body)
+        }
+
     /** Resolve a track id to a signed FLAC URL, classified. */
     suspend fun getFileUrl(trackId: Long, formatId: Int, token: String): QbdlxResolveResult =
         withContext(Dispatchers.IO) {

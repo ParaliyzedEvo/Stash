@@ -9,6 +9,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
@@ -16,6 +17,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
+import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,6 +65,7 @@ class ArtistProfileViewModel @Inject constructor(
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
+    private val musicRepository: MusicRepository,
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
 ) : ViewModel() {
@@ -222,8 +225,10 @@ class ArtistProfileViewModel @Inject constructor(
             val artistName = state.hero.name
             val seen = mutableSetOf<String>()
 
+            // Popular is always YT-sourced (real videoIds), so keying on
+            // videoId is safe here.
             val popularTracks = state.popular
-                .filter { seen.add(it.videoId) }
+                .filter { seen.add(trackKey(it)) }
                 .map { it.toDomainTrack(albumFallback = artistName) }
 
             if (popularTracks.isEmpty() && state.albums.isEmpty() && state.singles.isEmpty()) {
@@ -239,19 +244,28 @@ class ArtistProfileViewModel @Inject constructor(
             val catalog = state.albums + state.singles
             for (album in catalog) {
                 if (appended >= CATALOG_CAP) break
-                val detail = runCatching { albumCache.get(album.id) }.getOrNull() ?: continue
+                // Route the album fetch by its source — a merged-in Qobuz album
+                // (numeric id, source=QOBUZ) would otherwise 404 on the YT path
+                // and be silently dropped from Play Artist.
+                val detail = runCatching { albumCache.get(album.id, album.source) }
+                    .getOrNull() ?: continue
                 val remaining = CATALOG_CAP - appended
-                val albumTracks = detail.tracks
-                    .filter { seen.add(it.videoId) }
+                val domain = detail.tracks
+                    // trackKey, not videoId: Qobuz tracks share blank videoIds,
+                    // so a raw-videoId seen-set would drop all but the first.
+                    .filter { seen.add(trackKey(it)) }
                     .take(remaining)
-                    .map {
-                        it.toDomainTrack(
-                            albumFallback = artistName,
-                            albumTitle = album.title,
-                            albumArtist = artistName,
-                        )
-                    }
-                if (albumTracks.isEmpty()) continue
+                    .map { domainTrackFor(it, album.source, album.title, artistName) }
+                if (domain.isEmpty()) continue
+
+                // Qobuz tracks carry no videoId — persist by canonical identity
+                // to a real PK so the queue survives resume (same as the album
+                // screen's play path). YT tracks keep their synthetic id.
+                val albumTracks = if (album.source == AlbumSource.QOBUZ) {
+                    domain.map { it.copy(id = musicRepository.ensureTrackPersisted(it)) }
+                } else {
+                    domain
+                }
 
                 if (appended == 0) {
                     playerRepository.setQueue(albumTracks, startIndex = 0)
@@ -261,6 +275,40 @@ class ArtistProfileViewModel @Inject constructor(
                 appended += albumTracks.size
             }
         }
+    }
+
+    /** Dedup key for the catalog fill: videoId when present (YT), else a
+     *  title|artist identity (Qobuz tracks all carry a blank videoId). */
+    private fun trackKey(t: TrackSummary): String =
+        t.videoId.ifBlank { "${t.title}|${t.artist}" }
+
+    /** Build a domain [Track] for a catalog track, branching on the album's
+     *  source. Qobuz → no videoId, id=0 (a real PK is assigned by
+     *  [MusicRepository.ensureTrackPersisted] before queueing); YT → the
+     *  existing synthetic-id mapping. */
+    private fun domainTrackFor(
+        t: TrackSummary,
+        source: AlbumSource,
+        albumTitle: String,
+        artistName: String,
+    ): Track = if (source == AlbumSource.QOBUZ) {
+        Track(
+            id = 0L,
+            title = t.title,
+            artist = t.artist.ifBlank { artistName },
+            album = albumTitle,
+            durationMs = (t.durationSeconds * 1000.0).toLong(),
+            albumArtUrl = t.thumbnailUrl,
+            youtubeId = null,
+            source = MusicSource.YOUTUBE,
+            isStreamable = true,
+        )
+    } else {
+        t.toDomainTrack(
+            albumFallback = artistName,
+            albumTitle = albumTitle,
+            albumArtist = artistName,
+        )
     }
 
     private fun TrackSummary.toDomainTrack(
