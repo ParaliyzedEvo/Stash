@@ -81,12 +81,12 @@ class RadioStationGenerator @Inject constructor(
             else (SEED_SHARE / (1f - SEED_SHARE)) * neighborWeightSum
         val out = ArrayList<RadioCandidate>()
         tracks[seedName]?.take(TRACKS_PER_ARTIST)?.forEach {
-            out += RadioCandidate(seedName, it.title, it.videoId, seedWeight)
+            out += RadioCandidate(seedName, it.title, it.videoId, seedWeight, it.thumbnailUrl)
         }
         for (n in neighbors) {
             val w = n.match.coerceAtLeast(0.05f)
             tracks[n.name]?.take(TRACKS_PER_ARTIST)?.forEach {
-                out += RadioCandidate(n.name, it.title, it.videoId, w)
+                out += RadioCandidate(n.name, it.title, it.videoId, w, it.thumbnailUrl)
             }
         }
         return out
@@ -150,7 +150,7 @@ class RadioStationGenerator @Inject constructor(
             val id = yt.resolveArtist(n.name)?.id ?: continue
             val popular = runCatching { yt.getArtist(id).popular }.getOrDefault(emptyList())
             popular.take(TRACKS_PER_ARTIST).forEach {
-                val cand = RadioCandidate(n.name, it.title, it.videoId, n.match.coerceAtLeast(0.05f))
+                val cand = RadioCandidate(n.name, it.title, it.videoId, n.match.coerceAtLeast(0.05f), it.thumbnailUrl)
                 if (cand.identity() !in session.played) fresh += cand
             }
         }
@@ -167,6 +167,7 @@ class RadioStationGenerator @Inject constructor(
         title = title,
         artist = artist,
         durationMs = 0L,
+        albumArtUrl = thumbnailUrl,
         youtubeId = videoId,
         source = MusicSource.YOUTUBE,
         isStreamable = true,

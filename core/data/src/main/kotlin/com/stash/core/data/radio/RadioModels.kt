@@ -14,6 +14,7 @@ data class RadioCandidate(
     val title: String,
     val videoId: String?,
     val weight: Float,
+    val thumbnailUrl: String? = null,
 )
 
 /** Stable per-station identity for the no-repeat set. */
