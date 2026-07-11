@@ -201,13 +201,13 @@ fun AlbumDiscoveryScreen(
                             // buttons inside PreviewDownloadRow have their own
                             // click handlers that consume the event, so the
                             // outer clickable only fires on the metadata area.
-                            PreviewDownloadRow(
+                            SongRow(
                                 item = track.toSearchResultItem(),
                                 isDownloading = track.videoId in downloadingIds,
                                 isDownloaded = track.videoId in downloadedIds,
                                 isPreviewLoading = previewLoadingId == track.videoId,
                                 isPreviewPlaying = isPreviewPlaying,
-                                onPreview = { vm.delegate.previewTrack(trackItem) },
+                                onPlay = { vm.delegate.previewTrack(trackItem) },
                                 onStopPreview = { vm.delegate.stopPreview() },
                                 onDownload = {
                                     vm.delegate.downloadTrack(

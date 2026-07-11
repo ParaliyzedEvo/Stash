@@ -63,14 +63,14 @@ fun PopularTracksSection(
             LaunchedEffect(track.videoId) {
                 losslessPrefetcher.warmUp(trackItem)
             }
-            PreviewDownloadRow(
+            SongRow(
                 item = item,
                 isDownloading = track.videoId in downloadingIds,
                 isDownloaded = track.videoId in downloadedIds,
                 isPreviewLoading = previewLoadingId == track.videoId,
                 isPreviewPlaying = previewState is PreviewState.Playing &&
                     previewState.videoId == track.videoId,
-                onPreview = { onPreview(trackItem) },
+                onPlay = { onPreview(trackItem) },
                 onStopPreview = onStopPreview,
                 onDownload = { onDownload(item) },
                 onPlayNext = { onPlayNext(trackItem) },

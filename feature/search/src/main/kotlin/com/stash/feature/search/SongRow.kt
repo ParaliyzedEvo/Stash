@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
@@ -47,26 +47,27 @@ import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * Canonical "preview + download" search/Popular row.
+ * Canonical tap-to-play song row for Search results, artist "Popular", and album
+ * tracklists — the SAME composable everywhere (no fork). The whole row is the play
+ * affordance: tapping it plays the track (full stream when Online, 30s preview when
+ * Offline), and tapping it again while a preview plays stops it (inheriting the old
+ * ▶/⏹ toggle). Download stays a one-tap control on the row.
  *
- * Extracted from the previous `SearchResultRow` in `SearchScreen.kt` so that
- * both [ResultsList] (Search tab) and [PopularTracksSection] (Artist Profile)
- * render the SAME composable — no fork, no divergence. The outer Row is
- * tagged `"PreviewDownloadRow"` so a Compose UI test can lock the non-fork.
- *
- * The download button cycles through three visual states:
+ * The download control cycles through three visual states:
  *  - Default: download arrow icon (tappable)
  *  - Downloading: circular progress indicator
  *  - Downloaded: green checkmark icon
+ *
+ * The outer Row is tagged `"SongRow"` so a Compose UI test can lock the non-fork.
  */
 @Composable
-fun PreviewDownloadRow(
+fun SongRow(
     item: SearchResultItem,
     isDownloading: Boolean,
     isDownloaded: Boolean,
     isPreviewLoading: Boolean,
     isPreviewPlaying: Boolean,
-    onPreview: () -> Unit,
+    onPlay: () -> Unit,
     onStopPreview: () -> Unit,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
@@ -93,17 +94,25 @@ fun PreviewDownloadRow(
     onStartRadio: () -> Unit = {},
 ) {
     val extendedColors = StashTheme.extendedColors
+    // Dim the art behind the loading spinner / stop glyph so it reads clearly.
+    val scrim = MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .testTag("PreviewDownloadRow")
+            .testTag("SongRow")
             .clip(RoundedCornerShape(12.dp))
             .background(extendedColors.glassBackground)
+            // Whole row = play affordance. Tapping while a 30s preview plays stops it
+            // (inherits the old ▶/⏹ button toggle) so a running preview is never
+            // orphaned. The download button + ⋮ below consume their own taps.
+            .clickable { if (isPreviewPlaying) onStopPreview() else onPlay() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Album art or fallback music note
+        // Album art or fallback music note, with a spinner (resolving/loading) or a
+        // stop hint (preview playing) overlaid so the row-tap state is visible now
+        // that the standalone ▶ button is gone.
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -125,6 +134,28 @@ fun PreviewDownloadRow(
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
+            }
+            when {
+                isPreviewLoading || isResolving -> Box(
+                    modifier = Modifier.fillMaxSize().background(scrim),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                isPreviewPlaying -> Box(
+                    modifier = Modifier.fillMaxSize().background(scrim),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop preview",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
         }
 
@@ -161,30 +192,6 @@ fun PreviewDownloadRow(
         )
 
         Spacer(modifier = Modifier.width(8.dp))
-
-        // Preview button
-        IconButton(
-            onClick = if (isPreviewPlaying) onStopPreview else onPreview,
-            modifier = Modifier.size(40.dp),
-        ) {
-            when {
-                isPreviewLoading || isResolving -> CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                isPreviewPlaying -> Icon(
-                    imageVector = Icons.Default.Stop,
-                    contentDescription = "Stop preview",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                else -> Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Preview",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
 
         // Download action button
         Box(
@@ -271,7 +278,7 @@ fun PreviewDownloadRow(
 /**
  * Formats a duration in seconds to "m:ss" or "h:mm:ss" display string.
  *
- * Internal to the search package so both [PreviewDownloadRow] and any
+ * Internal to the search package so both [SongRow] and any
  * callers that surface a row can share a single formatter.
  */
 internal fun formatDuration(seconds: Double): String {

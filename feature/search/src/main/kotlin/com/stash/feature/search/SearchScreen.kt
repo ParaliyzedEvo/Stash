@@ -488,7 +488,7 @@ private fun SectionedResultsList(
                         LaunchedEffect(t.videoId) {
                             losslessPrefetcher.warmUp(t.toTrackItem())
                         }
-                        PreviewDownloadRow(
+                        SongRow(
                             item = item,
                             isDownloading = t.videoId in downloadingIds,
                             isDownloaded = t.videoId in downloadedIds,
@@ -497,7 +497,7 @@ private fun SectionedResultsList(
                             isPreviewPlaying = previewState is PreviewState.Playing &&
                                 previewState.videoId == t.videoId,
                             isResolving = (t.videoId.hashCode().toLong() == tappedTrackId),
-                            onPreview = { onPreview(t.toTrackItem()) },
+                            onPlay = { onPreview(t.toTrackItem()) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(t) },
                             onPlayNext = { onPlayNext(t.toTrackItem()) },
