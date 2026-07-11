@@ -24,8 +24,18 @@ class RadioStationGeneratorSongTest {
             Result.success(listOf(
                 LastFmTopTrack("Lil Wayne", "6 Foot 7 Foot", 100),
                 LastFmTopTrack("Lil Wayne", "Lollipop", 90)))
-        coEvery { yt.searchCanonicalVideoId(any(), any()) } answers
-            { "vid_${firstArg<String>()}_${secondArg<String>()}".replace(" ", "") }
+        // Song-radio candidates carry no Last.fm artwork and resolve via YT Music
+        // search — which also yields the song's square album cover. Most resolve
+        // WITH a cover; "T.I." resolves without one to exercise the video-frame
+        // fallback so blank covers never reach Now Playing/queue/notif.
+        coEvery { yt.searchCanonicalMatch(any(), any()) } answers {
+            val artist = firstArg<String>()
+            com.stash.data.ytmusic.CanonicalMatch(
+                videoId = "vid_${artist}_${secondArg<String>()}".replace(" ", ""),
+                thumbnailUrl = if (artist == "T.I.") null
+                    else "https://lh3.googleusercontent.com/cover=w1024-h1024",
+            )
+        }
 
         val (session, batch) = gen().start(RadioSeed.Song("A Milli", "Lil Wayne"))
 
@@ -34,10 +44,10 @@ class RadioStationGeneratorSongTest {
         assertTrue("has seed share", batch.any { it.artist == "Lil Wayne" })
         assertTrue("has similar tracks", batch.any { it.artist != "Lil Wayne" })
         assertTrue(session.played.isNotEmpty())
-        // Song-radio candidates carry no Last.fm artwork and resolve to a bare
-        // videoId — every emitted track must still get album art (derived from the
-        // videoId), else Now Playing/queue/notif show blank covers across the board.
+        // Every emitted track has album art, and the resolved square cover is used
+        // when the search returned one (crisp, no black bars) rather than the
+        // low-res video frame.
         assertTrue("all tracks have album art", batch.all { !it.albumArtUrl.isNullOrBlank() })
-        assertTrue("art derived from videoId", batch.all { it.albumArtUrl!!.contains("/vi/") })
+        assertTrue("resolved cover used", batch.any { it.albumArtUrl!!.contains("lh3.googleusercontent.com") })
     }
 }

@@ -262,6 +262,10 @@ class YTMusicApiClient @Inject constructor(
     suspend fun searchCanonicalVideoId(artist: String, title: String): String? =
         innerTubeClient.searchCanonical(artist, title)
 
+    /** [searchCanonicalVideoId] plus the matched song's square album art. */
+    suspend fun searchCanonicalMatch(artist: String, title: String): CanonicalMatch? =
+        innerTubeClient.searchCanonicalMatch(artist, title)
+
     suspend fun searchAll(query: String): SearchAllResults {
         val response = innerTubeClient.search(query)
             ?: return SearchAllResults(emptyList())

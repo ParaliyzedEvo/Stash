@@ -101,8 +101,21 @@ class RadioStationGenerator @Inject constructor(
             val cand = session.ordered[session.cursor++]
             val id = cand.identity()
             if (id in session.played) continue
-            val videoId = cand.videoId?.takeIf { it.isNotBlank() }
-                ?: yt.searchCanonicalVideoId(cand.artist, cand.title) ?: continue
+            // Candidates with a known videoId (artist-radio, seeded song) keep
+            // their own thumbnail; those without one resolve via YT Music search,
+            // which also yields the song's square album cover — so no-thumbnail
+            // candidates get a crisp cover instead of the low-res video frame.
+            val existingId = cand.videoId?.takeIf { it.isNotBlank() }
+            val videoId: String
+            val resolvedArt: String?
+            if (existingId != null) {
+                videoId = existingId
+                resolvedArt = null
+            } else {
+                val match = yt.searchCanonicalMatch(cand.artist, cand.title) ?: continue
+                videoId = match.videoId
+                resolvedArt = match.thumbnailUrl
+            }
             // Two different candidates (e.g. a seed-artist top track and a similar
             // track) can resolve to the SAME videoId — guard on the resolved id too
             // so the same audio never plays twice in one station.
@@ -110,7 +123,7 @@ class RadioStationGenerator @Inject constructor(
             if (vidKey in session.played) continue
             session.played += id
             session.played += vidKey
-            out += cand.toTrack(videoId)
+            out += cand.toTrack(videoId, resolvedArt)
         }
         return out
     }
@@ -162,19 +175,17 @@ class RadioStationGenerator @Inject constructor(
         session.ordered += RadioInterleaver.order(fresh)
     }
 
-    private fun RadioCandidate.toTrack(videoId: String) = Track(
+    private fun RadioCandidate.toTrack(videoId: String, resolvedArt: String? = null) = Track(
         id = videoId.hashCode().toLong(),
         title = title,
         artist = artist,
         durationMs = 0L,
-        // Album art, across the board: prefer the richer InnerTube thumbnail
-        // (artist-radio popular tracks carry one) and otherwise derive it from the
-        // videoId. Song-radio candidates come from Last.fm (no artwork) and resolve
-        // via searchCanonicalVideoId (videoId only), so without this fallback they
-        // would have no art. Every YouTube video has an hqdefault thumbnail, so
-        // this covers ALL radio tracks with no extra API call. This is the single
-        // chokepoint every emitted radio Track flows through (both seed types).
-        albumArtUrl = thumbnailUrl ?: ytThumbnail(videoId),
+        // Album art, best-first: the candidate's own InnerTube cover (artist-radio
+        // popular tracks carry a square 544px one), else the square album cover
+        // pulled from the YT Music search that resolved the videoId (song-radio /
+        // Last.fm neighbours), else the low-res video frame as a last resort. This
+        // is the single chokepoint every emitted radio Track flows through.
+        albumArtUrl = thumbnailUrl ?: resolvedArt ?: ytThumbnail(videoId),
         youtubeId = videoId,
         source = MusicSource.YOUTUBE,
         isStreamable = true,
