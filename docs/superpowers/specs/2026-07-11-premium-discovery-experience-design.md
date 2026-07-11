@@ -22,14 +22,16 @@ states — not a new information architecture.
   stream without backing out to Home.
 - Apply the new row consistently across Search results, artist "Popular", and album
   tracklists; polish spacing/typography/state feedback.
+- **Make the preview start fast** — resolve its FLAC via the immediate
+  (rate-limiter-bypassing) path, not the background rate-limited one (see §6).
 
 **Non-goals (Phase 1)**
 - No artist-page restructure — keep hero → Popular → Albums row → Singles/EPs row →
   Fans also like (horizontal rows, compact hero). Chosen deliberately.
 - No discography-quality fix (wrong albums, sort) — that's Phase 2.
 - No change to the streaming resolver, download pipeline, or player.
-- Keep the existing 30s-preview-on-tap behavior when Offline (the chip is the escape
-  hatch, not a behavior change).
+- Keep the existing 30s-preview-on-tap *behavior* when Offline (the chip is the escape
+  hatch). We change how fast the preview *resolves* (§6), not what a tap does.
 
 ---
 
@@ -140,7 +142,46 @@ reusing Home's control.
 
 ---
 
-## 6. Error handling & edge cases
+## 6. Fast preview (lossless resolve priority)
+
+**On-device diagnosis (2026-07-11, offline preview of a Logic track):**
+```
+preview lossless Ii4E45K3UiU via qbdlx_qobuz confidence=1.00
+preview-play … totalDt=18496ms
+```
+The offline preview **already uses the FLAC** (qbdlx, perfect 1.00 match) — *not*
+YouTube. But a cold tap took **18.5 s** to start.
+
+**Root cause:** `QbdlxQobuzSource` has two resolve paths — `resolve()` goes through
+`AggregatorRateLimiter` (**1 token / 3 s**, burst 4); `resolveImmediate()` bypasses the
+token bucket. Full streaming (`playFromStream`) is fast because it uses the immediate
+path. The **preview** goes through `LosslessUrlPrefetcher` → `LosslessSourceRegistry.resolve`
+→ the **rate-limited** path, so a cold tap waits behind speculative row-prefetches for
+tokens to refill (~15–18 s). When the row's background prefetch already finished, the
+tap is instant — hence "fast most of the time, sometimes very slow."
+
+**Fix:** a user-initiated preview tap is a foreground action and must bypass the rate
+limiter (mirroring streaming), while the background scroll-prefetch stays rate-limited
+(it's speculative). The qbdlx source's internal `resolve` already accepts a
+`bypassRateLimit` flag (the machinery exists); it just isn't exposed through the
+interface.
+- Add `bypassRateLimit: Boolean = false` to `LosslessSource.resolve` and
+  `LosslessSourceRegistry.resolve`; thread it to the qbdlx source's existing internal
+  param. Sources that don't rate-limit ignore it.
+- `LosslessUrlPrefetcher`: `warmUp` (background, scroll-triggered) keeps
+  `bypassRateLimit = false`; the foreground `lookup` (tap-triggered) passes
+  `bypassRateLimit = true` when the warm cache isn't ready, so a cold tap does a single
+  search+match+getFileUrl (~1–2 s) instead of waiting on tokens.
+- Warm taps stay instant (they await an already-completed deferred). The YouTube
+  fallback on a genuine lossless miss/failure is unchanged.
+
+**Scope guard:** this touches the lossless resolve interface/registry (`data:download`)
+— a thin, additive flag, not a resolver rewrite. No change to matching, sources, or the
+download pipeline.
+
+---
+
+## 7. Error handling & edge cases
 
 - **Blank-videoId rows (Qobuz-native):** already keyed safely by index elsewhere; the
   now-playing indicator never false-matches them (blank id ≠ player's id).
@@ -154,7 +195,7 @@ reusing Home's control.
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 - **`SongRow` (Compose/unit where possible, ViewModel for wiring):** row tap invokes
   play; download affordance shows idle/downloading/downloaded from the delegate flows;
@@ -163,13 +204,18 @@ reusing Home's control.
 - **Offline chip:** `SearchViewModel` exposes mode from `StreamingPreference`; the
   toggle/open-sheet action fires; chip hidden when the engine flag is off. Extraction
   is behavior-preserving — Home's existing streaming tests must still pass.
+- **Fast preview:** the foreground `lookup` resolves with `bypassRateLimit = true`
+  (the rate limiter's `acquire` is not awaited on a tap), while `warmUp` stays
+  rate-limited; a lossless miss still falls back to the YouTube extractor. Verify the
+  `bypassRateLimit` flag threads through registry → qbdlx source to its existing
+  internal param.
 - **Artist/Album screens:** `SongRow` is wired into Popular and album tracklists;
   section structure/order is unchanged (guard against accidental restructure).
 - **No regressions:** existing search/album/artist ViewModel tests stay green.
 
 ---
 
-## 8. Out of scope / deferred
+## 9. Out of scope / deferred
 
 - Discography data quality — wrong-artist Qobuz gap-fills, album sort (Phase 2 spec).
 - Album grid / filter-chip discography (rejected in favour of refined horizontal rows).
