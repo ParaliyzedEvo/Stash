@@ -60,8 +60,12 @@ interface LosslessSource {
      *  5. On 429, call [AggregatorRateLimiter.reportRateLimited]; on
      *     any other failure, [AggregatorRateLimiter.reportFailure]; on
      *     success, [AggregatorRateLimiter.reportSuccess].
+     *
+     * @param bypassRateLimit when true, a user-initiated (foreground) resolve
+     *   skips the per-source token bucket. Background/speculative callers pass
+     *   false (the default). Sources without a rate limiter ignore it.
      */
-    suspend fun resolve(query: TrackQuery): SourceResult?
+    suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult?
 
     /**
      * Inspect the source's current rate-limit state. Used by the Library

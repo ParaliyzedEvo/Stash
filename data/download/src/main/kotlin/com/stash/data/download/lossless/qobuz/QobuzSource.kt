@@ -111,8 +111,8 @@ class QobuzSource @Inject constructor(
         return true
     }
 
-    override suspend fun resolve(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = false, requestedQuality = null)
+    override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? =
+        resolveInternal(query, bypassRateLimit = bypassRateLimit, requestedQuality = null)
 
     /**
      * User-initiated immediate resolve for the streaming path. Mirrors

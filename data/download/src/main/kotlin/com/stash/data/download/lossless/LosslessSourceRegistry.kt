@@ -36,7 +36,7 @@ class LosslessSourceRegistry @Inject constructor(
      * pipeline as a last resort (the strict-superset behavior we want for
      * Path ii of the source-priority model).
      */
-    suspend fun resolve(query: TrackQuery): SourceResult? {
+    suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
         // Test toggles (outage drills). ARCOD-only takes precedence over
         // amz-only: filter the chain to a single source so a forced download
         // exercises that source even when the Qobuz proxies are healthy. A
@@ -61,7 +61,7 @@ class LosslessSourceRegistry @Inject constructor(
                 continue
             }
             if (!source.isEnabled()) continue
-            val result = runCatching { source.resolve(query) }
+            val result = runCatching { source.resolve(query, bypassRateLimit) }
                 .onFailure { e ->
                     // resolve() should never throw — it should catch and
                     // return null. Defensive log so an unexpected throw

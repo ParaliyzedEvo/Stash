@@ -50,11 +50,12 @@ class AmzSource @Inject constructor(
 
     override suspend fun rateLimitState(): RateLimitState = rateLimiter.stateOf(id)
 
-    override suspend fun resolve(query: TrackQuery): SourceResult? {
+    override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         if (!isEnabled()) return null
         // Acquire a token; bail cleanly if the source is circuit-broken or
-        // the bucket can't be satisfied.
-        if (!rateLimiter.acquire(id)) return null
+        // the bucket can't be satisfied. A user-initiated (foreground) resolve
+        // bypasses the token bucket.
+        if (!bypassRateLimit && !rateLimiter.acquire(id)) return null
 
         return try {
             // Requirement 2: text search ONLY — never query.searchTerms() / ISRC;
