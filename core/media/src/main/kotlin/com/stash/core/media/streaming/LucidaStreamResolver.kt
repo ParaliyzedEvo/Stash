@@ -31,7 +31,7 @@ class LucidaStreamResolver @Inject constructor(
         )
 
         val result = try {
-            withTimeout(STREAM_RESOLVE_TIMEOUT_MS) { source.resolveImmediate(query) }
+            withTimeout(STREAM_RESOLVE_TIMEOUT_MS) { source.resolve(query, bypassRateLimit = true) }
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "timeout id=${track.id} after ${STREAM_RESOLVE_TIMEOUT_MS}ms")
             null

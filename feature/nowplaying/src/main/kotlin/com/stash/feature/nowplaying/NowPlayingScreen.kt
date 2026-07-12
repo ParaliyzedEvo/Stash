@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -54,6 +54,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.stash.core.ui.components.SheetOptionRow
 import androidx.compose.runtime.Composable
@@ -336,41 +337,14 @@ fun NowPlayingScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        // Top bar (dismiss + like + more)
-                        TopBar(
-                            onDismiss = onDismiss,
-                            onMoreClick = { showOptionsSheet = true },
-                            hasTrack = uiState.hasTrack,
-                            onLikeTap = viewModel::onLikeTap,
-                            isLiked = uiState.currentTrack?.stashLikedAt != null,
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Track info
-                        TrackInfoSection(
-                            track = track,
-                            isStreaming = uiState.isStreaming,
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .statusBarsPadding()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
                 // -- Top bar: dismiss, radio, flag, download, save, queue --
                 TopBar(
                     onDismiss = onDismiss,
-                    onFlagWrongMatch = { showWrongMatchDialog = true },
-                    onSaveClick = { showSaveSheet = true },
-                    onQueueClick = { showQueue = true },
+                    onMoreClick = { showOptionsSheet = true },
                     hasTrack = uiState.hasTrack,
-                    queueSize = uiState.queueSize,
+                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                    onLikeTap = viewModel::onLikeTap,
+                    onFlagWrongMatch = { showWrongMatchDialog = true },
                     onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
                     isDownloaded = uiState.currentTrack?.isDownloaded == true,
                     isDownloading = isDownloadingCurrent,
@@ -382,18 +356,6 @@ fun NowPlayingScreen(
                     onStopRadio = viewModel::stopRadio,
                     accentColor = uiState.vibrantColor,
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // -- Album art --
-                AlbumArtSection(
-                    albumArtUrl = track?.albumArtUrl,
-                    albumArtPath = track?.albumArtPath,
-                    accentColor = uiState.vibrantColor,
-                    onBitmapLoaded = viewModel::onAlbumArtLoaded,
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
 
                 // -- Track info -- (tap the title/artist to open the artist
                 // profile; the trailing chevron signals it's actionable, and
@@ -589,13 +551,21 @@ fun NowPlayingScreen(
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // -- Top bar: dismiss, like, more --
+                    // -- Top bar: dismiss, like, more, radio, flag, download --
                     TopBar(
                         onDismiss = onDismiss,
                         onMoreClick = { showOptionsSheet = true },
                         hasTrack = uiState.hasTrack,
-                        onLikeTap = viewModel::onLikeTap,
                         isLiked = uiState.currentTrack?.stashLikedAt != null,
+                        onLikeTap = viewModel::onLikeTap,
+                        onFlagWrongMatch = { showWrongMatchDialog = true },
+                        onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
+                        isDownloaded = uiState.currentTrack?.isDownloaded == true,
+                        isDownloading = isDownloadingCurrent,
+                        radioActive = radioLabel != null,
+                        onStartRadio = viewModel::startRadioFromCurrent,
+                        onStopRadio = viewModel::stopRadio,
+                        accentColor = uiState.vibrantColor,
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -704,6 +674,9 @@ private fun TopBar(
     onDismiss: () -> Unit,
     onMoreClick: () -> Unit,
     hasTrack: Boolean,
+    isLiked: Boolean,
+    onLikeTap: () -> Unit,
+    onFlagWrongMatch: () -> Unit,
     onDownloadTap: () -> Unit,
     isDownloaded: Boolean,
     isDownloading: Boolean,

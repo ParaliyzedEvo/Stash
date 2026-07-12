@@ -218,18 +218,15 @@ fun StashScaffold(
                                 // Not in this tab at all — standard cross-tab nav.
                                 navController.navigate(dest.route) {
                                     // Save each tab's back stack + state when leaving it,
-                                // and restore it when returning — so tabbing to Settings
-                                // and back to Search lands on your results, not the
-                                // landing screen (the canonical Compose bottom-nav pattern).
-                                popUpTo(navController.graph.findStartDestination().id) {
+                                    // and restore it when returning — so tabbing to Settings
+                                    // and back to Search lands on your results, not the
+                                    // landing screen (the canonical Compose bottom-nav pattern).
+                                    popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
                                     }
                                     launchSingleTop = true
                                     restoreState = true
-                                    saveState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
                     )

@@ -33,11 +33,8 @@ class LucidaSource @Inject constructor(
         return !rateLimiter.stateOf(id).isCircuitBroken
     }
 
-    override suspend fun resolve(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = false)
-
-    suspend fun resolveImmediate(query: TrackQuery): SourceResult? =
-        resolveInternal(query, bypassRateLimit = true)
+    override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? =
+        resolveInternal(query, bypassRateLimit = bypassRateLimit)
 
     private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         // Early exit: if the circuit breaker is open, skip the entire resolve
