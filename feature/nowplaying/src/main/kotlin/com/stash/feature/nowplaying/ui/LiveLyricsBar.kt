@@ -104,8 +104,8 @@ fun LiveLyricsBar(
                 .clickable(onClickLabel = "Open lyrics", onClick = onTap)
                 .background(
                     Brush.verticalGradient(
-                        0f to barBase.copy(alpha = 0.30f),
-                        1f to barBase.copy(alpha = 0.65f),
+                        0f to barBase.copy(alpha = 0.15f),
+                        1f to barBase.copy(alpha = 0.40f),
                     ),
                 )
                 .padding(horizontal = 20.dp, vertical = 16.dp),
