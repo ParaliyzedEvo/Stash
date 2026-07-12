@@ -469,6 +469,8 @@ fun NowPlayingScreen(
                 currentPositionMs = lyricsPositionMs,
                 accentColor = uiState.vibrantColor,
                 onTap = viewModel::onShowLyrics,
+                isAmoled = isAmoled,
+                showBlurLayer = showBlurLayer,
             )
         }
     }
