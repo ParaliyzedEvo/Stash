@@ -640,6 +640,8 @@ fun NowPlayingScreen(
                 currentPositionMs = lyricsPositionMs,
                 accentColor = uiState.vibrantColor,
                 onTap = viewModel::onShowLyrics,
+                isAmoled = isAmoled,
+                showBlurLayer = showBlurLayer,
             )
         }
     }
@@ -710,21 +712,6 @@ private fun TopBar(
                     imageVector = Icons.Default.Radio,
                     contentDescription = if (radioActive) "Stop radio" else "Start radio",
                     tint = if (radioActive) accentColor else Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-
-        // Flag as wrong match — only shown when a track is loaded. Lives
-        // here (not in the Playlist Detail row menu) because Now Playing
-        // is where the user actually realises "this isn't the right song"
-        // — their ears are the ground truth.
-        if (hasTrack) {
-            IconButton(onClick = onFlagWrongMatch) {
-                Icon(
-                    imageVector = Icons.Default.Flag,
-                    contentDescription = "Flag as wrong match",
-                    tint = Color.White,
                     modifier = Modifier.size(24.dp),
                 )
             }
