@@ -149,6 +149,12 @@ enum class InnerTubeVariant(
  * This client handles the raw HTTP layer; higher-level parsing is done by
  * [YTMusicApiClient].
  */
+/**
+ * A canonical song match: the resolved [videoId] plus, when present, the
+ * song's square YT Music album-art thumbnail (high-res lh3).
+ */
+data class CanonicalMatch(val videoId: String, val thumbnailUrl: String?)
+
 @Singleton
 class InnerTubeClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
@@ -240,11 +246,14 @@ class InnerTubeClient @Inject constructor(
      * @param browseId The InnerTube browse ID.
      * @return The parsed JSON response, or null on failure.
      */
-    suspend fun browse(browseId: String): JsonObject? = withContext(Dispatchers.IO) {
+    suspend fun browse(browseId: String, params: String? = null): JsonObject? = withContext(Dispatchers.IO) {
         val variant = InnerTubeVariant.WEB_REMIX
         val body = buildJsonObject {
             put("context", buildContext(variant))
             put("browseId", browseId)
+            // params scopes a browse (e.g. an artist-discography "View all" grid
+            // to albums-only vs singles-only). Omitted → unfiltered/default view.
+            if (!params.isNullOrBlank()) put("params", params)
         }
         executeRequest("$BASE_URL/browse", body, null, variant)
     }
@@ -520,6 +529,16 @@ class InnerTubeClient @Inject constructor(
      * @return The video id of the best ATV or OMV match, or null if none found.
      */
     suspend fun searchCanonical(artist: String, title: String): String? =
+        searchCanonicalMatch(artist, title)?.videoId
+
+    /**
+     * Like [searchCanonical] but also returns the matched song's square YT
+     * Music album-art thumbnail (lh3, upgraded to high-res) from the same
+     * search response — no extra request. Radio tracks resolved this way
+     * (song radio, Last.fm neighbours) otherwise fall back to the low-res
+     * `mqdefault` video frame; this gives them a crisp, no-bars cover.
+     */
+    suspend fun searchCanonicalMatch(artist: String, title: String): CanonicalMatch? =
         withContext(Dispatchers.IO) {
             val query = "$artist $title"
             val response = search(query, params = songsFilterParams) ?: return@withContext null
@@ -537,8 +556,8 @@ class InnerTubeClient @Inject constructor(
                 ?.jsonObject?.get("contents")
                 ?.jsonArray ?: return@withContext null
 
-            // Collect (videoId, musicVideoType) pairs from Songs shelves only.
-            data class Candidate(val videoId: String, val type: MusicVideoType?)
+            // Collect (videoId, musicVideoType, thumbnail) from Songs shelves only.
+            data class Candidate(val videoId: String, val type: MusicVideoType?, val thumbnailUrl: String?)
             val candidates = mutableListOf<Candidate>()
 
             for (shelf in shelves) {
@@ -577,7 +596,17 @@ class InnerTubeClient @Inject constructor(
                         ?.get("watchEndpointMusicConfig")?.jsonObject
                         ?.get("musicVideoType")?.jsonPrimitive?.content
 
-                    candidates.add(Candidate(videoId, MusicVideoType.fromInnerTube(rawType)))
+                    // Square album-art thumbnail (lh3) — largest of the set,
+                    // upgraded to high-res. Absent for some rows; that's fine.
+                    val thumbnailUrl = row["thumbnail"]?.jsonObject
+                        ?.get("musicThumbnailRenderer")?.jsonObject
+                        ?.get("thumbnail")?.jsonObject
+                        ?.get("thumbnails")?.jsonArray
+                        ?.lastOrNull()?.jsonObject
+                        ?.get("url")?.jsonPrimitive?.content
+                        ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
+
+                    candidates.add(Candidate(videoId, MusicVideoType.fromInnerTube(rawType), thumbnailUrl))
                 }
             }
 
@@ -595,7 +624,7 @@ class InnerTubeClient @Inject constructor(
             } else {
                 Log.d(TAG, "searchCanonical('$query'): resolved → ${best.videoId} (${best.type})")
             }
-            best?.videoId
+            best?.let { CanonicalMatch(it.videoId, it.thumbnailUrl) }
         }
 
     /**

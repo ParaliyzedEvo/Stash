@@ -41,6 +41,15 @@ internal fun normalizeArtistBrowseId(browseId: String): String =
     if (browseId.startsWith("MPLAUC")) browseId.removePrefix("MPLA") else browseId
 
 /**
+ * Matches a YouTube play-count string ("16M plays", "1.2B plays", "1,234 plays",
+ * "1 play") so it's never mistaken for an album title. A compact/grouped number,
+ * an optional K/M/B magnitude suffix, then "play"/"plays". Real album names don't
+ * take this shape (e.g. "Child's Play" has word text before "Play", so it's safe).
+ */
+internal val PLAY_COUNT_REGEX =
+    Regex("""^[\d.,]+\s*[KMB]?\s*plays?$""", RegexOption.IGNORE_CASE)
+
+/**
  * Parses a `musicResponsiveListItemRenderer` into a [TrackSummary].
  *
  * Expected shape:
@@ -141,11 +150,18 @@ internal fun parseTrackSummaryFromListItem(
     val parsedArtist = artistNames.joinToString(", ")
     val artist = parsedArtist.ifBlank { fallbackArtist.orEmpty() }
 
-    val album = flexColumns.getOrNull(2)?.asObject()
+    // flexColumns[2] is the album ONLY on album-page tracklists (a different
+    // parser). This helper's callers are the search "Songs" shelf and the artist
+    // "Popular" shelf, where flexColumns[2] is the PLAY COUNT ("16M plays"), not
+    // the album — YouTube Music search song rows carry no album at all. Guard
+    // against stamping the play count as the album (which polluted track.album and
+    // broke tap-to-album focus); keep a real album if a future layout ever supplies one.
+    val albumRaw = flexColumns.getOrNull(2)?.asObject()
         ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
         ?.firstArray()?.firstOrNull()?.asObject()
         ?.get("text")?.asString()
         ?: parsedAlbumFromSubtitle
+    val album = albumRaw?.takeUnless { it.matches(PLAY_COUNT_REGEX) }
 
     val thumbnails = renderer.navigatePath(
         "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails",

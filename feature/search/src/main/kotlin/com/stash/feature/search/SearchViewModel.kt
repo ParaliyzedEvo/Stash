@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -113,9 +114,20 @@ class SearchViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
+    val currentPlayingYoutubeId: StateFlow<String?> =
+        playerRepository.playerState
+            .map { it.currentTrack?.youtubeId }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
     fun onPlayNext(item: TrackItem) {
         recordTrack(item)
         delegate.playNext(item)
+    }
+    fun onStartRadio(item: TrackItem) {
+        recordTrack(item)
+        delegate.startRadio(item)
     }
     fun onAddToQueue(item: TrackItem) {
         recordTrack(item)

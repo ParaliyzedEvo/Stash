@@ -69,4 +69,8 @@ data class SearchAlbumRoute(
     val artist: String,
     val thumbnailUrl: String?,
     val year: String?,
+    // Which catalog this album came from — routes AlbumCache + the play path.
+    // Defaulted so any pre-update back-stack entry still deserializes.
+    val source: com.stash.data.ytmusic.model.AlbumSource =
+        com.stash.data.ytmusic.model.AlbumSource.YOUTUBE,
 )

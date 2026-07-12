@@ -9,6 +9,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
@@ -16,6 +17,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
+import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -63,6 +67,8 @@ class ArtistProfileViewModel @Inject constructor(
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
+    private val musicRepository: MusicRepository,
+    private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
 ) : ViewModel() {
@@ -105,7 +111,24 @@ class ArtistProfileViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
+    val currentPlayingYoutubeId: StateFlow<String?> =
+        playerRepository.playerState
+            .map { it.currentTrack?.youtubeId }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
+    /** Online/Offline mode for the profile-header chip. */
+    val streamingEnabled: StateFlow<Boolean> =
+        streamingPreference.enabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)
+
+    fun applyStreamingMode(enabled: Boolean) {
+        viewModelScope.launch { streamingPreference.setEnabled(enabled) }
+    }
+
     fun onPlayNext(item: TrackItem) = delegate.playNext(item)
+
+    fun onStartRadio(item: TrackItem) = delegate.startRadio(item)
     fun onAddToQueue(item: TrackItem) = delegate.addToQueue(item)
     fun onRequestAddToPlaylist(item: TrackItem) { _playlistSheetItem.value = item }
     fun onDismissPlaylistSheet() { _playlistSheetItem.value = null }
@@ -215,6 +238,22 @@ class ArtistProfileViewModel @Inject constructor(
      * Double-tap-safe: a second invocation cancels the prior fill job before
      * relaunching. Per spec, no Snackbar — actual playback IS the feedback.
      */
+    /**
+     * Start an artist radio seeded from this artist. The browseId is already in
+     * hand (nav arg), so the generator skips a resolveArtist hop. On a false
+     * return (streaming off/offline, or no seed tracks) we surface a one-shot
+     * hint instead of a dead tap.
+     */
+    fun startRadio() {
+        viewModelScope.launch {
+            val name = _uiState.value.hero.name.ifBlank { initialName }
+            val started = playerRepository.startRadio(
+                com.stash.core.data.radio.RadioSeed.Artist(name, ytBrowseId = artistId),
+            )
+            if (!started) _userMessages.emit("Radio needs Online mode — turn on streaming.")
+        }
+    }
+
     fun playArtist() {
         fillCatalogJob?.cancel()
         fillCatalogJob = viewModelScope.launch {
@@ -222,8 +261,10 @@ class ArtistProfileViewModel @Inject constructor(
             val artistName = state.hero.name
             val seen = mutableSetOf<String>()
 
+            // Popular is always YT-sourced (real videoIds), so keying on
+            // videoId is safe here.
             val popularTracks = state.popular
-                .filter { seen.add(it.videoId) }
+                .filter { seen.add(trackKey(it)) }
                 .map { it.toDomainTrack(albumFallback = artistName) }
 
             if (popularTracks.isEmpty() && state.albums.isEmpty() && state.singles.isEmpty()) {
@@ -239,19 +280,28 @@ class ArtistProfileViewModel @Inject constructor(
             val catalog = state.albums + state.singles
             for (album in catalog) {
                 if (appended >= CATALOG_CAP) break
-                val detail = runCatching { albumCache.get(album.id) }.getOrNull() ?: continue
+                // Route the album fetch by its source — a merged-in Qobuz album
+                // (numeric id, source=QOBUZ) would otherwise 404 on the YT path
+                // and be silently dropped from Play Artist.
+                val detail = runCatching { albumCache.get(album.id, album.source) }
+                    .getOrNull() ?: continue
                 val remaining = CATALOG_CAP - appended
-                val albumTracks = detail.tracks
-                    .filter { seen.add(it.videoId) }
+                val domain = detail.tracks
+                    // trackKey, not videoId: Qobuz tracks share blank videoIds,
+                    // so a raw-videoId seen-set would drop all but the first.
+                    .filter { seen.add(trackKey(it)) }
                     .take(remaining)
-                    .map {
-                        it.toDomainTrack(
-                            albumFallback = artistName,
-                            albumTitle = album.title,
-                            albumArtist = artistName,
-                        )
-                    }
-                if (albumTracks.isEmpty()) continue
+                    .map { domainTrackFor(it, album.source, album.title, artistName) }
+                if (domain.isEmpty()) continue
+
+                // Qobuz tracks carry no videoId — persist by canonical identity
+                // to a real PK so the queue survives resume (same as the album
+                // screen's play path). YT tracks keep their synthetic id.
+                val albumTracks = if (album.source == AlbumSource.QOBUZ) {
+                    domain.map { it.copy(id = musicRepository.ensureTrackPersisted(it)) }
+                } else {
+                    domain
+                }
 
                 if (appended == 0) {
                     playerRepository.setQueue(albumTracks, startIndex = 0)
@@ -261,6 +311,40 @@ class ArtistProfileViewModel @Inject constructor(
                 appended += albumTracks.size
             }
         }
+    }
+
+    /** Dedup key for the catalog fill: videoId when present (YT), else a
+     *  title|artist identity (Qobuz tracks all carry a blank videoId). */
+    private fun trackKey(t: TrackSummary): String =
+        t.videoId.ifBlank { "${t.title}|${t.artist}" }
+
+    /** Build a domain [Track] for a catalog track, branching on the album's
+     *  source. Qobuz → no videoId, id=0 (a real PK is assigned by
+     *  [MusicRepository.ensureTrackPersisted] before queueing); YT → the
+     *  existing synthetic-id mapping. */
+    private fun domainTrackFor(
+        t: TrackSummary,
+        source: AlbumSource,
+        albumTitle: String,
+        artistName: String,
+    ): Track = if (source == AlbumSource.QOBUZ) {
+        Track(
+            id = 0L,
+            title = t.title,
+            artist = t.artist.ifBlank { artistName },
+            album = albumTitle,
+            durationMs = (t.durationSeconds * 1000.0).toLong(),
+            albumArtUrl = t.thumbnailUrl,
+            youtubeId = null,
+            source = MusicSource.YOUTUBE,
+            isStreamable = true,
+        )
+    } else {
+        t.toDomainTrack(
+            albumFallback = artistName,
+            albumTitle = albumTitle,
+            albumArtist = artistName,
+        )
     }
 
     private fun TrackSummary.toDomainTrack(

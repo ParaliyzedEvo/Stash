@@ -35,7 +35,7 @@ class LosslessSourceRegistry @Inject constructor(
      * pipeline as a last resort (the strict-superset behavior we want for
      * Path ii of the source-priority model).
      */
-    suspend fun resolve(query: TrackQuery): SourceResult? {
+    suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
         // Test toggle (outage drill): when force-amz-only is on, filter the
         // chain down to amz so downloads exercise the amz source only. An amz
         // miss falls through to a normal null return (no quota to protect).
@@ -59,7 +59,7 @@ class LosslessSourceRegistry @Inject constructor(
                 continue
             }
             if (!source.isEnabled()) continue
-            val result = runCatching { source.resolve(query) }
+            val result = runCatching { source.resolve(query, bypassRateLimit) }
                 .onFailure { e ->
                     // resolve() should never throw — it should catch and
                     // return null. Defensive log so an unexpected throw

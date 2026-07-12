@@ -57,9 +57,10 @@ class ArcodSource @Inject constructor(
 
     override suspend fun rateLimitState(): RateLimitState = rateLimiter.stateOf(id)
 
-    override suspend fun resolve(query: TrackQuery): SourceResult? {
+    override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         if (!isEnabled()) return null
-        if (!rateLimiter.acquire(id)) return null
+        // Foreground (user-initiated) resolves bypass the token bucket.
+        if (!bypassRateLimit && !rateLimiter.acquire(id)) return null
 
         return try {
             // 1. Search the proxied Qobuz catalog. ARCOD's get-music takes a

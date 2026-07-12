@@ -161,6 +161,26 @@ interface PlayerRepository {
      */
     suspend fun addToQueue(tracks: List<Track>)
 
+    /**
+     * Start a radio station seeded from an artist or track. Builds a balanced
+     * queue and arms self-extension; replaces any current queue/station. Returns
+     * false (no-op) if streaming is off/offline or the seed yields nothing.
+     *
+     * [keepCurrent] = true (the Now Playing "Start radio from this song" case):
+     * the seed IS the currently-playing track, so DON'T restart it — keep the
+     * current item playing and splice the discoveries around it.
+     */
+    suspend fun startRadio(
+        seed: com.stash.core.data.radio.RadioSeed,
+        keepCurrent: Boolean = false,
+    ): Boolean
+
+    /** Stop the active station (queued tracks remain; no more auto-grow). */
+    fun stopRadio()
+
+    /** Live label of the active station's seed (null when no station). */
+    val radioSeedLabel: StateFlow<String?>
+
     /** Toggle shuffle mode on/off. */
     suspend fun toggleShuffle()
 

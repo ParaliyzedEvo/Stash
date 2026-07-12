@@ -26,6 +26,7 @@ gradle-daemon-jvm.properties
 
 # Local configuration file
 local.properties
+*.bak
 
 # Android Studio
 *.iml
@@ -77,7 +78,6 @@ node_modules/
 .claude/scheduled_tasks.lock
 
 # Local spike/experiment artifacts — never commit (huge binaries, screenshots)
-app/src/androidTest/assets/clapspike/
 spike/*.png
 spike/*.flac
 spike/*.txt

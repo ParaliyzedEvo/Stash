@@ -190,6 +190,15 @@ fun StashScaffold(
                     StashBottomBar(
                         currentRoute = currentRoute,
                         onNavigate = { dest ->
+                            // Now Playing is a full-screen route pushed on top of a
+                            // tab's stack while the bottom bar stays visible. If the
+                            // saveState tab-switch below captured it, restoreState
+                            // would bring it straight back on the next tab tap —
+                            // trapping the user on Now Playing. Pop it off first so a
+                            // tab tap always leaves it.
+                            if (currentRoute == NowPlayingRoute::class.qualifiedName) {
+                                navController.popBackStack()
+                            }
                             val destRoute = dest.route::class.qualifiedName
                             val isOnThisTabRoot = currentRoute == destRoute
                             // If we're already on this tab's root, do nothing.
@@ -208,12 +217,19 @@ fun StashScaffold(
                             if (!popped) {
                                 // Not in this tab at all — standard cross-tab nav.
                                 navController.navigate(dest.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
+                                    // Save each tab's back stack + state when leaving it,
+                                // and restore it when returning — so tabbing to Settings
+                                // and back to Search lands on your results, not the
+                                // landing screen (the canonical Compose bottom-nav pattern).
+                                popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
                                     }
                                     launchSingleTop = true
                                     restoreState = true
+                                    saveState = true
                                 }
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         },
                     )

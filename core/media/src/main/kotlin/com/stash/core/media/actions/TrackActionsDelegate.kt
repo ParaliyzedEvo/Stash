@@ -412,6 +412,19 @@ class TrackActionsDelegate @Inject constructor(
         }
     }
 
+    /** Start a song radio seeded from [item]. Streaming-only: on a false return
+     *  (streaming off/offline) we surface a hint instead of a dead tap. */
+    fun startRadio(item: TrackItem) {
+        scope().launch {
+            val started = playerRepository.startRadio(
+                com.stash.core.data.radio.RadioSeed.Song(
+                    title = item.title, artist = item.artist, ytVideoId = item.videoId,
+                ),
+            )
+            if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
+        }
+    }
+
     /** Append [item] to the end of the queue. */
     fun addToQueue(item: TrackItem) {
         scope().launch {

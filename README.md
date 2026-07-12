@@ -30,8 +30,8 @@ Stash has two modes. They decide what a sync actually does.
 
 ## The FLAC backbone
 
+- **[QBDLX](https://github.com/ImAiiR/QobuzDownloaderX)** — a program that downloads streams directly from Qobuz.
 - **[arcod](https://arcod.xyz)** — a third Qobuz source from yet another operator. Connect a free account once and it slots right into the chain.
-- **[amz.squid.wtf](https://amz.squid.wtf)** — Amazon Music lossless. Structurally independent of the Qobuz proxies, so it keeps your music in FLAC even when both of those are down instead of dropping you to a lossy YouTube rip.
 
 These are run by people doing it for the love of it — mostly solo, mostly free. They're the whole reason Stash can hand you a real lossless file instead of a re-encode. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
 
@@ -183,7 +183,7 @@ Bug reports and feature requests through [GitHub Issues](https://github.com/rawn
 
 ## Contributing
 
-Pull requests welcome. For anything substantial, please open an issue first so we can talk through the change before you sink time into a PR.
+Pull requests welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for how to build the app, a map of the module layout, and the PR workflow. For anything substantial, please open an issue first so we can talk through the change before you sink time into a PR.
 
 Stash is GPL-3.0. You can use, copy, modify, and redistribute it freely. If you distribute a modified version, you have to release your changes under GPL-3.0 too.
 

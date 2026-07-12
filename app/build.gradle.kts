@@ -83,8 +83,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 110
-        versionName = "0.9.74"
+        versionCode = 111
+        versionName = "0.9.75"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
         // Last.fm API credentials exposed via BuildConfig for the app-level
@@ -220,22 +220,4 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
-
-    // ── SPIKE: spike/clap-on-device (throwaway, do NOT merge to master) ──────
-    // androidTest-only ONNX Runtime + instrumentation deps for the on-device
-    // CLAP embedding measurement harness (com.stash.app.clapspike). Wired as
-    // androidTestImplementation on purpose so the shipping APK stays unbloated.
-    androidTestImplementation(libs.onnxruntime.android)
-    androidTestImplementation(libs.androidx.test.core)
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation(libs.truth)
-
-    // ── GATE: amz client-side decrypt (-decryption_key support probe) ────────
-    // One-shot on-device check that the bundled youtubedl-android ffmpeg accepts
-    // `-decryption_key` (the amz CMAF decrypt recipe). The .so already ships in
-    // the app APK via :data:download; these only put YoutubeDL/FFmpeg.init() on
-    // the androidTest compile classpath so the probe can extract the binary.
-    androidTestImplementation(libs.youtubedl.android)
-    androidTestImplementation(libs.youtubedl.ffmpeg)
 }

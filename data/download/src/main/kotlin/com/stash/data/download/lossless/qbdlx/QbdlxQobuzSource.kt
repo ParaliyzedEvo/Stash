@@ -59,9 +59,9 @@ class QbdlxQobuzSource @Inject constructor(
     suspend fun isEnabledForStreaming(): Boolean =
         losslessPrefs.qbdlxEnabledNow() && !credentialStore.allDead()
 
-    override suspend fun resolve(query: TrackQuery): SourceResult? {
+    override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         if (!isEnabled()) return null
-        return resolveInternal(query, bypassRateLimit = false, requestedQuality = null)
+        return resolveInternal(query, bypassRateLimit = bypassRateLimit, requestedQuality = null)
     }
 
     /**

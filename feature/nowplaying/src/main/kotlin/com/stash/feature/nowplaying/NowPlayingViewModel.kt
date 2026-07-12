@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -131,12 +132,55 @@ class NowPlayingViewModel @Inject constructor(
     val resolvingArtist: StateFlow<Boolean> = _resolvingArtist.asStateFlow()
 
     /**
+     * Keys (youtubeId, or DB id when blank) of tracks whose download the user
+     * kicked off from Now Playing but that haven't landed on disk yet. Drives
+     * the spinner on the download button, since the WorkManager download is
+     * fire-and-forget and the plain icon gave no in-progress feedback. Cleared
+     * when the track's live row flips `isDownloaded`, or after a watchdog
+     * timeout so a failed/stuck job never strands a permanent spinner.
+     */
+    private val _downloadingKeys = MutableStateFlow<Set<String>>(emptySet())
+
+    /** True while the *currently-shown* track's download is in flight. */
+    val isDownloadingCurrent: StateFlow<Boolean> =
+        combine(_uiState, _downloadingKeys) { ui, keys ->
+            val t = ui.currentTrack ?: return@combine false
+            downloadKeyFor(t) in keys && !t.isDownloaded
+        }.distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)
+
+    private fun downloadKeyFor(t: com.stash.core.model.Track): String =
+        t.youtubeId?.takeIf { it.isNotBlank() } ?: t.id.toString()
+
+    /**
      * Tap on the Now Playing track block. Resolves the playing artist's NAME
      * to a YT browseId and emits an [ArtistNavTarget] carrying the current
      * album as `focusAlbum`. Prefers the clean `albumArtist`, falling back to
      * `artist`. No-op when nothing is playing or a resolve is already in
      * flight (double-tap guard). Resolve miss/failure → snackbar, no nav.
      */
+    /** Live label of the active radio station (null when no station). */
+    val radioSeedLabel: StateFlow<String?> = playerRepository.radioSeedLabel
+
+    /** Start a song radio seeded from the currently-playing track. Streaming-only:
+     *  a false return (streaming off/offline) surfaces a hint, not a dead tap. */
+    fun startRadioFromCurrent() {
+        val track = _uiState.value.currentTrack ?: return
+        viewModelScope.launch {
+            val started = playerRepository.startRadio(
+                com.stash.core.data.radio.RadioSeed.Song(
+                    title = track.title, artist = track.artist, ytVideoId = track.youtubeId,
+                ),
+                // The seed IS the currently-playing track — keep it playing, don't restart.
+                keepCurrent = true,
+            )
+            if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
+        }
+    }
+
+    /** Stop the active radio station. */
+    fun stopRadio() = playerRepository.stopRadio()
+
     fun onTrackInfoTapped() {
         val track = _uiState.value.currentTrack ?: return
         if (_resolvingArtist.value) return
@@ -653,6 +697,8 @@ class NowPlayingViewModel @Inject constructor(
                 musicRepository.removeDownload(track.id)
                 _userMessages.tryEmit("Download removed.")
             } else {
+                val key = downloadKeyFor(track)
+                _downloadingKeys.update { it + key }
                 // Resolve a synthetic streaming-engine id to a real DB row
                 // before queuing — otherwise `getById` returns null and the
                 // queue insert silently no-ops while the toast still fires
@@ -660,14 +706,25 @@ class NowPlayingViewModel @Inject constructor(
                 val realId = runCatching { musicRepository.ensureTrackPersisted(track) }
                     .getOrElse { e ->
                         android.util.Log.w("NowPlayingViewModel", "ensureTrackPersisted failed", e)
+                        _downloadingKeys.update { it - key }
                         _userMessages.tryEmit("Couldn't queue download.")
                         return@launch
                     }
                 val queued = musicRepository.queueDownload(realId)
-                _userMessages.tryEmit(
-                    if (queued) "Queued for download."
-                    else "Couldn't queue download."
-                )
+                if (!queued) {
+                    _downloadingKeys.update { it - key }
+                    _userMessages.tryEmit("Couldn't queue download.")
+                    return@launch
+                }
+                _userMessages.tryEmit("Downloading…")
+                // Watchdog: drop the spinner once the row lands on disk, or
+                // after a timeout so a failed/stuck job can't strand it.
+                viewModelScope.launch {
+                    withTimeoutOrNull(180_000L) {
+                        musicRepository.observeTrackById(realId).first { it?.isDownloaded == true }
+                    }
+                    _downloadingKeys.update { it - key }
+                }
             }
         }
     }

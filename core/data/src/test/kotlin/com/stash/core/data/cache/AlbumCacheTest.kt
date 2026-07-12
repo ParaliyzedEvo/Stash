@@ -1,5 +1,6 @@
 package com.stash.core.data.cache
 
+import com.stash.core.data.discography.QobuzAlbumFetcher
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.AlbumDetail
 import kotlinx.coroutines.CompletableDeferred
@@ -25,11 +26,16 @@ class AlbumCacheTest {
         thumbnailUrl = null, year = null, tracks = emptyList(), moreByArtist = emptyList(),
     )
 
+    /** Unused in these YT-path tests — the QOBUZ branch is covered by AlbumCacheRoutingTest. */
+    private val noFetcher = object : QobuzAlbumFetcher {
+        override suspend fun getAlbum(qobuzAlbumId: String): AlbumDetail = error("unused")
+    }
+
     @Test
     fun `miss fetches and caches`() = runTest {
         val api = mock<YTMusicApiClient>()
         whenever(api.getAlbum(eq("X"))).thenReturn(detail("X"))
-        val cache = AlbumCache(api)
+        val cache = AlbumCache(api, noFetcher)
 
         val result = cache.get("X")
 
@@ -42,7 +48,7 @@ class AlbumCacheTest {
     fun `hit within TTL returns cached without second network call`() = runTest {
         val api = mock<YTMusicApiClient>()
         whenever(api.getAlbum(eq("X"))).thenReturn(detail("X"))
-        val cache = AlbumCache(api)
+        val cache = AlbumCache(api, noFetcher)
 
         val first = cache.get("X")
         val second = cache.get("X")
@@ -61,7 +67,7 @@ class AlbumCacheTest {
 
         // Inject a clock we can advance.
         var fakeNow = 0L
-        val cache = object : AlbumCache(api) { override fun now() = fakeNow }
+        val cache = object : AlbumCache(api, noFetcher) { override fun now() = fakeNow }
 
         val got1 = cache.get("X")
         fakeNow = AlbumCache.TTL_MS + 1
@@ -78,7 +84,7 @@ class AlbumCacheTest {
         val a = detail("X")
         val b = a.copy(title = "T2")
         whenever(api.getAlbum(eq("X"))).thenReturn(a, b)
-        val cache = AlbumCache(api)
+        val cache = AlbumCache(api, noFetcher)
 
         cache.get("X")
         cache.invalidate("X")
@@ -93,7 +99,7 @@ class AlbumCacheTest {
         val hang = CompletableDeferred<AlbumDetail>()
         // getAlbum is suspend — use doSuspendableAnswer (NOT thenAnswer, which can't call .await).
         whenever(api.getAlbum(eq("X"))).doSuspendableAnswer { hang.await() }
-        val cache = AlbumCache(api)
+        val cache = AlbumCache(api, noFetcher)
 
         val j1 = async { cache.get("X") }
         val j2 = async { cache.get("X") }

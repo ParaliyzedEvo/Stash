@@ -116,8 +116,10 @@ import com.stash.core.ui.util.formatDuration
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.stash.core.ui.theme.LocalIsDarkTheme
-import com.stash.feature.home.streaming.StreamingModeChip
-import com.stash.feature.home.streaming.StreamingModeSheet
+import com.stash.core.ui.components.streaming.StreamingModeChip
+import com.stash.core.ui.components.streaming.StreamingModeSheet
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 
 /**

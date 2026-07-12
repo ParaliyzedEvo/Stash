@@ -206,6 +206,7 @@ fun StashNavHost(
                             artist = album.artist,
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
+                            source = album.source,
                         ),
                     )
                 },
@@ -424,6 +425,7 @@ fun StashNavHost(
                             artist = album.artist,
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
+                            source = album.source,
                         ),
                     )
                 },
@@ -444,6 +446,7 @@ fun StashNavHost(
                             artist = album.artist,
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
+                            source = album.source,
                         ),
                     )
                 },

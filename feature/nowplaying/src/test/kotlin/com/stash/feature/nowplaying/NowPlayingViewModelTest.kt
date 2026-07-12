@@ -16,6 +16,8 @@ import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.ArtistSummary
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.slot
+import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -415,6 +417,35 @@ class NowPlayingViewModelTrackTapTest {
         appContext = appContext,
         ytMusicApiClient = api,
     )
+
+    @Test fun `startRadioFromCurrent seeds a song radio from the playing track`() = runTest(dispatcher) {
+        // A youtubeId-bearing track makes liveTrackFlow fall through to a
+        // by-youtubeId Room lookup; stub it so the combine can populate currentTrack.
+        every { musicRepository.observeTrackByYoutubeId(any()) } returns flowOf(null)
+        playerStateFlow.value = playerStateFlow.value.copy(
+            currentTrack = Track(id = 7L, title = "song", artist = "artist", youtubeId = "vid42"),
+        )
+        val vm = newViewModel(mockk(relaxed = true))
+        advanceUntilIdle()
+
+        vm.startRadioFromCurrent()
+        advanceUntilIdle()
+
+        val seedSlot = slot<com.stash.core.data.radio.RadioSeed>()
+        // keepCurrent MUST be true — the seed is the currently-playing track, so
+        // the player keeps it playing instead of restarting it.
+        coVerify { playerRepository.startRadio(capture(seedSlot), keepCurrent = true) }
+        val seed = seedSlot.captured as com.stash.core.data.radio.RadioSeed.Song
+        assertEquals("song", seed.title)
+        assertEquals("artist", seed.artist)
+        assertEquals("vid42", seed.ytVideoId)
+    }
+
+    @Test fun `stopRadio delegates to the player`() = runTest(dispatcher) {
+        val vm = newViewModel(mockk(relaxed = true))
+        vm.stopRadio()
+        verify { playerRepository.stopRadio() }
+    }
 
     @Test fun `onTrackInfoTapped emits nav target with focusAlbum on resolve success`() =
         runTest(dispatcher) {

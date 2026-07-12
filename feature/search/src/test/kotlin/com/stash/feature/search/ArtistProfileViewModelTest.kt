@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.PreviewState
@@ -76,6 +77,7 @@ class ArtistProfileViewModelTest {
         delegate: TrackActionsDelegate = stubDelegate(),
         albumCache: AlbumCache = mock(),
         playerRepository: PlayerRepository = mock(),
+        musicRepository: MusicRepository = mock(),
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -88,6 +90,8 @@ class ArtistProfileViewModelTest {
         albumCache = albumCache,
         prefetcher = prefetcher,
         playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
     )
@@ -203,6 +207,28 @@ class ArtistProfileViewModelTest {
     }
 
     @Test
+    fun `startRadio starts an artist radio seeded with the browseId`() = runTest {
+        val profile = ArtistProfile(
+            id = "UC1", name = "LocalName", avatarUrl = null, subscribersText = null,
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val player = mock<PlayerRepository> { onBlocking { startRadio(any(), any()) } doReturn true }
+        val vm = vmWith(cache = cache, playerRepository = player)
+        advanceUntilIdle()
+
+        vm.startRadio()
+        advanceUntilIdle()
+
+        val seedCaptor = argumentCaptor<com.stash.core.data.radio.RadioSeed>()
+        verify(player).startRadio(seedCaptor.capture(), any())
+        val seed = seedCaptor.firstValue as com.stash.core.data.radio.RadioSeed.Artist
+        assertEquals("UC1", seed.ytBrowseId)
+        assertEquals("LocalName", seed.name)
+    }
+
+    @Test
     fun `playArtist sets queue from popular when popular is non-empty`() = runTest {
         val profile = ArtistProfile(
             id = "UC1",
@@ -265,7 +291,7 @@ class ArtistProfileViewModelTest {
             moreByArtist = emptyList(),
         )
         val albumCache = mock<AlbumCache>()
-        whenever(albumCache.get(eq("ALB1"))).thenReturn(albumDetail)
+        whenever(albumCache.get(eq("ALB1"), any())).thenReturn(albumDetail)
 
         val player = mock<PlayerRepository>()
         val vm = vmWith(cache = cache, albumCache = albumCache, playerRepository = player)
@@ -340,7 +366,7 @@ class ArtistProfileViewModelTest {
         // the first job before it can append anything from the album.
         val gate = CompletableDeferred<AlbumDetail>()
         val albumCache = mock<AlbumCache>()
-        whenever(albumCache.get(eq("ALB1"))).doSuspendableAnswer { gate.await() }
+        whenever(albumCache.get(eq("ALB1"), any())).doSuspendableAnswer { gate.await() }
 
         val player = mock<PlayerRepository>()
         val vm = vmWith(cache = cache, albumCache = albumCache, playerRepository = player)
@@ -366,4 +392,59 @@ class ArtistProfileViewModelTest {
         durationSeconds = 0.0,
         thumbnailUrl = null,
     )
+
+    /** A Qobuz-sourced track: no videoId, distinct titles for the dedup key. */
+    private fun qt(title: String) = TrackSummary(
+        videoId = "", title = title, artist = "MBV", album = "Loveless",
+        durationSeconds = 200.0, thumbnailUrl = null,
+    )
+
+    @Test
+    fun `playArtist fetches a Qobuz album by its source and queues persisted ids`() = runTest {
+        val profile = ArtistProfile(
+            id = "UC1", name = "MBV", avatarUrl = null, subscribersText = null,
+            popular = emptyList(),
+            albums = listOf(
+                AlbumSummary(
+                    id = "Q1", title = "Loveless", artist = "MBV",
+                    thumbnailUrl = null, year = "1991",
+                    source = com.stash.data.ytmusic.model.AlbumSource.QOBUZ,
+                ),
+            ),
+            singles = emptyList(), related = emptyList(),
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+
+        val albumCache = mock<AlbumCache>()
+        whenever(
+            albumCache.get(eq("Q1"), eq(com.stash.data.ytmusic.model.AlbumSource.QOBUZ)),
+        ).thenReturn(
+            AlbumDetail(
+                id = "Q1", title = "Loveless", artist = "MBV", artistId = null,
+                thumbnailUrl = null, year = "1991",
+                tracks = listOf(qt("Only Shallow"), qt("Loomer")),
+                moreByArtist = emptyList(),
+            ),
+        )
+        val musicRepo = mock<MusicRepository>()
+        whenever(musicRepo.ensureTrackPersisted(any())).thenReturn(2001L, 2002L)
+        val player = mock<PlayerRepository>()
+
+        val vm = vmWith(
+            cache = cache, albumCache = albumCache,
+            playerRepository = player, musicRepository = musicRepo,
+        )
+        advanceUntilIdle()
+        vm.playArtist()
+        advanceUntilIdle()
+
+        // The Qobuz album routed by source, its tracks persisted to real PKs,
+        // and queued with null youtubeId (they resolve lossless via qbdlx).
+        verify(albumCache).get(eq("Q1"), eq(com.stash.data.ytmusic.model.AlbumSource.QOBUZ))
+        val queued = argumentCaptor<List<Track>>()
+        verify(player).setQueue(queued.capture(), eq(0))
+        assertEquals(listOf(2001L, 2002L), queued.firstValue.map { it.id })
+        assertTrue(queued.firstValue.all { it.youtubeId == null })
+    }
 }

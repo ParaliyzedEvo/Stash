@@ -132,20 +132,31 @@ private fun parseAlbumCard(renderer: JsonObject): AlbumSummary? {
  * Returns null when there is no "more" link (small discography that
  * already fits in the carousel).
  */
-internal fun parseCarouselMoreBrowseId(carousel: JsonObject): String? {
+internal data class CarouselMore(val browseId: String, val params: String?)
+
+internal fun parseCarouselMore(carousel: JsonObject): CarouselMore? {
     val header = carousel.navigatePath(
         "header", "musicCarouselShelfBasicHeaderRenderer",
     )?.asObject() ?: return null
-    return header.navigatePath(
+    // The "View all" button's browseEndpoint carries BOTH a browseId and a
+    // `params` token. The params scope the discography grid to this shelf's
+    // release type (Albums vs Singles/EPs) — the artist's albums and singles
+    // "View all" links often share ONE browseId and differ ONLY by params.
+    // Dropping params returns the artist's FULL, unfiltered discography, which
+    // dumps singles/EPs into the album grid (and vice-versa). So capture both.
+    val endpoint = header.navigatePath(
         "moreContentButton", "buttonRenderer",
-        "navigationEndpoint", "browseEndpoint", "browseId",
-    )?.asString()
+        "navigationEndpoint", "browseEndpoint",
+    )?.asObject()
         ?: header.navigatePath("endIcons")?.firstArray()
             ?.firstOrNull()?.asObject()
             ?.navigatePath(
                 "buttonRenderer",
-                "navigationEndpoint", "browseEndpoint", "browseId",
-            )?.asString()
+                "navigationEndpoint", "browseEndpoint",
+            )?.asObject()
+        ?: return null
+    val browseId = endpoint.get("browseId")?.asString() ?: return null
+    return CarouselMore(browseId, endpoint.get("params")?.asString())
 }
 
 /**

@@ -437,79 +437,77 @@ suspend fun updateNowPlaying(
             val now = System.currentTimeMillis()
             val proxyUrl = credentials.proxyUrl
 
-            // Target + key selection. Two paths:
-            //  - Proxy: when a Worker proxy URL is set, route cacheable reads
-            //    through it. The Worker injects its OWN server-side key, so we
-            //    strip api_key and don't rotate. Breaker keyed by "proxy".
-            //  - Direct: round-robin a read key from the pool, skipping any
-            //    whose breaker is open. null = all throttled → fail fast.
-            val useProxy = cacheable && !proxyUrl.isNullOrBlank()
-            val targetBase: String
-            val breakerKey: String
-            val outgoing = params.toMutableMap()
-            if (useProxy) {
-                if (rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
-                    error("Last.fm proxy rate-limited; skipping request (circuit open)")
+            // Executes ONE attempt against [targetBase] with [outgoing] params,
+            // recording breaker state for [breakerKey]. Throws on 429 / non-2xx /
+            // API-error so the caller can fall back to another source. Caches the
+            // body on success (keyed independently of api_key).
+            suspend fun send(
+                targetBase: String,
+                breakerKey: String,
+                outgoing: MutableMap<String, String>,
+            ): JsonObject {
+                outgoing["format"] = "json"
+                val url = targetBase.toHttpUrl().newBuilder().apply {
+                    outgoing.forEach { (k, v) -> addQueryParameter(k, v) }
+                }.build()
+                val request = Request.Builder().url(url).get().build()
+                val (code, body) = okHttpClient.newCall(request).execute().use {
+                    it.code to it.body?.string()
                 }
-                targetBase = proxyUrl!!
-                breakerKey = PROXY_BREAKER_KEY
-                outgoing.remove("api_key") // the Worker supplies its own key
-            } else {
-                val readKey = selectReadKey(
-                    keys = credentials.readApiKeys,
-                    startIndex = readKeyCounter.getAndIncrement(),
-                    isOpen = { rateLimitGate.isOpen(it, now) },
-                ) ?: error("Last.fm rate-limited; skipping request (all keys throttled)")
-                targetBase = API_URL
-                breakerKey = readKey
-                outgoing["api_key"] = readKey
-            }
-            outgoing["format"] = "json"
+                // HTTP 429 — hard rate limit. Trip this source's breaker, then throw.
+                if (code == 429) {
+                    rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
+                    error("Last.fm GET failed: HTTP 429 (rate limited)")
+                }
+                check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
+                val bodyStr = body ?: error("Empty Last.fm response")
 
-            val url = targetBase.toHttpUrl().newBuilder().apply {
-                outgoing.forEach { (k, v) -> addQueryParameter(k, v) }
-            }.build()
-            val request = Request.Builder().url(url).get().build()
-            val (code, body) = okHttpClient.newCall(request).execute().use {
-                it.code to it.body?.string()
-            }
+                val root = json.parseToJsonElement(bodyStr).jsonObject
+                // Last.fm returns HTTP 200 with { error, message } on some failures
+                // (invalid artist, rate-limited, etc). Surface those so callers
+                // don't treat garbage as success.
+                root["error"]?.jsonPrimitive?.content?.let { err ->
+                    val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                    // error 29 == "Rate Limit Exceeded" → trip this source's breaker.
+                    if (err == "29") rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
+                    error("Last.fm API error $err: $msg")
+                }
 
-            // HTTP 429 — hard rate limit (direct key or proxy). Trip the
-            // breaker for whichever source we used, then fail.
-            if (code == 429) {
-                rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
-                error("Last.fm GET failed: HTTP 429 (rate limited)")
-            }
-            check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
-            val bodyStr = body ?: error("Empty Last.fm response")
-
-            val root = json.parseToJsonElement(bodyStr).jsonObject
-            // Last.fm returns HTTP 200 with { error, message } on some
-            // kinds of failures (invalid artist, rate-limited, etc).
-            // Surface those so callers don't treat garbage as success.
-            root["error"]?.jsonPrimitive?.content?.let { err ->
-                val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
-                // error 29 == "Rate Limit Exceeded" → trip this source's breaker
-                // so the next calls rotate past it instead of piling on.
-                if (err == "29") rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
-                error("Last.fm API error $err: $msg")
+                // A clean response means this source isn't throttled — close its breaker.
+                rateLimitGate.recordSuccess(breakerKey)
+                if (cacheKey != null) {
+                    cacheDao.upsert(
+                        com.stash.core.data.db.entity.LastFmCacheEntity(
+                            cacheKey = cacheKey,
+                            json = bodyStr,
+                            fetchedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                return root
             }
 
-            // A clean response means this source isn't throttled — close its breaker.
-            rateLimitGate.recordSuccess(breakerKey)
-
-            // Cache only successful (non-error) bodies, keyed independently of
-            // api_key so the entry is shared across key rotation/pooling.
-            if (cacheKey != null) {
-                cacheDao.upsert(
-                    com.stash.core.data.db.entity.LastFmCacheEntity(
-                        cacheKey = cacheKey,
-                        json = bodyStr,
-                        fetchedAt = System.currentTimeMillis(),
-                    ),
-                )
+            // Primary path: the Worker proxy for cacheable reads (it injects its
+            // OWN server-side key, so we strip api_key). On proxy failure/rate-limit,
+            // FALL BACK to a direct read key instead of failing — a throttled proxy
+            // must not kill discovery (radios, mixes). Breaker keyed by "proxy".
+            val useProxy = cacheable && !proxyUrl.isNullOrBlank()
+            if (useProxy && !rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
+                val proxyOutgoing = params.toMutableMap().apply { remove("api_key") }
+                runCatching { send(proxyUrl!!, PROXY_BREAKER_KEY, proxyOutgoing) }
+                    .getOrNull()
+                    ?.let { return@withContext it }
+                // proxy failed (429 / network / API error) → fall through to direct
             }
-            root
+
+            // Direct path: round-robin a read key from the pool, skipping any
+            // whose breaker is open. null = all throttled → fail fast.
+            val readKey = selectReadKey(
+                keys = credentials.readApiKeys,
+                startIndex = readKeyCounter.getAndIncrement(),
+                isOpen = { rateLimitGate.isOpen(it, now) },
+            ) ?: error("Last.fm rate-limited; skipping request (all keys throttled)")
+            send(API_URL, readKey, params.toMutableMap().apply { this["api_key"] = readKey })
         }
 
     // ── Response parsers ──────────────────────────────────────────────

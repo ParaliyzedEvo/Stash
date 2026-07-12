@@ -5,6 +5,7 @@ import com.stash.core.model.TrackItem
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +57,14 @@ class LosslessUrlPrefetcher @Inject constructor(
         cache[key] = CachedDeferred(
             deferred = scope.async {
                 concurrency.withPermit {
-                    runCatching { registry.resolve(track.toQuery()) }
-                        .onFailure { e -> Log.w(TAG, "resolve failed for $key: ${e.message}") }
+                    runCatching { registry.resolve(track.toQuery(), bypassRateLimit = false) }
+                        .onFailure { e ->
+                            // Re-throw cancellation so a lookup that supersedes this
+                            // warmUp doesn't log a spurious "resolve failed … cancelled"
+                            // (never swallow CancellationException).
+                            if (e is CancellationException) throw e
+                            Log.w(TAG, "resolve failed for $key: ${e.message}")
+                        }
                         .getOrNull()
                 }
             },
@@ -66,16 +73,29 @@ class LosslessUrlPrefetcher @Inject constructor(
     }
 
     /**
-     * Returns the cached/in-flight [SourceResult] for [track], or null when
-     * the registry finds no lossless match. If no warm-up is in progress,
-     * starts one synchronously before awaiting — so callers that skip
-     * [warmUp] still get a result (just with extra latency).
+     * Foreground (tap) resolve. If a warm result is already COMPLETE, return it
+     * instantly. Otherwise cancel any in-flight (rate-limited) warmUp for this
+     * track and start a NEW resolve that BYPASSES the rate limiter (user action,
+     * mirrors streaming) — no redundant call, no token wait.
      */
     suspend fun lookup(track: TrackItem): SourceResult? {
-        val cached = cache[track.videoId]
-        if (cached != null && cached.isFresh()) return cached.deferred.await()
-        warmUp(track)
-        return cache[track.videoId]!!.deferred.await()
+        val key = track.videoId
+        // Already-completed warm result → instant. `await()` on a completed deferred
+        // returns immediately and is NOT experimental (unlike getCompleted()). Only
+        // return here when it's actually done — never await a slow in-flight warmUp.
+        cache[key]?.let { if (it.isFresh() && it.deferred.isCompleted) return it.deferred.await() }
+        // Supersede a slow in-flight rate-limited warmUp so it doesn't spend a token.
+        cache[key]?.deferred?.cancel()
+        val fast = scope.async {
+            runCatching { registry.resolve(track.toQuery(), bypassRateLimit = true) }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "foreground resolve failed for $key: ${e.message}")
+                }
+                .getOrNull()
+        }
+        cache[key] = CachedDeferred(deferred = fast, createdAt = System.currentTimeMillis())
+        return fast.await()
     }
 
     /**

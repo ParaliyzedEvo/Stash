@@ -91,4 +91,34 @@ class TrackActionsDelegateQueueActionsTest {
         assertThat(messages).containsExactly("Playing next")
         coVerify(exactly = 1) { playerRepository.addNext(any<Track>()) }
     }
+
+    @Test
+    fun `startRadio seeds a song radio from the item`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        val slot = slot<com.stash.core.data.radio.RadioSeed>()
+        coEvery { playerRepository.startRadio(capture(slot)) } returns true
+
+        d.startRadio(item)
+        runCurrent()
+
+        coVerify(exactly = 1) { playerRepository.startRadio(any()) }
+        val seed = slot.captured as com.stash.core.data.radio.RadioSeed.Song
+        assertThat(seed.title).isEqualTo("Song")
+        assertThat(seed.artist).isEqualTo("Artist")
+        assertThat(seed.ytVideoId).isEqualTo("abc123")
+    }
+
+    @Test
+    fun `startRadio hints when streaming is off (false return)`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.startRadio(any()) } returns false
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        d.startRadio(item)
+        runCurrent()
+
+        assertThat(messages.any { it.contains("Online mode") }).isTrue()
+    }
 }

@@ -95,6 +95,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val trackDao: TrackDao,
     private val playbackResumer: PlaybackResumer,
     private val castStateHolder: CastStateHolder,
+    private val radioGenerator: com.stash.core.data.radio.RadioStationGenerator,
 ) : PlayerRepository {
 
     /**
@@ -192,6 +193,16 @@ class PlayerRepositoryImpl @Inject constructor(
             }
         }
 
+        // Radio auto-grow watcher. Mirrors the library-shuffle grower: when a
+        // station is armed and the queue nears the tail, append the next batch.
+        scope.launch {
+            playerState.collect { state ->
+                if (!radioActive) return@collect
+                val remaining = state.queue.size - state.currentIndex - 1
+                if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
+            }
+        }
+
         // Next-track prefetch watcher. Whenever the player advances (currentIndex
         // changes), eagerly resolve currentQueueTracks[currentIndex+1] so its URL
         // is cached + the controller's MediaItem URI is refreshed BEFORE ExoPlayer
@@ -261,6 +272,20 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     @Volatile
     private var librarySnapshot: List<Track> = emptyList()
+
+    /** Radio station state. `radioActive` arms the radio grow watcher; the
+     *  session holds the generator's cursor/no-repeat state. Mutually exclusive
+     *  with library shuffle — startRadio disarms shuffle and vice-versa. */
+    @Volatile
+    private var radioActive: Boolean = false
+
+    @Volatile
+    private var radioSession: com.stash.core.data.radio.RadioSession? = null
+
+    private val _radioSeedLabel = MutableStateFlow<String?>(null)
+    override val radioSeedLabel: StateFlow<String?> = _radioSeedLabel.asStateFlow()
+
+    private val radioGrowMutex = Mutex()
 
     /**
      * The LOGICAL playback queue — the user-intended track order. Since the
@@ -393,9 +418,13 @@ class PlayerRepositoryImpl @Inject constructor(
     ) {
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
-        // list doesn't grow back into a different queue later.
+        // list doesn't grow back into a different queue later. A radio station
+        // also ends (the user picked something else).
         libraryShuffleActive = false
         librarySnapshot = emptyList()
+        radioActive = false
+        radioSession = null
+        _radioSeedLabel.value = null
 
         val controller = ensureController() ?: return
         if (tracks.isEmpty()) return
@@ -716,6 +745,10 @@ class PlayerRepositoryImpl @Inject constructor(
         val shuffled = all.shuffled()
         librarySnapshot = shuffled
         libraryShuffleActive = true
+        // Mutually exclusive with radio: shuffling the library ends any station.
+        radioActive = false
+        radioSession = null
+        _radioSeedLabel.value = null
         // Keep the logical queue in lockstep: all-downloaded tracks resolve
         // 1:1 into the timeline, but a stale logical list from an earlier
         // setQueue would otherwise hijack the queue display whenever the
@@ -731,6 +764,98 @@ class PlayerRepositoryImpl @Inject constructor(
         // we hand to the controller IS the playback order.
         controller.prepare()
         controller.play()
+    }
+
+    override suspend fun startRadio(
+        seed: com.stash.core.data.radio.RadioSeed,
+        keepCurrent: Boolean,
+    ): Boolean {
+        if (!streamingPreference.current()) return false
+        val controller = ensureController() ?: return false
+        val (session, firstBatch) = radioGenerator.start(seed)
+        if (firstBatch.isEmpty()) return false
+        radioSession = session
+        radioActive = true
+        // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
+        // what normally disarms library shuffle), so disarm it here explicitly —
+        // otherwise both watchers append as the queue drains and library tracks
+        // pollute the station.
+        libraryShuffleActive = false
+        librarySnapshot = emptyList()
+
+        // Radio tracks are STREAMING tracks (no filePath) — they must become
+        // stash-resolve:// placeholders (toQueueMediaItem), NOT bare toMediaItem()
+        // which sets a null URI and makes Media3's DefaultMediaSourceFactory NPE
+        // on the missing localConfiguration. (shuffleLibrary can use toMediaItem
+        // because it only ever queues downloaded, file://-backed tracks.)
+        //
+        // Seamless start-from-current (Now Playing "Start radio"): keepCurrent is
+        // set BY THE CALLER because it knows the seed is the playing track — we do
+        // NOT infer it by matching videoIds (the playing item and the freshly-
+        // resolved seed track often have different/absent youtubeIds because they
+        // came through different resolution paths, which is why matching failed).
+        // Identify the seed inside firstBatch by normalized title|artist (the seed
+        // Song carries both), drop that one, and splice the discoveries around the
+        // still-playing current item instead of tearing the player down.
+        val songSeed = seed as? com.stash.core.data.radio.RadioSeed.Song
+        if (keepCurrent && songSeed != null && controller.currentMediaItem != null &&
+            controller.mediaItemCount > 0
+        ) {
+            val seedKey = radioIdentity(songSeed.artist, songSeed.title)
+            val seedTrack = firstBatch.firstOrNull { radioIdentity(it.artist, it.title) == seedKey }
+            val discoveries = firstBatch.filter { it !== seedTrack }
+            currentQueueTracks = listOfNotNull(seedTrack) + discoveries
+            val curIdx = controller.currentMediaItemIndex
+            if (curIdx + 1 < controller.mediaItemCount) {
+                controller.removeMediaItems(curIdx + 1, controller.mediaItemCount)
+            }
+            if (curIdx > 0) controller.removeMediaItems(0, curIdx)
+            controller.addMediaItems(discoveries.map { it.toQueueMediaItem() })
+            // No prepare/play/seek — the current item keeps playing uninterrupted.
+        } else {
+            // Fresh station (artist radio, song ⋮ menu on a non-playing row):
+            // replace the queue and start from the top.
+            currentQueueTracks = firstBatch
+            controller.setMediaItems(firstBatch.map { it.toQueueMediaItem() }, 0, 0L)
+            controller.prepare()
+            controller.play()
+        }
+        _radioSeedLabel.value = when (seed) {
+            is com.stash.core.data.radio.RadioSeed.Artist -> seed.name
+            is com.stash.core.data.radio.RadioSeed.Song -> seed.title
+        }
+        return true
+    }
+
+    override fun stopRadio() {
+        radioActive = false
+        radioSession = null
+        _radioSeedLabel.value = null
+    }
+
+    /** Normalized track identity for matching the radio seed against the batch —
+     *  lowercase, trimmed, whitespace-collapsed `title|artist`. Robust across the
+     *  different resolution paths that produce the same song. */
+    private fun radioIdentity(artist: String, title: String): String {
+        fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
+        return norm(title) + "|" + norm(artist)
+    }
+
+    /** Append the next generated batch to the station queue. Single-flight via
+     *  [radioGrowMutex] so a flurry of state emissions can't fan out into
+     *  concurrent grows. Internal as a test seam (the watcher that fires it is
+     *  driven by the private _playerState listener, device-verified). */
+    internal suspend fun growRadio() {
+        radioGrowMutex.withLock {
+            if (!radioActive) return
+            val controller = controllerDeferred ?: return
+            val session = radioSession ?: return
+            val batch = radioGenerator.nextBatch(session)
+            if (batch.isEmpty()) return
+            // Streaming tracks → stash-resolve:// placeholders (see startRadio).
+            controller.addMediaItems(batch.map { it.toQueueMediaItem() })
+            currentQueueTracks = currentQueueTracks + batch
+        }
     }
 
     /**
@@ -1547,10 +1672,14 @@ class PlayerRepositoryImpl @Inject constructor(
         val item = controller.currentMediaItem ?: return
         val extras = item.mediaMetadata.extras ?: return
         if (extras.getString(EXTRA_STREAM_CODEC) != null) return // already stamped
-        val trackId = extras.getLong(EXTRA_TRACK_ID, -1L)
-        if (trackId <= 0L) return
+        // Sentinel 0 = absent. Radio/search-synthetic ids are videoId.hashCode(),
+        // which is frequently NEGATIVE — the old `<= 0L` guard skipped the stamp
+        // for those, so the badge stayed "opus" and the art stayed the low-res
+        // placeholder. Allow any non-zero id.
+        val trackId = extras.getLong(EXTRA_TRACK_ID, 0L)
+        if (trackId == 0L) return
         val stream = streamUrlCache.get(trackId) ?: return // downloaded/unresolved: nothing to stamp
-        if (stream.codec == null && stream.origin == null) return
+        if (stream.codec == null && stream.origin == null && stream.coverArtUrl == null) return
         val newExtras = Bundle(extras).apply {
             stream.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
             stream.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
@@ -1558,8 +1687,19 @@ class PlayerRepositoryImpl @Inject constructor(
             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
         }
+        // Upgrade the artwork to the source's square cover (e.g. the high-res
+        // Qobuz cover) when the current art is a blank/low-res YouTube video
+        // thumbnail — those are letterboxed/soft; the resolved cover is square.
+        val currentArt = item.mediaMetadata.artworkUri?.toString()
+        val betterArt = stream.coverArtUrl?.takeIf {
+            it != currentArt &&
+                (currentArt.isNullOrBlank() ||
+                    com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(currentArt))
+        }
+        val metaBuilder = item.mediaMetadata.buildUpon().setExtras(newExtras)
+        betterArt?.let { metaBuilder.setArtworkUri(Uri.parse(it)) }
         val stamped = item.buildUpon()
-            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(newExtras).build())
+            .setMediaMetadata(metaBuilder.build())
             .build()
         controller.replaceMediaItem(controller.currentMediaItemIndex, stamped)
     }
@@ -1691,6 +1831,7 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
 
         /** Auto-grow fires once the remaining queue tail drops below this many tracks. */
+        private const val RADIO_GROW_THRESHOLD = 5
         private const val LIBRARY_SHUFFLE_GROW_THRESHOLD = 5
 
         /** How many tracks each grow appends. Big enough to outpace a fast-skipping user. */
