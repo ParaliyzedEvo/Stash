@@ -26,6 +26,8 @@ truth = "1.4.4"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
 mockk = "1.13.13"
+mockitoCore = "5.14.2"
+mockitoKotlin = "5.4.0"
 
 [libraries]
 # Compose
