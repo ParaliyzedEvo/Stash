@@ -17,7 +17,7 @@ body:
       options:
         - label: I'm on the **latest version** from the [Releases page](https://github.com/rawnaldclark/Stash/releases/latest)
           required: true
-        - label: I [searched existing issues](https://github.com/rawnaldclark/Stash/issues?q=is%3Aissue) and this isn't a duplicate
+        - label: Did you check the [task board](https://github.com/users/ParaliyzedEvo/projects/3/) for any **existing issues** that match your bug? (If you find one, comment on it instead of filing a new report.)
           required: true
         - label: This is a **bug**, not a question or feature request (those go to [Discord](https://discord.gg/vcbjEby5PC))
           required: true
