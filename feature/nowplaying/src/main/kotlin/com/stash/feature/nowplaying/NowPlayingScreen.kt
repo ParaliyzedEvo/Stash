@@ -126,6 +126,7 @@ fun NowPlayingScreen(
     val track = uiState.currentTrack
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
+    val exportingLyricsTrackId by viewModel.exportingLyricsTrackId.collectAsStateWithLifecycle()
     val radioLabel by viewModel.radioSeedLabel.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -459,6 +460,18 @@ fun NowPlayingScreen(
                             qualityText = qualityText,
                             isStreaming = uiState.isStreaming,
                         )
+                    }
+                    if (track.isDownloaded) {
+                        androidx.compose.material3.TextButton(
+                            enabled = exportingLyricsTrackId == null,
+                            onClick = viewModel::exportLyricsForCurrentTrack,
+                        ) {
+                            Text(when (exportingLyricsTrackId) {
+                                track.id -> "Saving lyrics sidecar"
+                                null -> "Save lyrics sidecar"
+                                else -> "Saving another track’s lyrics sidecar"
+                            })
+                        }
                     }
                 }
 
