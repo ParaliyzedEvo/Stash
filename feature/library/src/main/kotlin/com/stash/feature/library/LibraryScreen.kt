@@ -1247,6 +1247,14 @@ private fun TracksTab(
                 },
             )
             BottomSheetActionRow(
+                icon = Icons.Default.FavoriteBorder,
+                label = "Save to Playlist",
+                onClick = { 
+                    onSaveToPlaylist(track) 
+                    selectedTrack = null
+                },
+            )
+            BottomSheetActionRow(
                 icon = Icons.Default.Share,
                 label = "Share",
                 onClick = {
