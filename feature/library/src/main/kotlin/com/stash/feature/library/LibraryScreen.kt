@@ -52,11 +52,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -171,6 +173,7 @@ fun LibraryScreen(
             onDeletePlaylist = viewModel::deletePlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
+            onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
             onPlayArtist = onNavigateToArtist,
             onAddArtistToQueue = viewModel::addArtistToQueue,
             onDeleteArtist = viewModel::deleteArtist,
@@ -798,6 +801,7 @@ private fun PlaylistsGrid(
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
+    onTogglePlaylistPinned: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -897,6 +901,18 @@ private fun PlaylistsGrid(
                             }
                         }
                     }
+                    if (playlist.pinned) {
+                            Icon(
+                                imageVector = Icons.Default.PushPin,
+                                contentDescription = "Pinned",
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(16.dp),
+                            )
+                        }
+                    }
                 } else {
                     // No artwork: keep the original GlassCard look
                     GlassCard(
@@ -964,6 +980,15 @@ private fun PlaylistsGrid(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            BottomSheetActionRow(
+                icon = if (playlist.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                label = if (playlist.pinned) "Unpin Playlist" else "Pin Playlist",
+                onClick = {
+                    onTogglePlaylistPinned(playlist)
+                    selectedPlaylist = null
+                },
+            )
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,

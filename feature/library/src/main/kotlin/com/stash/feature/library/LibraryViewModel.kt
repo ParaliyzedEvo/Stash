@@ -200,6 +200,9 @@ class LibraryViewModel @Inject constructor(
             SortOrder.MOST_PLAYED -> filteredPlaylists.sortedByDescending { it.trackCount }
             // Playlists have no duration — fall back to the RECENT ordering.
             SortOrder.DURATION -> filteredPlaylists.sortedByDescending { it.dateAdded }
+        }.let { sorted ->
+            val (pinned, rest) = sorted.partition { it.pinned }
+            pinned.sortedBy { it.name.lowercase() } + rest
         }
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
@@ -603,6 +606,12 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             playlistImageHelper.deletePlaylistCoverFile(playlistId)
             musicRepository.updatePlaylistArtUrl(playlistId, null)
+        }
+    }
+
+    fun togglePlaylistPinned(playlist: Playlist) {
+        viewModelScope.launch {
+            musicRepository.setPlaylistPinned(playlist.id, !playlist.pinned)
         }
     }
 
