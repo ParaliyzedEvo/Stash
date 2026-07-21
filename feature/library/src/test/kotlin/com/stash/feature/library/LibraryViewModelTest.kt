@@ -180,6 +180,19 @@ class LibraryViewModelTest {
         assertEquals(listOf("Queued 2 songs for download."), messages)
     }
 
+    @Test
+    fun downloadSelected_counts_only_true_queue_results() = runTest {
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.queueDownload(eq(2L))).thenReturn(false)
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val messages = collectMessages(vm)
+        vm.downloadSelected(listOf(1L, 2L, 3L))
+        runCurrent()
+
+        assertEquals(listOf("Queued 2 songs for download."), messages)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

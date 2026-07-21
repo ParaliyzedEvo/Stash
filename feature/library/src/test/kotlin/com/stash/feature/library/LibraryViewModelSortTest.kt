@@ -58,6 +58,19 @@ class LibraryViewModelSortTest {
         assertThat(state.librarySongCount).isEqualTo(3)
     }
 
+    @Test fun cold_start_keeps_all_tracks_visible_when_library_contains_lossless_audio() = runTest {
+        val mixedFormats = listOf(
+            Track(id = 1L, title = "Lossless", artist = "X", fileFormat = "flac"),
+            Track(id = 2L, title = "New OPUS", artist = "X", fileFormat = "opus"),
+        )
+        val vm = buildVm(musicRepoMock(mixedFormats))
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.sourceFilter).isEqualTo(SourceFilter.ALL)
+        assertThat(state.tracks.map { it.id }).containsExactly(1L, 2L)
+    }
+
     // ── harness (mirrors LibraryViewModelMixTest) ─────────────────────────
     private fun musicRepoMock(allTracks: List<Track>): MusicRepository = mock {
         on { getAllTracks() } doReturn flowOf(allTracks)

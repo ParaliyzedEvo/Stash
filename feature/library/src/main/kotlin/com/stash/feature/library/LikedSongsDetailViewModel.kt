@@ -226,7 +226,7 @@ class LikedSongsDetailViewModel @Inject constructor(
             var succeeded = 0
             trackIds.forEach { id ->
                 runCatching { musicRepository.queueDownload(id) }
-                    .onSuccess { succeeded++ }
+                    .onSuccess { queued -> if (queued) succeeded++ }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
             if (succeeded > 0) {

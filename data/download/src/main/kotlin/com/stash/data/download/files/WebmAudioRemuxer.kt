@@ -2,6 +2,7 @@ package com.stash.data.download.files
 
 import android.util.Log
 import com.stash.core.data.audio.FFmpegBridge
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +33,7 @@ class WebmAudioRemuxer @Inject constructor(
     suspend fun toOpusIfWebm(file: File): File {
         if (!needsRemux(file)) return file
         val output = opusTarget(file)
-        return runCatching {
+        return try {
             ffmpeg.runWithStderrCapture(buildRemuxArgs(file, output))
             if (output.exists() && output.length() > 0) {
                 file.delete()
@@ -40,13 +41,22 @@ class WebmAudioRemuxer @Inject constructor(
                 output
             } else {
                 Log.w(TAG, "webm->opus remux produced no output for ${file.name}; keeping original")
-                output.delete()
+                deletePartialOutput(output)
                 file
             }
-        }.getOrElse { e ->
+        } catch (e: CancellationException) {
+            deletePartialOutput(output)
+            throw e
+        } catch (e: Exception) {
             Log.w(TAG, "webm->opus remux failed for ${file.name}: ${e.message}; keeping original")
-            runCatching { output.delete() }
+            deletePartialOutput(output)
             file
+        }
+    }
+
+    private fun deletePartialOutput(output: File) {
+        if (output.exists() && !output.delete()) {
+            Log.w(TAG, "could not delete partial remux output: ${output.absolutePath}")
         }
     }
 

@@ -472,6 +472,7 @@ interface TrackDao {
      * @param downloadedAt  Wall-clock millis the row was marked complete.
      * @param sampleRateHz  Audio sample rate in Hz, or null to preserve existing.
      * @param bitsPerSample Audio bit-depth, or null to preserve existing.
+     * @return Number of rows updated (expected to be exactly one).
      */
     @Query(
         """
@@ -492,7 +493,7 @@ interface TrackDao {
         downloadedAt: Long = System.currentTimeMillis(),
         sampleRateHz: Int? = null,
         bitsPerSample: Int? = null,
-    )
+    ): Int
 
     /**
      * v0.9.26 — fill `album` on a row that previously had no album recorded,

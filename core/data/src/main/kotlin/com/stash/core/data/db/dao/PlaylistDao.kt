@@ -38,6 +38,10 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(playlist: PlaylistEntity): Long
 
+    /** Insert without replacing an existing source_id row. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(playlist: PlaylistEntity): Long
+
     /** Insert a cross-reference linking a track to a playlist. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCrossRef(crossRef: PlaylistTrackCrossRef)
@@ -53,6 +57,61 @@ interface PlaylistDao {
         WHERE playlist_id = :playlistId AND track_id = :trackId
     """)
     suspend fun getCrossRef(playlistId: Long, trackId: Long): PlaylistTrackCrossRef?
+
+    /**
+     * Atomically returns the existing playlist or inserts it without REPLACE.
+     * Avoiding REPLACE matters because replacing a playlist cascades deletion
+     * to every playlist_tracks membership.
+     */
+    @Transaction
+    suspend fun ensurePlaylist(playlist: PlaylistEntity): Long {
+        findBySourceId(playlist.sourceId)?.let { return it.id }
+        val insertedId = insertIfAbsent(playlist)
+        if (insertedId != -1L) return insertedId
+        return checkNotNull(findBySourceId(playlist.sourceId)) {
+            "Playlist insert was ignored but source_id=${playlist.sourceId} was not found"
+        }.id
+    }
+
+    /**
+     * Atomically ensures [playlist] exists and [trackId] has an active
+     * membership. Unlike the UI-facing repository helper, this operation is
+     * strict: foreign-key/insert failures propagate and a soft-deleted
+     * cross-reference is reactivated before returning.
+     *
+     * This is used for the load-bearing "Your Downloads" membership. Keeping
+     * seeding and linking in one Room transaction prevents concurrent search
+     * downloads from replacing the playlist row between those operations.
+     */
+    @Transaction
+    suspend fun ensurePlaylistAndActiveCrossRef(
+        playlist: PlaylistEntity,
+        trackId: Long,
+    ): Long {
+        val playlistId = ensurePlaylist(playlist)
+        val existing = getCrossRef(playlistId, trackId)
+        if (existing?.removedAt != null || existing == null) {
+            val position = getNextPosition(playlistId)
+            insertCrossRef(
+                existing?.copy(
+                    position = position,
+                    removedAt = null,
+                    locallyAdded = true,
+                ) ?: PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position,
+                    locallyAdded = true,
+                ),
+            )
+        }
+
+        val active = getCrossRef(playlistId, trackId)
+        check(active != null && active.removedAt == null) {
+            "Failed to create active playlist membership for trackId=$trackId"
+        }
+        return playlistId
+    }
 
     /**
      * Bulk counterpart to [insertCrossRef] — one INSERT statement covering

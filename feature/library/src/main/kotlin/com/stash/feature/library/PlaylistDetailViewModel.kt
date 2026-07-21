@@ -302,8 +302,10 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun queueDownload(trackId: Long) {
         viewModelScope.launch {
-            musicRepository.queueDownload(trackId)
-            _userMessages.tryEmit("Queued for download.")
+            val queued = musicRepository.queueDownload(trackId)
+            _userMessages.tryEmit(
+                if (queued) "Queued for download." else "Couldn't queue download.",
+            )
         }
     }
 
@@ -385,7 +387,7 @@ class PlaylistDetailViewModel @Inject constructor(
             var succeeded = 0
             trackIds.forEach { id ->
                 runCatching { musicRepository.queueDownload(id) }
-                    .onSuccess { succeeded++ }
+                    .onSuccess { queued -> if (queued) succeeded++ }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
             if (succeeded > 0) {
