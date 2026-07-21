@@ -131,7 +131,6 @@ fun NowPlayingScreen(
     val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
-    val showBlurLayer by viewModel.showBlurLayerInAmoled.collectAsStateWithLifecycle(initialValue = true)
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
@@ -543,16 +542,6 @@ fun NowPlayingScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
-
-            AmbientBackground(
-                dominantColor = uiState.dominantColor,
-                vibrantColor = uiState.vibrantColor,
-                mutedColor = uiState.mutedColor,
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                showBlurLayer = showBlurLayer,
-                modifier = Modifier.fillMaxSize(),
-            )
 
             // Live-lyrics bar — sits exactly where the MiniPlayer is on other
             // screens (the scaffold hides MiniPlayer on this route), directly
