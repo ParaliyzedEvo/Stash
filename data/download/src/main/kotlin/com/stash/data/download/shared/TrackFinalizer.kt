@@ -9,6 +9,7 @@ import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.FileOrganizer.CommittedTrack
 import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lossless.AudioFormat
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,13 +57,19 @@ class TrackFinalizer @Inject constructor(
         track: Track,
         format: AudioFormat,
         embedMetadata: Boolean = true,
-    ): FinalizeResult = runCatching {
+    ): FinalizeResult = try {
         if (embedMetadata) {
             val art = runCatching { albumArtCache.resolveArt(track) }
-                .onFailure { e -> Log.w(TAG, "art resolve failed: ${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "art resolve failed: ${e.message}")
+                }
                 .getOrNull()
             runCatching { metadataEmbedder.embedMetadata(sourceFile, track, art) }
-                .onFailure { e -> Log.w(TAG, "metadata embed failed: ${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "metadata embed failed: ${e.message}")
+                }
         }
         val committed: CommittedTrack = fileOrganizer.commitDownload(
             tempFile = sourceFile,
@@ -73,7 +80,9 @@ class TrackFinalizer @Inject constructor(
         )
         val meta: AudioMetadata? = audioExtractor.extract(committed.filePath)
         FinalizeResult.Success(committed, meta)
-    }.getOrElse { e ->
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
         FinalizeResult.Failed(e.message ?: "finalize failed")
     }
 

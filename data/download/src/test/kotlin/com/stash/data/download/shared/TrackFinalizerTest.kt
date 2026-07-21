@@ -8,6 +8,7 @@ import com.stash.data.download.files.MetadataEmbedder
 import com.stash.data.download.lossless.AudioFormat
 import io.mockk.coEvery
 import io.mockk.coVerify
+import kotlinx.coroutines.CancellationException
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertNull
@@ -90,6 +91,25 @@ class TrackFinalizerTest {
         assertTrue(result is TrackFinalizer.FinalizeResult.Success)
     }
 
+    @Test fun `finalizeFile propagates cancellation from commit`() = runTest {
+        coEvery {
+            fileOrganizer.commitDownload(any(), any(), any(), any(), any())
+        } throws CancellationException("cancelled")
+
+        var cancellationPropagated = false
+        try {
+            subject.finalizeFile(
+                sourceFile = File.createTempFile("src", ".opus"),
+                track = stubTrack(),
+                format = AudioFormat(codec = "opus", bitrateKbps = 128),
+                embedMetadata = false,
+            )
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
+
+        assertTrue("cancellation must propagate", cancellationPropagated)
+    }
     private fun stubTrack(): Track = Track(
         id = 1L,
         title = "Title",

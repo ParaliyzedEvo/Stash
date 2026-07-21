@@ -6,6 +6,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -51,13 +52,10 @@ interface FFmpegBridge {
      *
      * Suspends on `Dispatchers.IO` — safe to call from any coroutine.
      *
-     * Throws [java.io.IOException] if the binary cannot be located or the
-     * process cannot be started. Does not throw on non-zero exit codes — a
-     * non-zero exit (e.g. ffmpeg's "Output #0, null" sentinel at the end of
-     * an ebur128 pass still exits 0, but a malformed input might exit 1)
-     * still returns whatever stderr was captured, so the parser can inspect
-     * it. Inspect the returned text for the expected Summary block;
-     * propagate failure from there.
+     * Throws [IOException] if the binary cannot be located, the process cannot
+     * be started, or ffmpeg exits non-zero. Non-zero failures include the
+     * captured stderr in the exception message so callers retain ffmpeg's
+     * diagnostic output while rejecting any partial output file.
      */
     suspend fun runWithStderrCapture(args: List<String>): String
 }
@@ -83,7 +81,7 @@ class FFmpegBridgeImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             val binary = ffmpegBinary()
             if (!binary.exists() || !binary.canExecute()) {
-                throw java.io.IOException(
+                throw IOException(
                     "ffmpeg binary missing or not executable at ${binary.absolutePath}; " +
                         "ensure FFmpeg.getInstance().init(context) has been called",
                 )
@@ -132,6 +130,14 @@ class FFmpegBridgeImpl @Inject constructor(
 
             if (exit != 0) {
                 Log.w(TAG, "ffmpeg exited with code $exit; stderr length=${stderr.length}")
+                throw IOException(
+                    buildString {
+                        append("ffmpeg exited with code "); append(exit)
+                        if (stderr.isNotBlank()) {
+                            append(":\n"); append(stderr)
+                        }
+                    },
+                )
             }
             stderr
         }

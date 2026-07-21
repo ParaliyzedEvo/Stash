@@ -9,6 +9,7 @@ import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -192,6 +193,8 @@ class DownloadExecutor @Inject constructor(
                 Log.w(TAG, "download: no output file (client=${playerClient ?: "default"}). Dir: $dirContents")
                 DownloadResult.NoOutput(stdout.take(2000), stderr.take(2000))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: YoutubeDLException) {
             // yt-dlp exited with non-zero code. The exception message IS the stderr.
             val errMsg = e.message ?: "Unknown yt-dlp error"

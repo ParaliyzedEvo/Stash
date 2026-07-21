@@ -9,7 +9,6 @@ import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
-import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -31,9 +30,8 @@ class MusicRepositoryDownloadsMixTest {
     @Test
     fun `ensureDownloadsMixSeeded inserts a new playlist when none exists`() = runTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
-        coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns null
         val inserted = slot<PlaylistEntity>()
-        coEvery { playlistDao.insert(capture(inserted)) } returns 42L
+        coEvery { playlistDao.ensurePlaylist(capture(inserted)) } returns 42L
 
         val repo = buildRepo(playlistDao = playlistDao)
         val id = repo.ensureDownloadsMixSeeded()
@@ -49,59 +47,29 @@ class MusicRepositoryDownloadsMixTest {
     @Test
     fun `ensureDownloadsMixSeeded is idempotent when playlist already exists`() = runTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
-        val existing = PlaylistEntity(
-            id = 7L,
-            name = "Your Downloads",
-            source = MusicSource.BOTH,
-            sourceId = "stash_downloads_mix",
-            type = PlaylistType.DOWNLOADS_MIX,
-        )
-        coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns existing
+        coEvery { playlistDao.ensurePlaylist(any()) } returns 7L
 
         val repo = buildRepo(playlistDao = playlistDao)
         val id = repo.ensureDownloadsMixSeeded()
 
         assertEquals(7L, id)
-        coVerify(exactly = 0) { playlistDao.insert(any()) }
+        coVerify(exactly = 1) { playlistDao.ensurePlaylist(any()) }
     }
 
     @Test
-    fun `linkTrackToDownloadsMix seeds then adds track when no existing link`() = runTest {
+    fun `linkTrackToDownloadsMix delegates to strict active-link transaction`() = runTest {
         val playlistDao = mockk<PlaylistDao>(relaxed = true)
-        coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns null
-        coEvery { playlistDao.insert(any()) } returns 42L
-        coEvery { playlistDao.getCrossRef(42L, 99L) } returns null
-        coEvery { playlistDao.getNextPosition(42L) } returns 0
+        coEvery { playlistDao.ensurePlaylistAndActiveCrossRef(any(), 99L) } returns 42L
 
         // addTrackToPlaylist calls trackDao.getByPlaylist(...).first() to update the
         // track count — return an empty list so first() doesn't block.
         val trackDao = mockk<TrackDao>(relaxed = true)
-        coEvery { trackDao.getByPlaylist(42L, includeStreamable = false) } returns flowOf(emptyList())
+        coEvery { trackDao.getByPlaylist(42L, includeStreamable = true) } returns flowOf(emptyList())
 
         val repo = buildRepo(playlistDao = playlistDao, trackDao = trackDao)
         repo.linkTrackToDownloadsMix(trackId = 99L)
 
-        coVerify { playlistDao.insertCrossRef(match { it.playlistId == 42L && it.trackId == 99L }) }
-    }
-
-    @Test
-    fun `linkTrackToDownloadsMix is a no-op when link already exists`() = runTest {
-        val playlistDao = mockk<PlaylistDao>(relaxed = true)
-        val existing = PlaylistEntity(
-            id = 7L,
-            name = "Your Downloads",
-            source = MusicSource.BOTH,
-            sourceId = "stash_downloads_mix",
-            type = PlaylistType.DOWNLOADS_MIX,
-        )
-        coEvery { playlistDao.findBySourceId("stash_downloads_mix") } returns existing
-        coEvery { playlistDao.getCrossRef(7L, 99L) } returns
-            PlaylistTrackCrossRef(playlistId = 7L, trackId = 99L, position = 0)
-
-        val repo = buildRepo(playlistDao = playlistDao)
-        repo.linkTrackToDownloadsMix(trackId = 99L)
-
-        coVerify(exactly = 0) { playlistDao.insertCrossRef(any()) }
+        coVerify { playlistDao.ensurePlaylistAndActiveCrossRef(any(), 99L) }
     }
 
     private fun buildRepo(

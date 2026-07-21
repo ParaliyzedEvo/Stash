@@ -630,23 +630,26 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun ensureDownloadsMixSeeded(): Long {
-        val existing = playlistDao.findBySourceId(DOWNLOADS_MIX_SOURCE_ID)
-        if (existing != null) return existing.id
-        val entity = com.stash.core.data.db.entity.PlaylistEntity(
+        return playlistDao.ensurePlaylist(downloadsMixEntity())
+    }
+
+    override suspend fun linkTrackToDownloadsMix(trackId: Long) {
+        val playlistId = playlistDao.ensurePlaylistAndActiveCrossRef(
+            playlist = downloadsMixEntity(),
+            trackId = trackId,
+        )
+        val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
+        playlistDao.updateTrackCount(playlistId, count)
+    }
+
+    private fun downloadsMixEntity() =
+        com.stash.core.data.db.entity.PlaylistEntity(
             name = "Your Downloads",
             source = com.stash.core.model.MusicSource.BOTH,
             sourceId = DOWNLOADS_MIX_SOURCE_ID,
             type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX,
             syncEnabled = false,
         )
-        return playlistDao.insert(entity)
-    }
-
-    override suspend fun linkTrackToDownloadsMix(trackId: Long) {
-        val playlistId = ensureDownloadsMixSeeded()
-        if (playlistDao.getCrossRef(playlistId, trackId) != null) return
-        addTrackToPlaylist(trackId = trackId, playlistId = playlistId)
-    }
 
     override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
         playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)

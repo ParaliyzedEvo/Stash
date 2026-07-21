@@ -89,22 +89,6 @@ class LibraryViewModel @Inject constructor(
     /** Local UI controls: tab, search query, and sort order. */
     private val _controls = MutableStateFlow(ControlState())
 
-    init {
-        // Smart-default: if the user already has lossless tracks, open
-        // Library to TRACKS / RECENT / FLAC instead of TRACKS / RECENT
-        // / ALL. One-shot snapshot read at cold start; the user's
-        // mid-session filter changes are honoured (we never fight back).
-        viewModelScope.launch {
-            val firstSnapshot = musicRepository.getAllTracks().first()
-            val hasLossless = firstSnapshot.any {
-                it.fileFormat.lowercase() in LOSSLESS_CODECS
-            }
-            if (hasLossless && _controls.value.sourceFilter == SourceFilter.ALL) {
-                _controls.update { it.copy(sourceFilter = SourceFilter.FLAC) }
-            }
-        }
-    }
-
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
@@ -425,7 +409,7 @@ class LibraryViewModel @Inject constructor(
             var succeeded = 0
             trackIds.forEach { id ->
                 runCatching { musicRepository.queueDownload(id) }
-                    .onSuccess { succeeded++ }
+                    .onSuccess { queued -> if (queued) succeeded++ }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
             if (succeeded > 0) {

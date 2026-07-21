@@ -21,6 +21,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.shared.TrackFinalizer
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -120,7 +121,8 @@ class SearchDownloadCoordinator @Inject constructor(
      * explicit user action on a specific track, so the user's fallback
      * preference governs unconditionally.
      *
-     * The flow does not throw; all errors are mapped to [SearchDownloadStatus.Failed].
+     * Operational errors are mapped to [SearchDownloadStatus.Failed].
+     * [CancellationException] still propagates for cooperative cancellation.
      */
     fun download(track: TrackItem): Flow<SearchDownloadStatus> = flow {
         val key = track.videoId
@@ -173,6 +175,7 @@ class SearchDownloadCoordinator @Inject constructor(
 
         val match = runCatching { registry.resolve(track.toQuery()) }
             .onFailure { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "registry.resolve threw for ${track.videoId}: ${e.message}")
             }
             .getOrNull()
@@ -209,6 +212,7 @@ class SearchDownloadCoordinator @Inject constructor(
                     }
                 }
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
             }
             return DownloadJobResult.Deferred
@@ -267,6 +271,7 @@ class SearchDownloadCoordinator @Inject constructor(
             }
         }.onFailure { e ->
             runCatching { dataSource.close() }
+            if (e is CancellationException) throw e
             Log.w(TAG, "lossless cache->file copy failed for $cacheKey: ${e.message}")
             return TrackFinalizer.FinalizeResult.Failed("Cache fill failed: ${e.message}")
         }
@@ -278,36 +283,58 @@ class SearchDownloadCoordinator @Inject constructor(
             format = match.format,
         )
 
-        // Search-specific DB writes — done here, not in TrackFinalizer,
-        // so sync's TrackFinalizer path is unaffected. Wrapped in
-        // runCatching: an exception escaping here would propagate up the
-        // flow and prevent SearchDownloadStatus.Completed from emitting,
-        // leaving the UI's per-row spinner stuck even though the file is
-        // already on disk. The file is the load-bearing artefact; if a DB
-        // write fails the next library scan / sync will reconcile.
+        // TrackFinalizer success proves only that the file was committed.
+        // Completed additionally requires validation and durable library state.
+        var outcome: TrackFinalizer.FinalizeResult = finalized
         if (finalized is TrackFinalizer.FinalizeResult.Success) {
-            runCatching {
-                upsertSearchTrack(track, match.format, finalized, match.coverArtUrl)
-            }.onFailure { e ->
-                Log.e(TAG, "upsertSearchTrack failed for ${track.videoId}: ${e.message}", e)
+            outcome = persistFinalizedTrack(
+                track,
+                match.format,
+                finalized,
+                match.coverArtUrl,
+            )
+            if (outcome is TrackFinalizer.FinalizeResult.Success) {
+                // v0.9.36 lyrics integration: chain the lyrics-fetch enqueue off
+                // the stamp's resolved trackId so we don't repeat findByYoutubeId.
+                // If the stamp lookup failed (returned null), skip lyrics too —
+                // we have no stable id to key the worker on.
+                stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
             }
-            // v0.9.36 lyrics integration: chain the lyrics-fetch enqueue off
-            // the stamp's resolved trackId so we don't repeat findByYoutubeId.
-            // If the stamp lookup failed (returned null), skip lyrics too —
-            // we have no stable id to key the worker on.
-            stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
         }
 
         // Free preview-cache space now that bytes are on permanent storage.
         runCatching { previewCache.removeResource(cacheKey) }
             .onFailure { e -> Log.w(TAG, "removeResource failed for $cacheKey: ${e.message}") }
 
-        return finalized
+        return outcome
     }
 
     // -------------------------------------------------------------------------
     // YouTube / yt-dlp fallback path
     // -------------------------------------------------------------------------
+
+    /**
+     * Converts file-finalization success into end-to-end success only after
+     * the required database state is durable. Expected validation rejections
+     * and persistence failures become [TrackFinalizer.FinalizeResult.Failed];
+     * cooperative cancellation is never converted into a terminal status.
+     */
+    private suspend fun persistFinalizedTrack(
+        track: TrackItem,
+        format: AudioFormat,
+        finalized: TrackFinalizer.FinalizeResult.Success,
+        coverArtUrl: String?,
+    ): TrackFinalizer.FinalizeResult = try {
+        upsertSearchTrack(track, format, finalized, coverArtUrl)
+        finalized
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.e(TAG, "search-track persistence failed for ${track.videoId}: ${e.message}", e)
+        TrackFinalizer.FinalizeResult.Failed(
+            "Failed to save download: ${e.message ?: "unknown persistence error"}",
+        )
+    }
 
     private suspend fun finalizeFromYtDlp(track: TrackItem): TrackFinalizer.FinalizeResult {
         val tempDir = File(context.cacheDir, "search_ytdlp").also { it.mkdirs() }
@@ -321,6 +348,7 @@ class SearchDownloadCoordinator @Inject constructor(
                 qualityArgs = emptyList(),
             )
         }.getOrElse { e ->
+            if (e is CancellationException) throw e
             return TrackFinalizer.FinalizeResult.Failed("yt-dlp threw: ${e.message}")
         }
 
@@ -343,18 +371,15 @@ class SearchDownloadCoordinator @Inject constructor(
             format = format,
         )
 
+        var outcome: TrackFinalizer.FinalizeResult = finalized
         if (finalized is TrackFinalizer.FinalizeResult.Success) {
-            // Same defensive runCatching as the lossless path — DB-write
-            // failures must not prevent Completed from emitting.
-            runCatching {
-                upsertSearchTrack(track, format, finalized, track.thumbnailUrl)
-            }.onFailure { e ->
-                Log.e(TAG, "upsertSearchTrack (yt-dlp) failed for ${track.videoId}: ${e.message}", e)
+            outcome = persistFinalizedTrack(track, format, finalized, track.thumbnailUrl)
+            if (outcome is TrackFinalizer.FinalizeResult.Success) {
+                // v0.9.36 lyrics integration: parity with the lossless branch.
+                stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
             }
-            // v0.9.36 lyrics integration: parity with the lossless branch.
-            stampEmbeddedAt(track.videoId)?.let { lyricsFetchTrigger.enqueueFor(it) }
         }
-        return finalized
+        return outcome
     }
 
     /**
@@ -377,6 +402,7 @@ class SearchDownloadCoordinator @Inject constructor(
             trackDao.setMetadataEmbeddedAt(trackId, System.currentTimeMillis())
             trackId
         }.onFailure { e ->
+            if (e is CancellationException) throw e
             Log.w(TAG, "setMetadataEmbeddedAt failed for $videoId: ${e.message}")
         }.getOrNull()
     }
@@ -406,8 +432,14 @@ class SearchDownloadCoordinator @Inject constructor(
                 spotifyUri = null, youtubeId = track.videoId,
             )) {
             android.util.Log.d("SearchDownload", "Refused download of blocked: ${track.artist} - ${track.title}")
-            return
+            throw PersistenceRejectedException("Track is blocked")
         }
+        // Reject a committed file before inserting or mutating library rows.
+        if (!localFileOps.acceptDownloadOrDelete(finalized.committed.filePath)) {
+            Log.w(TAG, "search download: discarded invalid file for videoId=${track.videoId}: ${finalized.committed.filePath}")
+            throw PersistenceRejectedException("Downloaded file failed validation")
+        }
+
 
         val existing = trackDao.findByYoutubeId(track.videoId)
             ?: trackDao.findByCanonicalIdentity(
@@ -451,22 +483,25 @@ class SearchDownloadCoordinator @Inject constructor(
         // would still hide its album from the Library tab.
         if (existing != null && existing.album.isBlank() && albumName.isNotBlank()) {
             runCatching { trackDao.updateAlbumIfEmpty(trackId, albumName) }
-                .onFailure { e -> Log.w(TAG, "updateAlbumIfEmpty failed: ${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "updateAlbumIfEmpty failed: ${e.message}")
+                }
         }
         if (existing != null && existing.albumArtist.isBlank() && albumArtistName.isNotBlank()) {
             runCatching { trackDao.updateAlbumArtistIfEmpty(trackId, albumArtistName) }
-                .onFailure { e -> Log.w(TAG, "updateAlbumArtistIfEmpty failed: ${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "updateAlbumArtistIfEmpty failed: ${e.message}")
+                }
         }
 
-        // Reject a "successful" download whose file is too small to be audio
-        // (a failed yt-dlp run leaving a tiny error body). Delete it + leave
-        // the track not-downloaded (streamable) rather than mark junk.
-        if (!localFileOps.acceptDownloadOrDelete(finalized.committed.filePath)) {
-            Log.w(TAG, "search download: discarded too-small file for trackId=$trackId: ${finalized.committed.filePath}")
-            return
-        }
+        // Establish orphan-sweep protection before flipping isDownloaded. A
+        // failed link therefore leaves a retryable streamable row rather than
+        // a downloaded row whose file can be deleted on the next cleanup.
+        musicRepository.linkTrackToDownloadsMix(trackId)
 
-        trackDao.markAsDownloaded(
+        val updated = trackDao.markAsDownloaded(
             trackId = trackId,
             filePath = finalized.committed.filePath,
             fileSizeBytes = finalized.committed.sizeBytes,
@@ -474,13 +509,19 @@ class SearchDownloadCoordinator @Inject constructor(
             bitsPerSample = finalized.meta?.bitsPerSample,
         )
 
+        check(updated == 1) {
+            "Track disappeared before download state could be persisted: trackId=$trackId"
+        }
         finalized.meta?.let { meta ->
             // Only write probed values when the probe succeeded and reported
             // a real codec. "unknown" indicates MediaMetadataRetriever returned
             // no MIME type — writing it would corrupt the format column.
             if (meta.format != "unknown") {
                 runCatching { trackDao.setFormatAndQuality(trackId, meta.format, meta.bitrateKbps) }
-                    .onFailure { e -> Log.w(TAG, "setFormatAndQuality failed: ${e.message}") }
+                    .onFailure { e ->
+                        if (e is CancellationException) throw e
+                        Log.w(TAG, "setFormatAndQuality failed: ${e.message}")
+                    }
             }
         }
 
@@ -497,13 +538,12 @@ class SearchDownloadCoordinator @Inject constructor(
 
         coverArtUrl?.let {
             runCatching { trackDao.fillMissingAlbumArtUrl(trackId, it) }
-                .onFailure { e -> Log.w(TAG, "fillMissingAlbumArtUrl failed: ${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "fillMissingAlbumArtUrl failed: ${e.message}")
+                }
         }
 
-        // Link to the "Your Downloads" / downloads-mix playlist so orphan
-        // cleanup never deletes this track's file on next sync.
-        runCatching { musicRepository.linkTrackToDownloadsMix(trackId) }
-            .onFailure { e -> Log.e(TAG, "linkTrackToDownloadsMix failed for $trackId", e) }
     }
 
     // -------------------------------------------------------------------------
@@ -575,6 +615,9 @@ class SearchDownloadCoordinator @Inject constructor(
         /** v0.9.17: lossless unavailable + fallback off → WaitingForLossless. */
         data object Deferred : DownloadJobResult
     }
+
+    /** Expected policy/file rejection while converting a committed file into durable library state. */
+    private class PersistenceRejectedException(message: String) : Exception(message)
 
     companion object {
         private const val TAG = "SearchDownloadCoordinator"

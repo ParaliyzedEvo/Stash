@@ -128,6 +128,9 @@ class SearchDownloadCoordinatorEmbedStampTest {
         } returns TrackFinalizer.FinalizeResult.Success(committed, meta)
 
         coEvery { trackDao.findByYoutubeId("vid42") } returns stubExistingTrackRow()
+        coEvery {
+            trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any())
+        } returns 1
     }
 
     @Test

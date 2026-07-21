@@ -201,6 +201,32 @@ class PlaylistDetailViewModelTest {
     }
 
     @Test
+    fun downloadSelected_counts_only_true_queue_results() = runTest {
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.queueDownload(eq(2L))).thenReturn(false)
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val messages = collectMessages(vm)
+        vm.downloadSelected(listOf(1L, 2L, 3L))
+        runCurrent()
+
+        assertEquals(listOf("Queued 2 songs for download."), messages)
+    }
+
+    @Test
+    fun queueDownload_reports_when_single_item_was_not_queued() = runTest {
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.queueDownload(eq(1L))).thenReturn(false)
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val messages = collectMessages(vm)
+        vm.queueDownload(1L)
+        runCurrent()
+
+        assertEquals(listOf("Couldn't queue download."), messages)
+    }
+
+    @Test
     fun downloadSelected_rethrows_cancellation_and_aborts_batch() = runTest {
         val musicRepo = musicRepoMock()
         // The FIRST item's repo call is cancelled. The batch methods re-throw
