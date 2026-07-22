@@ -399,12 +399,19 @@ class DiffWorker @AssistedInject constructor(
         }
         val bySpotifyUri = mutableMapOf<String, BatchTrack>()
         val byYoutubeId = mutableMapOf<String, BatchTrack>()
-        val byCanonical = mutableMapOf<String, MutableList<BatchTrack>>()
+        // A canonical key can legitimately map to MULTIPLE rows — e.g. two
+        // distinct YouTube uploads of "the same song" that arrive with
+        // different videoIds. A single-value map here would collapse them
+        // into one row, silently discarding the second identity.
+        val byCanonical = mutableMapOf<CanonicalKey, MutableList<BatchTrack>>()
 
         fun registerBatchTrack(track: BatchTrack) {
             track.entity.spotifyUri?.takeIf(String::isNotBlank)?.let { bySpotifyUri[it] = track }
             track.entity.youtubeId?.takeIf(String::isNotBlank)?.let { byYoutubeId[it] = track }
-            val canonicalKey = "${track.entity.canonicalTitle}|${track.entity.canonicalArtist}"
+            val canonicalKey = CanonicalKey(
+                title = track.entity.canonicalTitle,
+                artist = track.entity.canonicalArtist,
+            )
             val canonicalMatches = byCanonical.getOrPut(canonicalKey) { mutableListOf() }
             if (canonicalMatches.none { it === track }) {
                 canonicalMatches.add(track)
@@ -413,6 +420,11 @@ class DiffWorker @AssistedInject constructor(
 
         candidateTracks.values.forEach(::registerBatchTrack)
 
+        // A canonical-title/artist match is only safe to reuse when neither
+        // side's strong identifiers actively disagree. Without this, two
+        // tracks that share a title/artist but carry different spotifyUri
+        // or youtubeId values would incorrectly merge into a single row —
+        // e.g. two different YouTube uploads of the same song.
         fun strongIdsCompatible(
             track: BatchTrack,
             snapshot: RemoteTrackSnapshotEntity,
@@ -425,10 +437,13 @@ class DiffWorker @AssistedInject constructor(
         }
 
         fun matchBatchTrack(snapshot: RemoteTrackSnapshotEntity): BatchTrack? {
-            snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri -> bySpotifyUri[uri]?.let { return it } }
-            snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid -> byYoutubeId[yid]?.let { return it } }
-            val (ct, ca) = canonicalOf.getValue(snapshot)
-            return byCanonical["$ct|$ca"]?.firstOrNull {
+            snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri ->
+                bySpotifyUri[uri]?.let { return it }
+            }
+            snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid ->
+                byYoutubeId[yid]?.let { return it }
+            }
+            return byCanonical[canonicalOf.getValue(snapshot)]?.firstOrNull {
                 strongIdsCompatible(it, snapshot)
             }
         }
