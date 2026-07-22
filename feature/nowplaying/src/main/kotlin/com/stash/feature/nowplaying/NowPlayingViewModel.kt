@@ -10,6 +10,8 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.media.SleepTimerController
+import com.stash.core.model.AlbumNavTarget
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.PlaylistInfo
@@ -67,6 +69,7 @@ data class ArtistNavTarget(
 @HiltViewModel
 class NowPlayingViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
+    private val sleepTimerController: SleepTimerController,
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
@@ -144,6 +147,71 @@ class NowPlayingViewModel @Inject constructor(
     private val optimisticLikeState = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
 
     // ------------------------------------------------------------------
+    // Tap-to-album — resolve the playing track's album and navigate to it
+    // ------------------------------------------------------------------
+
+    /**
+     * One-shot navigation targets emitted when the user taps "View Album".
+     * Mirrors [_artistNavEvents]/[artistNavEvents] exactly — same buffer
+     * reasoning (a config-change re-subscribe landing right after emit
+     * shouldn't drop the event).
+     */
+    private val _albumNavEvents = MutableSharedFlow<AlbumNavTarget>(extraBufferCapacity = 1)
+    val albumNavEvents: SharedFlow<AlbumNavTarget> = _albumNavEvents.asSharedFlow()
+
+    /**
+     * True while an album resolve is in flight. Mirrors [_resolvingArtist] —
+     * the screen can swap the "View Album" row's icon for a spinner and/or
+     * use this as a double-tap guard.
+     */
+    private val _resolvingAlbum = MutableStateFlow(false)
+    val resolvingAlbum: StateFlow<Boolean> = _resolvingAlbum.asStateFlow()
+
+    /**
+     * "View Album" tap. Resolves the playing track's album NAME (scoped to
+     * its artist, to disambiguate same-named albums) to a YT browseId and
+     * emits an [AlbumNavTarget]. No-op when nothing is playing, the track
+     * has no album tag, or a resolve is already in flight. Resolve
+     * miss/failure -> snackbar, no nav. This intentionally does NOT route
+     * through the local Albums library tab — it opens the real remote
+     * album page, same as [onTrackInfoTapped] opens the real artist page.
+     */
+    fun onViewAlbumTapped() {
+        val track = _uiState.value.currentTrack ?: return
+        if (_resolvingAlbum.value) return
+        val albumName = track.album
+        if (albumName.isBlank()) {
+            _userMessages.tryEmit("This track has no album info")
+            return
+        }
+        val artistName = track.albumArtist.ifBlank { track.artist }
+        _resolvingAlbum.value = true
+        viewModelScope.launch {
+            try {
+                val album = ytMusicApiClient.resolveAlbum(albumName, artistName)
+                if (album != null) {
+                    _albumNavEvents.emit(
+                        AlbumNavTarget(
+                            albumId = album.id,
+                            name = album.title,
+                            artUrl = album.thumbnailUrl,
+                            artistName = artistName,
+                        ),
+                    )
+                } else {
+                    _userMessages.emit("Couldn't find this album")
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                _userMessages.emit("Couldn't find this album")
+            } finally {
+                _resolvingAlbum.value = false
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Tap-to-artist — resolve the playing artist and navigate to profile
     // ------------------------------------------------------------------
 
@@ -216,6 +284,28 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Stop the active radio station. */
     fun stopRadio() = playerRepository.stopRadio()
+
+    // ------------------------------------------------------------------
+    // Sleep timer
+    // ------------------------------------------------------------------
+
+    /** Current sleep-timer state, mirrored from the app-wide singleton. */
+    val sleepTimerState: StateFlow<SleepTimerController.State> = sleepTimerController.state
+
+    /** Arm a countdown timer for [minutes] minutes. */
+    fun onSleepTimerMinutes(minutes: Int) {
+        sleepTimerController.startMinutes(minutes)
+    }
+
+    /** Arm a timer that pauses at the end of the current track. */
+    fun onSleepTimerEndOfTrack() {
+        sleepTimerController.stopAtEndOfTrack()
+    }
+
+    /** Disarm the sleep timer without touching playback. */
+    fun onSleepTimerCancel() {
+        sleepTimerController.cancel()
+    }
 
     fun onTrackInfoTapped() {
         val track = _uiState.value.currentTrack ?: return
