@@ -89,6 +89,12 @@ class DiffWorker @AssistedInject constructor(
         private const val NEVER_MATCH_SENTINEL = "\u0000__stash_never_match__"
     }
 
+    private class BatchTrack(
+        var entity: TrackEntity,
+        val isNew: Boolean,
+        var persistedId: Long? = entity.id.takeUnless { isNew },
+    )
+
     override suspend fun doWork(): Result {
         val syncId = inputData.getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
         if (syncId == -1L) {
@@ -368,22 +374,76 @@ class DiffWorker @AssistedInject constructor(
         val canonicalOf = allowedSnapshots.associateWith {
             trackMatcher.canonicalTitle(it.title) to trackMatcher.canonicalArtist(it.artist)
         }
-        val spotifyUris = allowedSnapshots.mapNotNull { it.spotifyUri }.distinct()
+        val spotifyUris = allowedSnapshots.mapNotNull { it.spotifyUri?.takeIf(String::isNotBlank) }.distinct()
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
-        val youtubeIds = allowedSnapshots.mapNotNull { it.youtubeId }.distinct()
+        val youtubeIds = allowedSnapshots.mapNotNull { it.youtubeId?.takeIf(String::isNotBlank) }.distinct()
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
         val canonicalKeys = canonicalOf.values.map { (t, a) -> "$t|$a" }.distinct()
 
         val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalKeys)
-        val bySpotifyUri = candidates.filter { it.spotifyUri != null }.associateBy { it.spotifyUri }
-        val byYoutubeId = candidates.filter { it.youtubeId != null }.associateBy { it.youtubeId }
-        val byCanonical = candidates.associateBy { "${it.canonicalTitle}|${it.canonicalArtist}" }
+        val candidateTracks = candidates.associate { candidate ->
+            candidate.id to BatchTrack(candidate, isNew = false)
+        }
+        val bySpotifyUri = mutableMapOf<String, BatchTrack>()
+        val byYoutubeId = mutableMapOf<String, BatchTrack>()
+        val byCanonical = mutableMapOf<String, MutableList<BatchTrack>>()
 
-        fun matchExisting(snapshot: RemoteTrackSnapshotEntity): TrackEntity? {
-            snapshot.spotifyUri?.let { uri -> bySpotifyUri[uri]?.let { return it } }
-            snapshot.youtubeId?.let { yid -> byYoutubeId[yid]?.let { return it } }
+        fun registerBatchTrack(track: BatchTrack) {
+            track.entity.spotifyUri?.takeIf(String::isNotBlank)?.let { bySpotifyUri[it] = track }
+            track.entity.youtubeId?.takeIf(String::isNotBlank)?.let { byYoutubeId[it] = track }
+            val canonicalKey = "${track.entity.canonicalTitle}|${track.entity.canonicalArtist}"
+            val canonicalMatches = byCanonical.getOrPut(canonicalKey) { mutableListOf() }
+            if (canonicalMatches.none { it === track }) {
+                canonicalMatches.add(track)
+            }
+        }
+
+        candidateTracks.values.forEach(::registerBatchTrack)
+
+        fun strongIdsCompatible(
+            track: BatchTrack,
+            snapshot: RemoteTrackSnapshotEntity,
+        ): Boolean {
+            fun compatible(stored: String?, incoming: String?): Boolean =
+                stored.isNullOrBlank() || incoming.isNullOrBlank() || stored == incoming
+
+            return compatible(track.entity.spotifyUri, snapshot.spotifyUri) &&
+                compatible(track.entity.youtubeId, snapshot.youtubeId)
+        }
+
+        fun matchBatchTrack(snapshot: RemoteTrackSnapshotEntity): BatchTrack? {
+            snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri -> bySpotifyUri[uri]?.let { return it } }
+            snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid -> byYoutubeId[yid]?.let { return it } }
             val (ct, ca) = canonicalOf.getValue(snapshot)
-            return byCanonical["$ct|$ca"]
+            return byCanonical["$ct|$ca"]?.firstOrNull {
+                strongIdsCompatible(it, snapshot)
+            }
+        }
+
+        suspend fun enrichExistingBatchTrack(
+            batchTrack: BatchTrack,
+            snapshot: RemoteTrackSnapshotEntity,
+        ) {
+            val existingTrack = batchTrack.entity
+            val snapshotYtId = snapshot.youtubeId?.takeIf(String::isNotBlank)
+            if (!snapshotYtId.isNullOrBlank() && existingTrack.youtubeId.isNullOrBlank()) {
+                val youtubeOwner = byYoutubeId[snapshotYtId]
+                if (youtubeOwner == null || youtubeOwner === batchTrack) {
+                    val applied = trackDao.updateYoutubeIdIfUnclaimed(existingTrack.id, snapshotYtId)
+                    if (applied == 1) {
+                        batchTrack.entity = batchTrack.entity.copy(youtubeId = snapshotYtId)
+                        byYoutubeId[snapshotYtId] = batchTrack
+                        val ytUrl = "https://music.youtube.com/watch?v=$snapshotYtId"
+                        downloadQueueDao.fillMissingYoutubeUrlForTrack(existingTrack.id, ytUrl)
+                    }
+                }
+            }
+
+            val snapshotArt = snapshot.albumArtUrl
+            if (!snapshotArt.isNullOrBlank() && snapshotArt != batchTrack.entity.albumArtUrl) {
+                trackDao.updateAlbumArtUrl(existingTrack.id, snapshotArt)
+                batchTrack.entity = batchTrack.entity.copy(albumArtUrl = snapshotArt)
+            }
         }
 
         // Preload every current cross-ref for this playlist ONCE instead of
@@ -391,87 +451,111 @@ class DiffWorker @AssistedInject constructor(
         val existingCrossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id)
             .associateBy { it.trackId }
 
-        val newSnapshots = mutableListOf<RemoteTrackSnapshotEntity>()
-        val newEntities = mutableListOf<TrackEntity>()
-        val existingPairs = mutableListOf<Pair<TrackEntity, RemoteTrackSnapshotEntity>>()
+        val newTracks = mutableListOf<BatchTrack>()
+        val newOccurrences = mutableListOf<Pair<BatchTrack, RemoteTrackSnapshotEntity>>()
+        val existingPairs = mutableListOf<Pair<BatchTrack, RemoteTrackSnapshotEntity>>()
 
         for (snapshot in allowedSnapshots) {
-            val existing = matchExisting(snapshot)
-            if (existing != null) {
-                existingPairs.add(existing to snapshot)
-            } else {
+            val batchTrack = matchBatchTrack(snapshot) ?: run {
                 val (ct, ca) = canonicalOf.getValue(snapshot)
-                newEntities.add(
-                    TrackEntity(
+                BatchTrack(
+                    entity = TrackEntity(
                         title = snapshot.title,
                         artist = snapshot.artist,
                         album = snapshot.album ?: "",
                         durationMs = snapshot.durationMs,
                         source = playlistSnapshot.source,
-                        spotifyUri = snapshot.spotifyUri,
-                        youtubeId = snapshot.youtubeId,
+                        spotifyUri = snapshot.spotifyUri?.takeIf(String::isNotBlank),
+                        youtubeId = snapshot.youtubeId?.takeIf(String::isNotBlank),
                         albumArtUrl = snapshot.albumArtUrl,
                         canonicalTitle = ct,
                         canonicalArtist = ca,
                         isDownloaded = false,
                         isrc = snapshot.isrc,
                         explicit = snapshot.explicit,
-                    )
-                )
-                newSnapshots.add(snapshot)
+                    ),
+                    isNew = true,
+                ).also {
+                    newTracks.add(it)
+                    registerBatchTrack(it)
+                }
+            }
+
+            if (batchTrack.isNew) {
+                val snapshotYtId = snapshot.youtubeId?.takeIf(String::isNotBlank)
+                val youtubeOwner = snapshotYtId?.let(byYoutubeId::get)
+                if (!snapshotYtId.isNullOrBlank() &&
+                    batchTrack.entity.youtubeId.isNullOrBlank() &&
+                    (youtubeOwner == null || youtubeOwner === batchTrack)
+                ) {
+                    batchTrack.entity = batchTrack.entity.copy(youtubeId = snapshotYtId)
+                    byYoutubeId[snapshotYtId] = batchTrack
+                }
+
+                val snapshotArt = snapshot.albumArtUrl
+                if (!snapshotArt.isNullOrBlank() && snapshotArt != batchTrack.entity.albumArtUrl) {
+                    batchTrack.entity = batchTrack.entity.copy(albumArtUrl = snapshotArt)
+                }
+                newOccurrences.add(batchTrack to snapshot)
+            } else {
+                enrichExistingBatchTrack(batchTrack, snapshot)
+                existingPairs.add(batchTrack to snapshot)
             }
         }
 
         // ── Bulk insert new tracks ───────────────────────────────────────
         // Room's insertAll returns generated row ids in the same order as
         // the input list.
-        val newTrackIds = if (newEntities.isNotEmpty()) trackDao.insertAll(newEntities) else emptyList()
+        val newTrackIds = if (newTracks.isNotEmpty()) {
+            trackDao.insertAll(newTracks.map { it.entity })
+        } else {
+            emptyList()
+        }
+        check(newTrackIds.size == newTracks.size) {
+            "Expected ${newTracks.size} generated track ids, got ${newTrackIds.size}"
+        }
+        newTracks.zip(newTrackIds).forEach { (track, trackId) ->
+            track.persistedId = trackId
+        }
 
-        val crossRefsToInsert = mutableListOf<PlaylistTrackCrossRef>()
+        val crossRefsToInsert = linkedMapOf<Long, PlaylistTrackCrossRef>()
         val downloadEntries = mutableListOf<DownloadQueueEntity>()
-        var newTrackCount = 0
 
-        newTrackIds.forEachIndexed { index, trackId ->
-            val snapshot = newSnapshots[index]
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
-            if (!streamingMode) {
+        for ((batchTrack, snapshot) in newOccurrences) {
+            val trackId = checkNotNull(batchTrack.persistedId)
+            addCrossRefIfNotSoftDeleted(
+                localPlaylist.id,
+                trackId,
+                snapshot.position,
+                existingCrossRefs,
+                crossRefsToInsert,
+            )
+        }
+
+        if (!streamingMode) {
+            for (batchTrack in newTracks) {
+                val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
                     DownloadQueueEntity(
                         trackId = trackId,
                         syncId = syncId,
-                        searchQuery = "${snapshot.artist} - ${snapshot.title}",
-                        youtubeUrl = snapshot.youtubeId?.let { "https://music.youtube.com/watch?v=$it" },
+                        searchQuery = "${batchTrack.entity.artist} - ${batchTrack.entity.title}",
+                        youtubeUrl = batchTrack.entity.youtubeId?.let {
+                            "https://music.youtube.com/watch?v=$it"
+                        },
                     )
                 )
             }
-            newTrackCount++
         }
+        val newTrackCount = newTracks.size
 
         // ── Existing-track path: membership + enrichment ─────────────────
         // Enrichment writes (youtubeId backfill, art refresh, auto-
         // reconciliation) stay per-row — they're targeted single-column
         // UPDATEs, not the insert flood that caused the slowdown.
-        for ((existingTrack, snapshot) in existingPairs) {
+        for ((batchTrack, snapshot) in existingPairs) {
+            val existingTrack = batchTrack.entity
             addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
-
-            val snapshotYtId = snapshot.youtubeId
-            if (!snapshotYtId.isNullOrBlank() && existingTrack.youtubeId.isNullOrBlank()) {
-                // Guarded: a DIFFERENT track can already own this youtube_id
-                // (UNIQUE column) — e.g. one snapshot matching separate rows
-                // by spotifyUri and youtubeId. The unguarded UPDATE threw
-                // SQLiteConstraintException and failed the entire diff.
-                val applied = trackDao.updateYoutubeIdIfUnclaimed(existingTrack.id, snapshotYtId)
-                if (applied == 1) {
-                    val ytUrl = "https://music.youtube.com/watch?v=$snapshotYtId"
-                    downloadQueueDao.fillMissingYoutubeUrlForTrack(existingTrack.id, ytUrl)
-                }
-            }
-
-            val snapshotArt = snapshot.albumArtUrl
-            if (!snapshotArt.isNullOrBlank() && snapshotArt != existingTrack.albumArtUrl) {
-                trackDao.updateAlbumArtUrl(existingTrack.id, snapshotArt)
-            }
-
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = trackDao.findDownloadedByCanonical(
                     canonicalTitle = existingTrack.canonicalTitle.lowercase(),
@@ -489,7 +573,7 @@ class DiffWorker @AssistedInject constructor(
 
         // ── Flush batched writes ─────────────────────────────────────────
         if (crossRefsToInsert.isNotEmpty()) {
-            playlistDao.insertAllCrossRefs(crossRefsToInsert)
+            playlistDao.insertAllCrossRefs(crossRefsToInsert.values.toList())
         }
         if (downloadEntries.isNotEmpty()) {
             downloadQueueDao.insertAll(downloadEntries)
@@ -521,20 +605,19 @@ class DiffWorker @AssistedInject constructor(
         trackId: Long,
         position: Int,
         existingByTrackId: Map<Long, PlaylistTrackCrossRef>,
-        out: MutableList<PlaylistTrackCrossRef>,
+        out: MutableMap<Long, PlaylistTrackCrossRef>,
     ) {
-        val prior = existingByTrackId[trackId]
-        if (prior != null && prior.removedAt != null) {
+        val storedPrior = existingByTrackId[trackId]
+        if (storedPrior != null && storedPrior.removedAt != null) {
             Log.d(TAG, "Skipping re-link for soft-deleted track $trackId in playlist $playlistId (user removed it)")
             return
         }
-        out.add(
-            PlaylistTrackCrossRef(
-                playlistId = playlistId,
-                trackId = trackId,
-                position = position,
-                addedAt = prior?.addedAt ?: java.time.Instant.now(),
-            )
+        val batchPrior = out[trackId]
+        out[trackId] = PlaylistTrackCrossRef(
+            playlistId = playlistId,
+            trackId = trackId,
+            position = position,
+            addedAt = batchPrior?.addedAt ?: storedPrior?.addedAt ?: java.time.Instant.now(),
         )
     }
 
