@@ -316,6 +316,122 @@ class DiffWorkerTest {
     }
 
     @Test
+    fun `distinct YouTube IDs with the same canonical metadata stay separate`() = runBlocking {
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Strong IDs",
+                source = MusicSource.YOUTUBE,
+                sourceId = "youtube:playlist:strong-ids",
+                type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val playlistSnapshot = RemotePlaylistSnapshotEntity(
+            id = 6L,
+            syncId = 1L,
+            source = MusicSource.YOUTUBE,
+            sourcePlaylistId = "youtube:playlist:strong-ids",
+            playlistName = "Strong IDs",
+            playlistType = PlaylistType.CUSTOM,
+        )
+        val snapshots = listOf(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L,
+                snapshotPlaylistId = 6L,
+                title = "Same Song",
+                artist = "Artist",
+                youtubeId = "video-one",
+                position = 0,
+            ),
+            RemoteTrackSnapshotEntity(
+                syncId = 1L,
+                snapshotPlaylistId = 6L,
+                title = "Same Song",
+                artist = "Artist",
+                youtubeId = "video-two",
+                position = 1,
+            ),
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(playlistSnapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(6L) } returns snapshots
+        coEvery { streamingPreference.current() } returns true
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(2, db.trackDao().getAllForIntegrityScan().size)
+        assertEquals(
+            setOf("video-one", "video-two"),
+            db.trackDao().getAllForIntegrityScan().mapNotNull { it.youtubeId }.toSet(),
+        )
+        val playlist = requireNotNull(db.playlistDao().findBySourceId("youtube:playlist:strong-ids"))
+        assertEquals(2, db.playlistDao().getCrossRefsForPlaylist(playlist.id).size)
+    }
+
+    @Test
+    fun `existing canonical match reserves its first YouTube identity`() = runBlocking {
+        val existingId = db.trackDao().insert(
+            TrackEntity(
+                title = "Same Song",
+                artist = "Artist",
+                canonicalTitle = "same song",
+                canonicalArtist = "artist",
+                source = MusicSource.SPOTIFY,
+                spotifyUri = "spotify:track:existing",
+            )
+        )
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Identity Backfill",
+                source = MusicSource.YOUTUBE,
+                sourceId = "youtube:playlist:identity-backfill",
+                type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+        val playlistSnapshot = RemotePlaylistSnapshotEntity(
+            id = 7L,
+            syncId = 1L,
+            source = MusicSource.YOUTUBE,
+            sourcePlaylistId = "youtube:playlist:identity-backfill",
+            playlistName = "Identity Backfill",
+            playlistType = PlaylistType.CUSTOM,
+        )
+        val snapshots = listOf(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L,
+                snapshotPlaylistId = 7L,
+                title = "Same Song",
+                artist = "Artist",
+                youtubeId = "video-one",
+                position = 0,
+            ),
+            RemoteTrackSnapshotEntity(
+                syncId = 1L,
+                snapshotPlaylistId = 7L,
+                title = "Same Song",
+                artist = "Artist",
+                youtubeId = "video-two",
+                position = 1,
+            ),
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(playlistSnapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(7L) } returns snapshots
+        coEvery { streamingPreference.current() } returns true
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals("video-one", db.trackDao().getById(existingId)?.youtubeId)
+        assertEquals(
+            setOf("video-one", "video-two"),
+            db.trackDao().getAllForIntegrityScan().mapNotNull { it.youtubeId }.toSet(),
+        )
+        val playlist = requireNotNull(db.playlistDao().findBySourceId("youtube:playlist:identity-backfill"))
+        assertEquals(2, db.playlistDao().getCrossRefsForPlaylist(playlist.id).size)
+    }
+
+    @Test
     fun `canonical-only duplicates create one offline track and queue entry`() = runBlocking {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         val playlistId = db.playlistDao().insert(
