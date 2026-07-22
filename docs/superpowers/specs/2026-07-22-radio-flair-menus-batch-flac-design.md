@@ -47,7 +47,7 @@ The generator (`RadioStationGenerator`) is untouched. `NowPlayingViewModel.start
 
 ### Files
 
-`feature/nowplaying/.../NowPlayingScreen.kt` (TopBar slot + new `RadarSweep` composable, or a small new file in the same package), `NowPlayingViewModel.kt`, `core/media/.../PlayerRepository.kt` + `PlayerRepositoryImpl.kt` (sealed result), `core/model` if `RadioStartResult` lands there instead of `core/media`.
+`feature/nowplaying/.../NowPlayingScreen.kt` (TopBar slot + new `RadarSweep` composable, or a small new file in the same package), `NowPlayingViewModel.kt`, `core/media/.../PlayerRepository.kt` + `PlayerRepositoryImpl.kt` (sealed result). `RadioStartResult` lives in `core/model` — it carries no Media3 types, matching the `UpgradeResult` precedent.
 
 ### Testing
 
@@ -65,7 +65,7 @@ The generator (`RadioStationGenerator`) is untouched. `NowPlayingViewModel.start
 
 ### Library Songs tab
 
-`LibraryScreen.kt` TracksTab: the hand-rolled `ModalBottomSheet` (`:1163-1245`) and `BottomSheetActionRow` (`:1313`) are deleted; `selectedTrack` drives the shared `TrackOptionsSheet` instead. Action mapping: Play Next → `viewModel.playNext`, Add to Queue → `viewModel.addToQueue`, Save to Playlist → existing `SaveToPlaylistSheet` flow (single-track variant of the existing batch sheet), Download/Remove → the same single-track download toggle the detail screens use, Share → `trackToShare = track`, Delete → existing `trackToDelete` confirm dialog (keeps the "also block" toggle).
+`LibraryScreen.kt` TracksTab: the hand-rolled `ModalBottomSheet` (`:1163-1245`) and `BottomSheetActionRow` (`:1313`) are deleted; `selectedTrack` drives the shared `TrackOptionsSheet` instead. Action mapping: Play Next → `viewModel.playNext`, Add to Queue → `viewModel.addToQueue`, Save to Playlist → existing `SaveToPlaylistSheet` (already track-count-agnostic — the caller wires the one selected track, as the detail screens do), Download/Remove → the same single-track download toggle the detail screens use, Share → `trackToShare = track`, Delete → existing `trackToDelete` confirm dialog (keeps the "also block" toggle).
 
 ### Liked tab
 
@@ -97,12 +97,12 @@ New Room entity `FlacUpgradeQueueEntity` (`flac_upgrade_queue`): `trackId` (PK, 
 
 ### Worker
 
-`FlacUpgradeWorker` (`data/download`, modeled on `LosslessRetryWorker`):
+`FlacUpgradeWorker` (`data/download`). The drain-rows loop is modeled on `LosslessRetryWorker`; the foreground/notification/cancel machinery is modeled on `TrackDownloadWorker` + `SyncNotificationManager` in `core/data/sync` (`LosslessRetryWorker` is a plain one-shot worker with none of that plumbing — don't under-scope from it):
 
 - Foreground `CoroutineWorker`; notification "Upgrading to FLAC · done+skipped/total" with cancel action; cancel clears remaining PENDING rows.
 - Network constraint: `UNMETERED` when `SyncPreferencesManager.wifiOnly` (default true) else `CONNECTED`.
 - Loop: drain PENDING rows one at a time → `losslessUpgrader.upgradeToLossless(track)` (existing forced-resolve → download → tag → swap → delete-old pipeline; `AggregatorRateLimiter` and the qbdlx/amz token-pool and captcha-herd protections throttle automatically). Map `UpgradeResult.Upgraded/NoMatch/Error` → `DONE/NO_MATCH/FAILED`. `CancellationException` re-thrown before generic catch (worker-catch rule).
-- Completion: summary notification "N upgraded · M no FLAC found · K failed"; same text as a snackbar if the app is foreground. NO_MATCH/FAILED rows are kept until the next batch replaces them (post-mortem visibility) but nothing re-runs automatically.
+- Completion: summary notification "N upgraded · M no FLAC found · K failed"; same text as a snackbar if the app is foreground. NO_MATCH/FAILED rows linger only because cleanup is deferred to the next batch's clear-and-insert — nothing reads them and nothing re-runs automatically (no review UI; deliberate).
 
 ### Testing
 
@@ -115,4 +115,4 @@ New Room entity `FlacUpgradeQueueEntity` (`flac_upgrade_queue`): `trackId` (PK, 
 
 ## Rollout
 
-Single release. Suggested implementation order: §2 (smallest, immediately user-visible), §1, §3. Each section is independently shippable; nothing here migrates data except the additive `flac_upgrade_queue` table (Room schema version bump + additive migration).
+Single release. Implementation order: §2 (smallest, immediately user-visible), §1, §3 — the order matters in one place: §3's "Upgrade to FLAC" selection action on the Liked tab depends on §2 wiring Liked-tab selection first. Each section is otherwise independently shippable; nothing here migrates data except the additive `flac_upgrade_queue` table (Room schema version bump + additive migration).
