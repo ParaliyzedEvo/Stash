@@ -1401,6 +1401,7 @@ interface TrackDao {
         """
         UPDATE tracks SET youtube_id = :youtubeId
         WHERE id = :trackId
+          AND (youtube_id IS NULL OR TRIM(youtube_id) = '')
           AND NOT EXISTS (
               SELECT 1 FROM tracks WHERE youtube_id = :youtubeId AND id != :trackId
           )

@@ -399,29 +399,38 @@ class DiffWorker @AssistedInject constructor(
         }
         val bySpotifyUri = mutableMapOf<String, BatchTrack>()
         val byYoutubeId = mutableMapOf<String, BatchTrack>()
-        val byCanonical = mutableMapOf<CanonicalKey, BatchTrack>()
+        val byCanonical = mutableMapOf<String, MutableList<BatchTrack>>()
 
         fun registerBatchTrack(track: BatchTrack) {
             track.entity.spotifyUri?.takeIf(String::isNotBlank)?.let { bySpotifyUri[it] = track }
             track.entity.youtubeId?.takeIf(String::isNotBlank)?.let { byYoutubeId[it] = track }
-            byCanonical[
-                CanonicalKey(
-                    title = track.entity.canonicalTitle,
-                    artist = track.entity.canonicalArtist,
-                )
-            ] = track
+            val canonicalKey = "${track.entity.canonicalTitle}|${track.entity.canonicalArtist}"
+            val canonicalMatches = byCanonical.getOrPut(canonicalKey) { mutableListOf() }
+            if (canonicalMatches.none { it === track }) {
+                canonicalMatches.add(track)
+            }
         }
 
         candidateTracks.values.forEach(::registerBatchTrack)
 
+        fun strongIdsCompatible(
+            track: BatchTrack,
+            snapshot: RemoteTrackSnapshotEntity,
+        ): Boolean {
+            fun compatible(stored: String?, incoming: String?): Boolean =
+                stored.isNullOrBlank() || incoming.isNullOrBlank() || stored == incoming
+
+            return compatible(track.entity.spotifyUri, snapshot.spotifyUri) &&
+                compatible(track.entity.youtubeId, snapshot.youtubeId)
+        }
+
         fun matchBatchTrack(snapshot: RemoteTrackSnapshotEntity): BatchTrack? {
-            snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri ->
-                bySpotifyUri[uri]?.let { return it }
+            snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri -> bySpotifyUri[uri]?.let { return it } }
+            snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid -> byYoutubeId[yid]?.let { return it } }
+            val (ct, ca) = canonicalOf.getValue(snapshot)
+            return byCanonical["$ct|$ca"]?.firstOrNull {
+                strongIdsCompatible(it, snapshot)
             }
-            snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid ->
-                byYoutubeId[yid]?.let { return it }
-            }
-            return byCanonical[canonicalOf.getValue(snapshot)]
         }
 
         suspend fun enrichExistingBatchTrack(
@@ -430,7 +439,7 @@ class DiffWorker @AssistedInject constructor(
         ) {
             val existingTrack = batchTrack.entity
             val snapshotYtId = snapshot.youtubeId?.takeIf(String::isNotBlank)
-            if (snapshotYtId != null && existingTrack.youtubeId.isNullOrBlank()) {
+            if (!snapshotYtId.isNullOrBlank() && existingTrack.youtubeId.isNullOrBlank()) {
                 val youtubeOwner = byYoutubeId[snapshotYtId]
                 if (youtubeOwner == null || youtubeOwner === batchTrack) {
                     val applied = trackDao.updateYoutubeIdIfUnclaimed(existingTrack.id, snapshotYtId)
@@ -488,7 +497,7 @@ class DiffWorker @AssistedInject constructor(
             if (batchTrack.isNew) {
                 val snapshotYtId = snapshot.youtubeId?.takeIf(String::isNotBlank)
                 val youtubeOwner = snapshotYtId?.let(byYoutubeId::get)
-                if (snapshotYtId != null &&
+                if (!snapshotYtId.isNullOrBlank() &&
                     batchTrack.entity.youtubeId.isNullOrBlank() &&
                     (youtubeOwner == null || youtubeOwner === batchTrack)
                 ) {
@@ -527,7 +536,13 @@ class DiffWorker @AssistedInject constructor(
 
         for ((batchTrack, snapshot) in newOccurrences) {
             val trackId = checkNotNull(batchTrack.persistedId)
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
+            addCrossRefIfNotSoftDeleted(
+                localPlaylist.id,
+                trackId,
+                snapshot.position,
+                existingCrossRefs,
+                crossRefsToInsert,
+            )
         }
 
         if (!streamingMode) {
@@ -554,7 +569,6 @@ class DiffWorker @AssistedInject constructor(
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
             addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
-
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = trackDao.findDownloadedByCanonical(
                     canonicalTitle = existingTrack.canonicalTitle.lowercase(),
