@@ -63,7 +63,7 @@ fun TrackOptionsSheet(
 
 Update the KDoc `@param` block with: `@param onShare Opens the share-links sheet. Pass null to hide the row.`
 
-Insert the row between the Download/Remove block and the `Spacer(4.dp)` that precedes Delete:
+Insert the row between the Download/Remove block and the `Spacer(4.dp)` that precedes Delete (the parameter sits after `onDelete` in the signature; the ROW renders between Download and Delete):
 
 ```kotlin
         // -- Share option --
@@ -76,16 +76,37 @@ Insert the row between the Download/Remove block and the `Spacer(4.dp)` that pre
         }
 ```
 
-- [ ] **Step 3: Compile**
+- [ ] **Step 3: Wire Share into the four detail screens (spec §2: "six call sites total — one menu everywhere")**
 
-Run: `./gradlew :core:ui:compileDebugKotlin`
-Expected: BUILD SUCCESSFUL (default `= null` keeps all four existing detail-screen call sites source-compatible).
+In each of `feature/library/.../AlbumDetailScreen.kt`, `ArtistDetailScreen.kt`, `PlaylistDetailScreen.kt`, `LikedSongsDetailScreen.kt`:
 
-- [ ] **Step 4: Commit**
+1. Add state next to the screen's existing `selectedTrack`: `var trackToShare by remember { mutableStateOf<Track?>(null) }`
+2. Add to the screen (sibling of the TrackOptionsSheet block):
+
+```kotlin
+    trackToShare?.let { t ->
+        com.stash.core.ui.components.ShareTrackSheet(
+            title = t.title,
+            artist = t.artist,
+            spotifyUri = t.spotifyUri,
+            youtubeId = t.youtubeId,
+            onDismiss = { trackToShare = null },
+        )
+    }
+```
+
+3. Add to the screen's `TrackOptionsSheet(...)` call: `onShare = { trackToShare = it; selectedTrack = null },`
+
+- [ ] **Step 4: Compile**
+
+Run: `./gradlew :core:ui:compileDebugKotlin :feature:library:compileDebugKotlin`
+Expected: BUILD SUCCESSFUL.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add core/ui/src/main/kotlin/com/stash/core/ui/components/TrackOptionsSheet.kt
-git commit -m "feat(ui): optional Share row in the shared TrackOptionsSheet"
+git add core/ui/src/main/kotlin/com/stash/core/ui/components/TrackOptionsSheet.kt feature/library/src/main/kotlin/com/stash/feature/library/AlbumDetailScreen.kt feature/library/src/main/kotlin/com/stash/feature/library/ArtistDetailScreen.kt feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt feature/library/src/main/kotlin/com/stash/feature/library/LikedSongsDetailScreen.kt
+git commit -m "feat(ui): Share row in the shared TrackOptionsSheet, wired on all detail screens"
 ```
 
 ### Task 2: Library Songs tab adopts the shared sheet
@@ -311,7 +332,12 @@ Expected: `Installed on 1 device.`
 - Create: `core/model/src/main/kotlin/com/stash/core/model/RadioStartResult.kt`
 - Modify: `core/media/src/main/kotlin/com/stash/core/media/PlayerRepository.kt` (~lines 168-181)
 - Modify: `core/media/src/main/kotlin/com/stash/core/media/PlayerRepositoryImpl.kt` (~lines 686-745)
-- Modify: every other `startRadio(` caller — run `grep -rn "startRadio(" --include='*.kt' core/ data/ feature/ app/` and update each. Known: `core/media/.../actions/TrackActionsDelegate.kt` (~line 403) and `NowPlayingViewModel` (Task 6). Delegate mapping: where it previously checked `if (!started)`, use `if (result !is RadioStartResult.Started)` and keep its existing message behavior.
+- Modify: every other `startRadio(` caller — run `grep -rn "startRadio(" --include='*.kt' core/ data/ feature/ app/` and update each. Known production callers: `core/media/.../actions/TrackActionsDelegate.kt` (~line 403), `feature/search/.../ArtistProfileViewModel.kt` (~line 250), and `NowPlayingViewModel` (Task 6). Boolean-style mapping: where a caller checked `if (!started)`, use `if (result !is RadioStartResult.Started)` and keep its existing message copy.
+- Modify: **four existing TEST files that stub/assert the Boolean — they are compile blockers for their modules' test source sets** (grep will find them; listed so nothing is missed):
+  - `core/media/src/test/.../PlayerRepositoryRadioTest.kt` — asserts `.isTrue()`/`.isFalse()` (~lines 71, 85, 103, 146). REWORK per spec §1's test requirement: assert the distinct result values (`isEqualTo(RadioStartResult.Started)`, `.StreamingOff` for the streaming-off guard, `.PlayerNotReady` for the null controller, `.NoStation` for the empty batch).
+  - `core/media/src/test/.../listening/ListeningRecorderSkipTest.kt` (~line 84) — fake `override suspend fun startRadio(...) = false` → `= RadioStartResult.StreamingOff` (any non-Started value; add the import).
+  - `core/media/src/test/.../actions/TrackActionsDelegateQueueActionsTest.kt` (~lines 99, 114) — MockK `returns true`/`returns false` → `returns RadioStartResult.Started` / `returns RadioStartResult.NoStation`.
+  - `feature/search/src/test/.../ArtistProfileViewModelTest.kt` (~line 217) — Mockito `doReturn true` → `doReturn RadioStartResult.Started`.
 
 - [ ] **Step 1: Create the sealed type**
 
@@ -374,15 +400,16 @@ and the final `return true` becomes `return RadioStartResult.Started`. Add the i
 
 - [ ] **Step 4: Fix every other caller** (grep from the Files note). For boolean-style callers the mechanical mapping is `val started = playerRepository.startRadio(...) is RadioStartResult.Started` — keep their existing user-facing copy; ONLY NowPlaying (Task 6) gets the per-cause messages.
 
-- [ ] **Step 5: Compile everything that links these modules**
+- [ ] **Step 5: Compile main AND test sources of every module that touches startRadio, then run the reworked tests**
 
 Run: `./gradlew :core:media:compileDebugKotlin :feature:nowplaying:compileDebugKotlin :feature:search:compileDebugKotlin :app:compileDebugKotlin`
-Expected: BUILD SUCCESSFUL after all callers are updated (NowPlaying's VM still compiles against the old usage — fix it minimally here by using the Task-4-style boolean mapping; Task 6 replaces it properly).
+Then: `./gradlew :core:media:testDebugUnitTest --tests '*PlayerRepositoryRadioTest*' --tests '*ListeningRecorderSkipTest*' --tests '*TrackActionsDelegateQueueActionsTest*' :feature:search:testDebugUnitTest --tests '*ArtistProfileViewModelTest*'`
+Expected: BUILD SUCCESSFUL, all filtered tests pass. (NowPlaying's VM still compiles against the old usage — fix it minimally here with the boolean-style mapping; Task 6 replaces it properly. Run :core:media tests LOCALLY only — the module's test task is CI-flaky, not locally.)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add core/model/src/main/kotlin/com/stash/core/model/RadioStartResult.kt core/media/src/main/kotlin/com/stash/core/media/PlayerRepository.kt core/media/src/main/kotlin/com/stash/core/media/PlayerRepositoryImpl.kt <other caller files>
+git add core/model/src/main/kotlin/com/stash/core/model/RadioStartResult.kt core/media/src/main/kotlin/com/stash/core/media/PlayerRepository.kt core/media/src/main/kotlin/com/stash/core/media/PlayerRepositoryImpl.kt core/media/src/main/kotlin/com/stash/core/media/actions/TrackActionsDelegate.kt feature/search/src/main/kotlin/com/stash/feature/search/ArtistProfileViewModel.kt core/media/src/test/kotlin/com/stash/core/media/PlayerRepositoryRadioTest.kt core/media/src/test/kotlin/com/stash/core/media/listening/ListeningRecorderSkipTest.kt core/media/src/test/kotlin/com/stash/core/media/actions/TrackActionsDelegateQueueActionsTest.kt feature/search/src/test/kotlin/com/stash/feature/search/ArtistProfileViewModelTest.kt <plus any other files the grep surfaced>
 git commit -m "feat(media): startRadio returns RadioStartResult instead of a cause-collapsing Boolean"
 ```
 
@@ -436,8 +463,10 @@ Run: `./gradlew :feature:nowplaying:testDebugUnitTest --tests '*NowPlayingViewMo
     fun startRadioFromCurrent() {
         val track = _uiState.value.currentTrack ?: return
         if (_radioTuning.value) return // ignore taps while tuning
+        // Set SYNCHRONOUSLY (not inside launch) so a double-tap in the same
+        // frame can't pass the guard twice before the coroutine dispatches.
+        _radioTuning.value = true
         viewModelScope.launch {
-            _radioTuning.value = true
             try {
                 val result = playerRepository.startRadio(
                     com.stash.core.data.radio.RadioSeed.Song(
@@ -915,7 +944,10 @@ class FlacUpgradeWorker @AssistedInject constructor(
         var failed = 0
         try {
             pending.forEachIndexed { index, trackId ->
-                val track = trackDao.getById(trackId)
+                // getById returns the ROOM ENTITY; the upgrader takes the
+                // domain model — map via TrackMapper's TrackEntity.toDomain()
+                // (same module: com.stash.core.data.mapper — add the import).
+                val track = trackDao.getById(trackId)?.toDomain()
                 if (track == null) {
                     queueDao.setStatus(trackId, FlacUpgradeStatus.FAILED)
                     failed++
@@ -982,7 +1014,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
 }
 ```
 
-Add to `SyncNotificationManager`: `const val NOTIFICATION_ID_FLAC_UPGRADE = 9005` and:
+Add to `SyncNotificationManager`: `const val NOTIFICATION_ID_FLAC_UPGRADE = 9005`, `const val NOTIFICATION_ID_FLAC_SUMMARY = 9006` (dedicated id — a FLAC summary must not clobber a sync summary), and:
 
 ```kotlin
     /** Summary for a finished batch FLAC upgrade (spec 2026-07-22 §3). */
@@ -999,7 +1031,7 @@ Add to `SyncNotificationManager`: `const val NOTIFICATION_ID_FLAC_UPGRADE = 9005
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(NOTIFICATION_ID_SUMMARY, notification)
+        notificationManager.notify(NOTIFICATION_ID_FLAC_SUMMARY, notification)
     }
 ```
 
@@ -1195,8 +1227,8 @@ Dialog (place near the batch-delete dialog; free-space via `StatFs` on the app's
 
 - [ ] **Step 1: Full filtered test sweep**
 
-Run: `./gradlew :core:data:testDebugUnitTest --tests '*FlacUpgrade*' --tests 'com.stash.core.data.sync.workers.DiffWorkerTest' --tests '*TrackDaoFindExistingForBatchTest*' :feature:library:testDebugUnitTest --tests 'com.stash.feature.library.*' :feature:nowplaying:testDebugUnitTest --tests '*NowPlayingViewModelRadioTest*'`
-Expected: all pass.
+Run: `./gradlew :core:data:testDebugUnitTest --tests '*FlacUpgrade*' --tests 'com.stash.core.data.sync.workers.DiffWorkerTest' --tests '*TrackDaoFindExistingForBatchTest*' :feature:library:testDebugUnitTest --tests 'com.stash.feature.library.*' :feature:nowplaying:testDebugUnitTest --tests '*NowPlayingViewModel*' :core:media:testDebugUnitTest --tests '*PlayerRepositoryRadioTest*' --tests '*ListeningRecorderSkipTest*' --tests '*TrackActionsDelegateQueueActionsTest*' :feature:search:testDebugUnitTest --tests '*ArtistProfileViewModelTest*'`
+Expected: all pass (the :core:media filters cover the Boolean→RadioStartResult rework from Task 5).
 
 - [ ] **Step 2: Install** — `./gradlew :app:installDebug` → `Installed on 1 device.`
 
