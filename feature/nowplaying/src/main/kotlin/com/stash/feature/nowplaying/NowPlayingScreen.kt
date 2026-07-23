@@ -22,13 +22,11 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -37,19 +35,12 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Close
-import com.stash.core.media.SleepTimerController
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,7 +72,6 @@ import coil3.toBitmap
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.SaveToPlaylistSheet
-import com.stash.core.ui.components.SheetOptionRow
 import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
@@ -130,7 +120,6 @@ private fun npAccent(raw: Color): Color =
 fun NowPlayingScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
-    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -142,12 +131,6 @@ fun NowPlayingScreen(
     val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
-    var showOptionsSheet by remember { mutableStateOf(false) }
-    var showSleepTimerSheet by remember { mutableStateOf(false) }
-    var showCustomTimerDialog by remember { mutableStateOf(false) }
-    val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
-    val sleepTimerSheetState = rememberModalBottomSheetState()
-    val optionsSheetState = rememberModalBottomSheetState()
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
@@ -175,12 +158,6 @@ fun NowPlayingScreen(
     LaunchedEffect(Unit) {
         viewModel.artistNavEvents.collect { t ->
             onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.albumNavEvents.collect { a ->
-            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
         }
     }
 
@@ -252,42 +229,6 @@ fun NowPlayingScreen(
                 viewModel.createPlaylistAndAddTrack(name, track.id)
             },
             onDismiss = { showSaveSheet = false },
-        )
-    }
-
-    // Sleep timer bottom sheet — opened by the icon next to the track title.
-    if (showSleepTimerSheet) {
-        SleepTimerSheet(
-            currentState = sleepTimerState,
-            onSelectMinutes = { minutes ->
-                viewModel.onSleepTimerMinutes(minutes)
-                showSleepTimerSheet = false
-            },
-            onSelectEndOfTrack = {
-                viewModel.onSleepTimerEndOfTrack()
-                showSleepTimerSheet = false
-            },
-            onSelectCustom = {
-                showSleepTimerSheet = false
-                showCustomTimerDialog = true
-            },
-            onCancel = {
-                viewModel.onSleepTimerCancel()
-                showSleepTimerSheet = false
-            },
-            onDismiss = { showSleepTimerSheet = false },
-            sheetState = sleepTimerSheetState,
-        )
-    }
-
-    // Custom sleep-timer minutes dialog — opened from the sheet's "Custom" row.
-    if (showCustomTimerDialog) {
-        CustomSleepTimerDialog(
-            onConfirm = { minutes ->
-                viewModel.onSleepTimerMinutes(minutes)
-                showCustomTimerDialog = false
-            },
-            onDismiss = { showCustomTimerDialog = false },
         )
     }
 
@@ -402,11 +343,16 @@ fun NowPlayingScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // -- Top bar: dismiss, radio, more (options sheet) --
+                // -- Top bar: dismiss, radio, flag, download, save, queue --
                 TopBar(
                     onDismiss = onDismiss,
-                    onMoreClick = { showOptionsSheet = true },
+                    onFlagWrongMatch = { showWrongMatchDialog = true },
+                    onSaveClick = { showSaveSheet = true },
+                    onQueueClick = { showQueue = true },
                     hasTrack = uiState.hasTrack,
+                    queueSize = uiState.queueSize,
+                    onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
+                    isDownloaded = uiState.currentTrack?.isDownloaded == true,
                     isDownloading = isDownloadingCurrent,
                     // Radio toggle: start a station seeded from this song, or stop
                     // the active one. Lives in the TopBar icon row (no vertical
@@ -519,31 +465,25 @@ fun NowPlayingScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                    // Sleep timer — floated to the leading edge, mirroring the
-                    // Like heart's placement on the trailing edge. Accented
-                    // while a timer is armed so the state is visible at a
-                    // glance without opening the sheet.
+                    // Share — on the track itself (leading edge), mirroring the
+                    // heart. Loads the FULL DB row before opening the sheet so
+                    // the Spotify/YouTube link rows actually have identities.
                     if (track != null) {
-                        val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
-                        androidx.compose.material3.IconButton(
-                            onClick = { showSleepTimerSheet = true },
-                            modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .size(26.dp),
+                        IconButton(
+                            onClick = viewModel::onShareCurrent,
+                            modifier = Modifier.align(Alignment.CenterStart),
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Bedtime,
-                                contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                                tint = if (sleepTimerActive) npAccent(uiState.vibrantColor) else npInk().copy(alpha = 0.7f),
-                                modifier = Modifier.size(20.dp),
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share song",
+                                tint = npInk().copy(alpha = 0.7f),
+                                modifier = Modifier.size(22.dp),
                             )
                         }
                     }
-
-                    // Like heart — the sole action left inline, floated to the
-                    // trailing edge and vertically centred against the
-                    // title/artist block. Share/Queue/Save/Download/Flag all
-                    // moved into the "More" options sheet.
+                    // Like heart — relocated from the top icon row to a cleaner
+                    // primary spot, floated to the trailing edge and vertically
+                    // centred against the title/artist block.
                     if (track != null) {
                         com.stash.core.ui.components.LikeButton(
                             isLiked = uiState.currentTrack?.stashLikedAt != null,
@@ -553,7 +493,7 @@ fun NowPlayingScreen(
                             modifier = Modifier.align(Alignment.CenterEnd),
                         )
                     }
-                }   
+                }
 
                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
                 // Sized smaller than the artist/album line; degrades gracefully when
@@ -616,21 +556,6 @@ fun NowPlayingScreen(
             )
         }
     }
-
-    if (showOptionsSheet && track != null) {
-        NowPlayingOptionsSheet(
-            isDownloaded = track.isDownloaded,
-            queueSize = uiState.queueSize,
-            onSaveClick = { showSaveSheet = true },
-            onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
-            onShareClick = viewModel::onShareCurrent,
-            onQueueClick = { showQueue = true },
-            onFlagWrongMatch = { showWrongMatchDialog = true },
-            onViewAlbum = viewModel::onViewAlbumTapped,
-            onDismiss = { showOptionsSheet = false },
-            sheetState = optionsSheetState,
-        )
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -638,18 +563,25 @@ fun NowPlayingScreen(
 // ---------------------------------------------------------------------------
 
 /**
- * Top bar with dismiss button, radio toggle, and a "more" trigger that
- * opens [NowPlayingOptionsSheet] (Save / Download / Share / Queue / Flag).
+ * Top bar with dismiss button, "NOW PLAYING" label, save-to-playlist button,
+ * and queue button.
  *
- * @param onDismiss   Callback when the down-arrow is tapped.
- * @param onMoreClick Callback when the kebab (more actions) icon is tapped.
- * @param hasTrack    Whether a track is currently loaded.
+ * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onSaveClick  Callback when the save/bookmark icon is tapped.
+ * @param onQueueClick Callback when the queue icon is tapped.
+ * @param hasTrack     Whether a track is currently loaded (save button is hidden otherwise).
+ * @param queueSize    Number of tracks in the queue, shown as a badge hint.
  */
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
-    onMoreClick: () -> Unit,
+    onFlagWrongMatch: () -> Unit,
+    onSaveClick: () -> Unit,
+    onQueueClick: () -> Unit,
     hasTrack: Boolean,
+    queueSize: Int,
+    onDownloadTap: () -> Unit,
+    isDownloaded: Boolean,
     isDownloading: Boolean,
     radioActive: Boolean,
     onStartRadio: () -> Unit,
@@ -686,9 +618,26 @@ private fun TopBar(
             }
         }
 
-        // More actions — opens the options sheet (Save, Download, Share,
-        // Queue, Flag). While a download is in flight a spinner replaces
-        // the icon so it isn't a silent background job.
+        // Flag as wrong match — only shown when a track is loaded. Lives
+        // here (not in the Playlist Detail row menu) because Now Playing
+        // is where the user actually realises "this isn't the right song"
+        // — their ears are the ground truth.
+        if (hasTrack) {
+            IconButton(onClick = onFlagWrongMatch) {
+                Icon(
+                    imageVector = Icons.Default.Flag,
+                    contentDescription = "Flag as wrong match",
+                    tint = npInk(),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+
+        // Download / Remove-download toggle — single button that flips
+        // based on the current track's on-disk state. Streaming-mode
+        // users use this to grab the song they're listening to right now
+        // without leaving Now Playing. While a download is in flight a
+        // spinner replaces the icon so it isn't a silent background job.
         if (hasTrack) {
             if (isDownloading) {
                 Box(
@@ -702,15 +651,36 @@ private fun TopBar(
                     )
                 }
             } else {
-                IconButton(onClick = onMoreClick) {
+                IconButton(onClick = onDownloadTap) {
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More actions",
+                        imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                        contentDescription = if (isDownloaded) "Remove download" else "Download",
                         tint = npInk(),
                         modifier = Modifier.size(24.dp),
                     )
                 }
             }
+        }
+
+        // Save to playlist — only shown when a track is loaded.
+        if (hasTrack) {
+            IconButton(onClick = onSaveClick) {
+                Icon(
+                    imageVector = Icons.Default.BookmarkBorder,
+                    contentDescription = "Save to Playlist",
+                    tint = npInk(),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+
+        IconButton(onClick = onQueueClick) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Queue ($queueSize tracks)",
+                tint = npInk(),
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }
@@ -977,236 +947,6 @@ private fun QualityLine(
             modifier = Modifier.fillMaxWidth(),
         )
     }
-}
-
-/**
- * Premium track options bottom sheet, opened via the [TopBar]'s "more"
- * kebab icon. Consolidates Save / Download / Share / Queue / Flag so the
- * TopBar itself only carries Dismiss + Radio (the two actions worth a
- * permanent icon).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NowPlayingOptionsSheet(
-    isDownloaded: Boolean,
-    queueSize: Int,
-    onSaveClick: () -> Unit,
-    onDownloadTap: () -> Unit,
-    onShareClick: () -> Unit,
-    onQueueClick: () -> Unit,
-    onFlagWrongMatch: () -> Unit,
-    onViewAlbum: () -> Unit,
-    onDismiss: () -> Unit,
-    sheetState: androidx.compose.material3.SheetState,
-    modifier: Modifier = Modifier,
-) {
-    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = extendedColors.elevatedSurface,
-        modifier = modifier,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp),
-        ) {
-            Text(
-                text = "Track Options",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .padding(bottom = 20.dp)
-                    .align(Alignment.CenterHorizontally)
-            )
-
-            // View Queue
-            SheetOptionRow(
-                icon = Icons.AutoMirrored.Filled.QueueMusic,
-                label = "Queue ($queueSize)",
-                onClick = {
-                    onQueueClick()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Save to Playlist
-            SheetOptionRow(
-                icon = Icons.Default.BookmarkBorder,
-                label = "Save to Playlist",
-                onClick = {
-                    onSaveClick()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Share song
-            SheetOptionRow(
-                icon = Icons.Default.Share,
-                label = "Share song",
-                onClick = {
-                    onShareClick()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // View Album — resolves and opens the actual remote album page,
-            SheetOptionRow(
-                icon = Icons.Default.Album,
-                label = "View Album",
-                onClick = { onViewAlbum(); onDismiss() }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Download / Remove download
-            SheetOptionRow(
-                icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                label = if (isDownloaded) "Remove download" else "Download",
-                onClick = {
-                    onDownloadTap()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Flag as Wrong Match
-            SheetOptionRow(
-                icon = Icons.Default.Flag,
-                label = "Flag as Wrong Match",
-                onClick = {
-                    onFlagWrongMatch()
-                    onDismiss()
-                }
-            )
-        }
-    }
-}
-
-/**
- * Sleep-timer picker, opened from the icon beside the track title. Shows
- * the current countdown/end-of-track status (if armed), then the preset
- * durations, a Custom entry, End of Track, and — only while a timer is
- * running — a Cancel row.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SleepTimerSheet(
-    currentState: SleepTimerController.State,
-    onSelectMinutes: (Int) -> Unit,
-    onSelectEndOfTrack: () -> Unit,
-    onSelectCustom: () -> Unit,
-    onCancel: () -> Unit,
-    onDismiss: () -> Unit,
-    sheetState: androidx.compose.material3.SheetState,
-) {
-    val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = extendedColors.elevatedSurface,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp),
-        ) {
-            Text(
-                text = "Sleep Timer",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                modifier = Modifier
-                    .padding(bottom = 20.dp)
-                    .align(Alignment.CenterHorizontally),
-            )
-
-            when (currentState) {
-                is SleepTimerController.State.Countdown -> {
-                    val minutesLeft = ((currentState.endsAtMs - System.currentTimeMillis()) / 60_000L)
-                        .coerceAtLeast(0) + 1
-                    Text(
-                        text = "Music pauses in about $minutesLeft min",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                    )
-                }
-                SleepTimerController.State.EndOfTrack -> Text(
-                    text = "Music pauses when the current track ends",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-                SleepTimerController.State.Off -> Unit
-            }
-
-            listOf(15, 30, 45, 60, 120, 180).forEach { minutes ->
-                SheetOptionRow(
-                    icon = Icons.Default.Timer,
-                    label = "$minutes min",
-                    onClick = { onSelectMinutes(minutes) },
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onSelectCustom)
-            Spacer(Modifier.height(8.dp))
-            SheetOptionRow(icon = Icons.Default.Bedtime, label = "End of Track", onClick = onSelectEndOfTrack)
-
-            if (currentState != SleepTimerController.State.Off) {
-                Spacer(Modifier.height(8.dp))
-                SheetOptionRow(
-                    icon = Icons.Default.Close,
-                    label = "Cancel timer",
-                    onClick = onCancel,
-                )
-            }
-        }
-    }
-}
-
-/** Plain numeric-minutes entry, reached via the sheet's "Custom" row. */
-@Composable
-private fun CustomSleepTimerDialog(
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var minutesText by remember { mutableStateOf("") }
-    val parsedMinutes = minutesText.toIntOrNull()
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Custom sleep timer") },
-        text = {
-            androidx.compose.material3.OutlinedTextField(
-                value = minutesText,
-                onValueChange = { if (it.all(Char::isDigit)) minutesText = it },
-                label = { Text("Minutes") },
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                ),
-            )
-        },
-        confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = { parsedMinutes?.let(onConfirm) },
-                enabled = parsedMinutes != null && parsedMinutes > 0,
-            ) {
-                Text("Start")
-            }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
 }
 
 @androidx.compose.ui.tooling.preview.Preview(

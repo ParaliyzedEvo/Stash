@@ -564,10 +564,6 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.updateArtUrl(playlistId, artUrl)
     }
 
-    override suspend fun setPlaylistPinned(playlistId: Long, pinned: Boolean) {
-        playlistDao.setPinned(playlistId, pinned)
-    }
-
     // ── Custom playlist management ──────────────────────────────────────
 
     override suspend fun createPlaylist(name: String): Long {

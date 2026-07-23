@@ -1,11 +1,9 @@
 package com.stash.data.download.lossless.qbdlx
 
 import com.stash.core.data.discovery.HomeDiscoveryRepository
-import com.stash.core.model.discovery.QobuzDiscoveryStatus
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
-import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,8 +23,6 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
     private val client: QbdlxApiClient,
     private val credentialStore: QbdlxCredentialStore,
 ) : HomeDiscoveryRepository {
-    private val _status = kotlinx.coroutines.flow.MutableStateFlow(QobuzDiscoveryStatus.OK)
-    override val status: kotlinx.coroutines.flow.StateFlow<QobuzDiscoveryStatus> = _status.asStateFlow()
 
     private class Entry(val at: Long, val value: List<Any?>)
 
@@ -78,33 +74,13 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
 
     /** One 401 rotation (markDead + next live token). Empty when no live token. */
     private suspend fun <T> withToken(call: suspend (String) -> List<T>): List<T> {
-        val tok = credentialStore.activeToken()
-        if (tok == null) {
-            _status.value = QobuzDiscoveryStatus.NO_TOKEN
-            return emptyList()
-        }
+        val tok = credentialStore.activeToken() ?: return emptyList()
         return try {
-            val result = call(tok)
-            _status.value = QobuzDiscoveryStatus.OK
-            result
+            call(tok)
         } catch (e: QbdlxAuthException) {
             credentialStore.markDead(tok)
-            val next = credentialStore.activeToken()
-            if (next == null) {
-                _status.value = QobuzDiscoveryStatus.NO_TOKEN
-                return emptyList()
-            }
-            try {
-                val result = call(next)
-                _status.value = QobuzDiscoveryStatus.OK
-                result
-            } catch (e2: java.io.IOException) {
-                _status.value = QobuzDiscoveryStatus.NO_INTERNET
-                emptyList()
-            }
-        } catch (e: java.io.IOException) {
-            _status.value = QobuzDiscoveryStatus.NO_INTERNET
-            emptyList()
+            val next = credentialStore.activeToken() ?: return emptyList()
+            call(next)
         }
     }
 

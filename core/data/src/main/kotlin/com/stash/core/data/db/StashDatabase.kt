@@ -79,7 +79,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         LastFmCacheEntity::class,
         SpotifyResolutionEntity::class,
     ],
-    version = 35,
+    version = 34,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -876,17 +876,6 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_33_34 = object : Migration(33, 34) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0")
-            }
-        }
-
-        /**
-         * v34 → v35: add `pinned` to playlists so users can pin favorite
-         * playlists to the top of the Library Playlists grid. NOT NULL
-         * DEFAULT 0 — existing rows stay unpinned.
-         */
-        val MIGRATION_34_35 = object : Migration(34, 35) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE playlists ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

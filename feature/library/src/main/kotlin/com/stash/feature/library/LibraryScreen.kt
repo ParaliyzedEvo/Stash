@@ -44,7 +44,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.RemoveCircleOutline
@@ -53,13 +52,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -126,7 +123,7 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
-    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
+    onNavigateToAlbum: (String, String) -> Unit = { _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -148,20 +145,12 @@ fun LibraryScreen(
     // Batch-flow flags for the Save / Delete surfaces.
     var showBatchSave by remember { mutableStateOf(false) }
     var showBatchDelete by remember { mutableStateOf(false) }
-    var trackToSave by remember { mutableStateOf<Track?>(null) }
 
     // Snackbar for the batch roll-up summaries.
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
-
-    LaunchedEffect(Unit) {
-        viewModel.albumNavEvents.collect { a ->
-            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
-        }
-    }
-    
 
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
@@ -182,13 +171,10 @@ fun LibraryScreen(
             onDeletePlaylist = viewModel::deletePlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
-            onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
             onPlayArtist = onNavigateToArtist,
-            onSaveToPlaylist = { trackToSave = it },
-            onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
             onDeleteArtist = viewModel::deleteArtist,
-            onPlayAlbum = viewModel::playAlbum,
+            onPlayAlbum = onNavigateToAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
@@ -353,9 +339,6 @@ private fun LibraryContent(
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
-    onTogglePlaylistPinned: (Playlist) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
-    onViewAlbum: (Track) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
@@ -527,7 +510,6 @@ private fun LibraryContent(
                         onDeletePlaylist = onDeletePlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
-                        onTogglePlaylistPinned = onTogglePlaylistPinned,
                         header = {},
                     )
                     LibraryTab.TRACKS -> TracksTab(
@@ -537,8 +519,6 @@ private fun LibraryContent(
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
                         onDeleteTrack = onDeleteTrack,
-                        onSaveToPlaylist = onSaveToPlaylist,
-                        onViewAlbum = onViewAlbum,
                         anyServiceConnected = anyServiceConnected,
                         selection = selection,
                         header = libraryHeader,
@@ -818,7 +798,6 @@ private fun PlaylistsGrid(
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
-    onTogglePlaylistPinned: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -918,17 +897,6 @@ private fun PlaylistsGrid(
                             }
                         }
                     }
-                    if (playlist.pinned) {
-                            Icon(
-                                imageVector = Icons.Default.PushPin,
-                                contentDescription = "Pinned",
-                                tint = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .size(16.dp),
-                            )
-                        }
                 } else {
                     // No artwork: keep the original GlassCard look
                     GlassCard(
@@ -996,15 +964,6 @@ private fun PlaylistsGrid(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            BottomSheetActionRow(
-                icon = if (playlist.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
-                label = if (playlist.pinned) "Unpin Playlist" else "Pin Playlist",
-                onClick = {
-                    onTogglePlaylistPinned(playlist)
-                    selectedPlaylist = null
-                },
-            )
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
@@ -1140,8 +1099,6 @@ private fun TracksTab(
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
     onDeleteTrack: (Track, Boolean) -> Unit,
-    onSaveToPlaylist: (Track) -> Unit,
-    onViewAlbum: (Track) -> Unit,
     anyServiceConnected: Boolean,
     selection: SelectionState,
     header: @Composable () -> Unit = {},
@@ -1261,22 +1218,6 @@ private fun TracksTab(
                 label = "Add to Queue",
                 onClick = {
                     onAddToQueue(track)
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.FavoriteBorder,
-                label = "Save to Playlist",
-                onClick = { 
-                    onSaveToPlaylist(track) 
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Album,
-                label = "View Album",
-                onClick = {
-                    onViewAlbum(track)
                     selectedTrack = null
                 },
             )

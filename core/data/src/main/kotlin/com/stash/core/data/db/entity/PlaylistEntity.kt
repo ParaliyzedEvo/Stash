@@ -80,8 +80,4 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "hide_from_home", defaultValue = "0")
     val hideFromHome: Boolean = false,
-
-    /** User-pinned playlists sort first in the Library Playlists grid. */
-    @ColumnInfo(name = "pinned", defaultValue = "0")
-    val pinned: Boolean = false,
 )

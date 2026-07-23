@@ -90,9 +90,8 @@ fun LiveLyricsBar(
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // remember(state, liveEnabled): the 250ms position ticks recompose this
-    // composable every tick; without the cache each tick would re-allocate
-    // a Live() wrapper.
+    // remember(state): the 250ms position ticks recompose this composable
+    // every tick; without the cache each tick would re-allocate a Live() wrapper.
     val mode = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) }
     AnimatedVisibility(
         visible = mode != LiveBarMode.Hidden,

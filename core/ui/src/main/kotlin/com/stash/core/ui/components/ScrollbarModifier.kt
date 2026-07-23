@@ -195,7 +195,7 @@ fun BoxScope.VerticalScrollbar(
     width: Dp = 12.dp,
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
-    hitZoneWidth: Dp = 24.dp,
+    hitZoneWidth: Dp = 44.dp,
 ) {
     val info = remember { ScrollbarTrackInfo() }
     val colors = faderColors()
@@ -271,7 +271,7 @@ fun BoxScope.VerticalScrollbar(
     width: Dp = 12.dp,
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
-    hitZoneWidth: Dp = 24.dp,
+    hitZoneWidth: Dp = 44.dp,
 ) {
     val info = remember { ScrollbarTrackInfo() }
     val colors = faderColors()
