@@ -45,7 +45,7 @@ In `TrackOptionsSheet.kt`, add to the imports:
 import androidx.compose.material.icons.filled.Share
 ```
 
-Change the signature (add `onShare` after `onSaveToPlaylist`, keeping existing param order otherwise):
+Change the signature (add `onShare` after `onDelete` as shown — callers use named arguments, so position is cosmetic):
 
 ```kotlin
 @Composable
@@ -334,7 +334,7 @@ Expected: `Installed on 1 device.`
 - Modify: `core/media/src/main/kotlin/com/stash/core/media/PlayerRepositoryImpl.kt` (~lines 686-745)
 - Modify: every other `startRadio(` caller — run `grep -rn "startRadio(" --include='*.kt' core/ data/ feature/ app/` and update each. Known production callers: `core/media/.../actions/TrackActionsDelegate.kt` (~line 403), `feature/search/.../ArtistProfileViewModel.kt` (~line 250), and `NowPlayingViewModel` (Task 6). Boolean-style mapping: where a caller checked `if (!started)`, use `if (result !is RadioStartResult.Started)` and keep its existing message copy.
 - Modify: **four existing TEST files that stub/assert the Boolean — they are compile blockers for their modules' test source sets** (grep will find them; listed so nothing is missed):
-  - `core/media/src/test/.../PlayerRepositoryRadioTest.kt` — asserts `.isTrue()`/`.isFalse()` (~lines 71, 85, 103, 146). REWORK per spec §1's test requirement: assert the distinct result values (`isEqualTo(RadioStartResult.Started)`, `.StreamingOff` for the streaming-off guard, `.PlayerNotReady` for the null controller, `.NoStation` for the empty batch).
+  - `core/media/src/test/.../PlayerRepositoryRadioTest.kt` — asserts `.isTrue()`/`.isFalse()` (~lines 71, 85, 103, 146). REWORK per spec §1's test requirement: assert the distinct result values (`isEqualTo(RadioStartResult.Started)`, `.StreamingOff` for the streaming-off guard, `.NoStation` for the empty batch). NOTE: no null-controller case exists today — ADD a new test asserting `.PlayerNotReady` (don't just remap the four existing assertions).
   - `core/media/src/test/.../listening/ListeningRecorderSkipTest.kt` (~line 84) — fake `override suspend fun startRadio(...) = false` → `= RadioStartResult.StreamingOff` (any non-Started value; add the import).
   - `core/media/src/test/.../actions/TrackActionsDelegateQueueActionsTest.kt` (~lines 99, 114) — MockK `returns true`/`returns false` → `returns RadioStartResult.Started` / `returns RadioStartResult.NoStation`.
   - `feature/search/src/test/.../ArtistProfileViewModelTest.kt` (~line 217) — Mockito `doReturn true` → `doReturn RadioStartResult.Started`.
