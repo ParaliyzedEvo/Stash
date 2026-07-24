@@ -391,8 +391,8 @@ class TrackActionsDelegate @Inject constructor(
                     _userMessages.tryEmit("Turn on Online mode to queue this track.")
                     return@launch
                 }
-                val added = playerRepository.addNext(item.toDomainTrack())
-                _userMessages.tryEmit(if (added) "Playing next" else "Couldn't add to queue")
+                playerRepository.addNext(item.toDomainTrack())
+                _userMessages.tryEmit("Playing next")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -423,8 +423,8 @@ class TrackActionsDelegate @Inject constructor(
                     _userMessages.tryEmit("Turn on Online mode to queue this track.")
                     return@launch
                 }
-                val added = playerRepository.addToQueue(item.toDomainTrack())
-                _userMessages.tryEmit(if (added) "Added to queue" else "Couldn't add to queue")
+                playerRepository.addToQueue(item.toDomainTrack())
+                _userMessages.tryEmit("Added to queue")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

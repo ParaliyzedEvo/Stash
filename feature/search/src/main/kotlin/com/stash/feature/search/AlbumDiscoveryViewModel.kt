@@ -295,14 +295,14 @@ class AlbumDiscoveryViewModel @Inject constructor(
         viewModelScope.launch {
             val tracks = buildQueueTracks()
             if (tracks.isEmpty()) return@launch
-            val added = playerRepository.addToQueue(tracks)
-            _userMessages.emit(
-                if (added) {
-                    "Added album to queue"
-                } else {
-                    "Couldn't add album to queue"
-                },
-            )
+            try {
+                playerRepository.addToQueue(tracks)
+                _userMessages.emit("Added album to queue")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _userMessages.emit("Couldn't add album to queue")
+            }
         }
     }
 
