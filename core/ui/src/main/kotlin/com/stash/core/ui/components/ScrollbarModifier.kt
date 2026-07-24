@@ -26,10 +26,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputEventHandler
+import androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.node.DelegatingNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import com.stash.core.ui.theme.StashTheme
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -127,10 +134,61 @@ private fun DrawScope.drawFaderCap(
 }
 
 /**
+ * `Modifier.pointerInput` that SHARES hit-testing with occluded siblings.
+ *
+ * A plain pointerInput node is an opaque touch wall for its whole bounds:
+ * Compose dispatches a pointer only to the topmost hit path, so "leaving the
+ * event unconsumed" does NOT let it reach a sibling drawn underneath — the
+ * sibling never receives it at all. The full-height grab strip was therefore
+ * swallowing every tap on the right edge of every scrollbar-equipped list
+ * (dead ⋮ track menus, #288 regression). Overriding
+ * [PointerInputModifierNode.sharePointerInputWithSiblings] restores the
+ * contract the scrubber always assumed: off-thumb touches fall through to
+ * the row below; on-thumb touches are consumed, which the row's clickable
+ * correctly ignores.
+ *
+ * Like `pointerInput(key)`, the handler is reset only when [key] changes —
+ * lambda identity is deliberately ignored so recomposition doesn't cancel
+ * an in-flight scrub.
+ */
+private class SharedPointerInputElement(
+    private val key: Any?,
+    private val block: PointerInputEventHandler,
+) : ModifierNodeElement<SharedPointerInputNode>() {
+    override fun create() = SharedPointerInputNode(key, block)
+    override fun update(node: SharedPointerInputNode) = node.update(key, block)
+    override fun equals(other: Any?) =
+        other is SharedPointerInputElement && other.key == key
+    override fun hashCode() = key?.hashCode() ?: 0
+}
+
+private class SharedPointerInputNode(
+    private var key: Any?,
+    block: PointerInputEventHandler,
+) : DelegatingNode(), PointerInputModifierNode {
+    private val inner = delegate(SuspendingPointerInputModifierNode(block))
+
+    fun update(key: Any?, block: PointerInputEventHandler) {
+        if (this.key != key) {
+            this.key = key
+            inner.pointerInputEventHandler = block
+        }
+    }
+
+    override fun sharePointerInputWithSiblings() = true
+
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) =
+        inner.onPointerEvent(pointerEvent, pass, bounds)
+
+    override fun onCancelPointerInput() = inner.onCancelPointerInput()
+}
+
+/**
  * Shared scrub gesture: claims (and scrubs) ONLY when the touch lands on the
- * VISIBLE cap. Off-thumb or faded-out touches are left unconsumed so the
- * list/grid underneath scrolls normally — otherwise this full-height strip
- * would swallow every right-edge drag and freeze scrolling along that edge.
+ * VISIBLE cap. Off-thumb or faded-out touches are left unconsumed and —
+ * because the strip shares pointer input with siblings (see
+ * [SharedPointerInputElement]) — genuinely fall through to the list rows and
+ * their ⋮ buttons underneath.
  */
 private fun Modifier.faderScrubber(
     stateKey: Any,
@@ -139,7 +197,7 @@ private fun Modifier.faderScrubber(
     thumbHeightOffset: Float,
     onWake: () -> Unit,
     onScrub: (Float) -> Unit,
-): Modifier = pointerInput(stateKey) {
+): Modifier = this.then(SharedPointerInputElement(stateKey) {
     val grabTolerance = GRAB_TOLERANCE.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -164,7 +222,7 @@ private fun Modifier.faderScrubber(
             }
         }
     }
-}
+})
 
 /**
  * Excludes ONLY the thumb's current rect (plus grab slack) from the system

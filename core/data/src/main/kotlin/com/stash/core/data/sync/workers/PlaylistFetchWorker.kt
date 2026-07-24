@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Instant
@@ -107,6 +108,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // sync_history FAILED row and the SyncStateManager onError call
         // can't drift out of sync.
         private const val AUTH_EXPIRED_REASON = "Credentials expired — re-authenticate to resume sync"
+    }
+
+    /**
+     * Running count of playlists/mixes whose tracks have been fetched
+     * (Spotify daily mixes + liked songs + user playlists, YouTube home
+     * mixes + liked songs + user playlists) — fed to
+     * [SyncStateManager.onFetchingPlaylists] so a long fetch on a big
+     * library shows a live "Fetched N playlists…" counter instead of the
+     * bar sitting frozen. Thread-safe: several of these fetches run
+     * concurrently via [fetchYouTubePlaylists]'s Semaphore-bounded async.
+     */
+    private val fetchedPlaylistCounter = AtomicInteger(0)
+
+    private fun reportPlaylistFetched() {
+        syncStateManager.onFetchingPlaylists(fetchedPlaylistCounter.incrementAndGet())
     }
 
     /**
@@ -344,6 +360,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for mix '${mix.name}'", e)
                             // Continue with next mix rather than aborting
                         }
+                        reportPlaylistFetched()
                     }
                 }
                 is SyncResult.Empty -> {
@@ -440,6 +457,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
         }
+        reportPlaylistFetched()
 
         // Fetch user-created/saved playlists from the Spotify library.
         var userPlaylistCount = 0
@@ -594,6 +612,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     inventoryComplete = false
                     Log.w(TAG, "fetchSpotifyPlaylists: snapshot failed for '${playlist.name}'", e)
                 }
+                reportPlaylistFetched()
             }
 
             if (shouldDeactivateMissingSpotifyPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
@@ -765,6 +784,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "fetchAndSnapshotMix: exception for '${mix.title}'", e)
         }
+        reportPlaylistFetched()
     }
 
     /**
@@ -866,6 +886,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             Log.e(TAG, "fetchAndSnapshotLikedSongs: exception", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
         }
+        reportPlaylistFetched()
     }
 
     /**
@@ -925,6 +946,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "fetchAndSnapshotUserPlaylist: exception for '${playlist.title}'", e)
         }
+        reportPlaylistFetched()
     }
 }
 
