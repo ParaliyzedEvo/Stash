@@ -6,6 +6,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.stash.core.data.sync.workers.DiffWorker
 import com.stash.core.data.sync.workers.PlaylistFetchWorker
@@ -86,6 +87,21 @@ class SyncScheduler @Inject constructor(
      * or running sync chain.
      */
     fun triggerManualSync() {
+        // Guard against re-triggering a sync that's already running. Without
+        // this, a second tap (e.g. an impatient user during a long fetch on
+        // a large library) called enqueueChain -> REPLACE, which cancels the
+        // in-flight PlaylistFetchWorker outright — every partially-completed
+        // playlist/mix fetch throws JobCancellationException and the whole
+        // chain restarts from zero. A user who taps repeatedly because sync
+        // LOOKS stalled was actually the one preventing it from ever
+        // finishing. isSyncChainActive() checks WorkManager's live state
+        // directly rather than trusting caller-side flags, so this holds
+        // even if the UI's own isSyncing guard is bypassed or stale.
+        if (isSyncChainActive()) {
+            Log.i(TAG, "Manual sync requested, but a sync is already running — ignoring")
+            return
+        }
+
         Log.i(TAG, "Manual sync triggered by user")
         // Immediately signal the UI that sync is starting so the button
         // shows progress feedback even before WorkManager picks up the work.
@@ -96,6 +112,18 @@ class SyncScheduler @Inject constructor(
             .build()
         enqueueChain(initialDelayMs = 0, constraints = constraints)
     }
+
+    /**
+     * True when [UNIQUE_WORK_NAME] has any work in a non-terminal state
+     * (ENQUEUED or RUNNING). Synchronous — WorkManager's `get...Sync()`
+     * variants block the calling thread, so this must only be called from
+     * a background-safe context (it already is here: ViewModel actions run
+     * off the main thread via viewModelScope, and this itself does no I/O
+     * beyond querying WorkManager's own DB).
+     */
+    private fun isSyncChainActive(): Boolean =
+        workManager.getWorkInfosForUniqueWork(UNIQUE_WORK_NAME).get()
+            .any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }
 
     /**
      * Cancels any pending or running sync chain.

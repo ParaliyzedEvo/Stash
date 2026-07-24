@@ -61,14 +61,23 @@ class SyncStateManager @Inject constructor() {
         _phase.value = SyncPhase.Authenticating
     }
 
-    /** Transition to [SyncPhase.FetchingPlaylists]. */
-    fun onFetchingPlaylists() {
-        _phase.value = SyncPhase.FetchingPlaylists
+    /**
+     * Transition to (or update the live counter within) [SyncPhase.FetchingPlaylists].
+     * Safe to call repeatedly with an increasing [playlistsFetched] as the
+     * fetch worker processes each playlist/mix, so the UI shows a running
+     * count instead of an apparently-frozen bar during a long fetch.
+     */
+    fun onFetchingPlaylists(playlistsFetched: Int = 0) {
+        _phase.value = SyncPhase.FetchingPlaylists(playlistsFetched)
     }
 
-    /** Transition to [SyncPhase.Diffing]. */
-    fun onDiffing() {
-        _phase.value = SyncPhase.Diffing
+    /**
+     * Transition to (or update progress within) [SyncPhase.Diffing]. Unlike
+     * fetch, the diff worker knows its total playlist count upfront, so this
+     * reports a real fraction, not just a live count.
+     */
+    fun onDiffing(playlistsDiffed: Int = 0, totalPlaylists: Int = 0) {
+        _phase.value = SyncPhase.Diffing(playlistsDiffed, totalPlaylists)
     }
 
     /**

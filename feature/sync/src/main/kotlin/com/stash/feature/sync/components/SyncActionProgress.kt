@@ -105,8 +105,26 @@ fun SyncActionProgress(
 /** Human-readable label for the current sync phase. */
 internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
     is SyncPhase.Authenticating -> "Authenticating..."
-    is SyncPhase.FetchingPlaylists -> "Fetching playlists..."
-    is SyncPhase.Diffing -> "Comparing changes..."
+    is SyncPhase.FetchingPlaylists -> {
+        // No fixed total is known during fetch (Spotify's folder-walked
+        // playlist count and YouTube's aren't known until the fetch itself
+        // finishes) — so this is a live running count, not a fraction.
+        // Still gives the user visible proof of forward progress on a
+        // long fetch instead of a static "Fetching playlists..." that
+        // looked frozen for 40+ minutes on large libraries.
+        if (phase.playlistsFetched > 0) {
+            "Fetched ${phase.playlistsFetched} playlist${if (phase.playlistsFetched != 1) "s" else ""}..."
+        } else {
+            "Fetching playlists..."
+        }
+    }
+    is SyncPhase.Diffing -> {
+        if (phase.totalPlaylists > 0) {
+            "Comparing changes (${phase.playlistsDiffed}/${phase.totalPlaylists})..."
+        } else {
+            "Comparing changes..."
+        }
+    }
     is SyncPhase.Downloading -> "Downloading ${phase.downloaded}/${phase.total}..."
     is SyncPhase.Finalizing -> "Finalizing..."
     is SyncPhase.Completed -> "Complete"

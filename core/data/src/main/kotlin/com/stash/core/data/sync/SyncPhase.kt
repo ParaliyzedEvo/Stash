@@ -25,14 +25,44 @@ sealed interface SyncPhase {
         override val progress: Float = 0.05f
     }
 
-    /** Retrieving playlist metadata from the remote source. */
-    data object FetchingPlaylists : SyncPhase {
-        override val progress: Float = 0.20f
+    /**
+     * Retrieving playlist metadata from the remote source.
+     *
+     * @property playlistsFetched Running count of playlists/mixes fetched so
+     *   far this phase. No total denominator: the true playlist count for
+     *   Spotify (folder-walked) and YouTube isn't known until the fetch
+     *   itself finishes, so this is a live counter for display ("Fetched 42
+     *   playlists…") rather than a fraction — a fabricated total would be
+     *   worse than none. [progress] still nudges forward (capped) as the
+     *   count grows so a long fetch visibly moves instead of sitting dead
+     *   at the phase's starting value.
+     */
+    data class FetchingPlaylists(
+        val playlistsFetched: Int = 0,
+    ) : SyncPhase {
+        override val progress: Float
+            get() = (0.05f + minOf(playlistsFetched, 150) * 0.001f).coerceAtMost(0.20f)
     }
 
-    /** Comparing remote snapshots against local data to find differences. */
-    data object Diffing : SyncPhase {
-        override val progress: Float = 0.25f
+    /**
+     * Comparing remote snapshots against local data to find differences.
+     *
+     * @property playlistsDiffed Playlists reconciled so far this phase.
+     * @property totalPlaylists  Total playlists to reconcile — known
+     *   upfront here (unlike fetch), since the snapshot rows already exist
+     *   in the DB by the time this phase starts.
+     */
+    data class Diffing(
+        val playlistsDiffed: Int = 0,
+        val totalPlaylists: Int = 0,
+    ) : SyncPhase {
+        override val progress: Float
+            get() {
+                val base = 0.20f
+                val span = 0.05f
+                val fraction = if (totalPlaylists > 0) playlistsDiffed.toFloat() / totalPlaylists else 0f
+                return base + span * fraction
+            }
     }
 
     /**

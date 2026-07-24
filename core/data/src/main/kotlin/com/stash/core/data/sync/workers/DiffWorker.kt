@@ -131,7 +131,9 @@ class DiffWorker @AssistedInject constructor(
             val streamingMode = streamingPreference.current()
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
+            syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
             var newTrackCount = 0
+            var playlistsDiffed = 0
 
             for (playlistSnapshot in playlistSnapshots) {
                 // Pick the mode for this specific playlist's source so a
@@ -185,6 +187,8 @@ class DiffWorker @AssistedInject constructor(
                     )
                 }
                 newTrackCount += playlistNewTracks
+                playlistsDiffed++
+                syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
             }
 
             // Soft-hide YouTube playlists that rotated off the home feed
