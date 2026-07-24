@@ -17,7 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -70,6 +73,67 @@ fun SettingsHubScreen(
 
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
 
+    var searchQuery by remember { mutableStateOf("") }
+    val searchIndex = remember(
+        onOpenPlayback, onOpenAudioQuality, onOpenAccounts,
+        onOpenLibraryStorage, onOpenAppearance, onOpenAbout,
+    ) {
+        listOf(
+            SettingsSearchItem(
+                title = "Playback",
+                subtitle = "Sleep timer, crossfade, gapless",
+                keywords = listOf("sleep timer", "crossfade", "gapless", "playback"),
+                icon = Icons.Rounded.PlayArrow,
+                onSelect = onOpenPlayback,
+            ),
+            SettingsSearchItem(
+                title = "Audio & Quality",
+                subtitle = "Streaming quality, lossless, download quality",
+                keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular"),
+                icon = Icons.Rounded.GraphicEq,
+                onSelect = onOpenAudioQuality,
+            ),
+            SettingsSearchItem(
+                title = "Accounts & Sync",
+                subtitle = "Spotify, YouTube Music, Last.fm",
+                keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble"),
+                icon = Icons.Rounded.Person,
+                onSelect = onOpenAccounts,
+            ),
+            SettingsSearchItem(
+                title = "Library & Storage",
+                subtitle = "Storage location, backups, downloads",
+                keywords = listOf("storage", "backup", "export", "import", "download", "move library"),
+                icon = Icons.Rounded.FolderOpen,
+                onSelect = onOpenLibraryStorage,
+            ),
+            SettingsSearchItem(
+                title = "Appearance",
+                subtitle = "Theme, AMOLED, Home layout",
+                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout"),
+                icon = Icons.Rounded.Palette,
+                onSelect = onOpenAppearance,
+            ),
+            SettingsSearchItem(
+                title = "About & Help",
+                subtitle = "Version, diagnostics, crash reports",
+                keywords = listOf("about", "version", "diagnostics", "crash", "help"),
+                icon = Icons.Rounded.Info,
+                onSelect = onOpenAbout,
+            ),
+        )
+    }
+    val searchResults = remember(searchQuery, searchIndex) {
+        if (searchQuery.isBlank()) {
+            emptyList()
+        } else {
+            searchIndex.filter { item ->
+                item.title.contains(searchQuery, ignoreCase = true) ||
+                    item.keywords.any { it.contains(searchQuery, ignoreCase = true) }
+            }
+        }
+    }
+
     // Consume any pending deep-link focus from Home banners ("fix lossless" /
     // Last.fm nudge) once on entry and drill into the relevant spoke. The
     // monolith satisfied this by scrolling a single screen; in hub-and-spoke we
@@ -95,7 +159,37 @@ fun SettingsHubScreen(
             color = MaterialTheme.colorScheme.onSurface,
         )
         SupportBanner(onDonate = onDonate, onStar = onStar)
-        SettingsSearchField()
+        SettingsSearchField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+        )
+        if (searchQuery.isNotBlank()) {
+            if (searchResults.isEmpty()) {
+                Text(
+                    text = "No settings found for \"$searchQuery\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            } else {
+                SettingsGroupCard(
+                    rows = searchResults.map { result ->
+                        {
+                            SettingsNavRow(
+                                title = result.title,
+                                subtitle = result.subtitle,
+                                leadingIcon = result.icon,
+                                onClick = {
+                                    searchQuery = ""
+                                    result.onSelect()
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+            return@Column
+        }
         SettingsGroupCard(
             rows = listOf(
                 {
@@ -150,3 +244,12 @@ fun SettingsHubScreen(
         )
     }
 }
+
+/** One entry in the Settings search index — a category the query can match. */
+private data class SettingsSearchItem(
+    val title: String,
+    val subtitle: String,
+    val keywords: List<String>,
+    val icon: ImageVector,
+    val onSelect: () -> Unit,
+)
