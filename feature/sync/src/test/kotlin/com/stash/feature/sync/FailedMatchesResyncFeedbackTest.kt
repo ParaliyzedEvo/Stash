@@ -3,7 +3,9 @@ package com.stash.feature.sync
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.preview.PreviewErrorEvent
 import com.stash.core.media.preview.PreviewPlayer
+import com.stash.core.media.preview.PreviewState
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.SwapCoordinator
@@ -16,6 +18,8 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -52,6 +56,8 @@ class FailedMatchesResyncFeedbackTest {
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        every { previewPlayer.playerErrors } returns MutableSharedFlow<PreviewErrorEvent>()
+        every { previewPlayer.previewState } returns MutableStateFlow(PreviewState.Idle)
     }
 
     @After fun tearDown() {

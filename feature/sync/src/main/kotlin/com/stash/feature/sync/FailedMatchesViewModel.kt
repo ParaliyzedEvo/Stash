@@ -1,6 +1,7 @@
 package com.stash.feature.sync
 
 import android.util.Log
+import androidx.media3.common.PlaybackException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -18,6 +19,7 @@ import com.stash.data.download.files.SwapCoordinator
 import com.stash.data.download.matching.HybridSearchExecutor
 import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
+import com.stash.data.download.preview.NoFastStreamException
 import com.stash.data.download.preview.PreviewUrlExtractor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -140,8 +142,12 @@ class FailedMatchesViewModel @Inject constructor(
         /** How many resync candidates to pre-extract preview URLs for. */
         private const val PRE_EXTRACT_LIMIT = 10
 
-        /** Max concurrent yt-dlp preview extractions (each is CPU-heavy). */
+        /** Max concurrent speculative InnerTube-only preview extractions. */
         private const val PRE_EXTRACT_CONCURRENCY = 2
+
+        private const val PREVIEW_FAILURE_MESSAGE =
+            "Couldn't load that preview. Try again, or approve to hear the full track."
+
     }
 
     /** Observable preview playback state for the UI to highlight the active row. */
@@ -173,6 +179,29 @@ class FailedMatchesViewModel @Inject constructor(
 
     /** Active pre-extraction jobs — cancelled when a new resync starts. */
     private var preExtractJobs = mutableListOf<Job>()
+
+    /** User-initiated extraction and one-shot fallback jobs. */
+    private var previewLoadJob: Job? = null
+    private var previewRetryJob: Job? = null
+
+    /**
+     * Ownership token for asynchronous preview work. A new tap or explicit stop
+     * advances the generation so late extractor/player events cannot revive an
+     * older candidate.
+     */
+    private var previewRequestGeneration = 0L
+    private var activePreviewRequestId: Long? = null
+    private var activePreviewVideoId: String? = null
+    private var activePreviewAttemptId: Long? = null
+    private var activePreviewRetried = false
+
+    init {
+        viewModelScope.launch {
+            previewPlayer.playerErrors.collect { event ->
+                onPreviewPlayerError(event.videoId, event.attemptId, event.error)
+            }
+        }
+    }
 
     // -- Combined UI state --------------------------------------------------
 
@@ -236,18 +265,36 @@ class FailedMatchesViewModel @Inject constructor(
             _resyncProgress.value = ""
 
             // Single search pass over BOTH unmatched and user-flagged tracks.
-            // Each row becomes a (trackId, searchQuery, rejectedVideoId?)
-            // triple so the same semaphored search loop handles both kinds.
-            val unmatched = uiState.value.tracks.map {
+            // Keep whether an excluded result may be surfaced as a last resort:
+            // unmatched rows can still preview their rejected candidate, while a
+            // flagged row must never be offered its current wrong video again.
+            // A track can transiently appear in both repository flows; flagged
+            // ownership wins so an unmatched fallback cannot reintroduce the
+            // very video the user marked as wrong.
+            val flaggedRowsSnapshot = uiState.value.flaggedTracks
+            val flaggedTrackIds = flaggedRowsSnapshot.mapTo(mutableSetOf()) { it.trackId }
+            val unmatched = uiState.value.tracks
+                .filterNot { it.trackId in flaggedTrackIds }
+                .map {
                 // Auto-requeued tracks (TrackDownloadWorker) get a blank
                 // download_queue.search_query. Fall back to "artist - title"
                 // — which we already have on the row — so resync can actually
                 // search instead of firing a blank query that finds nothing.
                 val query = it.searchQuery.ifBlank { "${it.artist} - ${it.title}" }
-                Triple(it.trackId, query, it.rejectedVideoId)
+                ResyncSearch(
+                    trackId = it.trackId,
+                    query = query,
+                    excludeVideoId = it.rejectedVideoId,
+                    allowExcludedFallback = true,
+                )
             }
-            val flagged = uiState.value.flaggedTracks.map {
-                Triple(it.trackId, it.searchQuery, it.currentYoutubeId)
+            val flagged = flaggedRowsSnapshot.map {
+                ResyncSearch(
+                    trackId = it.trackId,
+                    query = it.searchQuery,
+                    excludeVideoId = it.currentYoutubeId,
+                    allowExcludedFallback = false,
+                )
             }
             val jobs = unmatched + flagged
 
@@ -255,15 +302,17 @@ class FailedMatchesViewModel @Inject constructor(
             val total = jobs.size
             val completed = AtomicInteger(0)
 
-            jobs.map { (trackId, query, excludeVideoId) ->
+            jobs.map { request ->
                 launch {
                     semaphore.acquire()
                     try {
-                        val results = searchExecutor.search(query, maxResults = 5)
+                        val results = searchExecutor.search(request.query, maxResults = 5)
                         // For flagged tracks, skip the currently-associated
                         // (wrong) video — surfacing it as the candidate would
                         // just swap the track with itself.
-                        var best = results.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
+                        var best = results.firstOrNull {
+                            request.excludeVideoId == null || it.id != request.excludeVideoId
+                        }
 
                         // #19/#143: search() is InnerTube-first and only falls
                         // back to yt-dlp when YT Music returns *zero* results.
@@ -273,19 +322,21 @@ class FailedMatchesViewModel @Inject constructor(
                         // surfaces tracks that exist on YouTube but not YouTube
                         // Music (and genuine alternatives to a wrong match).
                         if (best == null) {
-                            val direct = searchExecutor.searchYtDlpDirect(query, maxResults = 5)
-                            best = direct.firstOrNull { excludeVideoId == null || it.id != excludeVideoId }
+                            val direct = searchExecutor.searchYtDlpDirect(request.query, maxResults = 5)
+                            best = direct.firstOrNull {
+                                request.excludeVideoId == null || it.id != request.excludeVideoId
+                            }
                         }
 
                         // Last resort: surface the top result even if it's the
                         // excluded one, so an unmatched track still gets *a*
                         // candidate to preview rather than nothing.
-                        if (best == null) {
+                        if (best == null && request.allowExcludedFallback) {
                             best = results.firstOrNull()
                         }
                         if (best != null) {
                             _resyncCandidates.update { current ->
-                                current + (trackId to ResyncCandidate(
+                                current + (request.trackId to ResyncCandidate(
                                     videoId = best.id,
                                     title = best.title,
                                     artist = best.uploader,
@@ -295,7 +346,7 @@ class FailedMatchesViewModel @Inject constructor(
                             }
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Resync search failed for '$query': ${e.message}")
+                        Log.w(TAG, "Resync search failed for '${request.query}': ${e.message}")
                     } finally {
                         semaphore.release()
                         val done = completed.incrementAndGet()
@@ -328,9 +379,10 @@ class FailedMatchesViewModel @Inject constructor(
     /**
      * Pre-extracts stream URLs for resync candidates in the background.
      *
-     * Runs up to [PRE_EXTRACT_LIMIT] extractions concurrently (limited by
-     * [PRE_EXTRACT_CONCURRENCY] semaphore). Extracted URLs are cached in
-     * [previewUrlCache] and served instantly when the user taps preview.
+     * Speculative work is InnerTube-only so it can never occupy the serialized
+     * yt-dlp lane needed by a foreground tap. Runs up to [PRE_EXTRACT_LIMIT]
+     * extractions concurrently (limited by [PRE_EXTRACT_CONCURRENCY]).
+     * Extracted URLs are cached and served instantly on a later tap.
      */
     private fun preExtractStreamUrls(candidates: Map<Long, ResyncCandidate>) {
         cancelPreExtraction()
@@ -341,13 +393,18 @@ class FailedMatchesViewModel @Inject constructor(
             val job = viewModelScope.launch {
                 semaphore.acquire()
                 try {
-                    val url = previewUrlExtractor.extractStreamUrl(candidate.videoId)
+                    val url = previewUrlExtractor.extractStreamUrl(
+                        candidate.videoId,
+                        allowYtDlp = false,
+                    )
                     previewUrlCache[candidate.videoId] = url
                     Log.d(TAG, "Pre-extracted preview URL for ${candidate.videoId}")
                 } catch (e: CancellationException) {
-                    // Expected: a user tap cancels this prefetch to take the
-                    // extractor permit. Not a failure — don't log it as one.
+                    // Expected when a new resync/tap drops the caller-side
+                    // prefetch. Extractor-owned single-flight work may finish.
                     throw e
+                } catch (e: NoFastStreamException) {
+                    Log.d(TAG, "No fast preview stream for ${candidate.videoId}")
                 } catch (e: Exception) {
                     Log.w(TAG, "Pre-extract failed for ${candidate.videoId}: ${e.message}")
                 } finally {
@@ -477,15 +534,18 @@ class FailedMatchesViewModel @Inject constructor(
 
     /**
      * Approves a replacement candidate for a user-flagged (wrong-match)
-     * track. Deletes the old audio file, kicks a fresh yt-dlp download of
-     * the new video in the background, then swaps youtubeId + file_path +
-     * file_size + clears the flag so the track disappears from the Failed
-     * Matches screen. File IO failures on the old-file delete are swallowed
-     * — a stray leftover file is strictly better than a lost swap, and the
-     * orphan cleanup pass will eventually catch it.
+     * track. [SwapCoordinator] downloads and validates the replacement before
+     * atomically changing identity/file state, then removes the old file.
      */
     fun approveSwap(row: FlaggedTrackRow, candidate: ResyncCandidate) {
         viewModelScope.launch {
+            // Defense in depth: candidates normally pass the resync exclusion
+            // above, but stale UI state or an external caller must not self-swap.
+            if (candidate.videoId == row.currentYoutubeId) {
+                _userMessages.tryEmit("Choose a different replacement for this track.")
+                return@launch
+            }
+
             // Guard: another track already owns this videoId — swapping would
             // violate the UNIQUE(youtube_id) constraint and blow up silently.
             val existing = trackDao.findByYoutubeId(candidate.videoId)
@@ -571,45 +631,186 @@ class FailedMatchesViewModel @Inject constructor(
      * @param videoId The YouTube video ID of the rejected candidate.
      */
     fun previewRejectedMatch(videoId: String) {
+        if (
+            activePreviewVideoId == videoId &&
+            previewPlayer.isRequestCurrent(activePreviewRequestId) &&
+            (_previewLoading.value == videoId ||
+                activePreviewAttemptId != null ||
+                (previewState.value as? PreviewState.Playing)?.videoId == videoId)
+        ) {
+            return
+        }
+
+        previewLoadJob?.cancel()
+        previewRetryJob?.cancel()
         previewPlayer.stop()
-        viewModelScope.launch {
-            _previewLoading.value = videoId
+        val requestId = previewPlayer.claimRequest()
+
+        val generation = ++previewRequestGeneration
+        activePreviewRequestId = requestId
+        activePreviewVideoId = videoId
+        activePreviewAttemptId = null
+        activePreviewRetried = false
+        _previewLoading.value = videoId
+
+        previewLoadJob = viewModelScope.launch {
             try {
                 // Check cache first — if pre-extraction finished, this is instant
-                val cached = previewUrlCache[videoId]
-                val url = if (cached != null) {
-                    cached
-                } else {
-                    // #372: a cache miss has to extract NOW, and the extractor's
-                    // yt-dlp/InnerTube semaphores are shared process-wide with the
-                    // background pre-extraction kicked off after every resync (up
-                    // to PRE_EXTRACT_LIMIT jobs). Without this the user's tap
-                    // queues behind that batch and the button just sits there for
-                    // many seconds — reported as "preview not working, kinda
-                    // static". A live tap outranks speculative prefetch, so drop
-                    // the background work and take the permit.
+                val url = previewUrlCache[videoId] ?: run {
+                    // Stop caller-side cache warming. Speculative extraction is
+                    // fast-only, while this foreground request may use yt-dlp.
                     cancelPreExtraction()
-                    previewUrlExtractor.extractStreamUrl(videoId).also {
+                    previewUrlExtractor.extractStreamUrl(
+                        videoId,
+                        allowYtDlp = true,
+                    ).also {
                         previewUrlCache[videoId] = it
                     }
                 }
-                previewPlayer.playUrl(videoId, url)
+                if (!isActivePreview(generation, videoId)) return@launch
+                val attemptId = previewPlayer.playUrlIfClaimed(requestId, videoId, url) { attemptId ->
+                    if (isActivePreview(generation, videoId)) {
+                        activePreviewAttemptId = attemptId
+                    }
+                }
+                if (attemptId == null) {
+                    abandonActivePreview(generation, videoId)
+                }
             } catch (e: CancellationException) {
                 throw e // never report our own cancellation as a preview failure
             } catch (e: Exception) {
-                // #372: this used to only Log.e, so every failure looked exactly
-                // like a dead button. Tell the user the preview failed.
-                Log.e(TAG, "Preview failed for videoId=$videoId", e)
-                _userMessages.tryEmit("Couldn't load that preview. Try again, or approve to hear the full track.")
+                failActivePreview(
+                    generation = generation,
+                    videoId = videoId,
+                    logMessage = "Preview failed for videoId=$videoId",
+                    error = e,
+                )
+            } finally {
+                clearPreviewLoading(generation, videoId)
             }
-            _previewLoading.value = null
         }
     }
 
     /**
-     * Drops the speculative post-resync prefetch. Safe to call any time: the
-     * cache keeps whatever already finished, and anything cancelled is simply
-     * re-extracted on demand.
+     * Handles source failures emitted after [PreviewPlayer.playUrl] returns.
+     * Only the active preview may retry, and each user request gets one direct
+     * yt-dlp fallback so a rejected retry URL cannot loop forever.
+     */
+    private fun onPreviewPlayerError(
+        videoId: String,
+        attemptId: Long,
+        error: PlaybackException,
+    ) {
+        if (videoId != activePreviewVideoId || attemptId != activePreviewAttemptId) return
+
+        val generation = previewRequestGeneration
+        val requestId = activePreviewRequestId ?: return
+        if (!previewPlayer.isRequestCurrent(requestId)) {
+            abandonActivePreview(generation, videoId)
+            return
+        }
+        if (!isIoError(error)) {
+            failActivePreview(
+                generation = generation,
+                videoId = videoId,
+                logMessage = "Preview playback failed for videoId=$videoId",
+                error = error,
+            )
+            return
+        }
+
+        if (activePreviewRetried) {
+            failActivePreview(
+                generation = generation,
+                videoId = videoId,
+                logMessage = "yt-dlp retry playback failed for videoId=$videoId",
+                error = error,
+            )
+            return
+        }
+
+        // Consume the retry before launching so duplicate error events cannot
+        // start parallel yt-dlp work.
+        activePreviewRetried = true
+        activePreviewAttemptId = null
+        _previewLoading.value = videoId
+        previewRetryJob = viewModelScope.launch {
+            try {
+                val retryUrl = previewUrlExtractor.extractViaYtDlpForRetry(videoId)
+                if (!isActivePreview(generation, videoId)) return@launch
+                previewUrlCache[videoId] = retryUrl
+                val retryAttemptId = previewPlayer.playUrlIfClaimed(
+                    requestId,
+                    videoId,
+                    retryUrl,
+                ) { attemptId ->
+                    if (isActivePreview(generation, videoId)) {
+                        activePreviewAttemptId = attemptId
+                    }
+                }
+                if (retryAttemptId == null) {
+                    abandonActivePreview(generation, videoId)
+                    return@launch
+                }
+                Log.d(TAG, "yt-dlp preview retry succeeded for videoId=$videoId")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failActivePreview(
+                    generation = generation,
+                    videoId = videoId,
+                    logMessage = "yt-dlp preview retry failed for videoId=$videoId",
+                    error = e,
+                )
+            } finally {
+                clearPreviewLoading(generation, videoId)
+            }
+        }
+    }
+
+    private fun isActivePreview(generation: Long, videoId: String): Boolean =
+        previewRequestGeneration == generation && activePreviewVideoId == videoId
+
+    private fun clearPreviewLoading(generation: Long, videoId: String) {
+        if (isActivePreview(generation, videoId) && _previewLoading.value == videoId) {
+            _previewLoading.value = null
+        }
+    }
+
+    private fun abandonActivePreview(generation: Long, videoId: String) {
+        if (!isActivePreview(generation, videoId)) return
+        activePreviewRequestId = null
+        activePreviewVideoId = null
+        activePreviewAttemptId = null
+        if (_previewLoading.value == videoId) _previewLoading.value = null
+    }
+
+    private fun failActivePreview(
+        generation: Long,
+        videoId: String,
+        logMessage: String,
+        error: Throwable,
+    ) {
+        if (!isActivePreview(generation, videoId)) return
+        Log.e(TAG, logMessage, error)
+        val ownedRequestId = activePreviewRequestId
+        val ownedAttemptId = activePreviewAttemptId
+        previewPlayer.cancelRequest(ownedRequestId)
+        activePreviewRequestId = null
+        activePreviewVideoId = null
+        activePreviewAttemptId = null
+        if (_previewLoading.value == videoId) _previewLoading.value = null
+        previewPlayer.stopIfCurrent(ownedAttemptId)
+        _userMessages.tryEmit(PREVIEW_FAILURE_MESSAGE)
+    }
+
+    private fun isIoError(error: PlaybackException): Boolean =
+        error.errorCode in 2000..2999
+
+    /**
+     * Drops caller-side speculative prefetch jobs. Extractor-owned single-flight
+     * work intentionally survives caller cancellation, but because speculative
+     * work is InnerTube-only it cannot retain the foreground yt-dlp permit.
      */
     private fun cancelPreExtraction() {
         preExtractJobs.forEach { it.cancel() }
@@ -618,7 +819,19 @@ class FailedMatchesViewModel @Inject constructor(
 
     /** Stops the current audio preview, if any. */
     fun stopPreview() {
-        previewPlayer.stop()
+        val ownedRequestId = activePreviewRequestId
+        val ownedAttemptId = activePreviewAttemptId
+        ++previewRequestGeneration
+        previewLoadJob?.cancel()
+        previewRetryJob?.cancel()
+        previewLoadJob = null
+        previewRetryJob = null
+        previewPlayer.cancelRequest(ownedRequestId)
+        activePreviewRequestId = null
+        activePreviewVideoId = null
+        activePreviewAttemptId = null
+        activePreviewRetried = false
+        previewPlayer.stopIfCurrent(ownedAttemptId)
         _previewLoading.value = null
     }
 
@@ -626,9 +839,16 @@ class FailedMatchesViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        previewPlayer.stop()
+        stopPreview()
         resyncJob?.cancel()
-        preExtractJobs.forEach { it.cancel() }
+        cancelPreExtraction()
         previewUrlCache.clear()
     }
+
+    private data class ResyncSearch(
+        val trackId: Long,
+        val query: String,
+        val excludeVideoId: String?,
+        val allowExcludedFallback: Boolean,
+    )
 }
