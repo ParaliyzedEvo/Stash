@@ -2,6 +2,7 @@ package com.stash.data.download.matching
 
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.data.download.ytdlp.YtDlpSearchResult
@@ -83,6 +84,7 @@ class YtLibraryCanonicalizerTest {
             matchScorer = MatchScorer(TrackMatcher()),
             trackDao = trackDao,
             trackMatcher = TrackMatcher(),
+            trackIdentityEvents = mock(),
         )
 
         // Track as imported from the user's Archive Mix — MV duration,
@@ -141,6 +143,7 @@ class YtLibraryCanonicalizerTest {
             matchScorer = MatchScorer(TrackMatcher()),
             trackDao = trackDao,
             trackMatcher = TrackMatcher(),
+            trackIdentityEvents = mock(),
         )
         val track = Track(
             title = "Studio Song",
@@ -173,6 +176,7 @@ class YtLibraryCanonicalizerTest {
             matchScorer = MatchScorer(TrackMatcher()),
             trackDao = trackDao,
             trackMatcher = TrackMatcher(),
+            trackIdentityEvents = mock(),
         )
         val track = Track(
             title = "Obscure Song",

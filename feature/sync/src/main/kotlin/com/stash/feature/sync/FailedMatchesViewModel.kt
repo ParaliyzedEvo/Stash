@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.DownloadStatus
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
@@ -127,6 +128,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val swapCoordinator: SwapCoordinator,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
+    private val trackIdentityEvents: TrackIdentityEvents,
 ) : ViewModel() {
 
     companion object {
@@ -394,6 +396,9 @@ class FailedMatchesViewModel @Inject constructor(
                     id = queueEntryId,
                     status = DownloadStatus.COMPLETED,
                 )
+                // Drop any StreamUrl cached under the OLD youtubeId — otherwise
+                // playback keeps serving the pre-approval (wrong/stale) URL.
+                trackIdentityEvents.emitIdentityChanged(trackId)
 
                 // Remove from resync candidates map
                 _resyncCandidates.update { it - trackId }

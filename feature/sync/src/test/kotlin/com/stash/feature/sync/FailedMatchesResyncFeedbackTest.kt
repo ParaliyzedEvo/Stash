@@ -2,6 +2,7 @@ package com.stash.feature.sync
 
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.files.FileOrganizer
@@ -47,6 +48,7 @@ class FailedMatchesResyncFeedbackTest {
     private val downloadQueueDao = mockk<com.stash.core.data.db.dao.DownloadQueueDao>(relaxed = true)
     private val swapCoordinator: SwapCoordinator = mockk(relaxed = true)
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
+    private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -72,6 +74,7 @@ class FailedMatchesResyncFeedbackTest {
             downloadExecutor, fileOrganizer, qualityPrefs, trackDao,
             downloadQueueDao, swapCoordinator, blocklistGuard,
             mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
+            trackIdentityEvents,
         )
     }
 

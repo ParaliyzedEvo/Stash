@@ -3,6 +3,7 @@ package com.stash.core.data.social
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.Track
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyTrackCandidate
@@ -42,6 +43,7 @@ class CrossPlatformLikeResolver @Inject constructor(
     private val ytMusicApiClient: YTMusicApiClient,
     private val matcher: TrackMatcher,
     private val trackDao: TrackDao,
+    private val trackIdentityEvents: TrackIdentityEvents,
 ) {
     /** The track's Spotify URI, resolving + persisting it if missing. Null when no safe match. */
     suspend fun ensureSpotifyUri(track: Track): String? {
@@ -87,6 +89,10 @@ class CrossPlatformLikeResolver @Inject constructor(
 
         runCatching { trackDao.updateYoutubeId(track.id, videoId) }
             .onFailure { Log.d(TAG, "ensureYoutubeId: persist skipped for ${track.id}: ${it.message}") }
+        // The track's youtubeId identity just changed — drop any StreamUrl
+        // cached for this track id so the next play resolves fresh instead
+        // of reusing a URL that was (or wasn't) resolved against this id.
+        trackIdentityEvents.emitIdentityChanged(track.id)
         Log.i(TAG, "ensureYoutubeId: matched ${track.id} → $videoId")
         return videoId
     }

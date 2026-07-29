@@ -2,6 +2,7 @@ package com.stash.data.download.files
 
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.QualityTier
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
@@ -34,6 +35,7 @@ class SwapCoordinatorTest {
     private val qualityPrefs = mockk<QualityPreferencesManager>()
     private val trackDao = mockk<TrackDao>(relaxed = true)
     private val blocklistGuard = mockk<BlocklistGuard>(relaxed = true)
+    private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
 
     private lateinit var coordinator: SwapCoordinator
 
@@ -48,6 +50,7 @@ class SwapCoordinatorTest {
             trackDao = trackDao,
             blocklistGuard = blocklistGuard,
             localFileOps = mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
+            trackIdentityEvents = trackIdentityEvents,
         )
     }
 
