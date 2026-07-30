@@ -509,7 +509,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
     ): MaterializeResult {
         // Existing playlist: verify it's still there (could have been
         // deleted by the user). If gone, fall through to re-create.
-        val existing = recipe.playlistId?.let { playlistDao.getById(it) }
+        val existing = recipe.playlistId
+            ?.let { playlistDao.getById(it) }
+            ?.takeIf { it.type == PlaylistType.STASH_MIX }
 
         // ── v0.9.42 idempotency backstop ──────────────────────────────────
         // Compute the discovery survivors (and therefore the FULL ordered

@@ -484,7 +484,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         // startIndex maps through the playable filter by track id.
         val startId = tracks[safeStart].id
-        val startInPlayable = playable.indexOfFirst { it.id == startId }.coerceAtLeast(0)
+        val startInPlayable = playable.indexOfFirst { it.id == startId }
+        if (startInPlayable < 0) {
+            _userMessages.tryEmit("That song isn't available offline right now.")
+            // Don't fall back to track 0 — bail rather than silently substitute.
+            return
+        }
 
         currentQueueTracks = playable
         controller.setMediaItems(items, startInPlayable, startPositionMs)

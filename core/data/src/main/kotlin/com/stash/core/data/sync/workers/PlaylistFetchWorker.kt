@@ -131,6 +131,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_SYNC_ID = "sync_id"
+        const val KEY_YOUTUBE_INVENTORY_COMPLETE = "youtube_inventory_complete"
         private const val TAG = "StashSync"
         /** Cap on concurrent in-flight YT browse calls during a sync. */
         private const val MAX_PARALLEL_YT_FETCHES = 3
@@ -160,6 +161,23 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
     private fun reportPlaylistFetched() {
         syncStateManager.onFetchingPlaylists(fetchedPlaylistCounter.incrementAndGet())
+    }
+
+    /**
+    * Flips to false the moment ANY YouTube fetch leg this run (home mixes
+    * listing, liked songs, user-playlist listing, or any individual mix/
+    * playlist's track fetch) errors or throws. Read by [doWork] and passed
+    * to DiffWorker via workDataOf so it can skip
+    * [PlaylistDao.deactivateMissingForSource] on a partial inventory —
+    * otherwise one flaky sub-fetch makes every OTHER YouTube playlist look
+    * "missing" and DiffWorker hides them (#post-343 YouTube analogue).
+    */
+    private val youtubeInventoryComplete = java.util.concurrent.atomic.AtomicBoolean(true)
+
+    private fun markYoutubeIncomplete(reason: String) {
+        if (youtubeInventoryComplete.compareAndSet(true, false)) {
+            Log.w(TAG, "YouTube inventory marked incomplete: $reason")
+        }
     }
 
     /**
@@ -261,8 +279,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
             if (probeResult.fetchSpotify) {
                 fetchSpotifyPlaylists(syncId, diagnostics)
             }
+            var youtubeComplete = true
             if (probeResult.fetchYoutube) {
-                fetchYouTubePlaylists(syncId, diagnostics)
+                youtubeComplete = fetchYouTubePlaylists(syncId, diagnostics)
             }
 
             // Persist diagnostics.
@@ -283,7 +302,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
-            return Result.success(workDataOf(KEY_SYNC_ID to syncId))
+            return Result.success(
+                workDataOf(
+                    KEY_SYNC_ID to syncId,
+                    KEY_YOUTUBE_INVENTORY_COMPLETE to youtubeComplete,
+                )
+            )
         } catch (e: SpotifyApiException) {
             // Transient Spotify API failure (e.g. 429 rate limit exhausted) --
             // ask WorkManager to schedule a retry so the sync can succeed later.
@@ -678,7 +702,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 )
                 if (hidden > 0) Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
             }
-            diagnostics.add(SyncStepResult("SPOTIFY", "getUserPlaylists", StepStatus.SUCCESS, userPlaylistCount))
+            diagnostics.add(
+                SyncStepResult(
+                    "SPOTIFY",
+                    "getUserPlaylists",
+                    if (inventoryComplete) StepStatus.SUCCESS else StepStatus.ERROR,
+                    userPlaylistCount,
+                    errorMessage = if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
+                )
+            )
         } catch (e: SpotifyApiException) {
             throw e
         } catch (e: Exception) {
@@ -701,7 +733,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * Liked Songs runs concurrently with user-playlist discovery and
      * per-playlist fan-out — they are fully independent.
      */
-    private suspend fun fetchYouTubePlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+    private suspend fun fetchYouTubePlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>): Boolean {
+        youtubeInventoryComplete.set(true)
         innerTubeClient.beginSyncSession()
         val sem = Semaphore(MAX_PARALLEL_YT_FETCHES)
         try {
@@ -726,12 +759,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 is SyncResult.Error -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getHomeMixes", StepStatus.ERROR, errorMessage = result.message))
                     Log.e(TAG, "fetchYouTubePlaylists: home mixes error: ${result.message}")
+                    markYoutubeIncomplete("getHomeMixes: ${result.message}")
                 }
             }
 
             // 2. Liked Songs runs concurrently with user-playlist discovery + per-playlist fan-out.
             coroutineScope {
-                launch { sem.withPermit { fetchAndSnapshotLikedSongs(syncId, diagnostics) } }
+                val likedDeferred = async { sem.withPermit { fetchAndSnapshotLikedSongs(syncId, diagnostics) } }
 
                 // Fetch user-library playlists (user-created + user-saved from
                 // Library → Playlists). These come with `PlaylistType.CUSTOM`
@@ -755,6 +789,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         )
                         if (paged.partial) {
                             Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
+                            markYoutubeIncomplete("getUserPlaylists partial: ${paged.partialReason}")
                         }
                         Log.d(TAG, "fetchYouTubePlaylists: found ${userPlaylists.size} user playlists")
                         userPlaylists.map { playlist ->
@@ -768,15 +803,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     is SyncResult.Error -> {
                         diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
                         Log.e(TAG, "fetchYouTubePlaylists: user playlists error: ${result.message}")
+                        markYoutubeIncomplete("getUserPlaylists: ${result.message}")
                     }
                 }
+            if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
             }
         } catch (e: Exception) {
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
+            markYoutubeIncomplete("top-level exception: ${e.message}")
         } finally {
             innerTubeClient.endSyncSession()
         }
+        return youtubeInventoryComplete.get()
     }
 
     /**
@@ -834,10 +873,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
                 is SyncResult.Error -> {
                     Log.e(TAG, "fetchAndSnapshotMix: failed to fetch tracks for '${mix.title}': ${tracksResult.message}")
+                    markYoutubeIncomplete("mix '${mix.title}' tracks: ${tracksResult.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchAndSnapshotMix: exception for '${mix.title}'", e)
+            markYoutubeIncomplete("mix '${mix.title}' exception: ${e.message}")
         }
         reportPlaylistFetched()
     }
@@ -849,7 +890,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private suspend fun fetchAndSnapshotLikedSongs(
         syncId: Long,
         diagnostics: MutableList<SyncStepResult>,
-    ) {
+    ): Boolean {
         try {
             when (val result = ytMusicApiClient.getLikedSongs()) {
                 is SyncResult.Success -> {
@@ -892,7 +933,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // Empty-after-filter: don't write a phantom playlist row.
                     if (likedSongs.isEmpty()) {
                         Log.d(TAG, "fetchAndSnapshotLikedSongs: all ${rawTracks.size} liked songs filtered (studio-only mode)")
-                        return  // exits the inner block; the outer try/catch around fetchAndSnapshotLikedSongs is unaffected
+                        reportPlaylistFetched()
+                        return true  // filtered-to-empty is a legit outcome, not a fetch failure
                     }
 
                     val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
@@ -935,13 +977,18 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 is SyncResult.Error -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
                     Log.e(TAG, "fetchAndSnapshotLikedSongs: liked songs error: ${result.message}")
+                    reportPlaylistFetched()
+                    return false
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchAndSnapshotLikedSongs: exception", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
+            reportPlaylistFetched()
+            return false
         }
         reportPlaylistFetched()
+        return true
     }
 
     /**
@@ -996,10 +1043,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
                 is SyncResult.Error -> {
                     Log.e(TAG, "fetchAndSnapshotUserPlaylist: failed tracks for '${playlist.title}': ${tracksResult.message}")
+                    markYoutubeIncomplete("playlist '${playlist.title}' tracks: ${tracksResult.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchAndSnapshotUserPlaylist: exception for '${playlist.title}'", e)
+            markYoutubeIncomplete("playlist '${playlist.title}' exception: ${e.message}")
         }
         reportPlaylistFetched()
     }

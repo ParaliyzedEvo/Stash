@@ -93,7 +93,12 @@ class DownloadManagerDeferTest {
         lyricsFetchTrigger = lyricsFetchTrigger,
         audioDurationExtractor = audioDurationExtractor,
         losslessHealthGate = losslessHealthGate,
-    )
+    ).apply {
+        // Under testDebugUnitTest, BuildConfig.DEBUG is unconditionally true,
+        // which would otherwise make the strict-FLAC Deferred branch under
+        // test permanently unreachable. Force the real (release) behavior.
+        forceYoutubeFallbackOnDebugBuilds = false
+    }
 
     private fun stubTrack(): Track = Track(
         id = 42L,

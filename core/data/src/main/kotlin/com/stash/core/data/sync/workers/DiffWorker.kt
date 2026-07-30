@@ -120,6 +120,12 @@ class DiffWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val syncId = inputData.getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
+        // Defaults to false (fail-closed) — if the key is somehow missing, treat
+        // the inventory as unreliable and skip deactivation rather than risk
+        // hiding real playlists.
+        val youtubeInventoryComplete = inputData.getBoolean(
+            PlaylistFetchWorker.KEY_YOUTUBE_INVENTORY_COMPLETE, false,
+        )
         if (syncId == -1L) {
             syncStateManager.onError("DiffWorker: missing sync ID")
             return Result.failure()
@@ -216,7 +222,11 @@ class DiffWorker @AssistedInject constructor(
             val youtubeSourceIds = playlistSnapshots
                 .filter { it.source == MusicSource.YOUTUBE }
                 .map { it.sourcePlaylistId }
-            if (youtubeSourceIds.isNotEmpty()) {
+            // #post-343: mirrors the Spotify inventoryComplete guard — never treat a
+            // PARTIAL YouTube fetch (one failed sub-leg: home mixes / liked songs /
+            // a specific playlist's tracks) as "these other playlists are gone."
+            // A single flaky call used to hide the user's entire YouTube library.
+            if (youtubeSourceIds.isNotEmpty() && youtubeInventoryComplete) {
                 val hidden = playlistDao.deactivateMissingForSource(
                     source = MusicSource.YOUTUBE,
                     currentSourceIds = youtubeSourceIds,
@@ -224,6 +234,8 @@ class DiffWorker @AssistedInject constructor(
                 if (hidden > 0) {
                     Log.i(TAG, "Deactivated $hidden stale YouTube playlist(s)")
                 }
+            } else if (youtubeSourceIds.isNotEmpty()) {
+                Log.w(TAG, "Skipping stale-YouTube-playlist deactivation — this sync's inventory was incomplete")
             }
 
             // Clean up orphaned tracks whose playlists were refreshed and

@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -217,6 +218,13 @@ class CrossfadeEngine(
             outgoing.volume = 0f
             incoming.volume = 1f
 
+            // A cancelTransition() call landing after the fade loop's last delay()
+            // has nothing to interrupt below this point (no suspension calls until
+            // job completion) — without this check the promote-and-clear tail runs
+            // to completion even though the transition was supposed to be aborted,
+            // which can leave the wrong player wired to the session mid-user-tap.
+            if (!isActive) return@launch
+
             // Late swap: give the incoming the outgoing's queue, then promote it.
             transferQueue(from = outgoing, to = incoming)
             outgoing.removeListener(masterFocusListener)
@@ -224,18 +232,9 @@ class CrossfadeEngine(
             incoming.pauseAtEndOfMediaItems = false
             playerA = incoming
             playerB = outgoing
-            // The incoming's playWhenReady=true edge fired while it was a
-            // listener-less spare, so no focus request ever ran for it. If
-            // focus was lost/abandoned during the ramp, the new master would
-            // play focusless forever. Idempotent when focus is already held.
             requestFocus()
-            android.util.Log.i(
-                "Crossfade",
-                "swap: master=${tag(incoming)} spare=${tag(outgoing)} (resetting spare)",
-            )
             onSwap(playerA)
 
-            // Reset the old master to a clean spare.
             outgoing.pauseAtEndOfMediaItems = false
             outgoing.playWhenReady = false
             outgoing.stop()
