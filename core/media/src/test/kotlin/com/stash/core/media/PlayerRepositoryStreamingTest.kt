@@ -7,6 +7,7 @@ import com.stash.core.common.constants.StashConstants
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
@@ -53,6 +54,9 @@ class PlayerRepositoryStreamingTest {
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk()
     private val trackDao: TrackDao = mockk()
+    private val trackIdentityEvents: TrackIdentityEvents = mockk {
+        every { changes } returns MutableSharedFlow()
+    }
 
     private lateinit var repo: PlayerRepositoryImpl
 
@@ -70,6 +74,7 @@ class PlayerRepositoryStreamingTest {
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = mockk(relaxed = true),
+            trackIdentityEvents = trackIdentityEvents,
         )
         // Tests that don't care about disk existence get a "file is there"
         // default; the not-downloaded tests can override per-test.
@@ -99,6 +104,7 @@ class PlayerRepositoryStreamingTest {
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = mockk(relaxed = true),
+            trackIdentityEvents = trackIdentityEvents,
         )
 
         val empty = File.createTempFile("stash-empty", ".flac").apply { deleteOnExit() }

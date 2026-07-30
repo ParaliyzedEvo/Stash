@@ -10,6 +10,7 @@ import com.stash.core.data.radio.RadioSeed
 import com.stash.core.data.radio.RadioSession
 import com.stash.core.data.radio.RadioStationGenerator
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
@@ -42,6 +43,9 @@ class PlayerRepositoryRadioTest {
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val controller: MediaController = mockk(relaxed = true)
     private val radioGenerator: RadioStationGenerator = mockk()
+    private val trackIdentityEvents: TrackIdentityEvents = mockk {
+        every { changes } returns MutableSharedFlow()
+    }
 
     private lateinit var repo: PlayerRepositoryImpl
 
@@ -58,6 +62,7 @@ class PlayerRepositoryRadioTest {
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = radioGenerator,
+            trackIdentityEvents = trackIdentityEvents,
         )
         repo.controllerDeferred = controller
     }
@@ -98,6 +103,7 @@ class PlayerRepositoryRadioTest {
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = radioGenerator,
+            trackIdentityEvents = trackIdentityEvents,
         )
 
         val started = coldRepo.startRadio(RadioSeed.Song("t", "a"))

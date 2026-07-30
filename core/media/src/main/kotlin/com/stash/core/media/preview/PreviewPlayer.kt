@@ -47,11 +47,15 @@ sealed interface PreviewState {
  * Error event surfaced by [PreviewPlayer] when ExoPlayer's [Player.Listener]
  * reports an [onPlayerError]. Emitted on [PreviewPlayer.playerErrors].
  *
- * Search and Artist Profile ViewModels collect this flow so they can
- * transparently retry a failed preview via the yt-dlp fallback path
- * (see `SearchViewModel.onPreviewError` for the retry policy).
+ * [attemptId] identifies the exact [playUrl] request that failed. Consumers
+ * that retry must compare it with the token returned by [PreviewPlayer.playUrl]
+ * so a buffered error from an older URL cannot stop a newer attempt.
  */
-data class PreviewErrorEvent(val videoId: String, val error: PlaybackException)
+data class PreviewErrorEvent(
+    val videoId: String,
+    val attemptId: Long,
+    val error: PlaybackException,
+)
 
 // ---------------------------------------------------------------------------
 // Player
@@ -113,6 +117,7 @@ class PreviewPlayer @Inject constructor(
      * All internal helpers check [requirePlayer] or guard against null.
      */
     private var exoPlayer: ExoPlayer? = null
+    private var attemptErrorListener: Player.Listener? = null
 
     /**
      * The [videoId] passed to the most recent [playUrl] call.
@@ -121,6 +126,10 @@ class PreviewPlayer @Inject constructor(
      * have been replaced by a subsequent [playUrl] call.
      */
     private var currentVideoId: String = ""
+    private var requestSequence = 0L
+    private var currentRequestId = 0L
+    private var attemptSequence = 0L
+    private var currentAttemptId = 0L
 
     // ------------------------------------------------------------------
     // Listener
@@ -171,18 +180,6 @@ class PreviewPlayer @Inject constructor(
             }
         }
 
-        override fun onPlayerError(error: PlaybackException) {
-            // Any playback error resets state so the UI does not remain stuck in Playing.
-            _previewState.value = PreviewState.Idle
-            // Surface the error to any VM subscribed to [playerErrors] so it
-            // can decide whether to retry (e.g. InnerTube URL rejected → yt-dlp).
-            val id = currentVideoId
-            if (id.isNotEmpty()) {
-                // Non-blocking; fits in the 4-slot buffer even if the VM's
-                // collector hasn't drained the previous event yet.
-                _playerErrors.tryEmit(PreviewErrorEvent(id, error))
-            }
-        }
     }
 
     // ------------------------------------------------------------------
@@ -230,8 +227,69 @@ class PreviewPlayer @Inject constructor(
      *
      * @param videoId   Logical identifier of the track being previewed.
      * @param streamUrl Direct audio stream URL that ExoPlayer can open.
+     * @param onAttemptStarted Called with the attempt token before ExoPlayer
+     *                         receives or prepares the media item.
+     * @return An opaque token identifying this exact playback attempt.
      */
-    fun playUrl(videoId: String, streamUrl: String) {
+    @Synchronized
+    fun playUrl(
+        videoId: String,
+        streamUrl: String,
+        onAttemptStarted: (Long) -> Unit = {},
+    ): Long = checkNotNull(
+        playUrlIfClaimed(
+            requestId = claimRequest(),
+            videoId = videoId,
+            streamUrl = streamUrl,
+            onAttemptStarted = onAttemptStarted,
+        ),
+    )
+
+    /**
+     * Claims global ownership before a caller begins asynchronous URL/source
+     * resolution. A later claim from another screen supersedes this token.
+     */
+    @Synchronized
+    fun claimRequest(): Long {
+        requestSequence += 1L
+        currentRequestId = requestSequence
+        return currentRequestId
+    }
+
+    /** Invalidates [requestId] only if no newer screen has claimed playback. */
+    @Synchronized
+    fun cancelRequest(requestId: Long?) {
+        if (requestId != null && requestId == currentRequestId) {
+            currentRequestId = 0L
+        }
+    }
+
+    /** Returns whether [requestId] is still the latest global preview claim. */
+    @Synchronized
+    fun isRequestCurrent(requestId: Long?): Boolean =
+        requestId != null && requestId == currentRequestId
+
+    /**
+     * Starts URL playback only while [requestId] remains the latest global
+     * request. Returns `null` when another screen won ownership while the
+     * caller was suspended.
+     */
+    @Synchronized
+    fun playUrlIfClaimed(
+        requestId: Long,
+        videoId: String,
+        streamUrl: String,
+        onAttemptStarted: (Long) -> Unit = {},
+    ): Long? {
+        if (requestId != currentRequestId) return null
+        return playUrlInternal(videoId, streamUrl, onAttemptStarted)
+    }
+
+    private fun playUrlInternal(
+        videoId: String,
+        streamUrl: String,
+        onAttemptStarted: (Long) -> Unit,
+    ): Long {
         // Capture BEFORE any work so the bookend measures the full
         // tap→audible latency (spec §4.1 target: p50 <500ms / p95 <3s).
         val t0 = SystemClock.elapsedRealtime()
@@ -240,10 +298,13 @@ class PreviewPlayer @Inject constructor(
         // Stop any previous playback and clear the queue before loading the
         // new item.  This ensures the listener does not fire stale STATE_ENDED
         // events for the previous track after we replace it.
+        clearAttemptErrorListener(player)
         player.stop()
         player.clearMediaItems()
 
-        currentVideoId = videoId
+        val attemptId = beginAttempt(videoId)
+        installAttemptErrorListener(player, videoId, attemptId)
+        onAttemptStarted(attemptId)
 
         player.setMediaItem(MediaItem.fromUri(streamUrl))
         player.prepare()
@@ -265,6 +326,7 @@ class PreviewPlayer @Inject constructor(
                 }
             }
         })
+        return attemptId
     }
 
     /**
@@ -288,23 +350,89 @@ class PreviewPlayer @Inject constructor(
      * @param mediaSource Pre-built [MediaSource] from [SearchPreviewMediaSource.create].
      */
     @OptIn(UnstableApi::class)
-    fun play(videoId: String, mediaSource: MediaSource) {
+    @Synchronized
+    fun play(
+        videoId: String,
+        mediaSource: MediaSource,
+        onAttemptStarted: (Long) -> Unit = {},
+    ): Long = checkNotNull(
+        playIfClaimed(
+            requestId = claimRequest(),
+            videoId = videoId,
+            mediaSource = mediaSource,
+            onAttemptStarted = onAttemptStarted,
+        ),
+    )
+
+    /** MediaSource counterpart to [playUrlIfClaimed]. */
+    @OptIn(UnstableApi::class)
+    @Synchronized
+    fun playIfClaimed(
+        requestId: Long,
+        videoId: String,
+        mediaSource: MediaSource,
+        onAttemptStarted: (Long) -> Unit = {},
+    ): Long? {
+        if (requestId != currentRequestId) return null
+        return playInternal(videoId, mediaSource, onAttemptStarted)
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun playInternal(
+        videoId: String,
+        mediaSource: MediaSource,
+        onAttemptStarted: (Long) -> Unit,
+    ): Long {
         val player = requirePlayer()
         // Idempotency: skip if already playing this exact videoId.
-        if (currentVideoId == videoId && player.isPlaying) return
+        if (currentVideoId == videoId && player.isPlaying) {
+            onAttemptStarted(currentAttemptId)
+            return currentAttemptId
+        }
 
         // Stop previous playback and clear queue so stale STATE_ENDED events
         // from the prior track cannot fire after we replace the source.
+        clearAttemptErrorListener(player)
         player.stop()
         player.clearMediaItems()
 
-        currentVideoId = videoId
+        val attemptId = beginAttempt(videoId)
+        installAttemptErrorListener(player, videoId, attemptId)
+        onAttemptStarted(attemptId)
 
         player.setMediaSource(mediaSource)
         player.prepare()
         player.playWhenReady = true
 
         PerfLog.d { "PreviewPlayer.play($videoId) via MediaSource" }
+        return attemptId
+    }
+
+    private fun beginAttempt(videoId: String): Long {
+        attemptSequence += 1L
+        currentAttemptId = attemptSequence
+        currentVideoId = videoId
+        return currentAttemptId
+    }
+
+    private fun installAttemptErrorListener(
+        player: ExoPlayer,
+        videoId: String,
+        attemptId: Long,
+    ) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                _previewState.value = PreviewState.Idle
+                _playerErrors.tryEmit(PreviewErrorEvent(videoId, attemptId, error))
+            }
+        }
+        attemptErrorListener = listener
+        player.addListener(listener)
+    }
+
+    private fun clearAttemptErrorListener(player: ExoPlayer) {
+        attemptErrorListener?.let(player::removeListener)
+        attemptErrorListener = null
     }
 
     /**
@@ -315,13 +443,30 @@ class PreviewPlayer @Inject constructor(
      *
      * Safe to call when no playback is active.
      */
+    @Synchronized
     fun stop() {
-        exoPlayer?.stop()
-        exoPlayer?.clearMediaItems()
+        exoPlayer?.let { player ->
+            clearAttemptErrorListener(player)
+            player.stop()
+            player.clearMediaItems()
+        }
         // Clear so a late onPlayerError (fired after stop tears down the
         // source) can't be attributed to the stopped videoId.
         currentVideoId = ""
+        currentRequestId = 0L
+        currentAttemptId = 0L
         _previewState.value = PreviewState.Idle
+    }
+
+    /**
+     * Stops playback only when [attemptId] still owns the current source.
+     *
+     * ViewModels call this from teardown/failure paths so a stale screen cannot
+     * stop a newer screen's preview after the singleton player was preempted.
+     */
+    @Synchronized
+    fun stopIfCurrent(attemptId: Long?) {
+        if (attemptId != null && attemptId == currentAttemptId) stop()
     }
 
     /**
@@ -333,10 +478,15 @@ class PreviewPlayer @Inject constructor(
      * Should be called from the DI component's teardown (e.g. [Application.onTerminate]
      * or a [ViewModel.onCleared] that owns this singleton's scope).
      */
+    @Synchronized
     fun release() {
+        exoPlayer?.let(::clearAttemptErrorListener)
         exoPlayer?.removeListener(playerListener)
         exoPlayer?.release()
         exoPlayer = null
+        currentVideoId = ""
+        currentRequestId = 0L
+        currentAttemptId = 0L
         _previewState.value = PreviewState.Idle
     }
 }

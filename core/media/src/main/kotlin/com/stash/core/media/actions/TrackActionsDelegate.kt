@@ -16,6 +16,7 @@ import com.stash.data.download.search.SearchDownloadStatus
 import dagger.hilt.android.scopes.ViewModelScoped
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -95,6 +96,12 @@ class TrackActionsDelegate @Inject constructor(
      * trigger a spurious yt-dlp retry.
      */
     private var lastPreviewVideoId: String? = null
+    private var previewRequestId: Long? = null
+    private var lastPreviewAttemptId: Long? = null
+    private var lastPreviewRetried = false
+    private var previewLoadJob: Job? = null
+    private var previewRetryJob: Job? = null
+    private var previewGeneration = 0L
 
     /**
      * Wall-clock timestamp of the most recent [PreviewPlayer.playUrl] call.
@@ -116,7 +123,7 @@ class TrackActionsDelegate @Inject constructor(
         boundScope = scope
         scope.launch {
             previewPlayer.playerErrors.collect { event ->
-                onPreviewError(event.videoId, event.error)
+                onPreviewError(event.videoId, event.attemptId, event.error)
             }
         }
     }
@@ -142,9 +149,9 @@ class TrackActionsDelegate @Inject constructor(
      * for ExoPlayer-level IO failures that fire after [play] returns.
      *
      * ### Bookkeeping
-     * [lastPreviewVideoId] / [lastPreviewStartedAt] are recorded BEFORE calling
-     * [play] so a synchronous [onPlayerError] (possible for malformed URLs)
-     * still observes the correct "most recent preview" state.
+     * Preview ownership is recorded through [PreviewPlayer]'s attempt callback
+     * before ExoPlayer receives the media source, so immediate failures are
+     * attributed to the exact request that started them.
      *
      * @param track Full [TrackItem] so that [SearchPreviewMediaSource] can
      *              perform artist+title matching for lossless-source selection.
@@ -152,14 +159,31 @@ class TrackActionsDelegate @Inject constructor(
     fun previewTrack(track: TrackItem) {
         val videoId = track.videoId
 
-        scope().launch {
+        if ((previewState.value as? PreviewState.Playing)?.videoId == videoId) return
+        if (_previewLoadingId.value == videoId) return
+
+        val generation = ++previewGeneration
+        previewLoadJob?.cancel()
+        previewRetryJob?.cancel()
+        previewRetryJob = null
+        lastPreviewVideoId = videoId
+        lastPreviewAttemptId = null
+        lastPreviewRetried = false
+        // A new user selection deliberately preempts the singleton player.
+        previewPlayer.stop()
+        val requestId = previewPlayer.claimRequest()
+        previewRequestId = requestId
+
+        previewLoadJob = scope().launch {
             // Streaming mode: skip preview entirely. Route to full-track playback
             // via PlayerRepository.playFromStream. Same routing as
             // SearchViewModel.onResultTap, so every surface that calls
             // delegate.previewTrack (SearchScreen, ArtistProfileScreen,
             // AlbumDiscoveryScreen, etc.) behaves identically when streaming
             // is enabled instead of falling back to the 30s preview clip.
-            if (streamingPreference.current()) {
+            val streamingEnabled = streamingPreference.current()
+            if (!isActivePreviewRequest(generation, videoId)) return@launch
+            if (streamingEnabled) {
                 // Drive the row-level spinner while the stream resolves. The
                 // resolve can take seconds (worst for amz, which fetch+decrypts
                 // a whole FLAC), so without this the row sits silent and looks
@@ -170,6 +194,7 @@ class TrackActionsDelegate @Inject constructor(
                 _previewLoadingId.value = videoId
                 try {
                     val result = playerRepository.playFromStream(track)
+                    if (!isActivePreviewRequest(generation, videoId)) return@launch
                     when (result) {
                         is com.stash.core.media.StreamRoutingResult.Item -> Unit
                         com.stash.core.media.StreamRoutingResult.Deduped -> Unit
@@ -183,7 +208,9 @@ class TrackActionsDelegate @Inject constructor(
                             _userMessages.emit("You're offline — can't stream this track.")
                     }
                 } finally {
-                    _previewLoadingId.value = null
+                    if (isActivePreviewRequest(generation, videoId)) {
+                        _previewLoadingId.value = null
+                    }
                 }
                 return@launch
             }
@@ -198,7 +225,6 @@ class TrackActionsDelegate @Inject constructor(
             if ((previewState.value as? PreviewState.Playing)?.videoId == videoId) return@launch
             if (_previewLoadingId.value == videoId) return@launch
 
-            previewPlayer.stop()
             val t0 = System.currentTimeMillis()
             _previewLoadingId.value = videoId
             try {
@@ -209,16 +235,26 @@ class TrackActionsDelegate @Inject constructor(
                 // and constructs the source, but does NOT begin network I/O yet —
                 // that happens inside ExoPlayer once prepare() is called by play().
                 val mediaSource = searchPreviewMediaSource.create(track)
+                if (!isActivePreviewRequest(generation, videoId)) return@launch
 
-                // Set bookkeeping BEFORE play() so a synchronous onPlayerError
-                // (which can fire for a malformed upstream URL before prepare()
-                // completes) still sees the correct "most recent preview" state
-                // and triggers the onPreviewError retry path correctly.
-                lastPreviewVideoId = videoId
-                lastPreviewStartedAt = SystemClock.elapsedRealtime()
-
-                previewPlayer.play(videoId, mediaSource)
-                _previewLoadingId.value = null
+                val attemptId = previewPlayer.playIfClaimed(
+                    requestId,
+                    videoId,
+                    mediaSource,
+                ) { attemptId ->
+                    if (isActivePreviewRequest(generation, videoId)) {
+                        lastPreviewVideoId = videoId
+                        lastPreviewAttemptId = attemptId
+                        lastPreviewStartedAt = SystemClock.elapsedRealtime()
+                    }
+                }
+                if (attemptId == null) {
+                    abandonPreviewRequest(generation, videoId)
+                    return@launch
+                }
+                if (isActivePreviewRequest(generation, videoId)) {
+                    _previewLoadingId.value = null
+                }
 
                 android.util.Log.d(
                     "LATDIAG",
@@ -226,6 +262,7 @@ class TrackActionsDelegate @Inject constructor(
                 )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                if (!isActivePreviewRequest(generation, videoId)) return@launch
 
                 // Happy-path failure: fall back to the URL-only extractor so the
                 // user still gets a preview even when the Qobuz proxy is unavailable.
@@ -241,32 +278,74 @@ class TrackActionsDelegate @Inject constructor(
                         ?: previewUrlExtractor.extractStreamUrl(videoId).also {
                             previewUrlCache[videoId] = it
                         }
-                    lastPreviewVideoId = videoId
-                    lastPreviewStartedAt = SystemClock.elapsedRealtime()
-                    previewPlayer.playUrl(videoId, url)
-                    _previewLoadingId.value = null
+                    if (!isActivePreviewRequest(generation, videoId)) return@runCatching
+                    val attemptId = previewPlayer.playUrlIfClaimed(
+                        requestId,
+                        videoId,
+                        url,
+                    ) { attemptId ->
+                        if (isActivePreviewRequest(generation, videoId)) {
+                            lastPreviewVideoId = videoId
+                            lastPreviewAttemptId = attemptId
+                            lastPreviewStartedAt = SystemClock.elapsedRealtime()
+                        }
+                    }
+                    if (attemptId == null) {
+                        abandonPreviewRequest(generation, videoId)
+                        return@runCatching
+                    }
+                    if (isActivePreviewRequest(generation, videoId)) {
+                        _previewLoadingId.value = null
+                    }
                     android.util.Log.d(
                         "LATDIAG",
                         "preview-url-fallback-play videoId=$videoId cache=$cacheHit totalDt=${System.currentTimeMillis() - t0}ms",
                     )
                 }.onFailure { retryError ->
                     if (retryError is CancellationException) throw retryError
+                    if (!isActivePreviewRequest(generation, videoId)) return@onFailure
                     Log.e(TAG, "URL-fallback preview also failed for videoId=$videoId", retryError)
                     android.util.Log.d(
                         "LATDIAG",
                         "preview-fail videoId=$videoId totalDt=${System.currentTimeMillis() - t0}ms err=${retryError.javaClass.simpleName}",
                     )
                     _previewLoadingId.value = null
+                    previewPlayer.cancelRequest(previewRequestId)
+                    previewRequestId = null
+                    lastPreviewVideoId = null
                     _userMessages.emit("Couldn't load preview.")
-                    previewPlayer.stop()
+                    previewPlayer.stopIfCurrent(lastPreviewAttemptId)
                 }
             }
         }
     }
 
+    private fun isActivePreviewRequest(generation: Long, videoId: String): Boolean =
+        previewGeneration == generation && lastPreviewVideoId == videoId
+
+    private fun abandonPreviewRequest(generation: Long, videoId: String) {
+        if (!isActivePreviewRequest(generation, videoId)) return
+        previewRequestId = null
+        lastPreviewVideoId = null
+        lastPreviewAttemptId = null
+        if (_previewLoadingId.value == videoId) _previewLoadingId.value = null
+    }
+
     /** Stops the current audio preview, if any, and clears the loading flag. */
     fun stopPreview() {
-        previewPlayer.stop()
+        val ownedRequestId = previewRequestId
+        val ownedAttemptId = lastPreviewAttemptId
+        ++previewGeneration
+        previewLoadJob?.cancel()
+        previewRetryJob?.cancel()
+        previewLoadJob = null
+        previewRetryJob = null
+        previewPlayer.cancelRequest(ownedRequestId)
+        previewRequestId = null
+        lastPreviewVideoId = null
+        lastPreviewAttemptId = null
+        lastPreviewRetried = false
+        previewPlayer.stopIfCurrent(ownedAttemptId)
         _previewLoadingId.value = null
     }
 
@@ -277,31 +356,77 @@ class TrackActionsDelegate @Inject constructor(
      *
      * Retries via yt-dlp IFF all three hold:
      *  - [error] is an IO-class [PlaybackException] code (2000..2999).
-     *  - [videoId] matches [lastPreviewVideoId] (ignores stale late errors).
+     *  - [videoId] and [attemptId] match the exact active player request.
      *  - It fired within [RETRY_WINDOW_MS] of [lastPreviewStartedAt] — playback
      *    never went ready before failing.
      *
      * On retry failure we surface a snackbar so the user knows preview isn't
      * going to recover on its own.
      */
-    fun onPreviewError(videoId: String, error: PlaybackException) {
+    fun onPreviewError(videoId: String, attemptId: Long, error: PlaybackException) {
         if (!isIoError(error)) return
         if (videoId != lastPreviewVideoId) return
+        if (attemptId != lastPreviewAttemptId) return
+        val requestId = previewRequestId ?: return
+        if (!previewPlayer.isRequestCurrent(requestId)) {
+            abandonPreviewRequest(previewGeneration, videoId)
+            return
+        }
         val elapsed = SystemClock.elapsedRealtime() - lastPreviewStartedAt
         if (elapsed > RETRY_WINDOW_MS) return
 
-        scope().launch {
+        if (lastPreviewRetried) {
+            val ownedAttemptId = lastPreviewAttemptId
+            previewPlayer.cancelRequest(requestId)
+            previewRequestId = null
+            lastPreviewVideoId = null
+            lastPreviewAttemptId = null
+            previewPlayer.stopIfCurrent(ownedAttemptId)
+            _previewLoadingId.value = null
+            _userMessages.tryEmit("Couldn't load preview.")
+            return
+        }
+
+        lastPreviewRetried = true
+        lastPreviewAttemptId = null
+        val generation = previewGeneration
+        previewRetryJob?.cancel()
+
+        previewRetryJob = scope().launch {
             _previewLoadingId.value = videoId
             try {
                 val retryUrl = previewUrlExtractor.extractViaYtDlpForRetry(videoId)
+                if (!isActivePreviewRequest(generation, videoId) || !lastPreviewRetried) {
+                    return@launch
+                }
                 previewUrlCache[videoId] = retryUrl
-                previewPlayer.playUrl(videoId, retryUrl)
-                _previewLoadingId.value = null
+                val retryAttemptId = previewPlayer.playUrlIfClaimed(
+                    requestId,
+                    videoId,
+                    retryUrl,
+                ) { retryAttemptId ->
+                    if (isActivePreviewRequest(generation, videoId) && lastPreviewRetried) {
+                        lastPreviewVideoId = videoId
+                        lastPreviewAttemptId = retryAttemptId
+                        lastPreviewStartedAt = SystemClock.elapsedRealtime()
+                    }
+                }
+                if (retryAttemptId == null) {
+                    abandonPreviewRequest(generation, videoId)
+                    return@launch
+                }
+                if (isActivePreviewRequest(generation, videoId)) {
+                    _previewLoadingId.value = null
+                }
                 Log.d(TAG, "yt-dlp retry SUCCESS for $videoId after InnerTube error $error")
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
+                if (!isActivePreviewRequest(generation, videoId)) return@launch
                 Log.e(TAG, "yt-dlp retry FAILED for $videoId", t)
                 _previewLoadingId.value = null
+                previewPlayer.cancelRequest(requestId)
+                previewRequestId = null
+                lastPreviewVideoId = null
                 _userMessages.emit("Couldn't load preview.")
             }
         }
@@ -556,7 +681,7 @@ class TrackActionsDelegate @Inject constructor(
      * structured concurrency; no need to stop the error collector manually.
      */
     fun onOwnerCleared() {
-        previewPlayer.stop()
+        stopPreview()
     }
 
     /**

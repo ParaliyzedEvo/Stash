@@ -2,6 +2,7 @@ package com.stash.core.data.social
 
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.Track
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyTrackCandidate
@@ -24,7 +25,8 @@ class CrossPlatformLikeResolverTest {
     private val spotify = mockk<SpotifyApiClient>()
     private val yt = mockk<YTMusicApiClient>()
     private val dao = mockk<TrackDao>(relaxed = true)
-    private fun resolver() = CrossPlatformLikeResolver(spotify, yt, TrackMatcher(), dao)
+    private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
+    private fun resolver() = CrossPlatformLikeResolver(spotify, yt, TrackMatcher(), dao, trackIdentityEvents)
 
     private fun track(sp: String? = null, ytId: String? = null) = Track(
         id = 5L,

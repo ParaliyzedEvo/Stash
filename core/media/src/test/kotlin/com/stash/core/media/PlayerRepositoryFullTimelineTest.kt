@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
@@ -44,6 +45,9 @@ class PlayerRepositoryFullTimelineTest {
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val controller: MediaController = mockk(relaxed = true)
+    private val trackIdentityEvents: TrackIdentityEvents = mockk {
+        every { changes } returns MutableSharedFlow()
+    }
 
     private lateinit var repo: PlayerRepositoryImpl
 
@@ -60,6 +64,7 @@ class PlayerRepositoryFullTimelineTest {
             trackDao = trackDao,
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = mockk(relaxed = true),
+            trackIdentityEvents = trackIdentityEvents,
         )
         repo.controllerDeferred = controller
     }

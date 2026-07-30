@@ -3,6 +3,7 @@ package com.stash.data.download.matching
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.MusicVideoType
 import javax.inject.Inject
@@ -37,6 +38,7 @@ class YtLibraryCanonicalizer @Inject constructor(
     private val matchScorer: MatchScorer,
     private val trackDao: TrackDao,
     private val trackMatcher: TrackMatcher,
+    private val trackIdentityEvents: TrackIdentityEvents,
 ) {
     companion object {
         private const val TAG = "YtLibCanonicalizer"
@@ -109,6 +111,13 @@ class YtLibraryCanonicalizer @Inject constructor(
         // on the new (correct) videoId and try again without re-running
         // canonicalization — strictly better than the pre-persist state.
         trackDao.updateYoutubeId(track.id, best.videoId)
+        // Evict any StreamUrl cached under the OLD (OMV) videoId — otherwise
+        // the "next resolveUrl short-circuits on the new videoId" promise
+        // above is broken: PlayerRepositoryImpl.buildMediaItemForTrack checks
+        // StreamUrlCache BEFORE calling the resolver, so a stale cache hit
+        // would keep serving the old OMV audio/URL despite the DB now
+        // pointing at the ATV videoId.
+        trackIdentityEvents.emitIdentityChanged(track.id)
 
         // Also refresh the display/dedup metadata so the UI stops showing
         // the OMV's title ("Smooth Criminal (Official Video)") and its

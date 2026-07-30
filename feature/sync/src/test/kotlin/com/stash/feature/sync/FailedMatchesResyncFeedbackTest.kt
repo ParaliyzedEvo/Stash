@@ -2,7 +2,10 @@ package com.stash.feature.sync
 
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.media.preview.PreviewErrorEvent
+import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.preview.PreviewPlayer
+import com.stash.core.media.preview.PreviewState
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.SwapCoordinator
@@ -15,6 +18,8 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -47,9 +52,12 @@ class FailedMatchesResyncFeedbackTest {
     private val downloadQueueDao = mockk<com.stash.core.data.db.dao.DownloadQueueDao>(relaxed = true)
     private val swapCoordinator: SwapCoordinator = mockk(relaxed = true)
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
+    private val trackIdentityEvents = mockk<TrackIdentityEvents>(relaxed = true)
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        every { previewPlayer.playerErrors } returns MutableSharedFlow<PreviewErrorEvent>()
+        every { previewPlayer.previewState } returns MutableStateFlow(PreviewState.Idle)
     }
 
     @After fun tearDown() {
@@ -72,6 +80,7 @@ class FailedMatchesResyncFeedbackTest {
             downloadExecutor, fileOrganizer, qualityPrefs, trackDao,
             downloadQueueDao, swapCoordinator, blocklistGuard,
             mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
+            trackIdentityEvents,
         )
     }
 
