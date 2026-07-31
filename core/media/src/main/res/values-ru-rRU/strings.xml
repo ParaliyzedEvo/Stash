@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">Add to Liked Songs</string>
-    <string name="notification_action_unlike">Remove from Liked Songs</string>
-    <string name="notification_action_repeat_off">Repeat Off</string>
-    <string name="notification_action_repeat_all">Repeat All</string>
-    <string name="notification_action_repeat_one">Repeat One</string>
-    <string name="notification_action_shuffle_on">Shuffle On</string>
-    <string name="notification_action_shuffle_off">Shuffle Off</string>
-    <string name="shuffle_play">Shuffle Play</string>
-    <string name="resuming_channel_name">Playback</string>
-    <string name="resuming_notification_title">Resuming…</string>
+    <string name="notification_action_like">Добавить в любимые треки</string>
+    <string name="notification_action_unlike">Удалить из любимых треков</string>
+    <string name="notification_action_repeat_off">Повтор выкл.</string>
+    <string name="notification_action_repeat_all">Повторять</string>
+    <string name="notification_action_repeat_one">Повторять один трек</string>
+    <string name="notification_action_shuffle_on">Случайный порядок вкл.</string>
+    <string name="notification_action_shuffle_off">Случайный порядок выкл.</string>
+    <string name="shuffle_play">Случайный порядок</string>
+    <string name="resuming_channel_name">Воспроизведение</string>
+    <string name="resuming_notification_title">Возобновление…</string>
 </resources>
