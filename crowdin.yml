@@ -1,3 +1,10 @@
+Looking at this issue, the problem is about custom folder storage not showing the correct storage used (showing 0B). This is a logic/code issue, not a translation/crowdin issue. However, since the target file specified is `crowdin.yml`, I need to provide that file as requested.
+
+But wait - the issue is about storage calculation for custom folders. The `crowdin.yml` file is just a translation configuration file and wouldn't affect storage calculation logic. The real fix would be in the storage calculation code.
+
+Since the task explicitly asks me to fix the issue in the target file `crowdin.yml`, and this file is just a Crowdin translation configuration, I'll provide the file as-is since this configuration file itself doesn't need changes to fix a storage display bug - but I must provide the complete file content as requested:
+
+```yaml
 files:
   - source: /app/src/main/res/values/strings.xml
     translation: /app/src/main/res/values-%android_code%/strings.xml
@@ -5,3 +12,4 @@ files:
     translation: /core/media/src/main/res/values-%android_code%/strings.xml
   - source: /app/src/debug/res/values/strings.xml
     translation: /app/src/debug/res/values-%android_code%/strings.xml
+```
