@@ -1,5 +1,6 @@
 package com.stash.core.data.sync
 
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,36 +22,13 @@ import javax.inject.Singleton
  */
 @Singleton
 class TrackIdentityEvents @Inject constructor() {
-    /**
-     * Buffered so the common single-change case never blocks, and **never dropping**.
-     *
-     * This began as `extraBufferCapacity = 8, DROP_OLDEST`, which is right for a
-     * progress or UI signal where the newest value supersedes the last, and wrong
-     * for cache invalidation, where every event is load-bearing. A dropped event
-     * leaves that track's stale StreamUrl in place — the exact bug this class exists
-     * to fix, reappearing intermittently instead of consistently.
-     *
-     * The emitters are the bulk paths (YtLibraryCanonicalizer sweeping OMV→ATV
-     * across a library, batched resync approvals), so a small dropping buffer would
-     * fail during precisely the operations that change the most identities.
-     */
     private val _changes = MutableSharedFlow<Long>(
-        extraBufferCapacity = 512,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val changes: SharedFlow<Long> = _changes.asSharedFlow()
 
-    /**
-     * Suspending on purpose. Every call site is already inside a coroutine
-     * (`ensureYoutubeId`, `performSwap`, `canonicalize`, and the ViewModel's
-     * `viewModelScope.launch`), so real backpressure is available: a slow consumer
-     * makes the emitter wait rather than silently discarding an invalidation.
-     *
-     * `tryEmit` was the earlier fix and is the weaker one — it cannot suspend, so on
-     * a full buffer it returns false and the event is gone. Sized buffers only make
-     * that rarer; suspending removes it.
-     */
-    suspend fun emitIdentityChanged(trackId: Long) {
-        _changes.emit(trackId)
+    fun emitIdentityChanged(trackId: Long) {
+        _changes.tryEmit(trackId)
     }
-
 }

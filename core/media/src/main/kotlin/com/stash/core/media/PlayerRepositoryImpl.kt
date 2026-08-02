@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -232,7 +233,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     // Quality layer: upgrade the immediate next-up via the full
                     // chain (arcod/amz FLAC) so the common auto-advance never
                     // falls back to the cold LazyResolvingDataSource path.
-                    prefetchNextTrack(idx)
+                    prefetchNextTrack()
                 }
         }
     }
@@ -413,13 +414,59 @@ class PlayerRepositoryImpl @Inject constructor(
         // always correct (shuffle order, repeat-all wraparound included).
         // hasNextMediaItem() is false only at the true end with repeat off —
         // the correct no-op.
-        if (controller.hasNextMediaItem()) controller.seekToNextMediaItem()
+        if (!controller.hasNextMediaItem()) return
+        val nextIndex = controller.nextMediaItemIndex
+        val nextTrack = queueTrackAtTimelineIndex(controller, nextIndex)
+        if (nextTrack != null) {
+            // Sequential transport must never pin behind a stale offline row.
+            // When preparation rejects it, retain native navigation so the
+            // existing local-error recovery can advance to the next valid item.
+            prepareExplicitTimelineTarget(controller, nextIndex, nextTrack)
+        }
+        controller.seekToNextMediaItem()
     }
 
     override suspend fun skipPrevious() {
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
-        if (controller.hasPreviousMediaItem()) controller.seekToPreviousMediaItem()
+        if (!controller.hasPreviousMediaItem()) return
+
+        // Do not enter a stale offline item and rely on forward-only error
+        // recovery: A -> stale B -> current C would otherwise bounce back to C
+        // forever. Walk Media3's own previous-window order so shuffle and
+        // repeat-all remain correct, and stop if a cycle contains no playable
+        // predecessor.
+        val timeline = controller.currentTimeline
+        val navigationRepeatMode = if (controller.repeatMode == Player.REPEAT_MODE_ONE) {
+            Player.REPEAT_MODE_OFF
+        } else {
+            controller.repeatMode
+        }
+        // Seed with the origin so repeat-all cannot wrap around and select the
+        // currently playing item as its own predecessor.
+        val visited = mutableSetOf(controller.currentMediaItemIndex)
+        var candidate = controller.previousMediaItemIndex
+        while (candidate != C.INDEX_UNSET && visited.add(candidate)) {
+            val candidateTrack = queueTrackAtTimelineIndex(controller, candidate)
+            if (
+                candidateTrack == null ||
+                prepareExplicitTimelineTarget(
+                    controller = controller,
+                    timelineIndex = candidate,
+                    target = candidateTrack,
+                    reportUnavailable = false,
+                )
+            ) {
+                controller.seekToDefaultPosition(candidate)
+                return
+            }
+            candidate = timeline.getPreviousWindowIndex(
+                candidate,
+                navigationRepeatMode,
+                controller.shuffleModeEnabled,
+            )
+        }
+        _userMessages.tryEmit("No earlier song is available offline right now.")
     }
 
     override suspend fun seekTo(positionMs: Long) {
@@ -462,12 +509,17 @@ class PlayerRepositoryImpl @Inject constructor(
         // Downloaded → file://; stream → stash-resolve:// placeholder resolved
         // just-in-time by LazyResolvingDataSource at open(). Native next/prev/
         // repeat/shuffle are correct because ExoPlayer sees the whole queue.
-        // Item building does per-track disk checks (filePathExistsOnDisk), so
-        // it runs off the main thread; a 2.6k-track queue must not jank the UI.
+        // Only the selected track performs a live disk check on this critical
+        // path. Tail downloads use persisted size/path metadata and are opened
+        // lazily; local playback errors already skip safely when encountered.
+        // Construction stays on IO for the selected SAF probe and the large
+        // allocation, but tap-to-audio no longer scales with filesystem work.
         val builtItems = withContext(Dispatchers.IO) {
-            tracks.mapNotNull { track ->
-                track.takeIf { it.isPlayableForQueueAppend(streamingOn) }
-                    ?.let { it to it.toQueueMediaItem() }
+            tracks.mapIndexedNotNull { index, track ->
+                track.toInitialQueueMediaItem(
+                    streamingEnabled = streamingOn,
+                    validateLocalFile = index == safeStart,
+                )?.let { track to it }
             }
         }
         val streamingAtMutation = streamingPreference.current()
@@ -500,7 +552,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         // Warm the next-up URL so auto-advance never waits on a cold resolve
         // (the placeholder path is the cold-jump fallback, not the happy path).
-        scope.launch { prefetchNextTrack(controller.currentMediaItemIndex) }
+        scope.launch { prefetchNextTrack() }
     }
 
     override fun resumeLastQueue() {
@@ -530,16 +582,12 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Eager-resolve the next-up track (the successor of the currently-playing
-     * track in `currentQueueTracks`, matched by identity — see the body) and
-     * either refresh its existing timeline slot's URI, or — when it was dropped
-     * from the timeline by the fast-lane (`allowYtDlp=false`) background fill
-     * (an iOS-miss straggler InnerTube couldn't resolve) — insert it right
-     * after the current item so ExoPlayer can auto-advance and Next works.
+     * Eager-resolve Media3's actual next-up track (including shuffle order) and
+     * refresh its existing timeline slot before ExoPlayer auto-advances.
      *
      * Skips when:
      *  - There is no next track (current is last).
-     *  - The next track is downloaded (no resolve needed).
+     *  - The next track has a usable downloaded file (no resolve needed).
      *  - The cache already has a fresh entry (expires in >60s).
      *  - The next track isn't streamable.
      *  - Streaming pref is off.
@@ -548,27 +596,27 @@ class PlayerRepositoryImpl @Inject constructor(
      * MediaItem stays in place and [RefreshingDataSourceFactory] handles
      * any 403 at playback time, exactly as before this prefetch existed.
      */
-    private suspend fun prefetchNextTrack(currentIndex: Int) {
+    internal suspend fun prefetchNextTrack() {
         val controller = controllerDeferred ?: return
         val tracks = currentQueueTracks
-        // Determine the logical next-up from the CURRENTLY-PLAYING track's
-        // identity, NOT from [currentIndex]. `currentIndex` is a *timeline*
-        // index (controller.currentMediaItemIndex); `currentQueueTracks` is the
-        // *logical* queue. setQueue seeds the timeline with only the tapped
-        // track at timeline index 0 even when it is currentQueueTracks[K>0], so
-        // the two index spaces align only when playback started from track 0.
-        // Matching the current item's EXTRA_TRACK_ID into currentQueueTracks
-        // keeps "next" correct no matter where in the playlist the user started
-        // (and fixes the same latent aliasing in the URI-swap path below).
-        val currentId = controller.currentMediaItem
-            ?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
-        if (currentId <= 0L) return // missing/invalid id — can't locate the next-up
-        val currentPos = tracks.indexOfFirst { it.id == currentId }
-        val nextIndex = currentPos + 1
-        if (currentPos < 0 || nextIndex >= tracks.size) return
-
-        val next = tracks[nextIndex]
-        if (next.filePath != null) return
+        val nextTimelineIndex = controller.nextMediaItemIndex
+        if (nextTimelineIndex !in 0 until controller.mediaItemCount) return
+        val nextId = controller.getMediaItemAt(nextTimelineIndex)
+            .mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        val next = tracks.firstOrNull { it.id == nextId } ?: return
+        val nextLocalPath = next.filePath
+        val hasRecordedDownload = next.isDownloaded && !nextLocalPath.isNullOrBlank()
+        val knownTooSmall = next.fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
+        if (hasRecordedDownload && !knownTooSmall) {
+            // Full-library startup intentionally validates only the selected
+            // item. Validate the immediate successor here, after playback has
+            // started, so a stale tail path can still fall back to streaming
+            // without restoring an O(queue-size) disk/SAF scan on tap.
+            val hasUsableLocal = withContext(Dispatchers.IO) {
+                filePathExistsOnDisk(nextLocalPath)
+            }
+            if (hasUsableLocal) return
+        }
         // Only a CONFIRMED-unstreamable row (checked and false) is skipped.
         // Synced-library rows are all "never checked" (isStreamable=false,
         // isStreamableCheckedAt=null) — the bare-flag gate silently killed
@@ -584,12 +632,12 @@ class PlayerRepositoryImpl @Inject constructor(
         val cached = streamUrlCache.get(next.id)
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
-            refreshControllerMediaItem(controller, next, cached)
+            refreshControllerMediaItem(controller, nextTimelineIndex, next, cached)
             return
         }
 
-        // In-flight dedup. Three call sites fire prefetchNextTrack (the
-        // currentIndex watcher + the two explicit kicks in setQueue/fill), and
+        // In-flight dedup. Both the current-index watcher and setQueue's
+        // explicit kick can fire for the same next-up, and
         // the fresh-cache check above can't dedup CONCURRENT resolves of the
         // same next-up (none has cached yet). Without this guard a single
         // advance fans out up to 3 identical resolves — for a slow, job-based,
@@ -631,65 +679,56 @@ class PlayerRepositoryImpl @Inject constructor(
         // see docs/superpowers/plans/2026-07-04-full-timeline-lazy-resolve.md).
         // The URL is also in StreamUrlCache, so even an unswapped placeholder
         // opens instantly on a cache hit.
-        refreshControllerMediaItem(controller, next, resolved)
+        refreshControllerMediaItem(controller, nextTimelineIndex, next, resolved)
     }
 
     /**
-     * Swap the timeline slot matching [next] in place to the freshly-[resolved]
-     * stream. Updates the URI AND the quality/origin extras — the slot is
-     * usually a stash-resolve:// placeholder (or a stale earlier resolve), and
+     * Swap the exact [timelineIndex] chosen by Media3 to the freshly-[resolved]
+     * stream after verifying it still holds [next]. This avoids refreshing an
+     * earlier duplicate of the same track id. The slot is usually a
+     * stash-resolve:// placeholder (or a stale earlier resolve), and
      * the prefetch upgrades it to the real lossless URL; without refreshing
      * [EXTRA_STREAM_ORIGIN]/codec/bit-depth Now Playing would keep showing the
      * stale badge even though the audio is now FLAC. Preserves mediaId and the
-     * rest of the metadata. Returns `true` if the slot was found and refreshed;
-     * `false` only when [next] isn't in the timeline (shouldn't happen with the
-     * full timeline — the URL is still cached, so the placeholder plays fine).
+     * rest of the metadata. Returns `false` if the timeline changed while the
+     * resolve was in flight; the URL remains cached for lazy playback.
      */
     private fun refreshControllerMediaItem(
         controller: MediaController,
+        timelineIndex: Int,
         next: Track,
         resolved: StreamUrl,
     ): Boolean {
-        val count = controller.mediaItemCount
-        for (i in 0 until count) {
-            val item = controller.getMediaItemAt(i)
-            val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: continue
-            if (itemTrackId == next.id) {
-                val newExtras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-                    resolved.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
-                    resolved.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
-                    resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
-                    resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
-                    resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
-                }
-                // #336 follow-up: upgrade the artwork here too. This refresh
-                // stamps EXTRA_STREAM_CODEC into the session item, which makes
-                // maybeStampCurrentItemQuality's already-stamped guard exit
-                // early when the track starts playing — so a prefetched track
-                // skipped-to from Now Playing kept its video thumbnail
-                // (session AND row) even though the resolve carried the real
-                // cover. Fix it at the source: swap the art on the refreshed
-                // item and persist the row while the cover is in hand.
-                val currentArt = item.mediaMetadata.artworkUri?.toString()
-                val artUpgrade = resolved.coverArtUrl?.takeIf {
-                    it != currentArt &&
-                        (currentArt.isNullOrBlank() ||
-                            com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(currentArt))
-                }
-                val refreshedMeta = item.mediaMetadata.buildUpon().setExtras(newExtras)
-                artUpgrade?.let { art ->
-                    refreshedMeta.setArtworkUri(Uri.parse(art))
-                    persistArtUpgradeAsync(next.id, art)
-                }
-                val refreshed = item.buildUpon()
-                    .setUri(resolved.url)
-                    .setMediaMetadata(refreshedMeta.build())
-                    .build()
-                controller.replaceMediaItem(i, refreshed)
-                return true
-            }
+        if (timelineIndex !in 0 until controller.mediaItemCount) return false
+        val item = controller.getMediaItemAt(timelineIndex)
+        val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: return false
+        if (itemTrackId != next.id) return false
+        val newExtras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
+            resolved.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
+            resolved.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
+            resolved.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
+            resolved.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
+            resolved.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
         }
-        return false
+        // #336 follow-up: upgrade artwork together with the stream metadata so
+        // Now Playing cannot keep a stale video thumbnail after prefetch.
+        val currentArt = item.mediaMetadata.artworkUri?.toString()
+        val artUpgrade = resolved.coverArtUrl?.takeIf {
+            it != currentArt &&
+                (currentArt.isNullOrBlank() ||
+                    com.stash.core.common.ArtUrlUpgrader.isYouTubeVideoThumbnail(currentArt))
+        }
+        val refreshedMeta = item.mediaMetadata.buildUpon().setExtras(newExtras)
+        artUpgrade?.let { art ->
+            refreshedMeta.setArtworkUri(Uri.parse(art))
+            persistArtUpgradeAsync(next.id, art)
+        }
+        val refreshed = item.buildUpon()
+            .setUri(resolved.url)
+            .setMediaMetadata(refreshedMeta.build())
+            .build()
+        controller.replaceMediaItem(timelineIndex, refreshed)
+        return true
     }
 
     /**
@@ -1043,6 +1082,50 @@ class PlayerRepositoryImpl @Inject constructor(
         return id > 0L && currentQueueTracks.any { it.id == id }
     }
 
+    private fun queueTrackAtTimelineIndex(
+        controller: MediaController,
+        timelineIndex: Int,
+    ): Track? {
+        if (timelineIndex !in 0 until controller.mediaItemCount) return null
+        val trackId = controller.getMediaItemAt(timelineIndex)
+            .mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return null
+        return currentQueueTracks.firstOrNull { it.id == trackId }
+    }
+
+    /**
+     * Validate one explicitly requested timeline target (Next, Previous, or a
+     * queue-sheet jump). Tail downloads are intentionally not checked while a
+     * large queue is constructed; this is their just-in-time guard. A stale
+     * local item becomes a lazy stream placeholder online and is rejected
+     * offline, without scanning or rebuilding the rest of the queue.
+     */
+    private suspend fun prepareExplicitTimelineTarget(
+        controller: MediaController,
+        timelineIndex: Int,
+        target: Track,
+        reportUnavailable: Boolean = true,
+    ): Boolean {
+        val localPath = target.filePath
+        val hasRecordedDownload = target.isDownloaded && !localPath.isNullOrBlank()
+        if (!hasRecordedDownload) return true
+
+        val knownTooSmall =
+            target.fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
+        val hasUsableLocal = !knownTooSmall && withContext(Dispatchers.IO) {
+            filePathExistsOnDisk(localPath)
+        }
+        if (hasUsableLocal) return true
+
+        if (!streamingPreference.current() || target.isUnavailableForDisplay) {
+            if (reportUnavailable) {
+                _userMessages.tryEmit("That song isn't available offline right now.")
+            }
+            return false
+        }
+        controller.replaceMediaItem(timelineIndex, target.toStreamPlaceholderMediaItem())
+        return true
+    }
+
     /** Timeline slot holding [trackId], or -1 when the track was dropped by
      * the fast-lane background fill and has no MediaItem yet. */
     private fun timelineIndexOfTrackId(controller: MediaController, trackId: Long): Int {
@@ -1122,7 +1205,9 @@ class PlayerRepositoryImpl @Inject constructor(
             val target = currentQueueTracks.getOrNull(index) ?: return
             val timelineIdx = timelineIndexOfTrackId(controller, target.id)
             if (timelineIdx >= 0) {
-                controller.seekToDefaultPosition(timelineIdx)
+                if (prepareExplicitTimelineTarget(controller, timelineIdx, target)) {
+                    controller.seekToDefaultPosition(timelineIdx)
+                }
             } else {
                 // The tapped queue row was dropped from the timeline by the
                 // fast-lane fill (unresolved stream track). Route through
@@ -1134,7 +1219,10 @@ class PlayerRepositoryImpl @Inject constructor(
             return
         }
         if (index in 0 until controller.mediaItemCount) {
-            controller.seekToDefaultPosition(index)
+            val target = queueTrackAtTimelineIndex(controller, index)
+            if (target == null || prepareExplicitTimelineTarget(controller, index, target)) {
+                controller.seekToDefaultPosition(index)
+            }
         }
     }
 
@@ -1522,11 +1610,17 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-            controllerDeferred?.let { updateState(it) }
+            controllerDeferred?.let {
+                updateState(it)
+                scope.launch { prefetchNextTrack() }
+            }
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
-            controllerDeferred?.let { updateState(it) }
+            controllerDeferred?.let {
+                updateState(it)
+                scope.launch { prefetchNextTrack() }
+            }
         }
 
         /**
@@ -1577,16 +1671,41 @@ class PlayerRepositoryImpl @Inject constructor(
             // scheme instead: only genuinely-local files are per-track skips.
             when (classifyPlaybackError(scheme)) {
                 PlaybackErrorPolicy.LOCAL_SKIP -> {
-                    // A downloaded/local file failed to decode (corrupt file or
-                    // codec edge case). Per-track: skip it. Not a backend outage,
-                    // so it must not arm the streaming cascade.
+                    // A downloaded/local file failed to open or decode. Retry
+                    // that same track as a stream when online; otherwise use the
+                    // established per-track skip. This is not a backend outage,
+                    // so the local failure itself does not arm the cascade.
                     Log.w(
                         TAG,
                         "onPlayerError: '$failingTitle' code=${error.errorCode} " +
-                            "(${error.errorCodeName}) — skip-next (local)",
+                            "(${error.errorCodeName}) — stream-fallback-or-skip (local)",
                         error,
                     )
-                    controller?.recoverOrStop()
+                    if (controller == null) return
+                    if (current == null) {
+                        controller.recoverOrStop()
+                        return
+                    }
+                    val failedIndex = controller.currentMediaItemIndex
+                    val failedId = current.mediaMetadata.extras
+                        ?.getLong(EXTRA_TRACK_ID, -1L)
+                    scope.launch {
+                        val recovered = recoverLocalFailureAsStream(
+                            controller = controller,
+                            failedItem = current,
+                            failedIndex = failedIndex,
+                        )
+                        if (!recovered) {
+                            val activeId = controller.currentMediaItem?.mediaMetadata?.extras
+                                ?.getLong(EXTRA_TRACK_ID, -1L)
+                            if (
+                                controller.currentMediaItemIndex == failedIndex &&
+                                (failedId == null || activeId == failedId)
+                            ) {
+                                controller.recoverOrStop()
+                            }
+                        }
+                    }
                 }
                 PlaybackErrorPolicy.STREAMING_CASCADE -> {
                     // A streamed item failed — 403/network OR a 200 that served
@@ -1617,6 +1736,72 @@ class PlayerRepositoryImpl @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Retry a failed local queue item as a lazy stream. This listener-level
+     * fallback covers auto-advance and transport commands issued directly by
+     * notification, Bluetooth, or Android Auto controllers, which do not pass
+     * through the repository's explicit navigation guards.
+     */
+    internal suspend fun recoverLocalFailureAsStream(
+        controller: MediaController,
+        failedItem: MediaItem,
+        failedIndex: Int,
+    ): Boolean {
+        if (!connectivity.isConnected() || !streamingPreference.current()) return false
+        if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return false
+        val failedId = failedItem.mediaMetadata.extras
+            ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
+        val mediaTrackId = failedItem.mediaId.toLongOrNull() ?: return false
+        if (mediaTrackId != failedId) return false
+        val track = currentQueueTracks.firstOrNull { it.id == failedId }
+            ?: failedId.takeIf { it > 0L }
+                ?.let { id ->
+                    // Android Auto and service-resumed queues are built by the
+                    // playback service and therefore do not populate the
+                    // repository's logical queue. Resolve their trusted Room
+                    // row by the identity carried in service metadata.
+                    trackDao.getById(id)?.toDomain()
+                }
+            ?: return false
+        if (track.isUnavailableForDisplay) return false
+
+        if (failedIndex !in 0 until controller.mediaItemCount) return false
+        val slotItem = controller.getMediaItemAt(failedIndex)
+        val slotId = slotItem.mediaMetadata.extras
+            ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
+        if (slotId != failedId) return false
+
+        // Preference and DAO reads above suspend. Revalidate the active item
+        // immediately before mutating the timeline so a late fallback cannot
+        // restart playback after the user has navigated elsewhere.
+        val activeItem = controller.currentMediaItem ?: return false
+        val activeId = activeItem.mediaMetadata.extras
+            ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
+        if (
+            controller.currentMediaItemIndex != failedIndex ||
+            activeItem.mediaId != failedItem.mediaId ||
+            activeId != failedId ||
+            activeItem.localConfiguration?.uri != failedItem.localConfiguration?.uri
+        ) {
+            return false
+        }
+
+        val placeholder = stashResolveUri(
+            trackId = track.id,
+            youtubeId = track.youtubeId,
+            title = track.title,
+            artist = track.artist,
+            album = track.album,
+            durationMs = track.durationMs,
+            isrc = track.isrc,
+        )
+        val replacement = failedItem.buildUpon().setUri(placeholder).build()
+        controller.replaceMediaItem(failedIndex, replacement)
+        controller.prepare()
+        controller.play()
+        return true
     }
 
     private fun MediaController.recoverOrStop() {
@@ -1909,6 +2094,34 @@ class PlayerRepositoryImpl @Inject constructor(
         if (isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
             return toMediaItem()
         }
+        return toStreamPlaceholderMediaItem()
+    }
+
+    /**
+     * Queue-time item used by [setQueueInternal]. The selected item is verified
+     * against the filesystem so a tap can never silently substitute another
+     * track. Tail items deliberately trust persisted download metadata: their
+     * files are opened lazily by ExoPlayer, whose local-error policy skips a
+     * stale entry without crashing or draining a streaming backend.
+     */
+    private fun Track.toInitialQueueMediaItem(
+        streamingEnabled: Boolean,
+        validateLocalFile: Boolean,
+    ): MediaItem? {
+        val localPath = filePath
+        val hasRecordedDownload = isDownloaded && !localPath.isNullOrBlank()
+        val knownTooSmall = fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
+        val hasUsableLocal = hasRecordedDownload && !knownTooSmall &&
+            (!validateLocalFile || filePathExistsOnDisk(localPath))
+
+        return when {
+            hasUsableLocal -> toMediaItem()
+            !streamingEnabled || isUnavailableForDisplay -> null
+            else -> toStreamPlaceholderMediaItem()
+        }
+    }
+
+    private fun Track.toStreamPlaceholderMediaItem(): MediaItem {
         // Resolver inputs ride the URI's query params so even a track with no
         // Room row (search-surface synthetic id) can resolve at open() time.
         val placeholder = stashResolveUri(

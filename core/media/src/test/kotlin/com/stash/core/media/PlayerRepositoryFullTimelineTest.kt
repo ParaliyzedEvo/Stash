@@ -1,10 +1,13 @@
 package com.stash.core.media
 
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
@@ -14,11 +17,13 @@ import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.Track
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -84,6 +89,479 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
+    fun `setQueue validates only the selected download before starting full library playback`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        val tracks = (1L..2_000L).map { id ->
+            Track(
+                id = id,
+                title = "t$id",
+                artist = "a",
+                filePath = "/library/$id.opus",
+                fileSizeBytes = 1_000_000L,
+                isDownloaded = true,
+            )
+        }
+        val checkedPaths = mutableListOf<String>()
+        var checkedPathsWhenPlaybackStarted = emptyList<String>()
+        var checksWhenPlaybackStarted = -1
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            true
+        }
+        val items = slot<List<MediaItem>>()
+        every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
+        every { controller.play() } answers {
+            checksWhenPlaybackStarted = checkedPaths.size
+            checkedPathsWhenPlaybackStarted = checkedPaths.toList()
+        }
+
+        repo.setQueue(tracks, startIndex = 999)
+
+        assertThat(items.captured.map { it.mediaId })
+            .containsExactlyElementsIn((1L..2_000L).map(Long::toString))
+            .inOrder()
+        assertThat(checksWhenPlaybackStarted).isEqualTo(1)
+        assertThat(checkedPathsWhenPlaybackStarted).containsExactly("/library/1000.opus")
+        verify { controller.setMediaItems(any(), 999, 0L) }
+    }
+
+    @Test
+    fun `setQueue falls back to a stream placeholder when the selected download is stale online`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val checkedPaths = mutableListOf<String>()
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            path != "/storage/music/missing.flac"
+        }
+        val localBefore = Track(
+            id = 41L,
+            title = "Before",
+            artist = "Artist",
+            filePath = "/storage/music/before.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        val staleDownload = Track(
+            id = 42L,
+            title = "Missing locally",
+            artist = "Artist",
+            filePath = "/storage/music/missing.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val localAfter = localBefore.copy(
+            id = 43L,
+            title = "After",
+            filePath = "/storage/music/after.flac",
+        )
+        val items = slot<List<MediaItem>>()
+        every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
+
+        repo.setQueue(listOf(localBefore, staleDownload, localAfter), startIndex = 1)
+
+        assertThat(items.captured.map { it.localConfiguration?.uri?.scheme })
+            .containsExactly("file", "stash-resolve", "file").inOrder()
+        assertThat(checkedPaths).containsExactly("/storage/music/missing.flac")
+        verify { controller.setMediaItems(any(), 1, 0L) }
+        verify { controller.prepare() }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `prefetch replaces the exact duplicate slot chosen as Media3 next`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        every { streamUrlCache.get(3L) } returns null
+        coEvery { trackDao.getById(3L) } returns null
+        val checkedPaths = mutableListOf<String>()
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            path != "/storage/music/stale-next.flac"
+        }
+        val current = Track(id = 1L, title = "Current", artist = "Artist")
+        val logicalNext = Track(
+            id = 2L,
+            title = "Logical next",
+            artist = "Artist",
+            filePath = "/storage/music/logical-next.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        val shuffledNext = Track(
+            id = 3L,
+            title = "Next",
+            artist = "Artist",
+            filePath = "/storage/music/stale-next.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val currentItem = MediaItem.Builder()
+            .setMediaId("1")
+            .setUri("stash-resolve://track/1")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 1L) },
+                ).build(),
+            )
+            .build()
+        val logicalNextItem = MediaItem.Builder()
+            .setMediaId("2")
+            .setUri("file:///storage/music/logical-next.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 2L) },
+                ).build(),
+            )
+            .build()
+        val shuffledNextItem = MediaItem.Builder()
+            .setMediaId("3")
+            .setUri("file:///storage/music/stale-next.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 3L) },
+                ).build(),
+            )
+            .build()
+        every { controller.currentMediaItem } returns currentItem
+        every { controller.nextMediaItemIndex } returns 3
+        every { controller.mediaItemCount } returns 4
+        every { controller.getMediaItemAt(0) } returns shuffledNextItem
+        every { controller.getMediaItemAt(1) } returns currentItem
+        every { controller.getMediaItemAt(2) } returns logicalNextItem
+        every { controller.getMediaItemAt(3) } returns shuffledNextItem
+        val resolved = com.stash.core.media.streaming.StreamUrl(
+            url = "https://cdn.example/next.flac",
+            expiresAtMs = Long.MAX_VALUE,
+            codec = "flac",
+        )
+        coEvery {
+            streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true)
+        } returns resolved
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(3, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = listOf(shuffledNext, current, logicalNext, shuffledNext)
+
+        repo.prefetchNextTrack()
+
+        assertThat(checkedPaths).containsExactly("/storage/music/stale-next.flac")
+        assertThat(replacement.captured.mediaId).isEqualTo("3")
+        assertThat(replacement.captured.localConfiguration?.uri?.toString())
+            .isEqualTo("https://cdn.example/next.flac")
+        coVerify {
+            streamResolver.resolve(
+                match { it.id == 3L },
+                allowYouTube = true,
+                allowYtDlp = true,
+            )
+        }
+        verify(exactly = 0) { controller.replaceMediaItem(0, any()) }
+    }
+
+    @Test
+    fun `failed local item retries as a stream for external controller navigation`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        val failedTrack = Track(
+            id = 77L,
+            title = "Missing local",
+            artist = "Artist",
+            filePath = "/storage/music/missing.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val failedItem = MediaItem.Builder()
+            .setMediaId("77")
+            .setUri("file:///storage/music/missing.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 77L) },
+                ).build(),
+            )
+            .build()
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } returns failedItem
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns failedItem
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = listOf(
+            Track(id = 1L, title = "Before", artist = "Artist"),
+            failedTrack,
+        )
+
+        val recovered = repo.recoverLocalFailureAsStream(controller, failedItem, failedIndex = 1)
+
+        assertThat(recovered).isTrue()
+        assertThat(replacement.captured.mediaId).isEqualTo("77")
+        assertThat(replacement.captured.localConfiguration?.uri?.scheme)
+            .isEqualTo("stash-resolve")
+        verify { controller.prepare() }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `failed local item from a service-created queue retries from its database row`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
+        val failedTrack = Track(
+            id = 78L,
+            title = "Restored local",
+            artist = "Artist",
+            filePath = "/storage/music/restored-missing.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val failedItem = MediaItem.Builder()
+            .setMediaId("78")
+            .setUri("file:///storage/music/restored-missing.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 78L) },
+                ).build(),
+            )
+            .build()
+        every { controller.currentMediaItemIndex } returns 1
+        every { controller.currentMediaItem } returns failedItem
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns failedItem
+        coEvery { trackDao.getById(78L) } returns failedTrack.toEntity()
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = emptyList()
+
+        val recovered = repo.recoverLocalFailureAsStream(controller, failedItem, failedIndex = 1)
+
+        assertThat(recovered).isTrue()
+        assertThat(replacement.captured.mediaId).isEqualTo("78")
+        assertThat(replacement.captured.localConfiguration?.uri?.scheme)
+            .isEqualTo("stash-resolve")
+        verify { controller.prepare() }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `failed local recovery stops when the user navigates during preference lookup`() = runTest {
+        var activeIndex = 1
+        val failedTrack = Track(
+            id = 79L,
+            title = "Failed local",
+            artist = "Artist",
+            filePath = "/storage/music/failed.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val failedItem = MediaItem.Builder()
+            .setMediaId("79")
+            .setUri("file:///storage/music/failed.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 79L) },
+                ).build(),
+            )
+            .build()
+        val newCurrentItem = MediaItem.Builder()
+            .setMediaId("80")
+            .setUri("file:///storage/music/current.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 80L) },
+                ).build(),
+            )
+            .build()
+        every { connectivity.isConnected() } returns true
+        coEvery { streamingPreference.current() } coAnswers {
+            activeIndex = 0
+            true
+        }
+        every { controller.currentMediaItemIndex } answers { activeIndex }
+        every { controller.currentMediaItem } answers {
+            if (activeIndex == 1) failedItem else newCurrentItem
+        }
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns failedItem
+        repo.currentQueueTracks = listOf(
+            Track(id = 80L, title = "Current", artist = "Artist"),
+            failedTrack,
+        )
+
+        val recovered = repo.recoverLocalFailureAsStream(controller, failedItem, failedIndex = 1)
+
+        assertThat(recovered).isFalse()
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+    }
+
+    @Test
+    fun `failed local recovery honors disabled cellular streaming`() = runTest {
+        val failedTrack = Track(
+            id = 81L,
+            title = "Metered local",
+            artist = "Artist",
+            filePath = "/storage/music/metered.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val failedItem = MediaItem.Builder()
+            .setMediaId("81")
+            .setUri("file:///storage/music/metered.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 81L) },
+                ).build(),
+            )
+            .build()
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns true
+        coEvery { streamingPreference.current() } returns true
+        every { streamingPreference.streamOnCellular } returns flowOf(false)
+        every { controller.currentMediaItemIndex } returns 0
+        every { controller.currentMediaItem } returns failedItem
+        every { controller.mediaItemCount } returns 1
+        every { controller.getMediaItemAt(0) } returns failedItem
+        repo.currentQueueTracks = listOf(failedTrack)
+
+        val recovered = repo.recoverLocalFailureAsStream(controller, failedItem, failedIndex = 0)
+
+        assertThat(recovered).isFalse()
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+    }
+
+    @Test
+    fun `failed local recovery rejects mismatched media and metadata identities`() = runTest {
+        val failedTrack = Track(
+            id = 82L,
+            title = "Identity local",
+            artist = "Artist",
+            filePath = "/storage/music/identity.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val malformedItem = MediaItem.Builder()
+            .setMediaId("999")
+            .setUri("file:///storage/music/identity.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 82L) },
+                ).build(),
+            )
+            .build()
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        coEvery { streamingPreference.current() } returns true
+        every { controller.currentMediaItemIndex } returns 0
+        every { controller.currentMediaItem } returns malformedItem
+        every { controller.mediaItemCount } returns 1
+        every { controller.getMediaItemAt(0) } returns malformedItem
+        repo.currentQueueTracks = listOf(failedTrack)
+
+        val recovered = repo.recoverLocalFailureAsStream(controller, malformedItem, failedIndex = 0)
+
+        assertThat(recovered).isFalse()
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
+    }
+
+    @Test
+    fun `prefetch leaves an existing downloaded next track local`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val checkedPaths = mutableListOf<String>()
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            true
+        }
+        val current = Track(id = 31L, title = "Current", artist = "Artist")
+        val localNext = Track(
+            id = 32L,
+            title = "Local next",
+            artist = "Artist",
+            filePath = "/storage/music/local-next.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        fun item(track: Track, uri: String) = MediaItem.Builder()
+            .setMediaId(track.id.toString())
+            .setUri(uri)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, track.id) },
+                ).build(),
+            )
+            .build()
+        val currentItem = item(current, "stash-resolve://track/31")
+        val nextItem = item(localNext, "file:///storage/music/local-next.flac")
+        every { controller.nextMediaItemIndex } returns 1
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns nextItem
+        repo.currentQueueTracks = listOf(current, localNext)
+
+        repo.prefetchNextTrack()
+
+        assertThat(checkedPaths).containsExactly("/storage/music/local-next.flac")
+        coVerify(exactly = 0) {
+            streamResolver.resolve(any(), allowYouTube = true, allowYtDlp = true)
+        }
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+    }
+
+    @Test
+    fun `direct queue jump replaces a stale downloaded target with a stream placeholder`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        repo.filePathExistsOnDisk = { false }
+        val current = Track(id = 10L, title = "Current", artist = "Artist")
+        val staleTarget = Track(
+            id = 20L,
+            title = "Target",
+            artist = "Artist",
+            filePath = "/storage/music/stale-target.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val currentItem = MediaItem.Builder()
+            .setMediaId("10")
+            .setUri("stash-resolve://track/10")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 10L) },
+                ).build(),
+            )
+            .build()
+        val staleTargetItem = MediaItem.Builder()
+            .setMediaId("20")
+            .setUri("file:///storage/music/stale-target.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 20L) },
+                ).build(),
+            )
+            .build()
+        every { controller.currentMediaItem } returns currentItem
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(0) } returns currentItem
+        every { controller.getMediaItemAt(1) } returns staleTargetItem
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = listOf(current, staleTarget)
+
+        repo.skipToQueueIndex(1)
+
+        assertThat(replacement.captured.mediaId).isEqualTo("20")
+        assertThat(replacement.captured.localConfiguration?.uri?.scheme)
+            .isEqualTo("stash-resolve")
+        verify { controller.seekToDefaultPosition(1) }
+    }
+
+    @Test
     fun `offline addToQueue rejects consecutive stream-only tracks without starting playback`() = runTest {
         coEvery { streamingPreference.current() } returns false
         every { controller.mediaItemCount } returns 0
@@ -146,21 +624,42 @@ class PlayerRepositoryFullTimelineTest {
     @Test
     fun `offline setQueue rejects a downloaded row whose local file is unusable`() = runTest {
         coEvery { streamingPreference.current() } returns false
-        repo.filePathExistsOnDisk = { false }
+        val checkedPaths = mutableListOf<String>()
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            path != "/storage/music/missing.flac"
+        }
+        val localBefore = Track(
+            id = 504L,
+            title = "Before",
+            artist = "Artist",
+            filePath = "/storage/music/before.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
         val staleDownload = Track(
             id = 505L,
             title = "Missing",
             artist = "Artist",
             filePath = "/storage/music/missing.flac",
+            fileSizeBytes = 1_000_000L,
             isDownloaded = true,
             isStreamable = true,
         )
+        val localAfter = localBefore.copy(
+            id = 506L,
+            title = "After",
+            filePath = "/storage/music/after.flac",
+        )
 
-        repo.setQueue(listOf(staleDownload))
+        repo.setQueue(listOf(localBefore, staleDownload, localAfter), startIndex = 1)
 
+        assertThat(checkedPaths).containsExactly("/storage/music/missing.flac")
         verify(exactly = 0) {
             controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>())
         }
+        verify(exactly = 0) { controller.prepare() }
+        verify(exactly = 0) { controller.play() }
     }
 
     @Test
@@ -278,21 +777,171 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
-    fun `skipNext is always a native seek`() = runTest {
+    fun `skipNext replaces a stale downloaded target online before native seek`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        repo.filePathExistsOnDisk = { false }
+        val current = Track(id = 901L, title = "Current", artist = "Artist")
+        val staleNext = Track(
+            id = 902L,
+            title = "Next",
+            artist = "Artist",
+            filePath = "/storage/music/stale-next.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        fun item(track: Track, uri: String) = MediaItem.Builder()
+            .setMediaId(track.id.toString())
+            .setUri(uri)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, track.id) },
+                ).build(),
+            )
+            .build()
+        val nextItem = item(staleNext, "file:///storage/music/stale-next.flac")
         every { controller.hasNextMediaItem() } returns true
+        every { controller.nextMediaItemIndex } returns 1
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns nextItem
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = listOf(current, staleNext)
 
         repo.skipNext()
 
+        assertThat(replacement.captured.mediaId).isEqualTo("902")
+        assertThat(replacement.captured.localConfiguration?.uri?.scheme)
+            .isEqualTo("stash-resolve")
         verify { controller.seekToNextMediaItem() }
     }
 
     @Test
-    fun `skipPrevious is always a native seek`() = runTest {
+    fun `skipPrevious traverses past a stale downloaded target offline`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        val checkedPaths = mutableListOf<String>()
+        repo.filePathExistsOnDisk = { path ->
+            checkedPaths += path
+            path == "/storage/music/valid-previous.flac"
+        }
+        val validPrevious = Track(
+            id = 902L,
+            title = "Valid previous",
+            artist = "Artist",
+            filePath = "/storage/music/valid-previous.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        val stalePrevious = Track(
+            id = 903L,
+            title = "Previous",
+            artist = "Artist",
+            filePath = "/storage/music/stale-previous.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+            isStreamable = true,
+        )
+        val current = Track(id = 904L, title = "Current", artist = "Artist")
+        fun item(track: Track, uri: String) = MediaItem.Builder()
+            .setMediaId(track.id.toString())
+            .setUri(uri)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, track.id) },
+                ).build(),
+            )
+            .build()
+        val validPreviousItem = item(validPrevious, "file:///storage/music/valid-previous.flac")
+        val previousItem = MediaItem.Builder()
+            .setMediaId("903")
+            .setUri("file:///storage/music/stale-previous.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 903L) },
+                ).build(),
+            )
+            .build()
+        val timeline: Timeline = mockk()
         every { controller.hasPreviousMediaItem() } returns true
+        every { controller.previousMediaItemIndex } returns 1
+        every { controller.currentMediaItemIndex } returns 2
+        every { controller.currentTimeline } returns timeline
+        every { controller.repeatMode } returns Player.REPEAT_MODE_OFF
+        every { controller.shuffleModeEnabled } returns false
+        every {
+            timeline.getPreviousWindowIndex(1, Player.REPEAT_MODE_OFF, false)
+        } returns 0
+        every { controller.mediaItemCount } returns 3
+        every { controller.getMediaItemAt(0) } returns validPreviousItem
+        every { controller.getMediaItemAt(1) } returns previousItem
+        repo.currentQueueTracks = listOf(validPrevious, stalePrevious, current)
 
         repo.skipPrevious()
 
-        verify { controller.seekToPreviousMediaItem() }
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        verify { controller.seekToDefaultPosition(0) }
+        verify(exactly = 0) { controller.seekToPreviousMediaItem() }
+        assertThat(checkedPaths).containsExactly(
+            "/storage/music/stale-previous.flac",
+            "/storage/music/valid-previous.flac",
+        ).inOrder()
+    }
+
+    @Test
+    fun `skipPrevious does not wrap to the current item when every predecessor is stale`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        repo.filePathExistsOnDisk = { false }
+        val firstStale = Track(
+            id = 905L,
+            title = "First stale",
+            artist = "Artist",
+            filePath = "/storage/music/first-stale.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        val secondStale = Track(
+            id = 906L,
+            title = "Second stale",
+            artist = "Artist",
+            filePath = "/storage/music/second-stale.flac",
+            fileSizeBytes = 1_000_000L,
+            isDownloaded = true,
+        )
+        val current = Track(id = 907L, title = "Current", artist = "Artist")
+        fun item(track: Track, uri: String) = MediaItem.Builder()
+            .setMediaId(track.id.toString())
+            .setUri(uri)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, track.id) },
+                ).build(),
+            )
+            .build()
+        val timeline: Timeline = mockk()
+        every { controller.hasPreviousMediaItem() } returns true
+        every { controller.previousMediaItemIndex } returns 1
+        every { controller.currentMediaItemIndex } returns 2
+        every { controller.currentTimeline } returns timeline
+        every { controller.repeatMode } returns Player.REPEAT_MODE_ALL
+        every { controller.shuffleModeEnabled } returns false
+        every {
+            timeline.getPreviousWindowIndex(1, Player.REPEAT_MODE_ALL, false)
+        } returns 0
+        every {
+            timeline.getPreviousWindowIndex(0, Player.REPEAT_MODE_ALL, false)
+        } returns 2
+        every { controller.mediaItemCount } returns 3
+        every { controller.getMediaItemAt(0) } returns
+            item(firstStale, "file:///storage/music/first-stale.flac")
+        every { controller.getMediaItemAt(1) } returns
+            item(secondStale, "file:///storage/music/second-stale.flac")
+        every { controller.getMediaItemAt(2) } returns item(current, "stash-resolve://track/907")
+        repo.currentQueueTracks = listOf(firstStale, secondStale, current)
+
+        repo.skipPrevious()
+
+        verify(exactly = 0) { controller.seekToDefaultPosition(any()) }
+        verify(exactly = 0) { controller.seekToPreviousMediaItem() }
     }
 
     @Test

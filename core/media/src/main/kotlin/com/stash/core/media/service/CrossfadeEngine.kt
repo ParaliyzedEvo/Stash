@@ -232,18 +232,9 @@ class CrossfadeEngine(
             incoming.pauseAtEndOfMediaItems = false
             playerA = incoming
             playerB = outgoing
-            // The incoming's playWhenReady=true edge fired while it was a
-            // listener-less spare, so no focus request ever ran for it. If
-            // focus was lost/abandoned during the ramp, the new master would
-            // play focusless forever. Idempotent when focus is already held.
             requestFocus()
-            android.util.Log.i(
-                "Crossfade",
-                "swap: master=${tag(incoming)} spare=${tag(outgoing)} (resetting spare)",
-            )
             onSwap(playerA)
 
-            // Reset the old master to a clean spare.
             outgoing.pauseAtEndOfMediaItems = false
             outgoing.playWhenReady = false
             outgoing.stop()
