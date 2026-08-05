@@ -120,8 +120,9 @@ class SpotifyApiClient @Inject constructor(
          * Blend, Made-For-You mood mixes, "This Is <artist>": names vary by
          * locale but all are spotify-owned).
          *
-         * Note the caller defaults [ownerId] to "spotify" when the home item
-         * carries no owner data, so owner-less items also take the catch-all.
+         * The caller now SKIPS home items with no owner data entirely (fail-closed)
+         * rather than defaulting [ownerId] to "spotify" — that default used to sweep
+         * user-owned playlists from non-mix home sections into this catch-all.
          *
          * ponytail: owner rule first; add a deny-set only if device shows
          * editorial leakage (e.g. "Today's Top Hits" surfacing in the home feed).
@@ -601,7 +602,15 @@ class SpotifyApiClient @Inject constructor(
                         val ownerData = data["ownerV2"]?.jsonObject?.get("data")?.jsonObject
                         val ownerId = ownerData?.get("username")?.jsonPrimitive?.contentOrNull
                             ?: ownerData?.get("id")?.jsonPrimitive?.contentOrNull
-                            ?: "spotify"
+                        // Unknown owner is NOT the "spotify" catch-all — that used to sweep in
+                        // user-owned playlists surfaced in non-mix home feed sections (e.g.
+                        // "Jump back in") whose cards omit ownerV2. Fail closed: no owner data
+                        // means we can't confirm this is a real mix, so skip it rather than
+                        // mislabel someone's own playlist as a DAILY_MIX.
+                        if (ownerId == null) {
+                            Log.d(TAG, "parseHomeFeedForSpotifyMixes: skipping '$name' — no owner data")
+                            continue
+                        }
                         val ownerName = ownerData?.get("name")?.jsonPrimitive?.contentOrNull ?: "Spotify"
 
                         if (!isSpotifyMix(name, ownerId, uri.removePrefix("spotify:playlist:"))) continue
