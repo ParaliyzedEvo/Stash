@@ -8,6 +8,7 @@ import androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import com.stash.core.media.equalizer.LoudnessController
+import com.stash.core.media.equalizer.LoudnessState
 import java.nio.ByteBuffer
 import kotlin.math.pow
 
@@ -44,6 +45,17 @@ class LoudnessGainProcessor(
     return inputAudioFormat
   }
 
+  // While enabled the stage always stays in the pipeline (a mid-track gain can
+  // arrive when the backfill measures the playing track). After a disable it
+  // stays until the anti-click ramp settles at exactly unity — dropping it
+  // earlier would step the level at the flush boundary — and then leaves the
+  // pipeline at the next flush (toggle, seek, or track change).
+  override fun isActive(): Boolean =
+    super.isActive() &&
+      (wouldBeActive(controller.state.value) ||
+        currentLinearGain != 1f ||
+        rampSamplesRemaining > 0)
+
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
     val desiredLinear =
@@ -75,7 +87,10 @@ class LoudnessGainProcessor(
     out.flip()
   }
 
-  private companion object {
-    const val RAMP_MS = 15
+  companion object {
+    private const val RAMP_MS = 15
+
+    fun wouldBeActive(state: LoudnessState): Boolean =
+      state.enabled
   }
 }

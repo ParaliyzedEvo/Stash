@@ -51,6 +51,35 @@ class EqProcessorTest {
     ).inOrder()
   }
 
+  @Test fun `isActive is false after configure when disabled or flat`() {
+    val disabled = EqProcessor(ctrl(EqState(enabled = false, gainsDb = floatArrayOf(6f, 0f, 0f, 0f, 0f))))
+    disabled.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(disabled.isActive).isFalse()
+
+    val flat = EqProcessor(ctrl(EqState(enabled = true, gainsDb = floatArrayOf(0f, 0f, 0f, 0f, 0f))))
+    flat.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(flat.isActive).isFalse()
+  }
+
+  @Test fun `isActive is true after configure when enabled with a band gain`() {
+    val p = EqProcessor(ctrl(EqState(enabled = true, gainsDb = floatArrayOf(6f, 0f, 0f, 0f, 0f))))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isTrue()
+  }
+
+  @Test fun `isActive follows controller state without reconfigure`() {
+    val flow = MutableStateFlow(EqState(enabled = false, gainsDb = floatArrayOf(6f, 0f, 0f, 0f, 0f)))
+    val c = mockk<EqController>()
+    every { c.state } returns flow
+    val p = EqProcessor(c)
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+    flow.value = EqState(enabled = true, gainsDb = floatArrayOf(6f, 0f, 0f, 0f, 0f))
+    assertThat(p.isActive).isTrue()
+    flow.value = EqState(enabled = true, gainsDb = floatArrayOf(0f, 0f, 0f, 0f, 0f))
+    assertThat(p.isActive).isFalse()
+  }
+
   @Test fun `boosting band 1 amplifies a sine at 60 Hz mono`() {
     val p = EqProcessor(ctrl(EqState(enabled = true, gainsDb = floatArrayOf(+12f, 0f, 0f, 0f, 0f))))
     p.configure(AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))

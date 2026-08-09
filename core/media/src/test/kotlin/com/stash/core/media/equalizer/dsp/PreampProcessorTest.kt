@@ -38,6 +38,37 @@ class PreampProcessorTest {
     assertThat(outSamples.toList()).containsExactly(0x4000.toShort(), (-0x2000).toShort()).inOrder()
   }
 
+  @Test fun `isActive is false after configure when preamp is unity`() {
+    val p = PreampProcessor(controllerWithState(EqState(enabled = true, preampDb = 0f)))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+  }
+
+  @Test fun `isActive is false after configure when eq is disabled`() {
+    val p = PreampProcessor(controllerWithState(EqState(enabled = false, preampDb = 6f)))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+  }
+
+  @Test fun `isActive is true after configure when enabled with gain`() {
+    val p = PreampProcessor(controllerWithState(EqState(enabled = true, preampDb = 6f)))
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isTrue()
+  }
+
+  @Test fun `isActive follows controller state without reconfigure`() {
+    val flow = MutableStateFlow(EqState(enabled = false, preampDb = 6f))
+    val ctrl = mockk<EqController>()
+    every { ctrl.state } returns flow
+    val p = PreampProcessor(ctrl)
+    p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+    flow.value = EqState(enabled = true, preampDb = 6f)
+    assertThat(p.isActive).isTrue()
+    flow.value = EqState(enabled = true, preampDb = 0f)
+    assertThat(p.isActive).isFalse()
+  }
+
   @Test fun `enabled with +6 dB doubles amplitude`() {
     val p = PreampProcessor(controllerWithState(EqState(enabled = true, preampDb = 6f)))
     p.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))

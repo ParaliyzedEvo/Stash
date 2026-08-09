@@ -8,6 +8,7 @@ import androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import com.stash.core.media.equalizer.EqController
+import com.stash.core.media.equalizer.EqState
 import java.nio.ByteBuffer
 
 /**
@@ -39,7 +40,7 @@ class EqProcessor(
 
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
-    if (!state.enabled || isFlat(state.gainsDb)) {
+    if (!wouldBeActive(state)) {
       passthrough(inputBuffer); return
     }
     if (!state.gainsDb.contentEquals(lastAppliedGains)) {
@@ -60,6 +61,11 @@ class EqProcessor(
     out.flip()
   }
 
+  // See PreampProcessor.isActive — inactive stages are dropped from the
+  // pipeline by a bare flush(), so a disabled EQ costs zero per buffer.
+  override fun isActive(): Boolean =
+    super.isActive() && wouldBeActive(controller.state.value)
+
   override fun onFlush() {
     if (::filters.isInitialized) filters.forEach { row -> row.forEach { it.reset() } }
   }
@@ -79,10 +85,12 @@ class EqProcessor(
     out.flip()
   }
 
-  private fun isFlat(gains: FloatArray): Boolean = gains.all { it == 0f }
-
   companion object {
     val BAND_FREQS: FloatArray = floatArrayOf(60f, 230f, 910f, 3_600f, 14_000f)
     const val BAND_Q = 1f
+
+    /** Single bypass predicate shared by [isActive] and [queueInput]. */
+    fun wouldBeActive(state: EqState): Boolean =
+      state.enabled && !state.gainsDb.all { it == 0f }
   }
 }

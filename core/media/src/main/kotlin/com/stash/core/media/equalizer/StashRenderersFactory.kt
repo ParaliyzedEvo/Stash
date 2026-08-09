@@ -17,10 +17,13 @@ import com.stash.core.media.equalizer.dsp.SoftClipLimiterProcessor
 /**
  * Custom RenderersFactory that builds an audio sink with our EQ + loudness chain.
  *
- * The chain is built ONCE per ExoPlayer instance. Toggling EQ or loudness
- * enabled is a flag flip read by each processor on every buffer — never a
- * topology change. This is what makes "stacking on re-enable" structurally
- * impossible.
+ * The chain is built ONCE per ExoPlayer instance; "stacking on re-enable" is
+ * structurally impossible because the same processor instances live for the
+ * player's whole life. Which of them are IN the active pipeline is a
+ * different question: each processor gates `isActive()` on its pref state, so
+ * Media3 drops disabled stages entirely (a disabled stage used to burn ~10%
+ * of a core copying bytes through itself). Toggles are picked up mid-track by
+ * [watchDspActivation], which the playback service wires to [builtSink].
  *
  * Chain order (see spec §3.2):
  *   PreampProcessor → EqProcessor → BassShelfProcessor →
@@ -38,6 +41,14 @@ class StashRenderersFactory(
     private val loudnessController: LoudnessController,
 ) : DefaultRenderersFactory(context) {
 
+    /**
+     * The sink built for this factory's player, kept so the service can wire
+     * [watchDspActivation] to it. One factory instance per player — each
+     * player build calls [buildAudioSink] exactly once.
+     */
+    var builtSink: AudioSink? = null
+        private set
+
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
@@ -51,6 +62,7 @@ class StashRenderersFactory(
             .setEnableFloatOutput(false)
             .setAudioProcessors(buildAudioProcessors())
             .build()
+            .also { builtSink = it }
     }
 
     /**
@@ -61,13 +73,17 @@ class StashRenderersFactory(
      * cracking open the sink.
      */
     private fun buildAudioProcessors(): Array<AudioProcessor> {
+        // Read on the playback thread each time the pipeline is (re)built.
+        val limiterNeeded = {
+            dspActivation(eqController.state.value, loudnessController.state.value).limiter
+        }
         return if (ENABLE_LOUDNESS) {
             arrayOf(
                 PreampProcessor(eqController),
                 EqProcessor(eqController),
                 BassShelfProcessor(eqController),
                 LoudnessGainProcessor(loudnessController),
-                SoftClipLimiterProcessor(),
+                SoftClipLimiterProcessor(limiterNeeded),
             )
         } else {
             arrayOf(

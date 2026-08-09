@@ -8,6 +8,7 @@ import androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import com.stash.core.media.equalizer.EqController
+import com.stash.core.media.equalizer.EqState
 import java.nio.ByteBuffer
 
 /**
@@ -39,7 +40,7 @@ class BassShelfProcessor(
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
     val gain = state.bassBoostDb
-    if (!state.enabled || gain == 0f) { passthrough(inputBuffer); return }
+    if (!wouldBeActive(state)) { passthrough(inputBuffer); return }
     rebuildIfNeeded(gain)
     val out = replaceOutputBuffer(inputBuffer.remaining())
     while (inputBuffer.remaining() >= 2 * channels) {
@@ -51,6 +52,11 @@ class BassShelfProcessor(
     }
     out.flip()
   }
+
+  // See PreampProcessor.isActive — inactive stages are dropped from the
+  // pipeline by a bare flush(), so a zero-boost shelf costs zero per buffer.
+  override fun isActive(): Boolean =
+    super.isActive() && wouldBeActive(controller.state.value)
 
   override fun onFlush() {
     if (::filters.isInitialized) filters.forEach { it.reset() }
@@ -71,5 +77,9 @@ class BassShelfProcessor(
   companion object {
     const val SHELF_FREQ = 100f
     const val SHELF_Q = 0.7f
+
+    /** Single bypass predicate shared by [isActive] and [queueInput]. */
+    fun wouldBeActive(state: EqState): Boolean =
+      state.enabled && state.bassBoostDb != 0f
   }
 }

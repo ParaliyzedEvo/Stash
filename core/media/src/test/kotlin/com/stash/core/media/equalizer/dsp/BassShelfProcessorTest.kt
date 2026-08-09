@@ -38,6 +38,27 @@ class BassShelfProcessorTest {
     ).inOrder()
   }
 
+  @Test fun `isActive is false after configure when boost is zero or eq disabled`() {
+    val zero = BassShelfProcessor(ctrl(EqState(enabled = true, bassBoostDb = 0f)))
+    zero.configure(AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+    assertThat(zero.isActive).isFalse()
+
+    val disabled = BassShelfProcessor(ctrl(EqState(enabled = false, bassBoostDb = 12f)))
+    disabled.configure(AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+    assertThat(disabled.isActive).isFalse()
+  }
+
+  @Test fun `isActive follows controller state without reconfigure`() {
+    val flow = MutableStateFlow(EqState(enabled = true, bassBoostDb = 0f))
+    val c = mockk<EqController>()
+    every { c.state } returns flow
+    val p = BassShelfProcessor(c)
+    p.configure(AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+    flow.value = EqState(enabled = true, bassBoostDb = 12f)
+    assertThat(p.isActive).isTrue()
+  }
+
   @Test fun `boosts a 60 Hz sine when bassBoostDb is set`() {
     val p = BassShelfProcessor(ctrl(EqState(enabled = true, bassBoostDb = 12f)))
     p.configure(AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))

@@ -186,6 +186,38 @@ class SoftClipLimiterProcessorTest {
     }
   }
 
+  @Test fun isActive_falseWhenNotNeeded_flipsWithoutReconfigure() {
+    var needed = false
+    val p = SoftClipLimiterProcessor { needed }
+    p.configure(AudioFormat(sampleRate, 1, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isFalse()
+    needed = true
+    assertThat(p.isActive).isTrue()
+  }
+
+  @Test fun isActive_defaultsToTrue() {
+    val p = SoftClipLimiterProcessor()
+    p.configure(AudioFormat(sampleRate, 1, C.ENCODING_PCM_16BIT))
+    assertThat(p.isActive).isTrue()
+  }
+
+  @Test fun flushClearsLookaheadRing_noStaleAudioAfterSeek() {
+    // Fill the ring with a step well past the prefill, then flush (what a seek
+    // does). The next stream must start with a fresh prefill of zeros — not
+    // 2 ms of pre-seek audio bleeding out of the stale ring.
+    val p = makeProcessor()
+    p.queueInput(pcm16Buffer(ShortArray(lookaheadSamples * 3) { 8000 }))
+    p.getOutput()
+
+    p.flush()
+
+    p.queueInput(pcm16Buffer(ShortArray(lookaheadSamples)))  // silence
+    val out = readAll(p.getOutput())
+    for (i in 0 until lookaheadSamples) {
+      assertThat(out[i].toInt()).isEqualTo(0)
+    }
+  }
+
   @Test fun lookaheadDelaysOutputByExpectedSamples() {
     // Feed a sub-threshold step (constant non-zero value) → first ringBuffer.size output samples
     // are the prefill zeros, then the step appears.

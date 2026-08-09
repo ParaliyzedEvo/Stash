@@ -31,6 +31,7 @@ import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
+import com.stash.core.media.equalizer.watchDspActivation
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
 import com.stash.core.media.ResumeStreamResolver
@@ -581,14 +582,23 @@ class StashPlaybackService : MediaLibraryService() {
                 /* bufferForPlaybackAfterRebufferMs = */ 2_000,
             )
             .build()
-        return ExoPlayer.Builder(this)
-            .setRenderersFactory(StashRenderersFactory(this, eqController, loudnessController))
+        val renderersFactory = StashRenderersFactory(this, eqController, loudnessController)
+        val player = ExoPlayer.Builder(this)
+            .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ false)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        // Disabled DSP stages are dropped from the audio pipeline entirely
+        // (StashRenderersFactory kdoc); this watcher re-applies the pipeline
+        // when a toggle crosses an active/inactive boundary so EQ/loudness
+        // changes still land mid-track.
+        renderersFactory.builtSink?.let { sink ->
+            watchDspActivation(serviceScope, eqController, loudnessController, player, sink)
+        }
+        return player
     }
 
     /**

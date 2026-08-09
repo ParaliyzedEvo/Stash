@@ -8,6 +8,7 @@ import androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import com.stash.core.media.equalizer.EqController
+import com.stash.core.media.equalizer.EqState
 import java.nio.ByteBuffer
 import kotlin.math.pow
 
@@ -39,9 +40,23 @@ class PreampProcessor(
     return inputAudioFormat
   }
 
+  // SilenceSkippingAudioProcessor pattern: onConfigure always returns the real
+  // format; the toggle gates isActive() so a bare pipeline flush() — what
+  // DefaultAudioSink runs when it re-applies the chain mid-stream — can move
+  // this stage in or out of the pipeline without a reconfigure. Out of the
+  // pipeline, queueInput is never called: the passthrough copy cost is gone.
+  override fun isActive(): Boolean =
+    super.isActive() && wouldBeActive(controller.state.value)
+
+  companion object {
+    /** Single bypass predicate shared by [isActive] and [queueInput]. */
+    fun wouldBeActive(state: EqState): Boolean =
+      state.enabled && state.preampDb != 0f
+  }
+
   override fun queueInput(inputBuffer: ByteBuffer) {
     val state = controller.state.value
-    if (!state.enabled || state.preampDb == 0f) {
+    if (!wouldBeActive(state)) {
       val out = replaceOutputBuffer(inputBuffer.remaining())
       while (inputBuffer.hasRemaining()) out.put(inputBuffer.get())
       out.flip()

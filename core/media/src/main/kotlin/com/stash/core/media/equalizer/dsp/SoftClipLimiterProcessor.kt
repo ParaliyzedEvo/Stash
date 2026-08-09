@@ -27,10 +27,15 @@ import kotlin.math.exp
  * the limiter has visibility on the upcoming peak before any real audio
  * leaves the processor.
  *
- * Pure DSP — no controller, no Hilt. Constructor is parameterless.
+ * Pure DSP — no controller, no Hilt. [isNeeded] is the one hook to the
+ * outside: the limiter only earns its per-sample cost while some upstream
+ * stage can add gain, so the factory passes "any boost stage active" and a
+ * bare pipeline flush drops the limiter along with the stages it guards.
  */
 @OptIn(UnstableApi::class)
-class SoftClipLimiterProcessor : BaseAudioProcessor() {
+class SoftClipLimiterProcessor(
+  private val isNeeded: () -> Boolean = { true },
+) : BaseAudioProcessor() {
 
   private lateinit var ringBuffer: ShortArray
   private lateinit var windowMax: SlidingWindowMax
@@ -52,6 +57,21 @@ class SoftClipLimiterProcessor : BaseAudioProcessor() {
     currentGain = 1f
     prefillSamples = ringBuffer.size
     return inputAudioFormat
+  }
+
+  override fun isActive(): Boolean = super.isActive() && isNeeded()
+
+  override fun onFlush() {
+    // A flush starts a new stream (seek, toggle re-apply, track change): the
+    // lookahead ring must not bleed 2 ms of pre-flush audio into it, and the
+    // prefill delay must be re-established.
+    if (::ringBuffer.isInitialized) {
+      ringBuffer.fill(0)
+      windowMax.reset()
+      ringWrite = 0
+      currentGain = 1f
+      prefillSamples = ringBuffer.size
+    }
   }
 
   override fun queueInput(inputBuffer: ByteBuffer) {

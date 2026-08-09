@@ -155,6 +155,39 @@ class LoudnessGainProcessorTest {
     assertThat(tail).isWithin(10).of((1000f * targetLinear).toInt())
   }
 
+  @Test fun isActive_trueWhileEnabled() {
+    // Default setUp state: enabled, 0 dB. Stays active so a mid-track gain
+    // arrival (backfill measuring the playing track) still applies.
+    val p = makeProcessor()
+    assertThat(p.isActive).isTrue()
+  }
+
+  @Test fun isActive_falseWhenDisabledAndSettledAtUnity() {
+    coEvery { store.read() } returns
+        LoudnessState(enabled = false, currentTrackGainDb = 6f, currentTargetGainDb = 6f)
+    controller = LoudnessController(store)
+    runBlocking { controller.awaitInit() }
+    val p = makeProcessor()
+    assertThat(p.isActive).isFalse()
+  }
+
+  @Test fun isActive_staysTrueAfterDisableUntilRampSettles() {
+    controller.setCurrentTrackGain(6.0205999f)  // ~2× linear
+    val p = makeProcessor()
+    // Settle the ramp at ~2×.
+    p.queueInput(pcm16Buffer(ShortArray(rampSamples + 200) { 1000 }))
+    p.getOutput()
+
+    controller.setEnabled(false)
+    // Gain is still ~2×: dropping the stage now would step the level — must stay active.
+    assertThat(p.isActive).isTrue()
+
+    // Feed enough input for the 15 ms ramp back to unity to complete.
+    p.queueInput(pcm16Buffer(ShortArray(rampSamples + 200) { 1000 }))
+    p.getOutput()
+    assertThat(p.isActive).isFalse()
+  }
+
   @Test fun extremePositiveGain_doesNotOverflow() {
     controller.setCurrentTrackGain(24f)  // ~ 15.85× linear
     val p = makeProcessor()
