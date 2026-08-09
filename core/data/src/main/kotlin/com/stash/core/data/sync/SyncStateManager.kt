@@ -23,7 +23,8 @@ data class AuthExpiryState(
  * - Authenticating   :  5%
  * - FetchingPlaylists: 15%
  * - Diffing          :  5%
- * - Downloading      : 70%  (interpolated per-track)
+ * - VerifyingLibrary :  5%
+ * - Downloading      : 65%  (interpolated per-track)
  * - Finalizing       :  5%
  */
 @Singleton
@@ -78,6 +79,16 @@ class SyncStateManager @Inject constructor() {
      */
     fun onDiffing(playlistsDiffed: Int = 0, totalPlaylists: Int = 0) {
         _phase.value = SyncPhase.Diffing(playlistsDiffed, totalPlaylists)
+    }
+
+    /**
+     * Transition to (or update progress within) [SyncPhase.VerifyingLibrary].
+     * Called at each housekeeping step in TrackDownloadWorker before the
+     * download loop starts, so a long reconciliation pass on a big library
+     * visibly advances instead of leaving the bar frozen on Diffing.
+     */
+    fun onVerifyingLibrary(step: Int = 0, total: Int = 4) {
+        _phase.value = SyncPhase.VerifyingLibrary(step, total)
     }
 
     /**

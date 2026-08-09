@@ -18,6 +18,7 @@ import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.library.LibraryReconciliationUseCase
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
@@ -59,6 +60,9 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
+    private val reconciliationUseCase: LibraryReconciliationUseCase,
+    private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
+    private val syncLog: com.stash.core.data.sync.SyncLog,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -85,6 +89,9 @@ class TrackDownloadWorker @AssistedInject constructor(
          * see and act on it instead of silently re-retrying forever.
          */
         const val TRANSIENT_RETRY_LIMIT = 10
+
+        /** Codecs treated as lossless — mirrors TrackDao's getFlacCount() set. */
+        private const val LOSSLESS_FORMAT = "flac"
     }
 
     /**
@@ -137,75 +144,18 @@ class TrackDownloadWorker @AssistedInject constructor(
             // Diagnostic: log the actual queue state before any changes
             val statusCounts = downloadQueueDao.getStatusCounts()
             Log.i(TAG, "Queue status breakdown: ${statusCounts.map { "${it.status}=${it.count}" }}")
-            val orphanCounts = downloadQueueDao.getOrphanedTrackCounts()
-            Log.i(TAG, "Orphaned undownloaded tracks (no active queue entry): ${orphanCounts.map { "${it.source}=${it.cnt}" }}")
 
-            // Self-healing sweep: drop queue entries whose track has no
-            // currently sync-enabled parent playlist. Without this, queues
-            // built before the predicate fix (when 1 enabled playlist could
-            // pull thousands of orphaned rows) stay bloated forever.
-            val sweptOrphans = downloadQueueDao.deleteOrphanedQueueEntries()
-            if (sweptOrphans > 0) {
-                Log.i(TAG, "Swept $sweptOrphans orphaned queue entries (tracks with no sync-enabled parent playlist)")
-            }
-
-            // Reset exhausted retries so tracks get another chance each sync.
-            downloadQueueDao.resetExhaustedRetries()
-
-            // Reset stale IN_PROGRESS entries from a previous interrupted run.
-            // Safe because this worker is a unique chain — only one runs at a time.
-            val resetInProgress = downloadQueueDao.resetStaleInProgress()
-            if (resetInProgress > 0) {
-                Log.i(TAG, "Reset $resetInProgress stale IN_PROGRESS entries back to PENDING")
-            }
-
-            // Streaming mode: do not drain ANY pending downloads — DiffWorker
-            // already skipped enqueueing fresh ones (see its v0.9.30 gate),
-            // but pre-toggle PENDING rows (queued while the user was in
-            // Offline mode) would otherwise drain on every Sync Now and the
-            // user sees "downloads happening" despite being in Online mode.
-            // Leave them PENDING so a future switch back to Offline naturally
-            // resumes them. Housekeeping above (orphan sweep, stale-IP reset)
-            // still ran so counters stay accurate. Fall through to finalize
-            // with downloaded=0 so the chain closes cleanly.
-            if (streamingPreference.current()) {
-                Log.i(TAG, "Streaming mode: skipping download drain (PENDING rows preserved)")
-                syncStateManager.onDownloading(downloaded = 0, total = 0)
-                return Result.success(
-                    workDataOf(
-                        KEY_SYNC_ID to syncId,
-                        KEY_DOWNLOADED to 0,
-                        KEY_FAILED to 0,
-                    )
-                )
-            }
-
-            // Re-queue tracks that are undownloaded but have no active queue entry.
-            // This catches tracks whose retries were all exhausted and entries cleaned up,
-            // or tracks that somehow never got queued.
-            //
-            // v0.9.30: SKIP this auto-requeue in streaming mode. DiffWorker
-            // intentionally does NOT enqueue downloads for synced tracks
-            // when streaming is on (the user wants metadata-only sync,
-            // tracks play via Kennyy). Without this guard the auto-requeue
-            // here would silently undo DiffWorker's skip and download
-            // everything anyway. User-initiated downloads via the long-press
-            // "Download to library" path still work — they insert into
-            // download_queue directly and this worker processes the
-            // existing pending rows further down.
+            syncStateManager.onVerifyingLibrary(step = 0, total = LibraryReconciliationUseCase.TOTAL_STEPS)
             if (!streamingPreference.current()) {
-                val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
-                if (unqueuedTrackIds.isNotEmpty()) {
-                    Log.i(TAG, "Re-queuing ${unqueuedTrackIds.size} undownloaded tracks with no active queue entry")
-                    Log.i(TAG, "QueueTrace: TrackDownloadWorker.requeue track_ids=${unqueuedTrackIds.take(50)}${if (unqueuedTrackIds.size > 50) "...(${unqueuedTrackIds.size - 50} more)" else ""}")
-                    val newEntries = unqueuedTrackIds.map { trackId ->
-                        com.stash.core.data.db.entity.DownloadQueueEntity(
-                            trackId = trackId,
-                            syncId = syncId,
-                        )
-                    }
-                    downloadQueueDao.insertAll(newEntries)
-                }
+                val result = reconciliationUseCase.reconcile(
+                    onProgress = { step, total -> syncStateManager.onVerifyingLibrary(step, total) },
+                    checkFileExists = fileExistenceChecker::exists,
+                )
+                Log.i(
+                    TAG,
+                    "Reconciliation: swept=${result.orphansSwept} staleResumed=${result.staleResumed} " +
+                        "filesMissing=${result.filesMissing} requeued=${result.unqueuedRequeued}",
+                )
             } else {
                 Log.i(TAG, "Streaming mode: skipping auto-requeue of undownloaded tracks")
             }
@@ -602,6 +552,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                     "(${"%.1f".format(tpm)} tracks/min); failed=${finalFailed}",
             )
 
+            runLosslessUpgradeSweep()
+
             return Result.success(
                 workDataOf(
                     KEY_SYNC_ID to syncId,
@@ -821,6 +773,99 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
         }
         return Result.success()
+    }
+
+    /**
+    * Sweeps every downloaded lossy track and re-attempts it through the same
+    * [trackDownloader] used for new downloads. Runs unconditionally at the end
+    * of a chain sync — independent of REFRESH/ACCUMULATE, since sync mode
+    * governs playlist membership, not audio quality.
+    *
+    * Reuses [TrackDownloader] rather than duplicating lossless-resolution
+    * logic: the existing strict-FLAC pipeline already decides per-track
+    * whether a lossless source exists. An attempt only counts as an upgrade
+    * when the outcome is [TrackDownloadOutcome.Success] AND the resulting
+    * file's format is actually lossless — a Success via yt-dlp lossy fallback
+    * is discarded immediately, and the original file is never touched unless
+    * a genuine lossless replacement is already on disk.
+    */
+    private suspend fun runLosslessUpgradeSweep() {
+        if (streamingPreference.current()) {
+            Log.i(TAG, "Streaming mode: skipping FLAC upgrade sweep")
+            return
+        }
+
+        val candidates = trackDao.getLosslessUpgradeCandidates()
+        if (candidates.isEmpty()) return
+
+        Log.i(TAG, "FLAC upgrade sweep: ${candidates.size} candidate(s)")
+        val upgradedCount = AtomicInteger(0)
+
+        supervisorScope {
+            for (candidate in candidates) {
+                launch {
+                    try {
+                        val track = candidate.toDomain()
+                        val outcome = trackDownloader.downloadTrack(track = track, preResolvedUrl = null)
+
+                        if (outcome !is TrackDownloadOutcome.Success) {
+                            // Deferred (no lossless source, strict mode) / Unmatched / Failed —
+                            // expected for most candidates most syncs. Leave the file alone.
+                            return@launch
+                        }
+
+                        val meta = audioDurationExtractor.extract(outcome.filePath)
+                        val newFormat = meta?.format?.lowercase()
+                        if (newFormat != LOSSLESS_FORMAT) {
+                            // Succeeded only via lossy yt-dlp fallback — not an upgrade.
+                            // Discard the new file; the original stays exactly as it was.
+                            runCatching { File(outcome.filePath).delete() }
+                            return@launch
+                        }
+
+                        val oldPath = candidate.filePath
+                        val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
+
+                        trackDao.markAsDownloaded(
+                            trackId = candidate.id,
+                            filePath = outcome.filePath,
+                            fileSizeBytes = fileSize,
+                            sampleRateHz = meta.sampleRateHz,
+                            bitsPerSample = meta.bitsPerSample,
+                        )
+                        runCatching {
+                            trackDao.setFormatAndQuality(
+                                trackId = candidate.id,
+                                fileFormat = meta.format,
+                                qualityKbps = meta.bitrateKbps,
+                            )
+                        }.onFailure { e ->
+                            Log.w(TAG, "setFormatAndQuality failed during upgrade for ${candidate.id}", e)
+                        }
+
+                        if (!oldPath.isNullOrBlank() && oldPath != outcome.filePath) {
+                            runCatching { File(oldPath).delete() }
+                                .onFailure { e ->
+                                    Log.w(TAG, "Failed to delete pre-upgrade file for ${candidate.id}: $oldPath", e)
+                                }
+                        }
+
+                        upgradedCount.incrementAndGet()
+                        Log.i(TAG, "Upgraded to ${meta.format}: ${track.artist} - ${track.title}")
+                    } catch (ce: kotlinx.coroutines.CancellationException) {
+                        throw ce
+                    } catch (e: Exception) {
+                        // Never let a failed upgrade attempt touch the existing file.
+                        Log.w(TAG, "Upgrade attempt failed for track ${candidate.id}", e)
+                    }
+                }
+            }
+        }
+
+        val count = upgradedCount.get()
+        if (count > 0) {
+            syncLog.success("$count song${if (count == 1) "" else "s"} upgraded to lossless")
+        }
     }
 
     /**

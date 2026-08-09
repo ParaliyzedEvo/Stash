@@ -102,6 +102,11 @@ class SyncScheduler @Inject constructor(
             return
         }
 
+        if (isSyncChainActive()) {
+            Log.i(TAG, "Manual sync requested, but a sync is already running — ignoring")
+            return
+        }
+
         Log.i(TAG, "Manual sync triggered by user")
         // Immediately signal the UI that sync is starting so the button
         // shows progress feedback even before WorkManager picks up the work.
