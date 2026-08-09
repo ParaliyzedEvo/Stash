@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">Add to Liked Songs</string>
-    <string name="notification_action_unlike">Remove from Liked Songs</string>
-    <string name="notification_action_repeat_off">Repeat Off</string>
-    <string name="notification_action_repeat_all">Repeat All</string>
-    <string name="notification_action_repeat_one">Repeat One</string>
-    <string name="notification_action_shuffle_on">Shuffle On</string>
-    <string name="notification_action_shuffle_off">Shuffle Off</string>
-    <string name="shuffle_play">Shuffle Play</string>
-    <string name="resuming_channel_name">Playback</string>
-    <string name="resuming_notification_title">Resuming…</string>
+    <string name="notification_action_like">添加到喜欢的歌曲</string>
+    <string name="notification_action_unlike">从喜欢的歌曲中移除</string>
+    <string name="notification_action_repeat_off">关闭循环</string>
+    <string name="notification_action_repeat_all">列表循环</string>
+    <string name="notification_action_repeat_one">单曲循环</string>
+    <string name="notification_action_shuffle_on">开启随机</string>
+    <string name="notification_action_shuffle_off">关闭随机</string>
+    <string name="shuffle_play">随机播放</string>
+    <string name="resuming_channel_name">播放</string>
+    <string name="resuming_notification_title">继续…</string>
 </resources>
