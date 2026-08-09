@@ -231,29 +231,24 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Track queries ───────────────────────────────────────────────────
 
     override fun getAllTracks(): Flow<List<Track>> =
-        trackDao.getAllByDateAdded()
-            // `SELECT * FROM tracks` with a multi-thousand-row library
-            // bumps against Android's CursorWindow size limit (~2 MB).
-            // Libraries past that boundary read the tail rows from a
-            // separate fetched window, and if the tracks table mutates
-            // while Room's suspending query is mid-iteration (e.g. the
-            // user just tapped "delete playlist and songs" in Library
-            // tab while this Flow is live), CursorWindow throws
-            // `IllegalStateException: Couldn't read row N, col 0 from
-            // CursorWindow`. Without a retry the exception propagates
-            // through combine() → StateFlow → viewModelScope → CRASH
-            // (issue #14). Retrying re-subscribes the upstream; Room's
-            // InvalidationTracker has by then committed the mutation,
-            // so the fresh cursor reads a consistent table. Cap at 3
+        trackDao.getLibraryByDateAdded()
+            // #380 root-cause fix lives in the DAO: a narrow projection
+            // (rows small enough that realistic libraries fit one
+            // ~2 MB CursorWindow), `is_downloaded = 1` in SQL instead
+            // of the in-memory filter below, and @Transaction so each
+            // emission reads one consistent snapshot even when a
+            // playlist delete mutates `tracks` mid-query (the old
+            // SELECT * re-executed per window refill and raced the
+            // delete — issues #14/#380). This retry predates that fix;
+            // it stays as the last-resort belt for any CursorWindow
+            // surprise a vendor SQLite build cooks up. Cap at 3
             // attempts so a non-race failure doesn't loop forever.
             .retryWhen { cause, attempt ->
                 val raced = cause is IllegalStateException &&
                     cause.message?.contains("CursorWindow") == true
                 raced && attempt < 3
             }
-            .map { entities ->
-                entities.filter { it.isDownloaded }.map { it.toDomain() }
-            }
+            .map { rows -> rows.map { it.toDomain() } }
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
         trackDao.getByArtist(artist).map { entities -> entities.map { it.toDomain() } }

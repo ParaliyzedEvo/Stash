@@ -658,7 +658,7 @@ class LibraryViewModel @Inject constructor(
      * playlist and songs" action. The earlier ad-hoc implementation fired
      * N separate `deleteTrack` statements in a loop; each invalidated
      * Room's InvalidationTracker, which retriggered the Library UI's
-     * live `getAllByDateAdded()` Flow mid-iteration, causing its
+     * live `getLibraryByDateAdded()` Flow mid-iteration, causing its
      * CursorWindow to be recycled underneath the reader and crashing
      * the app with `IllegalStateException: Couldn't read row N, col 0
      * from CursorWindow`. The cascade path invalidates once at commit,

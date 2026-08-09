@@ -64,6 +64,55 @@ data class TrackPathRow(
 )
 
 /**
+ * #380 — the Library Songs feed projection: exactly the columns
+ * `LibraryTrackRow.toDomain()` consumes, nothing else.
+ *
+ * `SELECT *` here was ~40 columns, a dozen of them TEXT (SAF file paths,
+ * URIs, art URLs, canonical duplicates); at 6 000 rows the result spans
+ * multiple ~2 MB CursorWindows and every extra window refill re-executes
+ * the statement — the re-execution races concurrent deletes and threw
+ * `IllegalStateException: Couldn't read row N from CursorWindow` when a
+ * large playlist was deleted mid-collection. Narrow rows keep realistic
+ * libraries inside one window; the `@Transaction` on the query closes the
+ * race outright for libraries that still span.
+ */
+data class LibraryTrackRow(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    @androidx.room.ColumnInfo(name = "album_artist") val albumArtist: String,
+    @androidx.room.ColumnInfo(name = "duration_ms") val durationMs: Long,
+    @androidx.room.ColumnInfo(name = "file_path") val filePath: String?,
+    @androidx.room.ColumnInfo(name = "file_format") val fileFormat: String,
+    @androidx.room.ColumnInfo(name = "quality_kbps") val qualityKbps: Int,
+    @androidx.room.ColumnInfo(name = "file_size_bytes") val fileSizeBytes: Long,
+    val source: com.stash.core.model.MusicSource,
+    @androidx.room.ColumnInfo(name = "spotify_uri") val spotifyUri: String?,
+    @androidx.room.ColumnInfo(name = "youtube_id") val youtubeId: String?,
+    @androidx.room.ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
+    @androidx.room.ColumnInfo(name = "album_art_path") val albumArtPath: String?,
+    @androidx.room.ColumnInfo(name = "date_added") val dateAdded: java.time.Instant,
+    @androidx.room.ColumnInfo(name = "last_played") val lastPlayed: java.time.Instant?,
+    @androidx.room.ColumnInfo(name = "play_count") val playCount: Int,
+    @androidx.room.ColumnInfo(name = "is_downloaded") val isDownloaded: Boolean,
+    @androidx.room.ColumnInfo(name = "match_confidence") val matchConfidence: Float,
+    @androidx.room.ColumnInfo(name = "match_dismissed") val matchDismissed: Boolean,
+    val isrc: String?,
+    val explicit: Boolean?,
+    @androidx.room.ColumnInfo(name = "bits_per_sample") val bitsPerSample: Int?,
+    @androidx.room.ColumnInfo(name = "sample_rate_hz") val sampleRateHz: Int?,
+    @androidx.room.ColumnInfo(name = "spotify_saved_at") val spotifySavedAt: Long?,
+    @androidx.room.ColumnInfo(name = "ytmusic_saved_at") val ytMusicSavedAt: Long?,
+    @androidx.room.ColumnInfo(name = "lastfm_loved_at") val lastFmLovedAt: Long?,
+    @androidx.room.ColumnInfo(name = "stash_liked_at") val stashLikedAt: Long?,
+    @androidx.room.ColumnInfo(name = "is_streamable") val isStreamable: Boolean,
+    @androidx.room.ColumnInfo(name = "is_streamable_checked_at") val isStreamableCheckedAt: Long?,
+    @androidx.room.ColumnInfo(name = "metadata_embedded_at") val metadataEmbeddedAt: Long?,
+    @androidx.room.ColumnInfo(name = "lyrics_fetched_at") val lyricsFetchedAt: Long?,
+)
+
+/**
  * Summary projection for album browsing.
  *
  * @property album  Album name.
@@ -249,19 +298,37 @@ interface TrackDao {
 
     // ── List queries (all reactive) ─────────────────────────────────────
 
-    /** All tracks ordered by most-recently-added first. v0.9.15: filters blocked. */
+    /**
+     * The Library Songs feed: downloaded tracks, most-recently-added first,
+     * blocklist-filtered, narrow [LibraryTrackRow] projection (see its kdoc
+     * for the #380 CursorWindow story). `is_downloaded = 1` lives in SQL —
+     * the repository used to fetch every stub row and drop them in memory.
+     * `@Transaction` pins each emission to one snapshot so a concurrent
+     * playlist delete can't change the table between CursorWindow refills.
+     */
+    @Transaction
     @Query(
         """
-        SELECT t.* FROM tracks t
+        SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.duration_ms,
+               t.file_path, t.file_format, t.quality_kbps, t.file_size_bytes,
+               t.source, t.spotify_uri, t.youtube_id, t.album_art_url,
+               t.album_art_path, t.date_added, t.last_played, t.play_count,
+               t.is_downloaded, t.match_confidence, t.match_dismissed, t.isrc,
+               t.explicit, t.bits_per_sample, t.sample_rate_hz,
+               t.spotify_saved_at, t.ytmusic_saved_at, t.lastfm_loved_at,
+               t.stash_liked_at, t.is_streamable, t.is_streamable_checked_at,
+               t.metadata_embedded_at, t.lyrics_fetched_at
+        FROM tracks t
         LEFT JOIN track_blocklist bl
             ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE bl.canonical_key IS NULL
+          AND t.is_downloaded = 1
         ORDER BY t.date_added DESC
         """
     )
-    fun getAllByDateAdded(): Flow<List<TrackEntity>>
+    fun getLibraryByDateAdded(): Flow<List<LibraryTrackRow>>
 
     /** All tracks by a specific artist, ordered by album then title. */
     @Query("SELECT * FROM tracks WHERE artist = :artist ORDER BY album ASC, title ASC")
@@ -288,7 +355,12 @@ interface TrackDao {
      * tracks. The per-tap connectivity guard in PlaylistDetailViewModel still
      * governs whether a stream-only track can actually play. Other playlist
      * types remain downloaded-only in Offline mode (Library = your saved music).
+     *
+     * `@Transaction`: a large playlist's detail feed spans CursorWindows the
+     * same way the Library feed does (#380) — one snapshot per emission so a
+     * concurrent delete can't race the window refills.
      */
+    @Transaction
     @Query(
         """
         SELECT t.* FROM tracks t
@@ -1383,7 +1455,13 @@ interface TrackDao {
      * mirrors the Albums tab. With `false` (default-pref behaviour),
      * only `is_downloaded = 1` rows contribute. Callers MUST pass the
      * flag explicitly — see [getByPlaylist] for rationale.
+     *
+     * `@Transaction`: thousands of artist groups span CursorWindows; one
+     * snapshot per emission so a mass delete can't race the refills (#380 —
+     * the device repro's fatal collector was actually [getAllAlbums], the
+     * same class of unbounded reactive read as this one).
      */
+    @Transaction
     @Query(
         """
         SELECT artist,
@@ -1412,7 +1490,14 @@ interface TrackDao {
      * "Drake, PARTYNEXTDOOR" since both feature on most tracks.
      * MAX(art) is a deterministic tie-break; album art is consistent
      * across an album's tracks in practice.
+     *
+     * `@Transaction`: this was the query that actually took the process down
+     * in the #380 device repro (`Couldn't read row 2430 from CursorWindow`
+     * while a 8 000-track playlist delete ran) — thousands of album groups
+     * span windows and each refill re-executed the statement against a
+     * table mid-delete. One snapshot per emission closes it.
      */
+    @Transaction
     @Query(
         """
         SELECT t.album AS album,
