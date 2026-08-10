@@ -372,6 +372,24 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Shuffle the liked list and play it from the top — what the header
+     * shuffle icon does while the Liked tab is open (issue #402: it used to
+     * shuffle the whole library no matter which tab you were on). Scoped to
+     * the same list the tab shows (current origin filter + search query),
+     * with [playLiked]'s offline-playability narrowing. Shuffles the LIST
+     * itself rather than enabling player shuffle mode, matching
+     * [AlbumDetailViewModel.shuffleAll].
+     */
+    fun shuffleLiked() {
+        viewModelScope.launch {
+            val all = likedTracks.value
+            val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
+            if (playable.isEmpty()) return@launch
+            playerRepository.setQueue(playable.shuffled(), 0)
+        }
+    }
+
     // ── Public actions ───────────────────────────────────────────────────
 
     /** Switch the active content tab. */

@@ -177,6 +177,7 @@ fun LibraryScreen(
             searchQuery = searchQuery,
             importState = importState,
             onShuffleLibrary = viewModel::shuffleLibrary,
+            onShuffleLiked = viewModel::shuffleLiked,
             onTabSelected = viewModel::selectTab,
             onSearchQueryChanged = viewModel::setSearchQuery,
             onSortOrderChanged = viewModel::setSortOrder,
@@ -423,6 +424,7 @@ private fun LibraryContent(
     searchQuery: String,
     importState: com.stash.data.download.files.LocalImportState,
     onShuffleLibrary: () -> Unit,
+    onShuffleLiked: () -> Unit,
     onTabSelected: (LibraryTab) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
@@ -513,9 +515,16 @@ private fun LibraryContent(
                 modifier = Modifier.weight(1f),
             )
             // Shuffle stays in the always-visible header so it's reachable even
-            // once the hero has scrolled away.
-            IconButton(onClick = onShuffleLibrary) {
-                Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle library", tint = MaterialTheme.colorScheme.primary)
+            // once the hero has scrolled away. It shuffles what you're looking
+            // at: the liked list on the Liked tab (issue #402 — it used to
+            // shuffle the whole library there), the whole library elsewhere.
+            val likedTabActive = state.activeTab == LibraryTab.LIKED
+            IconButton(onClick = if (likedTabActive) onShuffleLiked else onShuffleLibrary) {
+                Icon(
+                    Icons.Filled.Shuffle,
+                    contentDescription = if (likedTabActive) "Shuffle liked songs" else "Shuffle library",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Import tracks")
