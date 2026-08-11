@@ -97,6 +97,13 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        VerifyLibrarySection(
+            status = state.verification,
+            onRunVerification = viewModel::runVerification,
+        )
+
+        Spacer(Modifier.height(20.dp))
+
         QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
 
         Spacer(Modifier.height(40.dp))
@@ -297,6 +304,88 @@ private fun BackfillSection(
                         Button(onClick = onRunBackfill) {
                             Text("Retry scan")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VerifyLibrarySection(
+    status: LibraryVerificationStatus,
+    onRunVerification: () -> Unit,
+) {
+    SectionHeader(title = "Verify library")
+
+    GlassCard {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            when (status) {
+                LibraryVerificationStatus.Idle -> {
+                    Text(
+                        text = "Reconcile the download queue against your library and " +
+                            "rebuild the track and storage stats shown on the Sync tab. " +
+                            "Doesn't touch playlists or trigger any network sync.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onRunVerification) {
+                        Text("Verify")
+                    }
+                }
+                is LibraryVerificationStatus.Running -> {
+                    val total = status.total.coerceAtLeast(1)
+                    Text(
+                        text = "Checking library… ${status.step} / ${status.total}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { status.step.toFloat() / total.toFloat() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                is LibraryVerificationStatus.Done -> {
+                    val r = status.reconciliation
+                    val a = status.adoption
+                    Text(
+                        text = "Verified — ${r.filesMissing} missing file${if (r.filesMissing == 1) "" else "s"} found, " +
+                            "${r.unqueuedRequeued} track(s) requeued, " +
+                            "${r.orphansSwept} stale entr${if (r.orphansSwept == 1) "y" else "ies"} cleaned up.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (a.adopted > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Found ${a.adopted} song${if (a.adopted == 1) "" else "s"} already on disk and added to your library.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    } else if (a.scanned > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Checked ${a.scanned} track${if (a.scanned == 1) "" else "s"} not yet downloaded — none matched a file on disk.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onRunVerification) {
+                        Text("Verify again")
+                    }
+                }
+                is LibraryVerificationStatus.Failed -> {
+                    Text(
+                        text = "Verification couldn't finish: ${status.message}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onRunVerification) {
+                        Text("Retry")
                     }
                 }
             }

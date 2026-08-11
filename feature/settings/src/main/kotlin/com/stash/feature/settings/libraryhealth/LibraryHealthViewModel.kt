@@ -38,6 +38,9 @@ class LibraryHealthViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
     private val metadataExtractor: AudioDurationExtractor,
+    private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
+    private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
+    private val adoptExistingFilesUseCase: com.stash.data.download.files.AdoptExistingFilesUseCase,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryHealthState())
@@ -152,6 +155,90 @@ class LibraryHealthViewModel @Inject constructor(
     }
 
     /**
+     * Reconciles the download queue against the library — sweeps orphaned
+     * queue rows, resets exhausted/stale retries, and re-queues undownloaded
+     * tracks with no active queue entry — then refreshes disk-truth size
+     * stats. The same pass [com.stash.core.data.sync.workers.TrackDownloadWorker]
+     * runs at the start of every sync, exposed here as a standalone action
+     * so the user can rebuild queue/stat state without a full sync.
+     *
+     * ViewModel-scoped like [runBackfill] rather than WorkManager-backed:
+     * this is DB housekeeping (no network, no per-file MMR reads), so it's
+     * expected to finish in well under a minute even on a large library. If
+     * that assumption turns out wrong in practice, promote this to a Worker
+     * the way runQualityInfoBackfill already is.
+     */
+    fun runVerification() {
+        if (_state.value.verification is LibraryVerificationStatus.Running) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    verification = LibraryVerificationStatus.Running(
+                        step = 0,
+                        // +1 for the adoption pass, which runs after the
+                        // TOTAL_STEPS reconciliation steps complete.
+                        total = com.stash.core.data.library.LibraryReconciliationUseCase.TOTAL_STEPS + 1,
+                    ),
+                )
+            }
+            try {
+                val reconciliation = withContext(Dispatchers.IO) {
+                    reconciliationUseCase.reconcile(
+                        onProgress = { step, _ ->
+                            _state.update {
+                                it.copy(
+                                    verification = LibraryVerificationStatus.Running(
+                                        step = step,
+                                        total = com.stash.core.data.library.LibraryReconciliationUseCase.TOTAL_STEPS + 1,
+                                    ),
+                                )
+                            }
+                        },
+                        checkFileExists = fileExistenceChecker::exists,
+                    )
+                }
+                Log.i(TAG, "reconciliation: swept=${reconciliation.orphansSwept} " +
+                    "staleResumed=${reconciliation.staleResumed} filesMissing=${reconciliation.filesMissing} " +
+                    "requeued=${reconciliation.unqueuedRequeued}")
+
+                // Adoption pass: files already on disk that the DB doesn't
+                // know about yet (fresh install pointed at a pre-populated
+                // folder). Local-only, no auth required — see
+                // AdoptExistingFilesUseCase's KDoc for why this is separate
+                // from the network-capable reconcile() pass above.
+                _state.update {
+                    it.copy(
+                        verification = LibraryVerificationStatus.Running(
+                            step = com.stash.core.data.library.LibraryReconciliationUseCase.TOTAL_STEPS,
+                            total = com.stash.core.data.library.LibraryReconciliationUseCase.TOTAL_STEPS + 1,
+                        ),
+                    )
+                }
+                val adoption = withContext(Dispatchers.IO) { adoptExistingFilesUseCase.adopt() }
+                Log.i(TAG, "adoption: scanned=${adoption.scanned} adopted=${adoption.adopted}")
+
+                _state.update {
+                    it.copy(
+                        verification = LibraryVerificationStatus.Done(
+                            reconciliation = reconciliation,
+                            adoption = adoption,
+                        ),
+                    )
+                }
+                // Adoption/reconciliation both touch is_downloaded and
+                // file_size_bytes — the Library Health buckets and any
+                // cached storage totals are now stale.
+                refresh()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "runVerification failed", e)
+                _state.update { it.copy(verification = LibraryVerificationStatus.Failed(e.message ?: "Unknown error")) }
+            }
+        }
+    }
+
+    /**
      * Enqueues [QualityInfoBackfillWorker] without WorkManager constraints
      * — the user explicitly opted in by tapping the row, so we don't gate
      * on battery state. The worker self-re-enqueues if the library has
@@ -176,6 +263,7 @@ class LibraryHealthViewModel @Inject constructor(
 data class LibraryHealthState(
     val buckets: List<LibraryHealthBucket> = emptyList(),
     val backfill: BackfillStatus = BackfillStatus.Idle,
+    val verification: LibraryVerificationStatus = LibraryVerificationStatus.Idle,
 )
 
 /**
@@ -188,4 +276,20 @@ sealed interface BackfillStatus {
     data object Idle : BackfillStatus
     data class Running(val processed: Int, val total: Int) : BackfillStatus
     data class Done(val processed: Int, val total: Int) : BackfillStatus
+}
+
+/**
+ * Lifecycle of the standalone library-reconciliation action. Mirrors
+ * [BackfillStatus]'s shape; [Running] uses step/total (housekeeping
+ * steps) rather than processed/total (rows) since reconciliation has no
+ * natural per-row unit to report.
+ */
+sealed interface LibraryVerificationStatus {
+    data object Idle : LibraryVerificationStatus
+    data class Running(val step: Int, val total: Int) : LibraryVerificationStatus
+    data class Done(
+        val reconciliation: com.stash.core.data.library.ReconciliationResult,
+        val adoption: com.stash.data.download.files.AdoptionResult,
+    ) : LibraryVerificationStatus
+    data class Failed(val message: String) : LibraryVerificationStatus
 }

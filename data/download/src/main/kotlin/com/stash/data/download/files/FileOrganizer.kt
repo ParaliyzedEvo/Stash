@@ -61,6 +61,151 @@ class FileOrganizer @Inject constructor(
     /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
     fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
 
+    /**
+     * Whether a track's file still exists, and (for SAF) a fresh URI to
+     * persist if the stored one was stale. [filePath] is only consulted
+     * for the internal-storage fast path; for SAF paths it's ignored in
+     * favor of re-deriving the location from [artist]/[album]/[title]
+     * via [resolveExistingSafFile] — see that function's KDoc for why.
+     *
+     * Used by library reconciliation (missing-file detection) and by the
+     * "adopt existing files" pass (finding files the DB doesn't know
+     * about yet), both via [com.stash.core.data.library.FileExistenceChecker].
+     */
+    suspend fun checkExists(
+        artist: String,
+        album: String?,
+        title: String,
+        filePath: String,
+    ): com.stash.core.data.library.FileExistenceResult {
+        if (!filePath.startsWith("content://")) {
+            return com.stash.core.data.library.FileExistenceResult(exists = File(filePath).exists())
+        }
+        val match = resolveExistingSafFile(artist, album, title) ?: return com.stash.core.data.library.FileExistenceResult(exists = false)
+        val freshUri = match.uri.toString()
+        return com.stash.core.data.library.FileExistenceResult(
+            exists = true,
+            // Only report a "resolved" path when it actually differs — avoids
+            // a needless DB write on the common case where the URI was fine.
+            resolvedFilePath = freshUri.takeIf { it != filePath },
+        )
+    }
+
+    /**
+    * Pre-built index of the current SAF tree, so a bulk pass (like
+    * [com.stash.core.data.library.AdoptExistingFilesUseCase]) can look up
+    * album directories in O(1) instead of re-walking `root -> artist -> album`
+    * via [DocumentFile.findFile] for every single candidate.
+    *
+    * [DocumentFile.findFile] is not a direct lookup: internally it calls
+    * `listFiles()` on the parent and linearly scans for a name match. Doing
+    * that per-candidate against thousands of tracks means re-listing the same
+    * artist/album directories over and over via ContentResolver IPC — the
+    * actual cost that was making adoption slower than downloading the same
+    * tracks over the network. Building this index means the tree is walked
+    * exactly once regardless of candidate count.
+    *
+    * Filenames are also pre-listed per album dir (see [AlbumIndex]) so a
+    * lookup for a specific title never has to hit the provider again.
+    */
+    suspend fun buildSafIndex(): SafIndex? {
+        val treeUri = storagePreference.externalTreeUri.first() ?: return null
+        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
+    
+        val index = HashMap<Pair<String, String>, AlbumIndex>()
+        root.listFiles().forEach { artistDir ->
+            if (!artistDir.isDirectory) return@forEach
+            val artistName = artistDir.name ?: return@forEach
+            artistDir.listFiles().forEach { albumDir ->
+                if (!albumDir.isDirectory) return@forEach
+                val albumName = albumDir.name ?: return@forEach
+                // List each album dir's files exactly once, up front, and
+                // index by name for O(1) lookup instead of a per-candidate
+                // listFiles().firstOrNull { ... } scan.
+                val filesByName = albumDir.listFiles()
+                    .filter { it.isFile }
+                    .associateBy { it.name.orEmpty() }
+                index[artistName to albumName] = AlbumIndex(albumDir, filesByName)
+            }
+        }
+        return SafIndex(index)
+    }
+    
+    /**
+    * O(1) lookup against a pre-built [SafIndex]. Same slug convention and
+    * extension-probing behaviour as [resolveExistingSafFile], but with no
+    * SAF IPC calls at all once the index is built — everything after
+    * [buildSafIndex] is in-memory map lookups.
+    */
+    fun resolveInIndex(
+        index: SafIndex,
+        artist: String,
+        album: String?,
+        title: String,
+        knownFormat: String? = null,
+    ): DocumentFile? {
+        val artistSlug = FileOrganizerSlugs.slugify(artist)
+        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
+        val titleSlug = FileOrganizerSlugs.slugify(title)
+    
+        val albumIndex = index.byArtistAlbum[artistSlug to albumSlug] ?: return null
+    
+        val candidateNames = if (knownFormat != null) {
+            setOf("$titleSlug.$knownFormat")
+        } else {
+            KNOWN_AUDIO_FORMATS.map { "$titleSlug.$it" }
+        }
+        for (name in candidateNames) {
+            albumIndex.filesByName[name]?.let { return it }
+        }
+        return null
+    }
+    
+    /** In-memory index built once per bulk pass by [buildSafIndex]. */
+    class SafIndex(val byArtistAlbum: Map<Pair<String, String>, AlbumIndex>)
+    
+    /** Pre-listed contents of a single album directory. */
+    class AlbumIndex(val dir: DocumentFile, val filesByName: Map<String, DocumentFile>)
+
+    /**
+     * Resolves whether a track's file exists, without trusting any cached
+     * per-document URI. Walks from the CURRENT tree grant using the same
+     * artist/album/title slug convention [writeToSafTree] uses to create
+     * files, so it's immune to SAF document IDs going stale across a
+     * reinstall/re-grant — a fresh tree grant doesn't guarantee old
+     * per-document URIs still resolve (observed: fromSingleUri().exists()
+     * throws FileNotFoundException post-reinstall for genuinely-present
+     * files).
+     *
+     * One [DocumentFile.listFiles] call on the album dir rather than one
+     * [DocumentFile.findFile] probe per candidate extension — findFile()
+     * does its own linear scan internally, so probing N extensions
+     * individually multiplies the SAF IPC cost for nothing.
+     */
+    suspend fun resolveExistingSafFile(
+        artist: String,
+        album: String?,
+        title: String,
+        knownFormat: String? = null,
+    ): DocumentFile? {
+        val treeUri = storagePreference.externalTreeUri.first() ?: return null
+        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
+
+        val artistSlug = FileOrganizerSlugs.slugify(artist)
+        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
+        val titleSlug = FileOrganizerSlugs.slugify(title)
+
+        val artistDir = root.findFile(artistSlug)?.takeIf { it.isDirectory } ?: return null
+        val albumDir = artistDir.findFile(albumSlug)?.takeIf { it.isDirectory } ?: return null
+
+        val candidateNames = if (knownFormat != null) {
+            setOf("$titleSlug.$knownFormat")
+        } else {
+            KNOWN_AUDIO_FORMATS.mapTo(mutableSetOf()) { "$titleSlug.$it" }
+        }
+        return albumDir.listFiles().firstOrNull { it.isFile && it.name in candidateNames }
+    }
+
     /** Directory for cached album artwork files. */
     fun getAlbumArtDir(): File = File(context.cacheDir, "albumart").also { it.mkdirs() }
 
@@ -152,6 +297,10 @@ class FileOrganizer @Inject constructor(
         private val LOSSLESS_EXTENSIONS = setOf(
             "flac", "alac", "wav", "ape", "tta", "wv", "aiff",
         )
+        // Mirrors the format switch in mimeTypeFor(). Used by
+        // resolveExistingSafFile's extension-probe when the caller doesn't
+        // know the track's format ahead of time.
+        private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
     }
 
     /**
