@@ -95,8 +95,12 @@ class SyncStateManager @Inject constructor() {
      * @param downloaded Tracks downloaded so far.
      * @param total      Total tracks to download.
      */
-    fun onDownloading(downloaded: Int, total: Int) {
-        _phase.value = SyncPhase.Downloading(downloaded = downloaded, total = total)
+    fun onDownloading(downloaded: Int, total: Int, deferred: Int = 0) {
+        _phase.value = SyncPhase.Downloading(
+            downloaded = downloaded,
+            total = total,
+            deferred = deferred,
+        )
     }
 
     /** Transition to [SyncPhase.Finalizing]. */

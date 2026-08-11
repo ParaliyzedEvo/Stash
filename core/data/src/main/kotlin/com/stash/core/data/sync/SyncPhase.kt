@@ -94,17 +94,23 @@ sealed interface SyncPhase {
      *
      * @property downloaded Number of tracks downloaded so far.
      * @property total      Total number of tracks to download.
+     * @property deferred   Tracks resolved as "wait for a lossless source"
+     *   (strict-FLAC deferral, #421). Deferred is a RESOLVED outcome — it
+     *   must advance progress like downloads/failures do, or an all-deferral
+     *   sync reads as a hang at 0/N with a frozen bar.
      */
     data class Downloading(
         val downloaded: Int = 0,
         val total: Int = 0,
+        val deferred: Int = 0,
     ) : SyncPhase {
         override val progress: Float
             get() {
                 // Download phase spans 25%..95% of the overall progress.
                 val base = 0.30f
                 val span = 0.65f
-                val fraction = if (total > 0) downloaded.toFloat() / total else 0f
+                val resolved = downloaded + deferred
+                val fraction = if (total > 0) resolved.toFloat() / total else 0f
                 return base + span * fraction
             }
     }

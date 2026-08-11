@@ -231,6 +231,10 @@ class TrackDownloadWorker @AssistedInject constructor(
             // tallies despite concurrent updates from multiple coroutines.
             val downloadedCount = AtomicInteger(0)
             val failedCount = AtomicInteger(0)
+            // #421: strict-FLAC deferrals ("wait for a lossless source") are a
+            // RESOLVED outcome — counted so progress moves and the user is told,
+            // instead of the sync sitting at "Downloading 0/N" and going quiet.
+            val deferredCount = AtomicInteger(0)
             val totalBytesDownloaded = AtomicLong(0)
             val firstError = AtomicReference<String?>(null)
             val playlistsChecked = inputData.getInt(DiffWorker.KEY_PLAYLISTS_CHECKED, 0)
@@ -447,6 +451,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     // TrackDownloaderImpl — do NOT increment retries,
                                     // do NOT mark FAILED, do NOT tally as failure.
                                     // LosslessRetryScheduler owns the re-attempt signal.
+                                    deferredCount.incrementAndGet()
                                     Log.i(TAG, "Deferred (waiting for lossless): ${track.artist} - ${track.title}")
                                 }
                             }
@@ -506,13 +511,26 @@ class TrackDownloadWorker @AssistedInject constructor(
                             }
                         }
 
-                        // Update progress notification after each completed track.
+                        // Update progress notification after each resolved track.
+                        // Deferred tracks count toward progress (the decision is
+                        // made) but are reported separately so "Downloaded X of Y"
+                        // never lies about files on disk.
+                        val deferred = deferredCount.get()
                         val completed = downloadedCount.get() + failedCount.get()
-                        syncStateManager.onDownloading(downloaded = completed, total = total)
+                        val resolved = completed + deferred
+                        syncStateManager.onDownloading(
+                            downloaded = completed,
+                            total = total,
+                            deferred = deferred,
+                        )
                         syncNotificationManager.updateProgress(
                             title = "Syncing playlists",
-                            text = "Downloaded $completed of $total",
-                            progress = 0.25f + 0.70f * (completed.toFloat() / total),
+                            text = if (deferred > 0) {
+                                "Downloaded $completed of $total · $deferred waiting for lossless"
+                            } else {
+                                "Downloaded $completed of $total"
+                            },
+                            progress = 0.25f + 0.70f * (resolved.toFloat() / total),
                         )
 
                         // Flush sync history tallies every 10 tracks for crash resilience.
@@ -561,8 +579,22 @@ class TrackDownloadWorker @AssistedInject constructor(
             Log.i(
                 TAG,
                 "PerfSummary: ${finalDownloaded} tracks in ${"%.1f".format(durationSec)}s " +
-                    "(${"%.1f".format(tpm)} tracks/min); failed=${finalFailed}",
+                    "(${"%.1f".format(tpm)} tracks/min); failed=${finalFailed}; " +
+                    "deferred=${deferredCount.get()}",
             )
+
+            // #421: leave a receipt for deferrals — a sync that "downloaded 0
+            // of 5" with no explanation reads as broken when the truth is
+            // "waiting for a lossless source".
+            val finalDeferred = deferredCount.get()
+            if (finalDeferred > 0) {
+                syncLog.info(
+                    "$finalDeferred song${if (finalDeferred == 1) "" else "s"} waiting for a " +
+                        "lossless source — they'll download automatically when one is available " +
+                        "(connect ARCOD or your own Qobuz in Audio & Quality, or allow the " +
+                        "YouTube fallback to get them now)",
+                )
+            }
 
             runLosslessUpgradeSweep()
 
