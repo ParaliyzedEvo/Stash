@@ -417,7 +417,11 @@ class LibraryViewModel @Inject constructor(
             val all = likedTracks.value
             val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
             if (playable.isEmpty()) return@launch
-            playerRepository.setQueue(playable.shuffled(), 0)
+            playerRepository.setQueue(
+                playable.shuffled(),
+                0,
+                source = com.stash.core.model.PlaybackSource.Liked(likedFilter.value.name),
+            )
         }
     }
 

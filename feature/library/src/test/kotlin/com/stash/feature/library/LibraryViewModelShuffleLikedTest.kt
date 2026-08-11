@@ -6,6 +6,7 @@ import com.stash.core.auth.model.AuthState
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaybackSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
@@ -72,7 +73,9 @@ class LibraryViewModelShuffleLikedTest {
         advanceUntilIdle()
 
         val tracksCaptor = argumentCaptor<List<Track>>()
-        verifyBlocking(playerRepository) { setQueue(tracksCaptor.capture(), eq(0)) }
+        verifyBlocking(playerRepository) {
+            setQueue(tracksCaptor.capture(), eq(0), eq(PlaybackSource.Liked("ALL")))
+        }
         assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 2L, 3L)
     }
 
@@ -86,7 +89,9 @@ class LibraryViewModelShuffleLikedTest {
         advanceUntilIdle()
 
         val tracksCaptor = argumentCaptor<List<Track>>()
-        verifyBlocking(playerRepository) { setQueue(tracksCaptor.capture(), eq(0)) }
+        verifyBlocking(playerRepository) {
+            setQueue(tracksCaptor.capture(), eq(0), eq(PlaybackSource.Liked("ALL")))
+        }
         assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 3L)
     }
 
@@ -99,7 +104,7 @@ class LibraryViewModelShuffleLikedTest {
         vm.shuffleLiked()
         advanceUntilIdle()
 
-        verifyBlocking(playerRepository, never()) { setQueue(any(), any()) }
+        verifyBlocking(playerRepository, never()) { setQueue(any(), any(), any()) }
     }
 
     // ── harness (mirrors LibraryViewModelLikedSearchTest) ────────────────
@@ -135,6 +140,10 @@ class LibraryViewModelShuffleLikedTest {
             },
             flacUpgradeEnqueuer = mock(),
             ytMusicApiClient = mock(),
+            libraryPreferencesStore = mock {
+                onBlocking { getSortOrder() } doReturn SortOrder.RECENT
+                onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
+            },
         )
     }
 }
