@@ -28,6 +28,7 @@ import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
 import com.stash.core.media.equalizer.EqController
+import com.stash.core.media.toPlayerRepeatMode
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
@@ -1670,6 +1671,14 @@ class StashPlaybackService : MediaLibraryService() {
                     }
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         session.player.shuffleModeEnabled = plan.isShuffled
+                        // Repeat mode is persisted with the queue and must be
+                        // restored on BOTH resume paths — resumeLastQueue (in-app)
+                        // and this media-button/dead-process path. Device-proven
+                        // miss: repeat set to All came back Off through here.
+                        // (plan.source is still dropped on this path — the
+                        // "Playing from" label doesn't survive a service-side
+                        // resume; repo-side wiring for that is a follow-up.)
+                        session.player.repeatMode = plan.repeatMode.toPlayerRepeatMode()
                     }
                     // Force play once the queue lands iff this is a real play
                     // request (not boot-time notification population).
