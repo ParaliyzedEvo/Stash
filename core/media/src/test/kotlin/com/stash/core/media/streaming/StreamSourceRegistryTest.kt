@@ -428,6 +428,26 @@ class StreamSourceRegistryTest {
         coVerify { youtube.resolve(track, allowYtDlp = true) }
     }
 
+    /**
+     * #429: force-qbdlx must keep the lossy safety net, exactly like
+     * force-arcod. The reporter had this toggle on while the qbdlx pool was
+     * dead — every track resolved through a dead source with no fallback,
+     * an infinite spinner on all playback.
+     */
+    @Test
+    fun `force qbdlx branch falls through to jiosaavn then youtube when qbdlx misses`() = runTest {
+        coEvery { streamingPreference.isForceQbdlxOnly() } returns true
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { jiosaavn.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val track = stubTrack()
+
+        registry().resolve(track, allowYouTube = true, allowYtDlp = true)
+
+        coVerify { jiosaavn.resolve(track) }
+        coVerify { youtube.resolve(track, allowYtDlp = true) }
+    }
+
     private fun stubTrack(): TrackEntity = TrackEntity(
         id = 1L,
         title = "Title",

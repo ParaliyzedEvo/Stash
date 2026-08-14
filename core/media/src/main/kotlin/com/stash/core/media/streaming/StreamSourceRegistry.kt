@@ -103,6 +103,13 @@ class StreamSourceRegistry @Inject constructor(
                 // allowYtDlp like arcod/amz so speculative background fill spends
                 // no pool-account quota (only foreground/next-up resolves hit it).
                 if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
+                // Same guarantee as the force-arcod branch below: a force toggle
+                // is a TEST instrument, but the pref outlives the build — and the
+                // qbdlx pool can die under it (it did; #429's reporter had this
+                // toggle on and got an infinite spinner on every track). Keep the
+                // lossy safety net so no stale preference means silence.
+                if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
+                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             } else if (streamingPreference.isForceArcodOnly()) {
                 // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
                 // ARCOD path can be exercised even when the Qobuz proxies are
