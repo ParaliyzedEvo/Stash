@@ -62,7 +62,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val classifier: DownloadFailureClassifier,
     private val reconciliationUseCase: LibraryReconciliationUseCase,
-    private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
+    private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
 ) : CoroutineWorker(appContext, params) {
@@ -149,7 +149,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 val result = reconciliationUseCase.reconcile(
                     syncId = syncId,
                     onProgress = { step, total -> syncStateManager.onVerifyingLibrary(step, total) },
-                    checkFileExists = fileExistenceChecker::exists,
+                    checkFileExists = fileExistenceSessionFactory.open()::exists,
                 )
                 Log.i(
                     TAG,

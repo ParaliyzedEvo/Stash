@@ -15,6 +15,19 @@ package com.stash.core.data.library
  * suspend because the SAF-tree lookup needs the current tree URI from
  * DataStore.
  */
+/**
+ * Opens a [FileExistenceChecker] scoped to ONE bulk pass. The session
+ * builds the SAF tree index at most once (lazily, on the first
+ * `content://` lookup) and serves every subsequent check from memory —
+ * per-track `DocumentFile.findFile` walks against a 1000+-track library
+ * were the "stuck on Checking library" hang in #429. Open a fresh
+ * session per pass; holding one across passes would serve stale disk
+ * state.
+ */
+fun interface FileExistenceSessionFactory {
+    fun open(): FileExistenceChecker
+}
+
 fun interface FileExistenceChecker {
     suspend fun exists(
         artist: String,

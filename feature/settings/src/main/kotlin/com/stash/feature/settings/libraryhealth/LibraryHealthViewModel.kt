@@ -38,7 +38,7 @@ class LibraryHealthViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val trackDao: TrackDao,
     private val metadataExtractor: AudioDurationExtractor,
-    private val fileExistenceChecker: com.stash.core.data.library.FileExistenceChecker,
+    private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
     private val adoptExistingFilesUseCase: com.stash.data.download.files.AdoptExistingFilesUseCase,
 ) : ViewModel() {
@@ -194,7 +194,7 @@ class LibraryHealthViewModel @Inject constructor(
                                 )
                             }
                         },
-                        checkFileExists = fileExistenceChecker::exists,
+                        checkFileExists = fileExistenceSessionFactory.open()::exists,
                     )
                 }
                 Log.i(TAG, "reconciliation: swept=${reconciliation.orphansSwept} " +

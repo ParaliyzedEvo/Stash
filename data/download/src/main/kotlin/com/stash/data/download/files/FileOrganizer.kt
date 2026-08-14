@@ -6,6 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.prefs.StoragePreference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -62,34 +63,63 @@ class FileOrganizer @Inject constructor(
     fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
 
     /**
-     * Whether a track's file still exists, and (for SAF) a fresh URI to
-     * persist if the stored one was stale. [filePath] is only consulted
-     * for the internal-storage fast path; for SAF paths it's ignored in
-     * favor of re-deriving the location from [artist]/[album]/[title]
-     * via [resolveExistingSafFile] — see that function's KDoc for why.
+     * One-pass existence checker: whether a track's file still exists, and
+     * (for SAF) a fresh URI to persist if the stored one was stale.
+     * [FileExistenceChecker.exists]'s `filePath` is only consulted for the
+     * internal-storage fast path; for SAF paths the location is re-derived
+     * from artist/album/title against a [buildSafIndex] built lazily ONCE
+     * per session — per-track findFile walks were the "stuck on Checking
+     * library" hang (#429). A missing tree grant fails SAFE (files reported
+     * present) so it can never mass-reset the library.
      *
-     * Used by library reconciliation (missing-file detection) and by the
-     * "adopt existing files" pass (finding files the DB doesn't know
-     * about yet), both via [com.stash.core.data.library.FileExistenceChecker].
+     * Used by library reconciliation (missing-file detection) via
+     * [com.stash.core.data.library.FileExistenceSessionFactory]. Open a
+     * fresh session per pass.
      */
-    suspend fun checkExists(
-        artist: String,
-        album: String?,
-        title: String,
-        filePath: String,
-    ): com.stash.core.data.library.FileExistenceResult {
-        if (!filePath.startsWith("content://")) {
-            return com.stash.core.data.library.FileExistenceResult(exists = File(filePath).exists())
+    fun existenceSession(): com.stash.core.data.library.FileExistenceChecker =
+        object : com.stash.core.data.library.FileExistenceChecker {
+            private val lock = kotlinx.coroutines.sync.Mutex()
+            private var built = false
+            private var index: SafIndex? = null
+
+            override suspend fun exists(
+                artist: String,
+                album: String?,
+                title: String,
+                filePath: String,
+            ): com.stash.core.data.library.FileExistenceResult {
+                if (!filePath.startsWith("content://")) {
+                    return com.stash.core.data.library.FileExistenceResult(exists = File(filePath).exists())
+                }
+                val idx = lock.withLock {
+                    if (!built) {
+                        index = buildSafIndex()
+                        built = true
+                        if (index == null) {
+                            android.util.Log.w(
+                                "FileOrganizer",
+                                "existenceSession: content:// paths present but no SAF tree grant — " +
+                                    "treating files as present (cannot verify; a false 'missing' here " +
+                                    "would reset the whole library to undownloaded)",
+                            )
+                        }
+                    }
+                    index
+                    // Fail SAFE on a missing/revoked tree grant: report the file as
+                    // existing rather than triggering a library-wide reset + redownload
+                    // storm the first sync after a re-grant lapse.
+                } ?: return com.stash.core.data.library.FileExistenceResult(exists = true)
+                val match = resolveInIndex(idx, artist, album, title)
+                    ?: return com.stash.core.data.library.FileExistenceResult(exists = false)
+                val freshUri = match.uri.toString()
+                return com.stash.core.data.library.FileExistenceResult(
+                    exists = true,
+                    // Only report a "resolved" path when it actually differs — avoids
+                    // a needless DB write on the common case where the URI was fine.
+                    resolvedFilePath = freshUri.takeIf { it != filePath },
+                )
+            }
         }
-        val match = resolveExistingSafFile(artist, album, title) ?: return com.stash.core.data.library.FileExistenceResult(exists = false)
-        val freshUri = match.uri.toString()
-        return com.stash.core.data.library.FileExistenceResult(
-            exists = true,
-            // Only report a "resolved" path when it actually differs — avoids
-            // a needless DB write on the common case where the URI was fine.
-            resolvedFilePath = freshUri.takeIf { it != filePath },
-        )
-    }
 
     /**
     * Pre-built index of the current SAF tree, so a bulk pass (like
@@ -133,7 +163,7 @@ class FileOrganizer @Inject constructor(
     
     /**
     * O(1) lookup against a pre-built [SafIndex]. Same slug convention and
-    * extension-probing behaviour as [resolveExistingSafFile], but with no
+    * extension-probing behaviour the per-track slug walk used to have, but with no
     * SAF IPC calls at all once the index is built — everything after
     * [buildSafIndex] is in-memory map lookups.
     */
@@ -166,45 +196,6 @@ class FileOrganizer @Inject constructor(
     
     /** Pre-listed contents of a single album directory. */
     class AlbumIndex(val dir: DocumentFile, val filesByName: Map<String, DocumentFile>)
-
-    /**
-     * Resolves whether a track's file exists, without trusting any cached
-     * per-document URI. Walks from the CURRENT tree grant using the same
-     * artist/album/title slug convention [writeToSafTree] uses to create
-     * files, so it's immune to SAF document IDs going stale across a
-     * reinstall/re-grant — a fresh tree grant doesn't guarantee old
-     * per-document URIs still resolve (observed: fromSingleUri().exists()
-     * throws FileNotFoundException post-reinstall for genuinely-present
-     * files).
-     *
-     * One [DocumentFile.listFiles] call on the album dir rather than one
-     * [DocumentFile.findFile] probe per candidate extension — findFile()
-     * does its own linear scan internally, so probing N extensions
-     * individually multiplies the SAF IPC cost for nothing.
-     */
-    suspend fun resolveExistingSafFile(
-        artist: String,
-        album: String?,
-        title: String,
-        knownFormat: String? = null,
-    ): DocumentFile? {
-        val treeUri = storagePreference.externalTreeUri.first() ?: return null
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        val titleSlug = FileOrganizerSlugs.slugify(title)
-
-        val artistDir = root.findFile(artistSlug)?.takeIf { it.isDirectory } ?: return null
-        val albumDir = artistDir.findFile(albumSlug)?.takeIf { it.isDirectory } ?: return null
-
-        val candidateNames = if (knownFormat != null) {
-            setOf("$titleSlug.$knownFormat")
-        } else {
-            KNOWN_AUDIO_FORMATS.mapTo(mutableSetOf()) { "$titleSlug.$it" }
-        }
-        return albumDir.listFiles().firstOrNull { it.isFile && it.name in candidateNames }
-    }
 
     /** Directory for cached album artwork files. */
     fun getAlbumArtDir(): File = File(context.cacheDir, "albumart").also { it.mkdirs() }
@@ -298,7 +289,7 @@ class FileOrganizer @Inject constructor(
             "flac", "alac", "wav", "ape", "tta", "wv", "aiff",
         )
         // Mirrors the format switch in mimeTypeFor(). Used by
-        // resolveExistingSafFile's extension-probe when the caller doesn't
+        // resolveInIndex's extension-probe when the caller doesn't
         // know the track's format ahead of time.
         private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
     }
