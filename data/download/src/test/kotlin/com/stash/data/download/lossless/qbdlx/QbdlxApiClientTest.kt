@@ -36,6 +36,32 @@ class QbdlxApiClientTest {
         assertThat(server.takeRequest().getHeader("X-User-Auth-Token")).isEqualTo("tok")
     }
 
+    /**
+     * REGRESSION (live-probed 2026-08-15): the shared pool mixes tokens minted under
+     * two Qobuz apps, and a token authenticates ONLY against its own app_id. Every
+     * catalog call used to send the client-wide primary, so the 312369995 tokens —
+     * two thirds of the pool — 401'd on `search` and were marked dead before signing
+     * ever ran. 2 of 18 tokens worked that way; 12 of 18 work with their own app_id.
+     */
+    @Test fun `catalog calls send the token's own app_id, not the client default`() = runTest {
+        val client = QbdlxApiClient(
+            sharedClient = OkHttpClient(),
+            signer = QbdlxSigner { 1000L },
+            signingResolver = { QbdlxSigning(appId = "312369995", appSecret = "other-secret") },
+        ).also {
+            it.baseUrl = server.url("/").toString().trimEnd('/')
+            it.appId = "798273057"
+        }
+        server.enqueue(MockResponse().setBody("""{"tracks":{"items":[]}}"""))
+
+        client.search("anything", token = "second-app-token")
+
+        val req = server.takeRequest()
+        assertThat(req.getHeader("X-App-Id")).isEqualTo("312369995")
+        assertThat(req.path).contains("app_id=312369995")
+        assertThat(req.path).doesNotContain("798273057")
+    }
+
     @Test fun `getFileUrl Ok when url present and not restricted`() = runTest {
         server.enqueue(MockResponse().setBody("""{"url":"https://cdn/file?fmt=6","format_id":6,"bit_depth":16,"sampling_rate":44.1,"sample":false,"restrictions":[]}"""))
         val r = client.getFileUrl(trackId = 42, formatId = 27, token = "tok")

@@ -31,9 +31,14 @@ class QbdlxApiClient @Inject constructor(
 ) {
     // appId read from BuildConfig directly (like ArcodClient reads ARCOD_STREAM_BASE) —
     // NOT a constructor String param, to avoid polluting the global Hilt String namespace.
-    // internal var so tests can override. This is the CATALOG default (search/metadata
-    // work under any valid app_id); getFileUrl overrides it per-token via the resolver,
-    // because ONLY the file-url response degrades to a preview on an app_id mismatch.
+    // internal var so tests can override.
+    //
+    // Only a FALLBACK for tokens the resolver doesn't know: [get] sends each token's
+    // own app_id. This used to be the catalog-wide default, on the belief (written
+    // here, and wrong) that "search/metadata work under any valid app_id" — live
+    // probing on 2026-08-15 showed catalog/search answers 401 on an app_id mismatch
+    // exactly like getFileUrl does, which is what made two thirds of the pool look
+    // permanently dead.
     internal var appId: String = com.stash.data.download.BuildConfig.QBDLX_APP_ID
     internal var httpClient: OkHttpClient = sharedClient  // direct www.qobuz.com; no interceptor
     internal var baseUrl: String = ORIGIN
@@ -194,9 +199,25 @@ class QbdlxApiClient @Inject constructor(
         return QbdlxResolveResult.Ok(f.url, "flac", f.bitDepth, (f.samplingRate * 1000f).toInt())
     }
 
-    private fun get(url: String, token: String, appIdHeader: String = appId): String {
-        val req = Request.Builder().url(url)
-            .header("X-App-Id", appIdHeader)
+    /**
+     * Qobuz binds a `user_auth_token` to the app_id it was minted under: send a
+     * different app's id and the SAME token answers 401. The pool mixes tokens from
+     * two apps, so the id must come from the TOKEN, never from a client-wide
+     * constant.
+     *
+     * Resolved here rather than at each endpoint because the endpoints that forgot
+     * are exactly how this went unnoticed: [getFileUrl] was migrated to per-token
+     * signing, the eight catalog calls were not, and since `search` runs first in
+     * every resolve those tokens 401'd and were marked dead before signing was ever
+     * reached. Measured on the live pool 2026-08-15: 2 of 18 tokens authenticated
+     * with the primary app_id, 12 of 18 with their own — the pool was never "dead".
+     */
+    private suspend fun get(url: String, token: String, appIdHeader: String? = null): String {
+        val tokenAppId = appIdHeader ?: signingResolver.signingFor(token).appId
+        val req = Request.Builder().url(
+            url.toHttpUrl().newBuilder().setQueryParameter("app_id", tokenAppId).build(),
+        )
+            .header("X-App-Id", tokenAppId)
             .header("X-User-Auth-Token", token)
             .header("Accept", "application/json")
             .header("User-Agent", UA)
