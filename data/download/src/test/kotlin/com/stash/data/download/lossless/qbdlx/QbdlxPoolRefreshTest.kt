@@ -100,6 +100,84 @@ class QbdlxPoolRefreshTest {
         assertThat(fetches).isEqualTo(0)
     }
 
+    /**
+     * REGRESSION (device-verified 2026-08-15, #qbdlx-stale-pool).
+     *
+     * Every other test in this class uses a ONE-token pool, where "every token is
+     * dead" is trivially reachable. The real pool is 17, and one resolve only ever
+     * probes MAX_TOKEN_ATTEMPTS (6) of them before falling through — so with dead
+     * marks expiring after DEAD_COOLDOWN_MS, the pool was never observed fully dead
+     * and the self-heal fetch NEVER fired. On device that left a rotted 17-token
+     * cache in place while the one live token sat on the webhook, unreachable.
+     *
+     * A budget's worth of consecutive auth failures with no success in between is
+     * the same "our credentials are gone" signal, and unlike "all dead" it is
+     * reachable at any pool size.
+     */
+    @Test fun `a pool bigger than one resolve's attempt budget still refreshes`() = runTest {
+        var fetches = 0
+        val pool = (1..17).joinToString(",") { "t$it:FR" }
+        val s = store(pool, QbdlxRemotePool { fetches++; "fresh:FR" })
+
+        // One resolve's worth of auth failures: 6 of 17 dead, 11 still look "live".
+        repeat(6) { i -> s.markDead("t${i + 1}") }
+
+        assertThat(s.activeToken()).isEqualTo("fresh")
+        assertThat(fetches).isEqualTo(1)
+    }
+
+    /**
+     * Successive resolves must work DOWN the pool instead of restarting at the same
+     * head. Dead marks expire in 60s while real listening puts minutes between
+     * tracks, so a canonical-order-only pick re-probed the same first tokens forever
+     * and a live token further down the list could never be reached.
+     */
+    @Test fun `successive resolves probe further into the pool, not the same head`() = runTest {
+        val s = store((1..12).joinToString(",") { "t$it:FR" }, QbdlxRemotePool { null })
+        var now = 1_000_000L
+        s.clock = { now }
+
+        val firstPass = buildSet {
+            repeat(6) {
+                val t = s.activeToken()!!
+                add(t)
+                s.markDead(t)
+            }
+        }
+
+        // Cooldown elapses — every token is selectable again.
+        now += QbdlxCredentialStore.DEAD_COOLDOWN_MS + 1
+
+        val secondPass = buildSet {
+            repeat(6) {
+                val t = s.activeToken()!!
+                add(t)
+                s.markDead(t)
+            }
+        }
+
+        assertThat(secondPass).containsNoneIn(firstPass)
+    }
+
+    /**
+     * After a refresh, a token we have never probed must be tried BEFORE the ones
+     * we already know failed — otherwise the freshly-added live token sits behind a
+     * queue of known-dead tokens and takes several more resolves to reach.
+     */
+    @Test fun `a newly added token is probed before every token of the pool it replaced`() = runTest {
+        // 12 stale tokens, but the refresh trigger fires after 6 failures — so 6 were
+        // never probed and look no worse than the fresh token on a cold start. The
+        // token the refresh was fetched FOR still has to go first.
+        //
+        // "zzzzz" is chosen to sort LAST in the old canonical (hashCode) order, so
+        // this cannot pass by ordering luck.
+        val stale = (1..12).joinToString(",") { "t$it:FR" }
+        val s = store(stale, QbdlxRemotePool { "$stale,zzzzz:FR" })
+        repeat(6) { i -> s.markDead("t${i + 1}") }
+
+        assertThat(s.activeToken()).isEqualTo("zzzzz")
+    }
+
     @Test fun `a dead pool stops reporting allDead once refreshed`() = runTest {
         // allDead() gates the source off AND drives the "paste a token" badge, so
         // it has to recover on its own too — not just activeToken().

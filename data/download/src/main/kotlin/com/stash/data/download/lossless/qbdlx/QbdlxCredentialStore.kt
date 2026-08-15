@@ -220,7 +220,14 @@ class QbdlxCredentialStore @Inject constructor(
      * per [REFRESH_MIN_INTERVAL_MS] so a genuinely dead pool cannot spin.
      */
     private suspend fun refreshIfExhausted() {
-        if (pool().any { !isDead(it.token) }) return
+        // "Every token is dead" alone is NOT a reachable condition on a real pool:
+        // a resolve probes only a bounded number of tokens before falling through,
+        // and marks expire after DEAD_COOLDOWN_MS, so a 17-token pool never showed
+        // fully-dead and this fetch never fired — the device sat on a rotted cache
+        // while the live token waited on the webhook (2026-08-15). A run of auth
+        // failures with no success in between says the same thing and is reachable
+        // at any pool size.
+        if (pool().any { !isDead(it.token) } && authFailureStreak < REFRESH_FAILURE_STREAK) return
         val now = clock()
         if (lastRefreshAttempt != 0L && now - lastRefreshAttempt < REFRESH_MIN_INTERVAL_MS) return
         lastRefreshAttempt = now
@@ -240,12 +247,24 @@ class QbdlxCredentialStore @Inject constructor(
             return
         }
 
+        // Everything in the pool we are REPLACING belongs to the generation that just
+        // failed us, including the tokens this process never got around to probing.
+        // Stamping them (putIfAbsent, so a real failure time is never overwritten)
+        // orders selection: tokens new in this fetch (still unstamped) → old ones we
+        // never probed → ones we watched fail. Without it a cold start ties the new
+        // token with every unprobed old one and picks by hashCode, so the token the
+        // refresh was fetched FOR could sit behind a dozen known-rotten ones.
+        pool().forEach { lastFailedAt.putIfAbsent(it.token, PRIOR_GENERATION_STAMP) }
+
         poolRaw = fetched
         Log.i(TAG, "pool refreshed: $before -> ${pool().size} token(s)")
         // A fresh pool deserves a clean slate: dead flags describe the OLD tokens,
         // and a re-added token should not inherit a cooldown from its last life.
+        // [lastFailedAt] is deliberately KEPT so tokens new in this fetch (no entry)
+        // are probed before the ones we already know failed.
         deadUntil.clear()
         activePrimary = null
+        authFailureStreak = 0
         runCatching {
             context.qbdlxCredentialsDataStore.edit { it[cachedPoolKey] = fetched }
         }
@@ -262,6 +281,31 @@ class QbdlxCredentialStore @Inject constructor(
      * left the whole pool stuck on one transient 401 ("token expired" forever).
      */
     private val deadUntil = ConcurrentHashMap<String, Long>()
+
+    /**
+     * Token → epoch-ms of its last auth failure. Drives selection order: a token we
+     * have never probed sorts ahead of one we know failed, and among failed ones the
+     * oldest failure goes first, so successive resolves work DOWN the pool.
+     *
+     * Selection used to be canonical order alone, which meant every resolve re-probed
+     * the same head of the list: QbdlxQobuzSource only tries a bounded number of
+     * tokens per resolve, and [DEAD_COOLDOWN_MS] expires between tracks, so anything
+     * past that first handful was unreachable and a live token further down was never
+     * found (device-verified 2026-08-15 against a 17-token pool).
+     *
+     * Deliberately SURVIVES a pool refresh: a freshly-added token has no entry here,
+     * so it sorts first and is probed immediately instead of queueing behind the
+     * known-dead tokens it was fetched to replace.
+     */
+    private val lastFailedAt = ConcurrentHashMap<String, Long>()
+
+    /**
+     * Consecutive auth failures with no successful use in between; reset by
+     * [recordAlive]. See [REFRESH_FAILURE_STREAK] for why this, and not "every token
+     * is dead", is what triggers a pool refresh.
+     */
+    @Volatile
+    private var authFailureStreak = 0
 
     /**
      * Sticky primary: the token we keep using until it dies (replaces round-robin).
@@ -364,9 +408,12 @@ class QbdlxCredentialStore @Inject constructor(
             if (!isDead(p) && pool().any { it.token == p }) return p
         }
         activePrimary?.let { if (!isDead(it)) return it }
+        // Never-probed tokens first (no [lastFailedAt] entry → 0), then oldest failure
+        // first, with the historical canonical order as the tiebreak so a healthy pool
+        // still picks the same token on every device.
         val next = pool().map { it.token }
             .filter { !isDead(it) }
-            .sortedWith(compareBy({ it.hashCode() }, { it }))
+            .sortedWith(compareBy({ lastFailedAt[it] ?: 0L }, { it.hashCode() }, { it }))
             .firstOrNull() ?: return null
         activePrimary = next
         return next
@@ -388,13 +435,18 @@ class QbdlxCredentialStore @Inject constructor(
 
     /** Mark [token] dead for the cooldown window (auth failure). Auto-retried after. */
     fun markDead(token: String) {
-        deadUntil[token] = clock() + DEAD_COOLDOWN_MS
+        val now = clock()
+        deadUntil[token] = now + DEAD_COOLDOWN_MS
+        lastFailedAt[token] = now
+        authFailureStreak++
         if (token == activePrimary) activePrimary = null
     }
 
     /** Clear a token's dead flag (a successful call, or a fresh paste). */
     fun recordAlive(token: String) {
         deadUntil.remove(token)
+        lastFailedAt.remove(token)
+        authFailureStreak = 0
     }
 
     /**
@@ -464,5 +516,23 @@ class QbdlxCredentialStore @Inject constructor(
          * one webhook call every 15 minutes rather than one per resolve.
          */
         const val REFRESH_MIN_INTERVAL_MS = 15 * 60_000L
+
+        /**
+         * Consecutive auth failures (no success in between) that trigger a pool
+         * refresh. One resolve's attempt budget in QbdlxQobuzSource is 6, so this is
+         * "a whole resolve found nothing but dead tokens" — the reachable form of
+         * "our pool has rotted", which the all-dead check alone could never observe
+         * on a pool larger than that budget. [REFRESH_MIN_INTERVAL_MS] still bounds
+         * the resulting webhook calls, so a looser trigger costs nothing.
+         */
+        const val REFRESH_FAILURE_STREAK = 6
+
+        /**
+         * Sentinel [lastFailedAt] value for tokens carried over from a pool we just
+         * replaced. Older than any real failure timestamp but newer than "never
+         * probed" (absent → 0), which is exactly the priority we want: brand-new
+         * tokens, then untried carry-overs, then tokens we watched fail.
+         */
+        private const val PRIOR_GENERATION_STAMP = 1L
     }
 }
