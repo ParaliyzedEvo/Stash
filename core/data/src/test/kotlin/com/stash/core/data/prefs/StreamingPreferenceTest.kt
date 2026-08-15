@@ -88,6 +88,55 @@ class StreamingPreferenceTest {
         assertFalse(prefs.isForceYouTubeFallback())
     }
 
+    // ── Developer force toggles are inert outside debuggable builds ─────────
+    //
+    // #429: a user enabled force-Qobuz back when it was a visible control, the
+    // row later became debug-only, and the PREF outlived its UI — honored by
+    // both registries on a release build, invisible, with no way to turn it
+    // off. Fourth incident of this class (force-YT release install, force-amz
+    // parked, force-arcod parked). The accessors now enforce the same contract
+    // the Settings UI declares: developer instruments exist only on debuggable
+    // builds. Force-YouTube is a USER-FACING recovery control and stays live.
+
+    // The preferencesDataStore delegate is a per-process singleton, so writes
+    // leak across tests unless undone (see the reset calls in the existing
+    // round-trip tests). Each test below clears what it sets.
+
+    @Test fun devForceToggles_ignoredOnNonDebuggableBuilds() = runTest {
+        prefs.devInstrumentsEnabled = false
+        prefs.setForceQbdlxOnly(true)
+        prefs.setForceArcodOnly(true)
+        prefs.setForceAmzOnly(true)
+
+        assertFalse(prefs.isForceQbdlxOnly())
+        assertFalse(prefs.isForceArcodOnly())
+        assertFalse(prefs.isForceAmzOnly())
+        // The raw flow still reports the stored value — the debug Settings UI
+        // (hidden on release) must reflect reality, and nothing is deleted.
+        assertTrue(prefs.forceQbdlxOnly.first())
+
+        prefs.setForceQbdlxOnly(false)
+        prefs.setForceArcodOnly(false)
+        prefs.setForceAmzOnly(false)
+    }
+
+    @Test fun devForceToggles_honoredOnDebuggableBuilds() = runTest {
+        prefs.devInstrumentsEnabled = true
+        prefs.setForceQbdlxOnly(true)
+        assertTrue(prefs.isForceQbdlxOnly())
+        prefs.setForceQbdlxOnly(false)
+        assertFalse(prefs.isForceQbdlxOnly())
+    }
+
+    @Test fun forceYouTubeFallback_staysHonoredRegardlessOfBuildType() = runTest {
+        // "Stream via YouTube" is a visible user setting, not a dev instrument:
+        // the user can always see and clear it, and its failure mode is safe.
+        prefs.devInstrumentsEnabled = false
+        prefs.setForceYouTubeFallback(true)
+        assertTrue(prefs.isForceYouTubeFallback())
+        prefs.setForceYouTubeFallback(false)
+    }
+
     @Test fun current_returnsLatestValue() = runTest {
         assertFalse(prefs.current())
         prefs.setEnabled(true)

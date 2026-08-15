@@ -114,15 +114,54 @@ class StreamingPreference @Inject constructor(
         prefs[forceQbdlxOnlyKey] ?: false
     }
 
+    /**
+     * Whether DEVELOPER force toggles (qbdlx/arcod/amz) are honored. Defaults to
+     * the installed app's debuggable flag — the same source of truth the Settings
+     * screen uses to decide whether to SHOW those rows, so visibility and effect
+     * can never disagree again.
+     *
+     * Why this gate exists (#429, fourth incident of the class): these prefs
+     * persist in DataStore, but the rows that set them have been hidden, removed,
+     * or debug-gated over time. A pref that outlives its UI is honored forever,
+     * invisibly, with no way to turn it off — one user spent months with a
+     * `[qbdlx]`-only chain from a toggle set back when it was still a visible
+     * control. Enforced HERE, at the accessors, so both registries and any future
+     * consumer inherit it and no call site can forget.
+     *
+     * Force-YouTube is deliberately NOT gated: "Stream via YouTube" is a visible
+     * user-facing recovery control, so the user can always see and clear it.
+     *
+     * internal var: test seam only.
+     */
+    internal var devInstrumentsEnabled: Boolean =
+        context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    /** One log per process, not per resolve — the chain is rebuilt constantly. */
+    private val suppressionLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private suspend fun devForceToggle(flow: Flow<Boolean>, name: String): Boolean {
+        if (!flow.first()) return false
+        if (devInstrumentsEnabled) return true
+        if (suppressionLogged.compareAndSet(false, true)) {
+            android.util.Log.w(
+                "StreamingPreference",
+                "developer force toggle '$name' is set but this build is not debuggable — " +
+                    "ignoring it (stale pref from an older version or a debug session; it would " +
+                    "otherwise route every track through one source with no fallback)",
+            )
+        }
+        return false
+    }
+
     suspend fun current(): Boolean = enabled.first()
 
     suspend fun isForceYouTubeFallback(): Boolean = forceYouTubeFallback.first()
 
-    suspend fun isForceArcodOnly(): Boolean = forceArcodOnly.first()
+    suspend fun isForceArcodOnly(): Boolean = devForceToggle(forceArcodOnly, "force_arcod_only")
 
-    suspend fun isForceAmzOnly(): Boolean = forceAmzOnly.first()
+    suspend fun isForceAmzOnly(): Boolean = devForceToggle(forceAmzOnly, "force_amz_only")
 
-    suspend fun isForceQbdlxOnly(): Boolean = forceQbdlxOnly.first()
+    suspend fun isForceQbdlxOnly(): Boolean = devForceToggle(forceQbdlxOnly, "force_qbdlx_only")
 
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
