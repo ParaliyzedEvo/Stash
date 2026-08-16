@@ -1816,7 +1816,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     // threshold, then HALT (pause + notify) instead of skip-storming
                     // the queue. `origin` is logged so a diagnostics capture reveals
                     // which source (kennyy/squid/youtube) served the bad URL.
-                    val verdict = cascadeGuard.onError()
+                    val verdict = cascadeGuard.onError(current?.mediaId)
                     Log.w(
                         TAG,
                         "onPlayerError: '$failingTitle' code=${error.errorCode} " +
@@ -1824,6 +1824,12 @@ class PlayerRepositoryImpl @Inject constructor(
                         error,
                     )
                     when (val v = verdict) {
+                        // Transient stream failure (mobile-network stall, dropped
+                        // CDN connection, expired URL): re-prepare the SAME item
+                        // at its current position before giving up on it. The
+                        // guard grants one retry per item, so a genuinely-dead
+                        // URL falls through to Recover on its next error.
+                        StreamErrorCascadeGuard.Verdict.RetrySameItem -> controller?.retryCurrentItem()
                         StreamErrorCascadeGuard.Verdict.Recover -> controller?.recoverOrStop()
                         is StreamErrorCascadeGuard.Verdict.Halt -> {
                             controller?.pause()
@@ -1916,6 +1922,27 @@ class PlayerRepositoryImpl @Inject constructor(
             // looping on the same broken item.
             stop()
         }
+    }
+
+    /**
+     * Re-prepare the CURRENT item after a transient stream error, resuming at the
+     * position it died at rather than restarting or skipping. After a
+     * PlaybackException the player is IDLE; [seekTo] fixes the resume point and
+     * [prepare] re-attempts the source — for a `stash-resolve://` placeholder that
+     * re-runs the lazy resolver, so an expired URL is re-fetched, while a plain
+     * transient stall just re-opens the same still-valid URL.
+     *
+     * Position is read BEFORE prepare because an error can reset currentPosition
+     * to 0 on some devices; coerced to a valid range so a bogus value can't throw.
+     */
+    private fun MediaController.retryCurrentItem() {
+        val resumeAt = currentPosition.coerceAtLeast(0L)
+        val index = currentMediaItemIndex
+        if (index in 0 until mediaItemCount) {
+            seekTo(index, resumeAt)
+        }
+        prepare()
+        play()
     }
 
     /**
