@@ -64,6 +64,7 @@ class FlacUpgradeWorkerTest {
         return object : LosslessUpgrader {
             override suspend fun upgradeToLossless(track: Track): UpgradeResult =
                 queue.removeFirst()
+            override suspend fun isLosslessEnabled(): Boolean = true
         }
     }
 
@@ -120,6 +121,7 @@ class FlacUpgradeWorkerTest {
         val untouchable = object : LosslessUpgrader {
             override suspend fun upgradeToLossless(track: Track): UpgradeResult =
                 error("upgrader must not be called for an empty queue")
+            override suspend fun isLosslessEnabled(): Boolean = true
         }
 
         val result = buildWorker(untouchable).doWork()

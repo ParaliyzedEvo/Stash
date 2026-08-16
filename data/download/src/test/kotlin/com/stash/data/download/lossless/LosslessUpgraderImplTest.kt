@@ -10,7 +10,9 @@ import com.stash.data.download.DownloadManager
 import com.stash.data.download.TrackDownloadResult
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -21,7 +23,10 @@ class LosslessUpgraderImplTest {
     private val downloadManager: DownloadManager = mockk()
     private val trackDao: TrackDao = mockk(relaxUnitFun = true)
     private val audioExtractor: AudioDurationExtractor = mockk()
-    private val subject = LosslessUpgraderImpl(context, downloadManager, trackDao, audioExtractor)
+    private val losslessPrefs: LosslessSourcePreferences = mockk {
+        every { enabled } returns flowOf(true)
+    }
+    private val subject = LosslessUpgraderImpl(context, downloadManager, trackDao, audioExtractor, losslessPrefs)
 
     @Test fun `Success maps to Upgraded`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns

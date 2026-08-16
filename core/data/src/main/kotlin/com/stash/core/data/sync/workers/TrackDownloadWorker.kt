@@ -65,6 +65,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
+    private val losslessUpgrader: com.stash.core.data.lossless.LosslessUpgrader,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -238,6 +239,7 @@ class TrackDownloadWorker @AssistedInject constructor(
             val totalBytesDownloaded = AtomicLong(0)
             val firstError = AtomicReference<String?>(null)
             val playlistsChecked = inputData.getInt(DiffWorker.KEY_PLAYLISTS_CHECKED, 0)
+            val downloadedTrackIds = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
 
             supervisorScope {
                 for (queueItem in pendingItems) {
@@ -384,6 +386,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     )
                                     totalBytesDownloaded.addAndGet(fileSize)
                                     downloadedCount.incrementAndGet()
+                                    downloadedTrackIds.add(queueItem.trackId)
                                 }
                                 is TrackDownloadOutcome.Unmatched -> {
                                     val err = "No YouTube match for: ${track.artist} - ${track.title}"
@@ -596,7 +599,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            runLosslessUpgradeSweep()
+            runLosslessUpgradeSweep(downloadedTrackIds)
 
             return Result.success(
                 workDataOf(
@@ -835,24 +838,31 @@ class TrackDownloadWorker @AssistedInject constructor(
      * rather than leaving an orphaned worker draining a queue that's just
      * been cleared out from under it.
      */
-    private suspend fun runLosslessUpgradeSweep() {
+    private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long> = emptySet()) {
         if (streamingPreference.current()) {
             Log.i(TAG, "Streaming mode: skipping FLAC upgrade sweep")
             return
         }
+        if (!losslessUpgrader.isLosslessEnabled()) {
+            Log.i(TAG, "Lossless disabled in Settings: skipping FLAC upgrade sweep")
+            return
+        }
 
         val candidates = trackDao.getLosslessUpgradeCandidates()
+            // Tracks this same sync run just downloaded already went through the
+            // primary lossless-first download path — re-attempting immediately
+            // after is redundant and needlessly hammers the lossless sources.
+            .filterNot { it.id in recentlyDownloadedTrackIds }
         if (candidates.isEmpty()) return
 
         flacUpgradeQueueDao.startBatch(candidates.map { it.id })
 
         WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-            com.stash.core.data.sync.workers.FlacUpgradeWorker.UNIQUE_WORK_NAME,
+            FlacUpgradeWorker.UNIQUE_WORK_NAME,
             androidx.work.ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<com.stash.core.data.sync.workers.FlacUpgradeWorker>().build(),
+            OneTimeWorkRequestBuilder<FlacUpgradeWorker>().build(),
         )
-
-        Log.i(TAG, "FLAC upgrade sweep: enqueued ${candidates.size} candidate(s) to FlacUpgradeWorker")
+        Log.i(TAG, "FLAC upgrade sweep: enqueued ${candidates.size} candidate(s)")
     }
 
     /**

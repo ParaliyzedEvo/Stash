@@ -19,4 +19,7 @@ import com.stash.core.model.UpgradeResult
  */
 interface LosslessUpgrader {
     suspend fun upgradeToLossless(track: Track): UpgradeResult
+
+    /** Master "Lossless downloads" toggle (Settings > Audio & Quality). */
+    suspend fun isLosslessEnabled(): Boolean
 }
