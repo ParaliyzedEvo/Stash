@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +78,7 @@ fun SyncScreen(
     onNavigateToFailedMatches: () -> Unit = {},
     onNavigateToBlockedSongs: () -> Unit = {},
     onNavigateToFailedDownloads: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onManageSource: (SyncSource) -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
@@ -158,6 +160,10 @@ fun SyncScreen(
                     )
                 },
             )
+        }
+
+        item(key = "download_management") {
+            DownloadManagementCard(onClick = onNavigateToDownloads)
         }
 
         // -- Songs that need review card --------------------------------------
@@ -425,6 +431,51 @@ fun SyncScreen(
                 TextButton(onClick = viewModel::onUndoResultShown) { Text("OK") }
             },
         )
+    }
+}
+
+/** Permanent entry point for the queue and recent download history. */
+@Composable
+private fun DownloadManagementCard(onClick: () -> Unit) {
+    val extendedColors = StashTheme.extendedColors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = extendedColors.glassBackground,
+        border = BorderStroke(0.5.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Downloads",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "View current downloads, queue, and history",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Open downloads",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

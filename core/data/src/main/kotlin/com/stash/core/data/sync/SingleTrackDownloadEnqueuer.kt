@@ -46,6 +46,10 @@ class SingleTrackDownloadEnqueuer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadNetworkPreference: DownloadNetworkPreference,
 ) {
+    companion object {
+        fun workName(queueId: Long): String = "single_track_$queueId"
+    }
+
     suspend fun enqueue(queueId: Long) {
         val mode = downloadNetworkPreference.current()
         val request = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
@@ -58,7 +62,7 @@ class SingleTrackDownloadEnqueuer @Inject constructor(
             .addTag("single_track_retry")
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "single_track_$queueId",
+            workName(queueId),
             ExistingWorkPolicy.KEEP,
             request,
         )

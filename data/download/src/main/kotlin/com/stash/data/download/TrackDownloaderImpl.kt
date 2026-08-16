@@ -5,7 +5,6 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
-import com.stash.core.model.DownloadStatus
 import com.stash.core.model.Track
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -54,10 +53,7 @@ class TrackDownloaderImpl @Inject constructor(
             TrackDownloadResult.Deferred -> {
                 val queueEntry = downloadQueueDao.getByTrackId(track.id)
                 queueEntry?.let {
-                    downloadQueueDao.updateStatus(
-                        id = it.id,
-                        status = DownloadStatus.WAITING_FOR_LOSSLESS,
-                    )
+                    downloadQueueDao.deferIfInProgress(it.id)
                 }
                 TrackDownloadOutcome.Deferred
             }

@@ -12,6 +12,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -23,6 +25,7 @@ import com.stash.core.data.library.LibraryReconciliationUseCase
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.SyncStateManager
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.data.sync.classifier.DownloadFailureClassifier
@@ -67,6 +70,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
     private val losslessUpgrader: com.stash.core.data.lossless.LosslessUpgrader,
+    private val downloadJobs: DownloadJobRegistry,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -250,12 +254,14 @@ class TrackDownloadWorker @AssistedInject constructor(
             supervisorScope {
                 for (queueItem in pendingItems) {
                     launch {
+                        if (downloadQueueDao.claimForDownload(queueItem.id) == 0) return@launch
+                        val itemJob = currentCoroutineContext().job
+                        downloadJobs.register(queueItem.id, itemJob)
+                        itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
+                        if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                            return@launch
+                        }
                         try {
-                            downloadQueueDao.updateStatus(
-                                id = queueItem.id,
-                                status = DownloadStatus.IN_PROGRESS,
-                            )
-
                             val trackEntity = trackDao.getById(queueItem.trackId)
                             if (trackEntity == null) {
                                 Log.w(TAG, "Track ${queueItem.trackId} not found in DB, skipping")
@@ -268,10 +274,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         causeChain = emptyList(),
                                     )
                                 )
-                                downloadQueueDao.markFailed(
-                                    queueId = queueItem.id,
+                                downloadQueueDao.failIfInProgress(
+                                    id = queueItem.id,
                                     errorMessage = err.take(1000),
                                     failureType = type,
+                                    completedAt = System.currentTimeMillis(),
                                 )
                                 failedCount.incrementAndGet()
                                 return@launch
@@ -295,9 +302,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                             }
 
                             if (trackEntity.isDownloaded && trackEntity.filePath != null) {
-                                downloadQueueDao.updateStatus(
+                                downloadQueueDao.completeIfInProgress(
                                     id = queueItem.id,
-                                    status = DownloadStatus.COMPLETED,
                                     completedAt = System.currentTimeMillis(),
                                 )
                                 downloadedCount.incrementAndGet()
@@ -385,9 +391,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                                             }
                                         }
                                     }
-                                    downloadQueueDao.updateStatus(
+                                    downloadQueueDao.completeIfInProgress(
                                         id = queueItem.id,
-                                        status = DownloadStatus.COMPLETED,
                                         completedAt = System.currentTimeMillis(),
                                     )
                                     totalBytesDownloaded.addAndGet(fileSize)
@@ -398,12 +403,12 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     val err = "No YouTube match for: ${track.artist} - ${track.title}"
                                     Log.w(TAG, err)
                                     downloadQueueDao.incrementRetryCount(queueItem.id)
-                                    downloadQueueDao.updateStatus(
+                                    downloadQueueDao.failIfInProgress(
                                         id = queueItem.id,
-                                        status = DownloadStatus.FAILED,
                                         failureType = DownloadFailureType.NO_MATCH,
                                         errorMessage = err,
                                         rejectedVideoId = outcome.rejectedVideoId,
+                                        completedAt = System.currentTimeMillis(),
                                     )
                                     firstError.compareAndSet(null, err)
                                     failedCount.incrementAndGet()
@@ -428,10 +433,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         // incremented separately to match prior tally
                                         // semantics for terminal failures.
                                         downloadQueueDao.incrementRetryCount(queueItem.id)
-                                        downloadQueueDao.markFailed(
-                                            queueId = queueItem.id,
+                                        downloadQueueDao.failIfInProgress(
+                                            id = queueItem.id,
                                             errorMessage = truncated,
                                             failureType = type,
+                                            completedAt = System.currentTimeMillis(),
                                         )
                                         firstError.compareAndSet(null, truncated)
                                         failedCount.incrementAndGet()
@@ -473,6 +479,9 @@ class TrackDownloadWorker @AssistedInject constructor(
                             // it back to PENDING). Marking thousands of in-flight rows
                             // FAILED on cancel was the root cause of the "2325 failed
                             // rows after Stop" smoke-test crash.
+                            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                                return@launch
+                            }
                             throw ce
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to download track ${queueItem.trackId}", e)
@@ -497,10 +506,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                             if (isTerminal || exhausted) {
                                 // Real terminal failure OR transient that won't stop
                                 // happening — surface in Failed Downloads viewer.
-                                downloadQueueDao.markFailed(
-                                    queueId = queueItem.id,
+                                downloadQueueDao.failIfInProgress(
+                                    id = queueItem.id,
                                     errorMessage = truncated,
                                     failureType = type,
+                                    completedAt = System.currentTimeMillis(),
                                 )
                                 failedCount.incrementAndGet()
                             } else {
@@ -700,10 +710,13 @@ class TrackDownloadWorker @AssistedInject constructor(
         // can no-op on non-FAILED rows). Relies on updateStatus's defaults to
         // null out error_message / completed_at / rejected_video_id and reset
         // failure_type to NONE, matching the chain-mode IN_PROGRESS call.
-        downloadQueueDao.updateStatus(
-            id = entry.id,
-            status = DownloadStatus.IN_PROGRESS,
-        )
+        if (downloadQueueDao.claimForDownload(entry.id) == 0) return Result.success()
+        val itemJob = currentCoroutineContext().job
+        downloadJobs.register(entry.id, itemJob)
+        itemJob.invokeOnCompletion { downloadJobs.unregister(entry.id, itemJob) }
+        if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+            return Result.success()
+        }
 
         val outcome = try {
             trackDownloader.downloadTrack(
@@ -716,6 +729,9 @@ class TrackDownloadWorker @AssistedInject constructor(
             // long). Don't mark the row FAILED — the queue stays in whatever
             // state IN_PROGRESS-with-cancel left it; the next sync's
             // resetStaleInProgress() will flip it back to PENDING.
+            if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+                return Result.success()
+            }
             throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Single-track downloader threw for queue ${entry.id}", e)
@@ -738,10 +754,11 @@ class TrackDownloadWorker @AssistedInject constructor(
             // chain-mode path uses revertToPendingAfterInterruption (a
             // sync passing through and leaving the row for the next sweep).
             // A failed manual retry should show the user what went wrong.
-            downloadQueueDao.markFailed(
-                queueId = entry.id,
+            downloadQueueDao.failIfInProgress(
+                id = entry.id,
                 errorMessage = truncated,
                 failureType = type,
+                completedAt = System.currentTimeMillis(),
             )
             // Catastrophe is handled; don't ask WorkManager to retry this row.
             return Result.success()
@@ -749,6 +766,10 @@ class TrackDownloadWorker @AssistedInject constructor(
 
         when (outcome) {
             is TrackDownloadOutcome.Success -> {
+                if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+                    runCatching { File(outcome.filePath).delete() }
+                    return Result.success()
+                }
                 // Persist the downloaded state on the TRACK row, mirroring chain
                 // mode (doWork). Without this the file lands on disk but
                 // tracks.is_downloaded / file_path stay unset, so the UI keeps
@@ -772,13 +793,9 @@ class TrackDownloadWorker @AssistedInject constructor(
                         )
                     }.onFailure { e -> Log.w(TAG, "setFormatAndQuality failed for ${entry.trackId}", e) }
                 }
-                downloadQueueDao.updateStatus(
+                downloadQueueDao.completeIfInProgress(
                     id = entry.id,
-                    status = DownloadStatus.COMPLETED,
-                    errorMessage = null,
                     completedAt = System.currentTimeMillis(),
-                    failureType = DownloadFailureType.NONE,
-                    rejectedVideoId = null,
                 )
                 Log.i(TAG, "Single-track mode: Success for queue ${entry.id}")
             }
@@ -792,10 +809,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                         causeChain = emptyList(),
                     ),
                 )
-                downloadQueueDao.markFailed(
-                    queueId = entry.id,
+                downloadQueueDao.failIfInProgress(
+                    id = entry.id,
                     errorMessage = truncated,
                     failureType = type,
+                    completedAt = System.currentTimeMillis(),
                 )
                 Log.w(
                     TAG,
@@ -804,9 +822,8 @@ class TrackDownloadWorker @AssistedInject constructor(
             }
             is TrackDownloadOutcome.Unmatched -> {
                 val err = "No YouTube match for: ${track.artist} - ${track.title}"
-                downloadQueueDao.updateStatus(
+                downloadQueueDao.failIfInProgress(
                     id = entry.id,
-                    status = DownloadStatus.FAILED,
                     errorMessage = err,
                     completedAt = System.currentTimeMillis(),
                     failureType = DownloadFailureType.NO_MATCH,
