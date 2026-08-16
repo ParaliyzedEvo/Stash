@@ -63,6 +63,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val classifier: DownloadFailureClassifier,
     private val reconciliationUseCase: LibraryReconciliationUseCase,
     private val fileExistenceSessionFactory: com.stash.core.data.library.FileExistenceSessionFactory,
+    private val fileAdopter: com.stash.core.data.library.FileAdopter,
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeQueueDao: com.stash.core.data.db.dao.FlacUpgradeQueueDao,
 ) : CoroutineWorker(appContext, params) {
@@ -150,11 +151,16 @@ class TrackDownloadWorker @AssistedInject constructor(
                     syncId = syncId,
                     onProgress = { step, total -> syncStateManager.onVerifyingLibrary(step, total) },
                     checkFileExists = fileExistenceSessionFactory.open()::exists,
+                    // #77/#163: recognize files already in the user's folder
+                    // (reinstall, manual copy) instead of re-downloading them.
+                    // Runs before reconcile's requeue step by design.
+                    adoptExistingFiles = fileAdopter::adoptAll,
                 )
                 Log.i(
                     TAG,
                     "Reconciliation: swept=${result.orphansSwept} staleResumed=${result.staleResumed} " +
-                        "filesMissing=${result.filesMissing} requeued=${result.unqueuedRequeued}",
+                        "filesMissing=${result.filesMissing} requeued=${result.unqueuedRequeued} " +
+                        "adopted=${result.filesAdopted}",
                 )
             } else {
                 // v0.9.30: Download Mode = Online (streaming index only). Pre-toggle

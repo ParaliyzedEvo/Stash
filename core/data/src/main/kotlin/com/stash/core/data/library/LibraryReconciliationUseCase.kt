@@ -12,6 +12,8 @@ data class ReconciliationResult(
     val staleResumed: Int,
     val filesMissing: Int,
     val unqueuedRequeued: Int,
+    /** Files found on disk and adopted as already-downloaded (see [LibraryReconciliationUseCase.reconcile]'s `adoptExistingFiles`). */
+    val filesAdopted: Int = 0,
 )
 
 /**
@@ -54,11 +56,21 @@ class LibraryReconciliationUseCase @Inject constructor(
      *   access — currently none, but keeps the signature safe to call
      *   without a lambda if a future caller needs that.
      */
+    /**
+     * @param adoptExistingFiles Marks files already present on disk as downloaded
+     *   (the #413 adoption pass) and returns how many were adopted. Runs BEFORE the
+     *   requeue step so a reinstalled library is recognized instead of queued for a
+     *   full re-download in the same pass (#77/#163: users re-downloaded 8 GB after
+     *   a reinstall because adoption only lived behind the manual Verify button).
+     *   Defaults to a no-op for callers that run adoption themselves
+     *   (LibraryHealthViewModel's Verify reports it as its own step).
+     */
     suspend fun reconcile(
         syncId: Long? = null,
         onProgress: (step: Int, total: Int) -> Unit = { _, _ -> },
         checkFileExists: suspend (artist: String, album: String?, title: String, filePath: String) -> com.stash.core.data.library.FileExistenceResult =
             { _, _, _, _ -> com.stash.core.data.library.FileExistenceResult(exists = true) },
+        adoptExistingFiles: suspend () -> Int = { 0 },
     ): ReconciliationResult {
         onProgress(0, TOTAL_STEPS)
 
@@ -98,6 +110,12 @@ class LibraryReconciliationUseCase @Inject constructor(
         }
         onProgress(4, TOTAL_STEPS)
 
+        // Adopt files already on disk BEFORE the requeue query below: an adopted
+        // track flips to is_downloaded and is therefore excluded from requeue.
+        // Order is the whole point — reversed, a reinstalled library would be
+        // queued for a full re-download in the same pass that recognizes it.
+        val adopted = adoptExistingFiles()
+
         val unqueuedTrackIds = downloadQueueDao.getUnqueuedTrackIds(connectedSources)
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
@@ -112,6 +130,7 @@ class LibraryReconciliationUseCase @Inject constructor(
             staleResumed = resetInProgress,
             filesMissing = missingIds.size,
             unqueuedRequeued = unqueuedTrackIds.size,
+            filesAdopted = adopted,
         )
     }
 }

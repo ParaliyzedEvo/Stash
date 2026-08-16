@@ -1,5 +1,6 @@
 package com.stash.data.download.files
 
+import com.stash.core.data.library.FileAdopter
 import com.stash.core.data.library.FileExistenceSessionFactory
 import dagger.Module
 import dagger.Provides
@@ -18,4 +19,8 @@ object FileExistenceCheckerModule {
     @Provides
     fun provideFileExistenceSessionFactory(fileOrganizer: FileOrganizer): FileExistenceSessionFactory =
         FileExistenceSessionFactory { fileOrganizer.existenceSession() }
+
+    @Provides
+    fun provideFileAdopter(adoptExistingFiles: AdoptExistingFilesUseCase): FileAdopter =
+        FileAdopter { adoptExistingFiles.adopt().adopted }
 }

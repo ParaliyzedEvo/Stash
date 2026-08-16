@@ -28,6 +28,16 @@ fun interface FileExistenceSessionFactory {
     fun open(): FileExistenceChecker
 }
 
+/**
+ * Port for the "recognize files already on disk" adoption pass
+ * (AdoptExistingFilesUseCase in :data:download — same module-inversion reason as
+ * [FileExistenceChecker]). Returns how many tracks were adopted. Self-gating:
+ * free when there are no undownloaded candidates or no external tree grant.
+ */
+fun interface FileAdopter {
+    suspend fun adoptAll(): Int
+}
+
 fun interface FileExistenceChecker {
     suspend fun exists(
         artist: String,
