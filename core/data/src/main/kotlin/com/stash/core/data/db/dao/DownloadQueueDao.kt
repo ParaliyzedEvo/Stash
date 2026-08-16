@@ -24,6 +24,22 @@ data class SourceCount(
     val cnt: Int,
 )
 
+/** Joined queue/track row used by the download-management screen. */
+data class DownloadManagementRow(
+    val queueId: Long,
+    val trackId: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumArtUrl: String?,
+    val status: DownloadStatus,
+    val retryCount: Int,
+    val errorMessage: String?,
+    val failureType: DownloadFailureType,
+    val createdAt: Long,
+    val completedAt: Long?,
+)
+
 /**
  * Data-access object for [DownloadQueueEntity].
  *
@@ -52,6 +68,35 @@ interface DownloadQueueDao {
     /** Reactive stream of downloads filtered by [status]. */
     @Query("SELECT * FROM download_queue WHERE status = :status ORDER BY created_at ASC")
     fun getByStatus(status: DownloadStatus): Flow<List<DownloadQueueEntity>>
+
+    /** Active queue, including deliberate lossless deferrals, oldest first. */
+    @Query("""
+        SELECT dq.id AS queueId, dq.track_id AS trackId,
+               t.title, t.artist, t.album, t.album_art_url AS albumArtUrl,
+               dq.status, dq.retry_count AS retryCount,
+               dq.error_message AS errorMessage, dq.failure_type AS failureType,
+               dq.created_at AS createdAt, dq.completed_at AS completedAt
+          FROM download_queue dq
+          INNER JOIN tracks t ON t.id = dq.track_id
+         WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+         ORDER BY dq.created_at ASC, dq.id ASC
+    """)
+    fun observeActiveDownloadRows(): Flow<List<DownloadManagementRow>>
+
+    /** Terminal download history, newest first and bounded for UI consumption. */
+    @Query("""
+        SELECT dq.id AS queueId, dq.track_id AS trackId,
+               t.title, t.artist, t.album, t.album_art_url AS albumArtUrl,
+               dq.status, dq.retry_count AS retryCount,
+               dq.error_message AS errorMessage, dq.failure_type AS failureType,
+               dq.created_at AS createdAt, dq.completed_at AS completedAt
+          FROM download_queue dq
+          INNER JOIN tracks t ON t.id = dq.track_id
+         WHERE dq.status IN ('COMPLETED', 'FAILED', 'SKIPPED')
+         ORDER BY COALESCE(dq.completed_at, dq.created_at) DESC, dq.id DESC
+         LIMIT :limit
+    """)
+    fun observeDownloadHistory(limit: Int): Flow<List<DownloadManagementRow>>
 
     /** Find a download queue entry by the associated track ID. */
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
@@ -217,6 +262,65 @@ interface DownloadQueueDao {
         failureType: DownloadFailureType = DownloadFailureType.NONE,
         rejectedVideoId: String? = null,
     )
+
+    /** Atomically claims a pending row for a worker. */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'IN_PROGRESS', error_message = NULL,
+               failure_type = 'NONE', completed_at = NULL
+         WHERE id = :id AND status IN ('PENDING', 'FAILED')
+    """)
+    suspend fun claimForDownload(id: Long): Int
+
+    /** Cancels an active row without allowing a terminal state to be overwritten. */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'SKIPPED', error_message = NULL,
+               failure_type = 'NONE', completed_at = :completedAt
+         WHERE id = :id
+           AND status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+    """)
+    suspend fun markCancelledIfActive(id: Long, completedAt: Long): Int
+
+    /** Completes only the worker claim that is still in progress. */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'COMPLETED', error_message = NULL,
+               failure_type = 'NONE', rejected_video_id = NULL,
+               completed_at = :completedAt
+         WHERE id = :id AND status = 'IN_PROGRESS'
+    """)
+    suspend fun completeIfInProgress(id: Long, completedAt: Long): Int
+
+    /** Fails only the worker claim that is still in progress. */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'FAILED', error_message = :errorMessage,
+               failure_type = :failureType,
+               rejected_video_id = :rejectedVideoId,
+               completed_at = :completedAt
+         WHERE id = :id AND status = 'IN_PROGRESS'
+    """)
+    suspend fun failIfInProgress(
+        id: Long,
+        errorMessage: String?,
+        failureType: DownloadFailureType,
+        completedAt: Long,
+        rejectedVideoId: String? = null,
+    ): Int
+
+    /** Defers only the worker claim that is still in progress. */
+    @Query("""
+        UPDATE download_queue
+           SET status = 'WAITING_FOR_LOSSLESS', error_message = NULL,
+               failure_type = 'NONE', completed_at = NULL
+         WHERE id = :id AND status = 'IN_PROGRESS'
+    """)
+    suspend fun deferIfInProgress(id: Long): Int
+
+    /** Lightweight status lookup used to resolve cancellation races. */
+    @Query("SELECT status FROM download_queue WHERE id = :id LIMIT 1")
+    suspend fun getStatusById(id: Long): DownloadStatus?
 
     // ── Failed Downloads viewer (Library Health phase 1) ────────────────
 

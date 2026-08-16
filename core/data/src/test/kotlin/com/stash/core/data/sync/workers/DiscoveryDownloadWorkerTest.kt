@@ -11,6 +11,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.model.DownloadStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -41,11 +42,12 @@ class DiscoveryDownloadWorkerTest {
         coEvery { isBlocked(any(), any(), any(), any()) } returns false
     }
     private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
+    private val downloadJobs = DownloadJobRegistry()
 
     private fun newWorker() = DiscoveryDownloadWorker(
         appContext, workerParams,
         downloadQueueDao, trackDao, trackDownloader,
-        audioDurationExtractor, blocklistGuard, syncNotificationManager,
+        audioDurationExtractor, blocklistGuard, syncNotificationManager, downloadJobs,
     )
 
     @Test fun `empty queue returns success and does not invoke TrackDownloader`() = runTest {

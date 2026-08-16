@@ -28,6 +28,7 @@ import com.stash.feature.settings.SettingsHubScreen
 import com.stash.feature.settings.equalizer.EqualizerScreen
 import com.stash.feature.settings.libraryhealth.LibraryHealthScreen
 import com.stash.feature.sync.FailedDownloadsScreen
+import com.stash.feature.sync.DownloadManagementScreen
 import com.stash.feature.sync.FailedMatchesScreen
 import com.stash.feature.sync.ManagePlaylistsScreen
 import com.stash.feature.sync.SyncScreen
@@ -165,6 +166,9 @@ fun StashNavHost(
                 onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
                 onNavigateToFailedDownloads = {
                     navController.navigate(FailedDownloadsRoute)
+                },
+                onNavigateToDownloads = {
+                    navController.navigate(DownloadManagementRoute)
                 },
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
@@ -346,6 +350,9 @@ fun StashNavHost(
 
         composable<FailedDownloadsRoute> {
             FailedDownloadsScreen(onBack = { navController.popBackStack() })
+        }
+        composable<DownloadManagementRoute> {
+            DownloadManagementScreen(onBack = { navController.popBackStack() })
         }
 
         composable<SearchArtistRoute> {
