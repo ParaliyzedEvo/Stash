@@ -939,8 +939,8 @@ git commit -m "feat(library): Show on Home action in the playlist sheet"
 
 The spec requires pins to survive sync the way `pinned`/`hideFromHome` do. Verified during planning: no sync path rewrites a whole playlist row — `DiffWorker.kt` and `StashMixRefreshWorker.kt` only call targeted column updaters (`updateArtUrl`/`updateName`/`updateLastSynced`/`updateTrackCount`/`updateSnapshotId`), and `PlaylistDao.insert` is `OnConflictStrategy.ABORT` (never REPLACE). Re-confirm nothing changed underneath:
 
-Run: `grep -rn "OnConflictStrategy.REPLACE" core/data/src/main/kotlin/com/stash/core/data/db/dao/PlaylistDao.kt`
-Expected: matches only on `insertCrossRef`/`insertAllCrossRefs` (the membership table), never a whole-playlist insert. If a whole-row REPLACE has appeared, stop and carry `pinned_to_home_at` through that path before shipping.
+Run: `grep -rnE "@Update|OnConflictStrategy.REPLACE" core/data/src/main/kotlin/com/stash/core/data/db/dao/PlaylistDao.kt`
+Expected: REPLACE matches only on `insertCrossRef`/`insertAllCrossRefs` (the membership table). `@Update fun update(playlist: PlaylistEntity)` (line ~215) is a full-row writer that would NULL the pin if a caller handed it a network-built entity — as of Task 1's review it has ZERO callers repo-wide; confirm that is still true (`grep -rn "playlistDao.update(" core/ data/ app/ feature/`). If either check finds a whole-row write path, stop and carry `pinned_to_home_at` through it before shipping.
 
 - [ ] **Step 1: Run every touched module's suite**
 
