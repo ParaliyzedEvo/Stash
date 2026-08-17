@@ -34,20 +34,20 @@ Home shows only algorithmic content (Daily Discover hero, Qobuz discovery rows, 
 ### Home rail
 
 - New `HomeSection.YOUR_PLAYLISTS("your_playlists")`, declared **first** in the enum. Fresh installs and users who never customized their section order see the rail at the top; users with a saved custom order get it appended at the end per the existing `resolveHomeSectionOrder` merge rule (their arrangement is respected; the section is draggable).
-- `HomeViewModel`: rail content = playlists where `pinnedToHomeAt != null && mixRail(p) == null`, ordered ascending by `pinnedToHomeAt` (first pinned = first card; stable, mirrors the Your Mixes stable-order precedent). Exposed as `HomeUiState.yourPlaylists: List<HomeMix>`.
-- The Liked card, when `showLikedOnHome` is true, leads the rail with a heart treatment and the merged (de-duped) track count across `STASH_LIKED` + `LIKED_SONGS` playlists.
-- `HomeScreen`: new `when` branch for the section, rendered through the same `isNotEmpty()` gate as every other rail (rail with no pins and Liked off renders nothing — Home unchanged until first opt-in). Cards reuse `MixRailCard`.
+- `HomeViewModel`: rail content = playlists where `pinnedToHomeAt != null && mixRail(p) == null`, ordered ascending by `pinnedToHomeAt` (first pinned = first card; stable, mirrors the Your Mixes stable-order precedent). Exposed as `HomeUiState.yourPlaylists: List<HomeMix>`. Derivation slots into the existing classification loop in `homePlaylistFlow` (`HomeViewModel.kt:250`). Rail membership depends **only** on `pinnedToHomeAt`; `hideFromHome` is ignored here — it is a mixes-only flow and mixes are excluded from this rail by the `mixRail(p) == null` condition.
+- The Liked card is **separate state**, not a synthetic `HomeMix`: `HomeUiState.likedCard: LikedCardState?` — null when `showLikedOnHome` is false; when non-null it carries the merged (de-duped, matching the Liked tab's `distinctBy { it.id }`) track count across `STASH_LIKED` + `LIKED_SONGS` playlists. It renders as the first card of the rail with a heart treatment and has its own tap handler — it never enters the id-routed playlist tap path.
+- `HomeScreen`: new `when` branch for the section, gated on `uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null` (so enabling Liked with zero pins still shows the rail, and a fully-off state renders nothing — Home unchanged until first opt-in). Playlist cards reuse `MixRailCard`.
 
 ### Taps
 
 - Playlist card tap → `PlaylistDetailRoute(id)` (same screen Library opens).
-- Liked card tap → Library ▸ Liked tab via a new optional `initialTab` argument on `LibraryRoute` (default null = current behavior). The existing `LikedSongsDetailRoute` is the wrong target: it merges only external (`LIKED_SONGS`) likes, not `STASH_LIKED`.
-- Long-press on a pinned playlist card → minimal sheet: **Open · Play All · Remove from Home** (unpinning never requires a trip back to Library). Long-press on the Liked card: none in v1 (remove via the Settings switch).
+- Liked card tap → Library ▸ Liked tab, as a **bottom-nav tab switch** (same `popUpTo(start)/saveState/restoreState` navigation the bottom bar performs — Back behaves exactly like a tab switch, and the Library tab highlights correctly). `LibraryRoute` stays a `@Serializable data object` — **no route-shape change** — because `StashScaffold` matches tabs by qualified-name string equality (`StashScaffold.kt:253`, `173-177`) and a nav argument would break highlighting and reselect-pop. Tab pre-selection travels out of band: a `LibraryDeepLinkController` mirroring the existing `SettingsDeepLinkController` pattern (`core/data/navigation`) — Home writes the request before navigating; `LibraryScreen` reads-and-clears it on entry and switches to the Liked tab via the existing tab-selection state. The existing `LikedSongsDetailRoute` is the wrong target: it merges only external (`LIKED_SONGS`) likes, not `STASH_LIKED`.
+- Long-press on a pinned playlist card → minimal sheet: **Open · Play All · Remove from Home** (unpinning never requires a trip back to Library). Play All reuses `HomeViewModel.playMix(playlistId)` (`HomeViewModel.kt:499`) — despite the name it is a generic play-playlist-by-id with the streaming/offline gate; no parallel path. Long-press on the Liked card: none in v1 (remove via the Settings switch).
 
 ### Toggle surfaces
 
 - Library Playlists grid long-press sheet: new row directly under "Pin Playlist" — label **"Show on Home"** / **"Remove from Home"** by `pinnedToHomeAt != null`, wired to the DAO setter via LibraryViewModel. No snackbar (consistent with the Pin action). The grid is CUSTOM-only, which scopes eligibility for free: created and imported playlists get the action; mixes and system playlists don't.
-- Settings > Home layout: **"Show Liked Songs on Home"** switch (writes `HomeSectionsPreference.showLikedOnHome`). Discoverable from Home via the existing Personalize card.
+- Settings > Appearance > Home layout (`SettingsAppearanceRoute` — the screen hosting the existing section-reorder UI, per `HomeScreen.kt:457`): **"Show Liked Songs on Home"** switch (writes `HomeSectionsPreference.showLikedOnHome`). Discoverable from Home via the existing Personalize card.
 
 ### Edge cases
 
@@ -61,4 +61,5 @@ Home shows only algorithmic content (Daily Discover hero, Qobuz discovery rows, 
 - Migration 41→42 (existing migration-test pattern).
 - DAO setter round-trip (pin → visible in query; unpin → NULL).
 - `resolveHomeSectionOrder`: YOUR_PLAYLISTS first on empty saved state; appended for a saved order lacking it (existing rule, one new assertion).
+- `LibraryDeepLinkController` request/consume round-trip (read clears the request), mirroring the `SettingsDeepLinkController` shape.
 - Device smoke (Pixel 5 rig): pin two playlists + enable Liked card; verify top rail, drag the section in Settings > Home layout, tap through playlist card / Liked card / long-press unpin.
