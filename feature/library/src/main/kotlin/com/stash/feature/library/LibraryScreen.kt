@@ -144,6 +144,13 @@ fun LibraryScreen(
     val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 
+    // Home's Liked card queued a focus before the tab switch: land on Liked.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (viewModel.consumeDeepLinkFocus() == com.stash.core.data.navigation.LibraryFocus.LIKED) {
+            viewModel.selectTab(LibraryTab.LIKED)
+        }
+    }
+
     // Multi-select state — Tracks and Liked tabs. `isActive` signals out so the
     // host can hide the mini-player (Task 7), and the selection is force-cleared
     // on every tab change so it can't leak onto Playlists/Artists/Albums.

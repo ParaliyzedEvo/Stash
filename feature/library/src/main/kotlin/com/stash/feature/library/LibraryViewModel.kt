@@ -97,6 +97,7 @@ class LibraryViewModel @Inject constructor(
     private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
     private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
     private val libraryPreferencesStore: LibraryPreferencesStore,
+    private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -431,6 +432,13 @@ class LibraryViewModel @Inject constructor(
     fun selectTab(tab: LibraryTab) {
         _controls.update { it.copy(activeTab = tab) }
     }
+
+    /**
+     * One-shot deep-link from Home (Liked card). Screen calls this on every
+     * entry — not `init` — so repeat taps work on this retained tab ViewModel.
+     */
+    fun consumeDeepLinkFocus(): com.stash.core.data.navigation.LibraryFocus? =
+        libraryDeepLinkController.consume()
 
     /**
      * Update the search query; filtering is applied reactively.

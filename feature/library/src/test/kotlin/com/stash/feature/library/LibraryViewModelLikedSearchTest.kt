@@ -105,6 +105,7 @@ class LibraryViewModelLikedSearchTest {
                 onBlocking { getSortOrder() } doReturn SortOrder.RECENT
                 onBlocking { getSourceFilter() } doReturn SourceFilter.ALL
             },
+            libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
         )
     }
 }
