@@ -32,6 +32,7 @@ import com.stash.feature.home.banner.MetadataBackfillBannerState
 import com.stash.feature.home.banner.metadataBackfillBannerStateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
@@ -49,6 +50,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
@@ -300,7 +303,7 @@ class HomeViewModel @Inject constructor(
     private val likedCardFlow: Flow<LikedCardState?> =
         homeSectionsPreference.showLikedOnHome.flatMapLatest { shown ->
             if (!shown) {
-                kotlinx.coroutines.flow.flowOf(null)
+                flowOf(null)
             } else {
                 combine(
                     musicRepository.getPlaylistsByType(com.stash.core.model.PlaylistType.STASH_LIKED),
@@ -308,19 +311,22 @@ class HomeViewModel @Inject constructor(
                 ) { stash, external -> stash + external }
                     .flatMapLatest { likedPlaylists ->
                         if (likedPlaylists.isEmpty()) {
-                            kotlinx.coroutines.flow.flowOf(LikedCardState(trackCount = 0))
+                            flowOf(LikedCardState(trackCount = 0))
                         } else {
                             combine(
                                 likedPlaylists.map { musicRepository.getTracksByPlaylist(it.id) },
                             ) { arrays ->
                                 LikedCardState(
-                                    trackCount = arrays.flatMap { it.toList() }.distinctBy { it.id }.size,
+                                    trackCount = arrays.flatMap { it }.distinctBy { it.id }.size,
                                 )
                             }
                         }
                     }
             }
         }
+            // Same rationale as the Liked tab's pipeline (LibraryViewModel):
+            // the dedupe over every liked track is pure list work — off Main.
+            .flowOn(Dispatchers.Default)
 
     /**
      * Lossless connect nudge: only visible when the user has not
