@@ -44,12 +44,17 @@ class PlaylistDaoPinnedToHomeTest {
         val id = playlistDao.insert(
             PlaylistEntity(name = "Gym", source = MusicSource.SPOTIFY, sourceId = "sp1"),
         )
+        // A second row proves the UPDATE is targeted, not a broadcast write.
+        val otherId = playlistDao.insert(
+            PlaylistEntity(name = "Roadtrip", source = MusicSource.SPOTIFY, sourceId = "sp2"),
+        )
 
         playlistDao.setPinnedToHome(id, 1723900000000L)
         assertEquals(
             1723900000000L,
             playlistDao.getAllActive().first().single { it.id == id }.pinnedToHomeAt,
         )
+        assertNull(playlistDao.getAllActive().first().single { it.id == otherId }.pinnedToHomeAt)
 
         playlistDao.setPinnedToHome(id, null)
         assertNull(playlistDao.getAllActive().first().single { it.id == id }.pinnedToHomeAt)
