@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -158,6 +159,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToArcodConnect: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
     onNavigateToMixBuilder: (Long?) -> Unit = {},
@@ -169,6 +171,8 @@ fun HomeScreen(
     var actionSheetMixId by remember { mutableStateOf<Long?>(null) }
     // Long-pressed Daily Discover hero → its own two-row sheet (refresh / minimize).
     var heroActionSheet by remember { mutableStateOf(false) }
+    // Long-pressed "Your playlists" card → Open / Play All / Remove from Home.
+    var pinnedSheetPlaylistId by remember { mutableStateOf<Long?>(null) }
     // Opening a mix = open its materialized playlist + freshen it if stale.
     // A HomeMix's id IS its playlist id, so this reuses the existing playlist nav.
     val openMix: (Long) -> Unit = { id ->
@@ -478,8 +482,31 @@ fun HomeScreen(
                 }
             }
             when (section) {
-                // Task 6 renders this.
-                HomeSection.YOUR_PLAYLISTS -> Unit
+                HomeSection.YOUR_PLAYLISTS ->
+                    if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
+                        item(key = "section_your_playlists") {
+                            CardRail(title = "Your playlists") {
+                                uiState.likedCard?.let { liked ->
+                                    item(key = "liked_card") {
+                                        LikedHomeCard(
+                                            trackCount = liked.trackCount,
+                                            onClick = {
+                                                viewModel.requestLibraryLikedFocus()
+                                                onNavigateToLibrary()
+                                            },
+                                        )
+                                    }
+                                }
+                                items(uiState.yourPlaylists.take(HOME_RAIL_LIMIT), key = { it.id }) { p ->
+                                    MixRailCard(
+                                        title = p.title, artUrl = p.artUrl, source = p.source,
+                                        onClick = { onNavigateToPlaylist(p.id) },
+                                        onLongPress = { pinnedSheetPlaylistId = p.id },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
@@ -695,6 +722,62 @@ fun HomeScreen(
                     onClick = {
                         openMix(id)
                         actionSheetMixId = null
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
+    // ── Pinned-playlist action sheet (long-press a "Your playlists" card) ──
+    pinnedSheetPlaylistId?.let { id ->
+        // Guard render only — a stale id (playlist unpinned/deleted after a
+        // re-emit) renders nothing; the next long-press overwrites it.
+        val pinned = uiState.yourPlaylists.firstOrNull { it.id == id }
+        if (pinned != null) {
+            val sheetState = rememberModalBottomSheetState()
+            ModalBottomSheet(
+                onDismissRequest = { pinnedSheetPlaylistId = null },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 8.dp),
+                ) {
+                    Text(
+                        text = pinned.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                MixActionRow(
+                    icon = Icons.AutoMirrored.Filled.ArrowForward,
+                    label = "Open",
+                    onClick = {
+                        pinnedSheetPlaylistId = null
+                        onNavigateToPlaylist(id)
+                    },
+                )
+                MixActionRow(
+                    icon = Icons.Default.PlayArrow,
+                    label = "Play All",
+                    onClick = {
+                        pinnedSheetPlaylistId = null
+                        viewModel.playMix(id)
+                    },
+                )
+                MixActionRow(
+                    icon = Icons.Filled.RemoveCircleOutline,
+                    label = "Remove from Home",
+                    onClick = {
+                        pinnedSheetPlaylistId = null
+                        viewModel.setPinnedToHome(id, pinned = false)
                     },
                 )
                 Spacer(Modifier.height(12.dp))
