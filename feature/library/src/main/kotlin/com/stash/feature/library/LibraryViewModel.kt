@@ -775,6 +775,16 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /** Pin/unpin [playlist] on Home's "Your playlists" rail. */
+    fun togglePlaylistOnHome(playlist: Playlist) {
+        viewModelScope.launch {
+            musicRepository.setPlaylistPinnedToHome(
+                playlist.id,
+                if (playlist.pinnedToHomeAt == null) System.currentTimeMillis() else null,
+            )
+        }
+    }
+
     // ── Playlist create / delete-preview ─────────────────────────────────
 
     /**

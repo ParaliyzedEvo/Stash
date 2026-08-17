@@ -60,6 +60,8 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -200,6 +202,7 @@ fun LibraryScreen(
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
+            onTogglePlaylistOnHome = viewModel::togglePlaylistOnHome,
             onPlayArtist = onNavigateToArtist,
             onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
@@ -447,6 +450,7 @@ private fun LibraryContent(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
+    onTogglePlaylistOnHome: (Playlist) -> Unit,
     onViewAlbum: (Track) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
@@ -632,6 +636,7 @@ private fun LibraryContent(
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
+                        onTogglePlaylistOnHome = onTogglePlaylistOnHome,
                         header = {},
                     )
                     LibraryTab.TRACKS -> TracksTab(
@@ -1066,6 +1071,7 @@ private fun PlaylistsGrid(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
+    onTogglePlaylistOnHome: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -1249,6 +1255,15 @@ private fun PlaylistsGrid(
                 label = if (playlist.pinned) "Unpin Playlist" else "Pin Playlist",
                 onClick = {
                     onTogglePlaylistPinned(playlist)
+                    selectedPlaylist = null
+                },
+            )
+
+            BottomSheetActionRow(
+                icon = if (playlist.pinnedToHomeAt != null) Icons.Filled.Home else Icons.Outlined.Home,
+                label = if (playlist.pinnedToHomeAt != null) "Remove from Home" else "Show on Home",
+                onClick = {
+                    onTogglePlaylistOnHome(playlist)
                     selectedPlaylist = null
                 },
             )
