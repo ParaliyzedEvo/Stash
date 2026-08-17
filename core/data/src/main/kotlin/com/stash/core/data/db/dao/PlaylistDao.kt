@@ -578,16 +578,15 @@ interface PlaylistDao {
     fun getYouTubePlaylistsForPreferences(): Flow<List<PlaylistEntity>>
 
     /**
-     * One-shot data migration: flip sync_enabled on every YouTube playlist
-     * that's still false. Fixes the Option A gap where playlists discovered
-     * before the Sync-preference UI was extended to YouTube got stuck at
-     * sync_enabled = 0 and silently skipped by DiffWorker. Called once per
-     * install from [com.stash.app.StashApplication].
+     * Idempotent cleanup for mixes auto-enabled by older releases or restored
+     * from an older backup. Mix Home
+     * visibility is controlled independently, so no algorithmic mix should
+     * retain implicit download consent. Other playlist types are untouched.
      *
      * @return the number of rows updated.
      */
-    @Query("UPDATE playlists SET sync_enabled = 1 WHERE source = 'YOUTUBE' AND sync_enabled = 0")
-    suspend fun enableAllYouTubePlaylistSync(): Int
+    @Query("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX' AND sync_enabled = 1")
+    suspend fun disableLegacyDailyMixSync(): Int
 
     /**
      * One-shot data migration: hide every YouTube playlist that currently
