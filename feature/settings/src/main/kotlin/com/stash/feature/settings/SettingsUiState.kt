@@ -54,6 +54,8 @@ data class SettingsUiState(
     val homeSectionOrder: List<com.stash.core.data.prefs.HomeSection> =
         com.stash.core.data.prefs.HomeSection.entries.toList(),
     val homeSectionsHidden: Set<com.stash.core.data.prefs.HomeSection> = emptySet(),
+    /** Merged Liked Songs card on Home's "Your playlists" rail. */
+    val showLikedOnHome: Boolean = false,
     val ytHistoryHealth: YouTubeScrobblerHealth = YouTubeScrobblerHealth.DISABLED,
     val ytPendingCount: Int = 0,
     /**

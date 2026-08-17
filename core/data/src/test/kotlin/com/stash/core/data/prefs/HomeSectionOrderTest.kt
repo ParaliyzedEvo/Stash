@@ -1,6 +1,7 @@
 package com.stash.core.data.prefs
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Merge semantics for the saved Home section order (see [resolveHomeSectionOrder]). */
@@ -21,6 +22,8 @@ class HomeSectionOrderTest {
             listOf(
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
+                // appended: added after this arrangement was saved.
+                HomeSection.YOUR_PLAYLISTS,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -33,8 +36,9 @@ class HomeSectionOrderTest {
             listOf(
                 HomeSection.RADIOS, HomeSection.TOP_ALBUMS,
                 // appended in default order:
-                HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS,
-                HomeSection.MADE_FOR_YOU, HomeSection.MOOD_DECADES,
+                HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
+                HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
+                HomeSection.MOOD_DECADES,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -47,5 +51,21 @@ class HomeSectionOrderTest {
         assertEquals(HomeSection.entries.size, result.size)
         assertEquals(HomeSection.RADIOS, result[0])
         assertEquals(HomeSection.NEW_RELEASES, result[1])
+    }
+
+    @Test
+    fun `your playlists leads the default order`() {
+        assertEquals(HomeSection.YOUR_PLAYLISTS, resolveHomeSectionOrder(emptyList()).first())
+    }
+
+    @Test
+    fun `saved order without your playlists appends it, preserving the arrangement`() {
+        val saved = listOf("made_for_you", "new_releases")
+        val resolved = resolveHomeSectionOrder(saved)
+        assertEquals(HomeSection.MADE_FOR_YOU, resolved[0])
+        assertEquals(HomeSection.NEW_RELEASES, resolved[1])
+        // New-in-an-update section can't be hidden by a stale pref: appended.
+        assertTrue(HomeSection.YOUR_PLAYLISTS in resolved)
+        assertTrue(resolved.indexOf(HomeSection.YOUR_PLAYLISTS) >= 2)
     }
 }

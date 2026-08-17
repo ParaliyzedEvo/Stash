@@ -478,6 +478,8 @@ fun HomeScreen(
                 }
             }
             when (section) {
+                // Task 6 renders this.
+                HomeSection.YOUR_PLAYLISTS -> Unit
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(

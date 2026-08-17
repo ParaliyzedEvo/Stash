@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -21,6 +22,7 @@ import javax.inject.Singleton
  * door and stays pinned on top.
  */
 enum class HomeSection(val key: String) {
+    YOUR_PLAYLISTS("your_playlists"),
     NEW_RELEASES("new_releases"),
     QOBUZ_PLAYLISTS("qobuz_playlists"),
     TOP_ALBUMS("top_albums"),
@@ -61,6 +63,16 @@ class HomeSectionsPreference @Inject constructor(
 ) {
     private val orderKey = stringPreferencesKey("home_sections_order")
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
+    private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
+
+    /** Merged Liked Songs card on the "Your playlists" rail. Off by default. */
+    val showLikedOnHome: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
+        prefs[showLikedKey] ?: false
+    }
+
+    suspend fun setShowLikedOnHome(shown: Boolean) {
+        context.homeSectionsDataStore.edit { prefs -> prefs[showLikedKey] = shown }
+    }
 
     val order: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         resolveHomeSectionOrder(prefs[orderKey].toKeys())

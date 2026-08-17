@@ -515,6 +515,7 @@ class SettingsViewModel @Inject constructor(
         nowPlayingPreference.ambientAnimationEnabled,
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
+        homeSectionsPreference.showLikedOnHome,
     ) { values ->
         // Read strictly in the order the flows are declared above. See [Values]:
         // there are no positional indices to renumber, and requireExhausted()
@@ -561,6 +562,7 @@ class SettingsViewModel @Inject constructor(
         val homeSectionOrder = v.next<List<com.stash.core.data.prefs.HomeSection>>()
         @Suppress("UNCHECKED_CAST")
         val homeSectionsHidden = v.next<Set<com.stash.core.data.prefs.HomeSection>>()
+        val showLikedOnHome = v.next<Boolean>()
         v.requireExhausted()
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
@@ -602,6 +604,7 @@ class SettingsViewModel @Inject constructor(
             ambientAnimationEnabled = ambientAnimationEnabled,
             homeSectionOrder = homeSectionOrder,
             homeSectionsHidden = homeSectionsHidden,
+            showLikedOnHome = showLikedOnHome,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1221,6 +1224,11 @@ class SettingsViewModel @Inject constructor(
     /** Show/hide a Home section without forgetting its position. */
     fun onHomeSectionHiddenChanged(section: com.stash.core.data.prefs.HomeSection, hide: Boolean) {
         viewModelScope.launch { homeSectionsPreference.setHidden(section, hide) }
+    }
+
+    /** Merged Liked Songs card on Home's "Your playlists" rail. */
+    fun onShowLikedOnHomeChanged(shown: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.setShowLikedOnHome(shown) }
     }
 
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings
