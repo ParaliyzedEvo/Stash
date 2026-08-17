@@ -225,6 +225,9 @@ class HomeViewModelTest {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
             on { getTracksByPlaylist(any()) } doReturn flowOf(heroTracks)
+            // Feeds likedCardFlow when showLikedOnHome is stubbed on — and an
+            // unstubbed (null) flow would NPE that combine (same trap as below).
+            on { getPlaylistsByType(any()) } doReturn flowOf(emptyList())
         }
         val recipeDao = mock<StashMixRecipeDao> {
             onBlocking { getBuiltinPlaylistIds() } doReturn builtinIds
@@ -278,6 +281,7 @@ class HomeViewModelTest {
             playerRepository = playerRepository,
             losslessPrefs = losslessPrefs,
             settingsDeepLinkController = mock(),
+            libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
             tipJarRepository = tipJar,
             recipeDao = recipeDao,
             discoveryQueueDao = discoveryQueueDao,
@@ -293,6 +297,9 @@ class HomeViewModelTest {
             },
             homeSectionsPreference = mock {
                 on { visibleSections } doReturn flowOf(com.stash.core.data.prefs.HomeSection.entries.toList())
+                // Feeds likedCardFlow — an unstubbed (null) flow NPEs the
+                // uiState pairing combine and every test hangs, not fails.
+                on { showLikedOnHome } doReturn flowOf(false)
             },
             // Defaults: fresh health (starts healthy) + no ARCOD token, so
             // the rescue banner stays out of existing tests.
