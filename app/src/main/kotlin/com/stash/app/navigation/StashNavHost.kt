@@ -75,8 +75,15 @@ fun StashNavHost(
                 },
                 // Liked card: the ViewModel queued the Liked focus; perform the
                 // canonical tab switch so Back + bottom-bar state behave exactly
-                // like tapping the Library tab.
-                onNavigateToLibrary = { onNavigateToTab(TopLevelDestination.LIBRARY) },
+                // like tapping the Library tab — then pop any RESTORED detail
+                // screens so LibraryScreen actually composes and consumes the
+                // focus now (restoreState can resurrect a playlist detail on
+                // top, which would swallow the tap and fire the jump on a later
+                // Back). No-op when the restored stack is just Library root.
+                onNavigateToLibrary = {
+                    onNavigateToTab(TopLevelDestination.LIBRARY)
+                    navController.popBackStack(LibraryRoute, inclusive = false)
+                },
                 // Qobuz discovery album/playlist taps → the shared album-detail
                 // screen (playlists ride the same route via QOBUZ_PLAYLIST source).
                 onNavigateToAlbum = { album ->
