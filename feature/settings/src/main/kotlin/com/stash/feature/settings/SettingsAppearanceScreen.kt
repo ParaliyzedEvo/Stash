@@ -145,9 +145,12 @@ fun SettingsAppearanceScreen(
 
         SettingsToggleRow(
             title = "Show Liked Songs on Home",
-            subtitle = "A merged Liked Songs card on the Your playlists rail",
+            subtitle = "Your Stash, Spotify and YouTube likes as one card in Your playlists",
             checked = uiState.showLikedOnHome,
             onCheckedChange = viewModel::onShowLikedOnHomeChanged,
+            // Hiding the whole section above overrides this switch — grey it
+            // out rather than leave a live-looking control that does nothing.
+            enabled = com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS !in uiState.homeSectionsHidden,
         )
     }
 }

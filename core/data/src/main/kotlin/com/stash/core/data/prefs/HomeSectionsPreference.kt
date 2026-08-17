@@ -55,7 +55,9 @@ private val Context.homeSectionsDataStore: DataStore<Preferences> by preferences
 /**
  * User-arranged Home layout: [order] is a full permutation of
  * [HomeSection]; [hidden] removes sections from Home without forgetting
- * their position. Defaults preserve today's layout with nothing hidden.
+ * their position; [showLikedOnHome] adds the merged Liked Songs card to
+ * the "Your playlists" section. Defaults preserve today's layout with
+ * nothing hidden and no Liked card.
  */
 @Singleton
 class HomeSectionsPreference @Inject constructor(
@@ -65,13 +67,12 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
 
-    /** Merged Liked Songs card on the "Your playlists" rail. Off by default. */
+    /**
+     * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
+     * merged and de-duped — leading the "Your playlists" rail.
+     */
     val showLikedOnHome: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
         prefs[showLikedKey] ?: false
-    }
-
-    suspend fun setShowLikedOnHome(shown: Boolean) {
-        context.homeSectionsDataStore.edit { prefs -> prefs[showLikedKey] = shown }
     }
 
     val order: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
@@ -110,6 +111,10 @@ class HomeSectionsPreference @Inject constructor(
             if (hide) current.add(section) else current.remove(section)
             prefs[hiddenKey] = current.joinToString(",") { it.key }
         }
+    }
+
+    suspend fun setShowLikedOnHome(shown: Boolean) {
+        context.homeSectionsDataStore.edit { prefs -> prefs[showLikedKey] = shown }
     }
 
     private fun String?.toKeys(): List<String> =
