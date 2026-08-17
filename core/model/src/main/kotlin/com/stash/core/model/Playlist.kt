@@ -35,6 +35,11 @@ data class Playlist(
      * "Recently added" sort. See [com.stash.core.data.db.entity.PlaylistEntity.dateAdded].
      */
     val dateAdded: Long = System.currentTimeMillis(),
+    /**
+     * Epoch-millis when this playlist was pinned to Home's "Your playlists"
+     * rail; null = not on Home. Also the rail's sort key.
+     */
+    val pinnedToHomeAt: Long? = null,
 )
 
 enum class PlaylistType {
