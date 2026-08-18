@@ -81,6 +81,12 @@ data class HomeUiState(
     val moodDecades: List<HomeMix> = emptyList(),
     val yourMixes: List<HomeMix> = emptyList(),
     val customMixPlaylistIds: Set<Long> = emptySet(),
+
+    // ── "Your playlists" rail (user-pinned + optional Liked card) ──────
+    /** Pinned playlists in pin order (pinnedToHomeAt ascending). */
+    val yourPlaylists: List<HomeMix> = emptyList(),
+    /** Merged Liked Songs card; null while the Settings toggle is off. */
+    val likedCard: LikedCardState? = null,
 ) {
     /** True before the Discover hero has materialized — drives the cold-start placeholder. */
     val isColdStart: Boolean get() = hero == null
@@ -94,6 +100,9 @@ data class HomeMix(
     /** Hero-pager subtitle ("N tracks") for the Your-mix pages. */
     val trackCount: Int = 0,
 )
+
+/** Merged Liked Songs card on the "Your playlists" rail (null = toggle off). */
+data class LikedCardState(val trackCount: Int)
 
 /**
  * Sentinel for the "Try lossless audio" Home banner. Singleton

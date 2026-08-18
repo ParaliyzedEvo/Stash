@@ -46,3 +46,17 @@ internal fun List<HomeMix>.freshestFirst(recency: Map<Long, Long>): List<HomeMix
         compareByDescending<HomeMix> { recency[it.id] ?: Long.MIN_VALUE }
             .thenBy { it.title.lowercase() },
     )
+
+/**
+ * Home's "Your playlists" rail: playlists the user explicitly pinned
+ * (`pinnedToHomeAt != null`), excluding anything that already lives on a
+ * mix rail. Ordered by pin time — first pinned renders first; stable, no
+ * reshuffling (the Your-mixes stable-order precedent).
+ *
+ * Reads the UNFILTERED playlist list on purpose: membership here depends
+ * only on the pin stamp, never on the mixes' `hideFromHome` flow.
+ */
+fun yourPlaylistsRail(playlists: List<Playlist>): List<Playlist> =
+    playlists
+        .filter { it.pinnedToHomeAt != null && mixRail(it) == null }
+        .sortedBy { it.pinnedToHomeAt }

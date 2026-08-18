@@ -60,6 +60,8 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -144,6 +146,19 @@ fun LibraryScreen(
     val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 
+    // Home's Liked card queued a focus before the tab switch: land on Liked.
+    // The tab is ALSO handed to the content pager — on a cold restore the
+    // pager re-emits its SAVED page through the settled-page push-back and
+    // would clobber this selectTab (device-reproduced); the pager must be
+    // scrolled explicitly, not just the ViewModel state.
+    var deepLinkFocusTab by remember { mutableStateOf<LibraryTab?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (viewModel.consumeDeepLinkFocus() == com.stash.core.data.navigation.LibraryFocus.LIKED) {
+            deepLinkFocusTab = LibraryTab.LIKED
+            viewModel.selectTab(LibraryTab.LIKED)
+        }
+    }
+
     // Multi-select state — Tracks and Liked tabs. `isActive` signals out so the
     // host can hide the mini-player (Task 7), and the selection is force-cleared
     // on every tab change so it can't leak onto Playlists/Artists/Albums.
@@ -193,6 +208,7 @@ fun LibraryScreen(
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
+            onTogglePlaylistOnHome = viewModel::togglePlaylistOnHome,
             onPlayArtist = onNavigateToArtist,
             onViewAlbum = viewModel::onViewAlbumTapped,
             onAddArtistToQueue = viewModel::addArtistToQueue,
@@ -215,6 +231,7 @@ fun LibraryScreen(
             likedSources = likedSources,
             onSelectLikedSource = viewModel::setLikedFilter,
             onPlayLikedTrack = viewModel::playLiked,
+            deepLinkFocusTab = deepLinkFocusTab,
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -440,6 +457,7 @@ private fun LibraryContent(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
+    onTogglePlaylistOnHome: (Playlist) -> Unit,
     onViewAlbum: (Track) -> Unit,
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
@@ -460,6 +478,7 @@ private fun LibraryContent(
     likedSources: Set<LikedFilter>,
     onSelectLikedSource: (LikedFilter) -> Unit,
     onPlayLikedTrack: (Track) -> Unit,
+    deepLinkFocusTab: LibraryTab? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -610,6 +629,15 @@ private fun LibraryContent(
                     onTabSelected(chipTabs[page].second)
                 }
             }
+            // Deep link (Home's Liked card) must beat the restored pager
+            // page: on a cold restore the push-back above re-emits the SAVED
+            // page and overwrites the deep-link's selectTab. Scrolling the
+            // pager directly is deterministic — the settled emission then
+            // pushes the same tab back, self-consistently.
+            LaunchedEffect(deepLinkFocusTab) {
+                val idx = chipTabs.indexOfFirst { it.second == deepLinkFocusTab }
+                if (idx >= 0) pagerState.scrollToPage(idx)
+            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -625,6 +653,7 @@ private fun LibraryContent(
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
+                        onTogglePlaylistOnHome = onTogglePlaylistOnHome,
                         header = {},
                     )
                     LibraryTab.TRACKS -> TracksTab(
@@ -1059,6 +1088,7 @@ private fun PlaylistsGrid(
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
+    onTogglePlaylistOnHome: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
@@ -1242,6 +1272,15 @@ private fun PlaylistsGrid(
                 label = if (playlist.pinned) "Unpin Playlist" else "Pin Playlist",
                 onClick = {
                     onTogglePlaylistPinned(playlist)
+                    selectedPlaylist = null
+                },
+            )
+
+            BottomSheetActionRow(
+                icon = if (playlist.pinnedToHomeAt != null) Icons.Filled.Home else Icons.Outlined.Home,
+                label = if (playlist.pinnedToHomeAt != null) "Remove from Home" else "Show on Home",
+                onClick = {
+                    onTogglePlaylistOnHome(playlist)
                     selectedPlaylist = null
                 },
             )

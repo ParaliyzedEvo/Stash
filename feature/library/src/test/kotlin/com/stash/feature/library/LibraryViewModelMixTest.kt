@@ -150,5 +150,6 @@ class LibraryViewModelMixTest {
         flacUpgradeEnqueuer = org.mockito.kotlin.mock(),
         ytMusicApiClient = org.mockito.kotlin.mock(),
         libraryPreferencesStore = libraryPreferencesStore,
+        libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
     )
 }

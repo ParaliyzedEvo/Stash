@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 41,
+    version = 42,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -999,6 +999,18 @@ abstract class StashDatabase : RoomDatabase() {
                       AND source_id LIKE '37i9dQZF1D%'
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /**
+         * v41 → v42: `playlists` gains nullable `pinned_to_home_at`
+         * (epoch-millis the user put the playlist on Home's "Your
+         * playlists" rail). NULL = not on Home, so every existing row
+         * stays off the rail until the user pins it.
+         */
+        val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN pinned_to_home_at INTEGER")
             }
         }
 

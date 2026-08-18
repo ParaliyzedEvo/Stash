@@ -496,6 +496,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET pinned = :pinned WHERE id = :playlistId")
     suspend fun setPinned(playlistId: Long, pinned: Boolean)
 
+    /** Pin/unpin a playlist on Home's "Your playlists" rail (null = off). */
+    @Query("UPDATE playlists SET pinned_to_home_at = :pinnedAt WHERE id = :playlistId")
+    suspend fun setPinnedToHome(playlistId: Long, pinnedAt: Long?)
+
     /**
      * v0.9.26 — flip `is_active` on every playlist materialized by a
      * built-in Stash Mix recipe. Used by the Stash-Mixes opt-out toggle

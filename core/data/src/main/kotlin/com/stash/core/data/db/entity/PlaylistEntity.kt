@@ -84,4 +84,13 @@ data class PlaylistEntity(
     /** User-pinned playlists sort first in the Library Playlists grid. */
     @ColumnInfo(name = "pinned", defaultValue = "0")
     val pinned: Boolean = false,
+
+    /**
+     * Epoch-millis when the user put this playlist on the Home "Your
+     * playlists" rail; NULL = not on Home (the default). Doubles as the
+     * rail's stable sort key (first pinned renders first). Independent of
+     * [pinned] (Library grid sort) and [hideFromHome] (mixes-only flow).
+     */
+    @ColumnInfo(name = "pinned_to_home_at")
+    val pinnedToHomeAt: Long? = null,
 )

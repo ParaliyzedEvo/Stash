@@ -50,6 +50,9 @@ fun StashNavHost(
     // the same lambda will be wired to Liked/Album/Artist/Library detail screens
     // in later tasks — only the Playlist destination consumes it today.
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    // The scaffold's canonical bottom-nav tab switch, for screens that trigger
+    // one themselves (Home's Liked card → Library ▸ Liked).
+    onNavigateToTab: (TopLevelDestination) -> Unit = {},
 ) {
     NavHost(
         navController = navController,
@@ -69,6 +72,17 @@ fun StashNavHost(
                 onNavigateToArcodConnect = { navController.navigate(ArcodConnectRoute) },
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+                // Liked card: the ViewModel queued the Liked focus; perform the
+                // canonical tab switch so Back + bottom-bar state behave exactly
+                // like tapping the Library tab — then pop any RESTORED detail
+                // screens so LibraryScreen actually composes and consumes the
+                // focus now (restoreState can resurrect a playlist detail on
+                // top, which would swallow the tap and fire the jump on a later
+                // Back). No-op when the restored stack is just Library root.
+                onNavigateToLibrary = {
+                    onNavigateToTab(TopLevelDestination.LIBRARY)
+                    navController.popBackStack(LibraryRoute, inclusive = false)
                 },
                 // Qobuz discovery album/playlist taps → the shared album-detail
                 // screen (playlists ride the same route via QOBUZ_PLAYLIST source).

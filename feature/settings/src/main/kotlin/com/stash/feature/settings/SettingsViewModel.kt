@@ -124,7 +124,7 @@ class SettingsViewModel @Inject constructor(
     //
     // Exposed as standalone StateFlows rather than threaded through the big
     // combine(...) below. That combine no longer uses numeric indices (see
-    // [Values]), but it is still 38 sources feeding one monolithic UiState, and
+    // [Values]), but it is still dozens of sources feeding one monolithic UiState, and
     // ListenBrainz belongs to one screen — keeping it separate is the right shape
     // regardless.
 
@@ -515,6 +515,7 @@ class SettingsViewModel @Inject constructor(
         nowPlayingPreference.ambientAnimationEnabled,
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
+        homeSectionsPreference.showLikedOnHome,
     ) { values ->
         // Read strictly in the order the flows are declared above. See [Values]:
         // there are no positional indices to renumber, and requireExhausted()
@@ -561,6 +562,7 @@ class SettingsViewModel @Inject constructor(
         val homeSectionOrder = v.next<List<com.stash.core.data.prefs.HomeSection>>()
         @Suppress("UNCHECKED_CAST")
         val homeSectionsHidden = v.next<Set<com.stash.core.data.prefs.HomeSection>>()
+        val showLikedOnHome = v.next<Boolean>()
         v.requireExhausted()
 
         val lastFmState: LastFmAuthState = local.lastFmAuthOverride
@@ -602,6 +604,7 @@ class SettingsViewModel @Inject constructor(
             ambientAnimationEnabled = ambientAnimationEnabled,
             homeSectionOrder = homeSectionOrder,
             homeSectionsHidden = homeSectionsHidden,
+            showLikedOnHome = showLikedOnHome,
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
@@ -1223,6 +1226,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { homeSectionsPreference.setHidden(section, hide) }
     }
 
+    /** Merged Liked Songs card on Home's "Your playlists" rail. */
+    fun onShowLikedOnHomeChanged(shown: Boolean) {
+        viewModelScope.launch { homeSectionsPreference.setShowLikedOnHome(shown) }
+    }
+
     /** Clear the kill-switch after PROTOCOL_BROKEN. Exposed to the Settings
      *  UI's "Retry YouTube sync" button on the red health badge. */
     fun onRetryYouTubeHistory() {
@@ -1589,7 +1597,7 @@ class SettingsViewModel @Inject constructor(
  *
  * ## Why this exists
  *
- * `SettingsUiState` is assembled from 38 flows. Kotlin's `combine` is only typed up
+ * `SettingsUiState` is assembled from one combine of every settings flow. Kotlin's `combine` is only typed up
  * to five, so beyond that the lambda receives `Array<Any?>` and the values were read
  * positionally: `values[27] as Boolean`, `values[28] as Boolean`, and so on.
  *
@@ -1609,7 +1617,7 @@ class SettingsViewModel @Inject constructor(
  * **What this does not fix:** reordering two same-typed flows is still silent. The
  * real remedy for that is structural — this is a hub-and-spoke Settings UI, so each
  * spoke should observe its own small typed state rather than every screen sharing one
- * 38-source object. That is a larger change and deliberately not attempted here.
+ * many-source object. That is a larger change and deliberately not attempted here.
  */
 private class Values(private val raw: Array<Any?>) {
     private var cursor = 0

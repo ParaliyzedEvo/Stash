@@ -71,6 +71,52 @@ fun StashScaffold(
     // Android 13+ runtime permission for notifications. One-shot per install.
     RequestNotificationPermissionOnce()
 
+    // Canonical bottom-nav tab switch (save/restore semantics + reselect-pop).
+    // Local fun rather than inline in StashBottomBar's onNavigate so screens
+    // that trigger a tab switch themselves (Home's Liked card → Library) route
+    // through the exact same logic via StashNavHost's onNavigateToTab.
+    fun navigateToTab(dest: TopLevelDestination) {
+        val destRoute = dest.route::class.qualifiedName
+        // The "current tab" is the top-most top-level route in
+        // the live back stack (Home, the start dest, is always at
+        // the bottom; the active tab sits above it, with detail
+        // screens above that).
+        val topLevelRoutes =
+            TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
+        val currentTabRoute = navController.currentBackStack.value
+            .lastOrNull { it.destination.route in topLevelRoutes }
+            ?.destination?.route
+
+        if (currentTabRoute == destRoute && currentRoute != destRoute) {
+            // Reselecting the tab we're already deep inside. The
+            // save/restore path below would popUpTo(start) SAVE
+            // this exact stack keyed by the tab, then restoreState
+            // bring it right back — a byte-identical no-op that
+            // reads as a dead tab button (only Back escaped). Pop
+            // back to the tab's own entry instead; this also drops
+            // any Now Playing pushed above it.
+            navController.popBackStack(dest.route, inclusive = false)
+        } else {
+            // Genuine tab switch. Now Playing is transient
+            // full-screen chrome — remove it (wherever it sits)
+            // before the switch so restoreState can never
+            // resurrect it into a tab's saved stack.
+            navController.popBackStack(NowPlayingRoute, inclusive = true)
+            navController.navigate(dest.route) {
+                // Save each tab's back stack + state when leaving
+                // it, and restore it when returning — so tabbing to
+                // Settings and back to Search lands on your results,
+                // not the landing screen (canonical bottom-nav).
+                popUpTo(navController.graph.findStartDestination().id) {
+                    inclusive = false
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     // Process notification deep-link extras handed in from MainActivity.
     // Only one target right now (the captcha verifier); easy to extend
     // when more deep-link surfaces show up.
@@ -164,47 +210,7 @@ fun StashScaffold(
 
                     StashBottomBar(
                         currentRoute = currentRoute,
-                        onNavigate = { dest ->
-                            val destRoute = dest.route::class.qualifiedName
-                            // The "current tab" is the top-most top-level route in
-                            // the live back stack (Home, the start dest, is always at
-                            // the bottom; the active tab sits above it, with detail
-                            // screens above that).
-                            val topLevelRoutes =
-                                TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
-                            val currentTabRoute = navController.currentBackStack.value
-                                .lastOrNull { it.destination.route in topLevelRoutes }
-                                ?.destination?.route
-
-                            if (currentTabRoute == destRoute && currentRoute != destRoute) {
-                                // Reselecting the tab we're already deep inside. The
-                                // save/restore path below would popUpTo(start) SAVE
-                                // this exact stack keyed by the tab, then restoreState
-                                // bring it right back — a byte-identical no-op that
-                                // reads as a dead tab button (only Back escaped). Pop
-                                // back to the tab's own entry instead; this also drops
-                                // any Now Playing pushed above it.
-                                navController.popBackStack(dest.route, inclusive = false)
-                            } else {
-                                // Genuine tab switch. Now Playing is transient
-                                // full-screen chrome — remove it (wherever it sits)
-                                // before the switch so restoreState can never
-                                // resurrect it into a tab's saved stack.
-                                navController.popBackStack(NowPlayingRoute, inclusive = true)
-                                navController.navigate(dest.route) {
-                                    // Save each tab's back stack + state when leaving
-                                    // it, and restore it when returning — so tabbing to
-                                    // Settings and back to Search lands on your results,
-                                    // not the landing screen (canonical bottom-nav).
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        inclusive = false
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
+                        onNavigate = ::navigateToTab,
                     )
                 }
             }
@@ -217,6 +223,7 @@ fun StashScaffold(
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding),
             onSelectionModeChanged = { selectionActive = it },
+            onNavigateToTab = ::navigateToTab,
         )
     }
 }

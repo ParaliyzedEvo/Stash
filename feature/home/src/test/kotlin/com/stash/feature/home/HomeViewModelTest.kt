@@ -96,6 +96,42 @@ class HomeViewModelTest {
         assertThat(state.isColdStart).isTrue()
     }
 
+    // ------------------------------------------------------------------
+    // "Your playlists" Liked card
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `liked card de-dupes the merged count across liked playlists`() = runTest {
+        // getTracksByPlaylist(any()) returns the same list for BOTH liked
+        // playlists: a naive sum would be 6, the de-duped union is 3.
+        val liked = listOf(
+            Track(id = 1L, title = "A", artist = "X"),
+            Track(id = 2L, title = "B", artist = "X"),
+            Track(id = 3L, title = "C", artist = "X"),
+        )
+        val vm = buildVm(
+            heroTracks = liked,
+            likedCardEnabled = true,
+            likedPlaylists = listOf(
+                Playlist(id = 91L, name = "Stash Liked", source = MusicSource.LOCAL, type = PlaylistType.STASH_LIKED),
+                Playlist(id = 92L, name = "Liked Songs", source = MusicSource.SPOTIFY, type = PlaylistType.LIKED_SONGS),
+            ),
+        )
+
+        val state = vm.uiState.first { it.likedCard != null }
+
+        assertThat(state.likedCard?.trackCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `liked card stays null while the setting is off`() = runTest {
+        val vm = buildVm(likedCardEnabled = false)
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.likedCard).isNull()
+    }
+
     @Test
     fun `no hero when there is no builtin playlist`() = runTest {
         val vm = buildVm(playlists = emptyList(), builtinIds = emptyList())
@@ -213,6 +249,10 @@ class HomeViewModelTest {
         playlists: List<Playlist> = emptyList(),
         builtinIds: List<Long> = emptyList(),
         heroTracks: List<Track> = emptyList(),
+        // Named to avoid shadowing HomeSectionsPreference.showLikedOnHome
+        // inside the `on { }` stubbing lambda (params outrank the receiver).
+        likedCardEnabled: Boolean = false,
+        likedPlaylists: List<Playlist> = emptyList(),
         streamingEnabled: Boolean = true,
         playerRepository: PlayerRepository = mock(),
         discoveryAlbums: List<AlbumSummary> = emptyList(),
@@ -225,6 +265,12 @@ class HomeViewModelTest {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
             on { getTracksByPlaylist(any()) } doReturn flowOf(heroTracks)
+            // Feeds likedCardFlow when showLikedOnHome is on — an unstubbed
+            // (null) flow would NPE that combine (same trap as below).
+            on { getPlaylistsByType(eq(PlaylistType.STASH_LIKED)) } doReturn
+                flowOf(likedPlaylists.filter { it.type == PlaylistType.STASH_LIKED })
+            on { getPlaylistsByType(eq(PlaylistType.LIKED_SONGS)) } doReturn
+                flowOf(likedPlaylists.filter { it.type == PlaylistType.LIKED_SONGS })
         }
         val recipeDao = mock<StashMixRecipeDao> {
             onBlocking { getBuiltinPlaylistIds() } doReturn builtinIds
@@ -278,6 +324,7 @@ class HomeViewModelTest {
             playerRepository = playerRepository,
             losslessPrefs = losslessPrefs,
             settingsDeepLinkController = mock(),
+            libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
             tipJarRepository = tipJar,
             recipeDao = recipeDao,
             discoveryQueueDao = discoveryQueueDao,
@@ -293,6 +340,9 @@ class HomeViewModelTest {
             },
             homeSectionsPreference = mock {
                 on { visibleSections } doReturn flowOf(com.stash.core.data.prefs.HomeSection.entries.toList())
+                // Feeds likedCardFlow — an unstubbed (null) flow NPEs the
+                // uiState pairing combine and every test hangs, not fails.
+                on { showLikedOnHome } doReturn flowOf(likedCardEnabled)
             },
             // Defaults: fresh health (starts healthy) + no ARCOD token, so
             // the rescue banner stays out of existing tests.

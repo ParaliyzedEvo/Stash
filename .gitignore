@@ -89,3 +89,4 @@ spike/**/__pycache__/
 # CLAP sonic-recommendation spike fixtures — 515MB of ONNX models + WAVs that
 # live under androidTest so the on-device spike can read them. Never commit.
 app/src/androidTest/assets/clapspike/
+.kotlin/

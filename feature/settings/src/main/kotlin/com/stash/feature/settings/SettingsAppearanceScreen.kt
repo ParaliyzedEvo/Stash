@@ -142,10 +142,21 @@ fun SettingsAppearanceScreen(
                 onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(section, hide = !shown) },
             )
         }
+
+        SettingsToggleRow(
+            title = "Show Liked Songs on Home",
+            subtitle = "Your Stash, Spotify and YouTube likes as one card in Your playlists",
+            checked = uiState.showLikedOnHome,
+            onCheckedChange = viewModel::onShowLikedOnHomeChanged,
+            // Hiding the whole section above overrides this switch — grey it
+            // out rather than leave a live-looking control that does nothing.
+            enabled = com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS !in uiState.homeSectionsHidden,
+        )
     }
 }
 
 private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
+    com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> "Your playlists"
     com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
     com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Qobuz Playlists"
     com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"

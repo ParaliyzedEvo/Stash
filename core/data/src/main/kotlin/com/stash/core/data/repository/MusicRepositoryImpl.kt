@@ -588,6 +588,10 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.setPinned(playlistId, pinned)
     }
 
+    override suspend fun setPlaylistPinnedToHome(playlistId: Long, pinnedAt: Long?) {
+        playlistDao.setPinnedToHome(playlistId, pinnedAt)
+    }
+
     // ── Custom playlist management ──────────────────────────────────────
 
     override suspend fun createPlaylist(name: String): Long {

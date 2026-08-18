@@ -32,6 +32,7 @@ import com.stash.feature.home.banner.MetadataBackfillBannerState
 import com.stash.feature.home.banner.metadataBackfillBannerStateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
@@ -49,6 +50,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
@@ -73,6 +76,7 @@ class HomeViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val losslessPrefs: LosslessSourcePreferences,
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
+    private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
     private val tipJarRepository: com.stash.core.data.tipjar.TipJarRepository,
     private val recipeDao: StashMixRecipeDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
@@ -194,6 +198,7 @@ class HomeViewModel @Inject constructor(
         val moodDecades: List<HomeMix>,
         val yourMixes: List<HomeMix>,
         val customMixPlaylistIds: Set<Long>,
+        val yourPlaylists: List<HomeMix>,
     )
 
     private val homePlaylistFlow: Flow<HomePlaylistData> = combine(
@@ -275,6 +280,9 @@ class HomeViewModel @Inject constructor(
             moodDecades = moodDecades.freshestFirst(recencyById),
             yourMixes = yourMixes,
             customMixPlaylistIds = customMixPlaylistIds,
+            // Reads the raw `playlists` param, not the !hideFromHome loop
+            // source above — pin-rail membership depends only on the stamp.
+            yourPlaylists = yourPlaylistsRail(playlists).map { it.toHomeMix() },
         )
     }
 
@@ -283,6 +291,42 @@ class HomeViewModel @Inject constructor(
             id = id, title = name, artUrl = artUrl, source = source,
             buildState = buildState, trackCount = trackCount,
         )
+
+    /**
+     * Merged Liked Songs card: pref-gated; when on, the count is the
+     * de-duped union across the STASH_LIKED + LIKED_SONGS playlists —
+     * exactly what Library's Liked tab shows (its distinctBy { id } merge).
+     * The type queries are subscribed only while the toggle is on, so the
+     * card costs nothing when disabled.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val likedCardFlow: Flow<LikedCardState?> =
+        homeSectionsPreference.showLikedOnHome.flatMapLatest { shown ->
+            if (!shown) {
+                flowOf(null)
+            } else {
+                combine(
+                    musicRepository.getPlaylistsByType(com.stash.core.model.PlaylistType.STASH_LIKED),
+                    musicRepository.getPlaylistsByType(com.stash.core.model.PlaylistType.LIKED_SONGS),
+                ) { stash, external -> stash + external }
+                    .flatMapLatest { likedPlaylists ->
+                        if (likedPlaylists.isEmpty()) {
+                            flowOf(LikedCardState(trackCount = 0))
+                        } else {
+                            combine(
+                                likedPlaylists.map { musicRepository.getTracksByPlaylist(it.id) },
+                            ) { arrays ->
+                                LikedCardState(
+                                    trackCount = arrays.flatMap { it }.distinctBy { it.id }.size,
+                                )
+                            }
+                        }
+                    }
+            }
+        }
+            // Same rationale as the Liked tab's pipeline (LibraryViewModel):
+            // the dedupe over every liked track is pure list work — off Main.
+            .flowOn(Dispatchers.Default)
 
     /**
      * Lossless connect nudge: only visible when the user has not
@@ -413,12 +457,13 @@ class HomeViewModel @Inject constructor(
     fun onSelectGenre(label: String) { genreFilter.value = label }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        homePlaylistFlow,
+        // Paired so uiState stays within the 5-flow typed combine overload.
+        combine(homePlaylistFlow, likedCardFlow) { home, liked -> home to liked },
         losslessBannersFlow,
         tipJarRepository.state,
         metadataBackfillBannerFlow,
         discoveryFlow,
-    ) { home, (losslessPrompt, showArcodRescue), tipJar, metadataBackfillBanner, discovery ->
+    ) { (home, likedCard), (losslessPrompt, showArcodRescue), tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
             hero = home.hero,
             isLoading = false,
@@ -437,6 +482,8 @@ class HomeViewModel @Inject constructor(
             moodDecades = home.moodDecades,
             yourMixes = home.yourMixes,
             customMixPlaylistIds = home.customMixPlaylistIds,
+            yourPlaylists = home.yourPlaylists,
+            likedCard = likedCard,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -643,6 +690,26 @@ class HomeViewModel @Inject constructor(
     /** Hide (or unhide) a mix's playlist from the Home rails. */
     fun setHideFromHome(playlistId: Long, hidden: Boolean) {
         viewModelScope.launch { playlistDao.setHideFromHome(playlistId, hidden) }
+    }
+
+    /**
+     * Pin/unpin a playlist on the "Your playlists" rail (Home-side unpin
+     * sheet). Goes through the repository — deliberately unlike
+     * [setHideFromHome]'s DAO-direct write above — because Library's sheet
+     * shares the same repository write path (it can't reach the DAO).
+     */
+    fun setPinnedToHome(playlistId: Long, pinned: Boolean) {
+        viewModelScope.launch {
+            musicRepository.setPlaylistPinnedToHome(
+                playlistId,
+                if (pinned) System.currentTimeMillis() else null,
+            )
+        }
+    }
+
+    /** Queue the Liked focus, then the caller performs the Library tab switch. */
+    fun requestLibraryLikedFocus() {
+        libraryDeepLinkController.request(com.stash.core.data.navigation.LibraryFocus.LIKED)
     }
 
     companion object {

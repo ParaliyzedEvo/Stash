@@ -259,6 +259,9 @@ interface MusicRepository {
 
     suspend fun setPlaylistPinned(playlistId: Long, pinned: Boolean)
 
+    /** Pin/unpin a playlist on Home's "Your playlists" rail. Null clears the pin. */
+    suspend fun setPlaylistPinnedToHome(playlistId: Long, pinnedAt: Long?)
+
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     /**
