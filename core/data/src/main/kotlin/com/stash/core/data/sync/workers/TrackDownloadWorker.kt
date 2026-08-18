@@ -844,7 +844,7 @@ class TrackDownloadWorker @AssistedInject constructor(
      * rather than leaving an orphaned worker draining a queue that's just
      * been cleared out from under it.
      */
-    private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long> = emptySet()) {
+    private suspend fun runLosslessUpgradeSweep(recentlyDownloadedTrackIds: Set<Long>) {
         if (streamingPreference.current()) {
             Log.i(TAG, "Streaming mode: skipping FLAC upgrade sweep")
             return
@@ -866,7 +866,15 @@ class TrackDownloadWorker @AssistedInject constructor(
         WorkManager.getInstance(applicationContext).enqueueUniqueWork(
             com.stash.core.data.sync.workers.FlacUpgradeWorker.UNIQUE_WORK_NAME,
             androidx.work.ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<com.stash.core.data.sync.workers.FlacUpgradeWorker>().build(),
+            OneTimeWorkRequestBuilder<com.stash.core.data.sync.workers.FlacUpgradeWorker>()
+                // Tag the AUTOMATIC batch: the worker's consent re-check must
+                // apply only to sweep-produced batches — the user's explicit
+                // "Upgrade to FLAC" selection (FlacUpgradeEnqueuer) is a
+                // manual override that runs regardless of the master toggle.
+                .setInputData(
+                    workDataOf(com.stash.core.data.sync.workers.FlacUpgradeWorker.KEY_AUTO_SWEEP to true),
+                )
+                .build(),
         )
 
         Log.i(TAG, "FLAC upgrade sweep: enqueued ${candidates.size} candidate(s) to FlacUpgradeWorker")
