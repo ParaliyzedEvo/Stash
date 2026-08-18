@@ -43,7 +43,10 @@ class LosslessUpgraderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
     private val trackDao: TrackDao,
     private val audioExtractor: AudioDurationExtractor,
+    private val losslessPrefs: LosslessSourcePreferences,
 ) : LosslessUpgrader {
+
+    override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabledNow()
 
     override suspend fun upgradeToLossless(track: Track): UpgradeResult = runCatching {
         // Capture old path BEFORE the download — the row's current file_path

@@ -18,5 +18,8 @@ import com.stash.core.model.UpgradeResult
  * their default settings.
  */
 interface LosslessUpgrader {
+    /** Whether automatic lossless downloads are enabled by the master preference. */
+    suspend fun isLosslessEnabled(): Boolean
+
     suspend fun upgradeToLossless(track: Track): UpgradeResult
 }
