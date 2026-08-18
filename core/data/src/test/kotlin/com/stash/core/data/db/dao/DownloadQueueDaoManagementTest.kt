@@ -5,9 +5,13 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
+import com.stash.core.model.MusicSource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -157,6 +161,88 @@ class DownloadQueueDaoManagementTest {
         assertEquals(DownloadStatus.PENDING, dao.getStatusById(3))
     }
 
+    // ── Cancellation durability ─────────────────────────────────────────
+    //
+    // Cancelling a download is only real if nothing puts it back. The
+    // reconciliation pass re-queues any undownloaded track that has no
+    // active queue row, so a SKIPPED row must read as "active intent" there
+    // — otherwise Cancel just restarts the download on the next sync.
+
+    @Test fun `cancelled row is not re-enqueued by reconciliation`() = runTest {
+        seedTrack(1, "Cancelled", "Artist", "Album", null)
+        seedPlaylistMembership(trackId = 1)
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
+
+        // Still PENDING: already queued, so not an "unqueued" track either.
+        assertEquals(emptyList<Long>(), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
+
+        assertEquals(1, dao.markCancelledIfActive(1, completedAt = 700))
+
+        assertEquals(emptyList<Long>(), dao.getUnqueuedTrackIds(listOf("SPOTIFY")))
+        assertEquals(0, dao.getOrphanedTrackCounts().size)
+    }
+
+    @Test fun `retry claim un-cancels a skipped row`() = runTest {
+        seedTrack(1, "Cancelled", "Artist", "Album", null)
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700)
+
+        assertEquals(1, dao.atomicallyClaimForRetry(1))
+        assertEquals(DownloadStatus.PENDING, dao.getStatusById(1))
+        // And the un-cancelled row is claimable by a worker again.
+        assertEquals(1, dao.claimForDownload(1))
+    }
+
+    @Test fun `history sweep purges cancelled rows alongside completed ones`() = runTest {
+        (1L..3L).forEach { seedTrack(it, "Track $it", "Artist", "Album", null) }
+        seedQueue(1, 1, DownloadStatus.COMPLETED, createdAt = 10, completedAt = 200)
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 20, completedAt = 300)
+        seedQueue(3, 3, DownloadStatus.FAILED, createdAt = 30, completedAt = 400)
+
+        dao.deleteCompleted()
+
+        // FAILED survives — it is still retryable and drives the Failed
+        // Downloads viewer. COMPLETED and SKIPPED are dead history.
+        assertNull(dao.getById(1))
+        assertNull(dao.getById(2))
+        assertEquals(DownloadStatus.FAILED, dao.getStatusById(3))
+    }
+
+    @Test fun `orphan sweep evicts a cancelled row once its track loses every playlist`() = runTest {
+        // sync_id is FK-constrained and the sweep only touches sync-created
+        // rows, so the run has to exist.
+        val syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
+        seedTrack(1, "Kept", "Artist", "Album", null)
+        seedTrack(2, "Orphan", "Artist", "Album", null)
+        seedPlaylistMembership(trackId = 1)
+        seedQueue(1, 1, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, syncId = syncId)
+        seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 100, completedAt = 700, syncId = syncId)
+
+        assertEquals(1, dao.deleteOrphanedQueueEntries())
+
+        // Track 1 still lives in a sync-enabled playlist, so its tombstone
+        // stays and keeps suppressing re-enqueue.
+        assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(1))
+        assertNull(dao.getById(2))
+    }
+
+    /** A sync-enabled, active, non-mix parent — the shape every "is this
+     *  track wanted?" predicate in the DAO checks for. */
+    private suspend fun seedPlaylistMembership(trackId: Long) {
+        val playlistDao = db.playlistDao()
+        playlistDao.insert(
+            PlaylistEntity(
+                id = trackId * 1000,
+                name = "Playlist $trackId",
+                source = MusicSource.SPOTIFY,
+                syncEnabled = true,
+                isActive = true,
+            )
+        )
+        playlistDao.insertCrossRef(
+            PlaylistTrackCrossRef(playlistId = trackId * 1000, trackId = trackId)
+        )
+    }
+
     private suspend fun seedTrack(
         id: Long,
         title: String,
@@ -185,6 +271,7 @@ class DownloadQueueDaoManagementTest {
         completedAt: Long? = null,
         error: String? = null,
         failureType: DownloadFailureType = DownloadFailureType.NONE,
+        syncId: Long? = null,
     ) {
         dao.insert(
             DownloadQueueEntity(
@@ -196,6 +283,7 @@ class DownloadQueueDaoManagementTest {
                 completedAt = completedAt?.let(Instant::ofEpochMilli),
                 errorMessage = error,
                 failureType = failureType,
+                syncId = syncId,
             )
         )
     }

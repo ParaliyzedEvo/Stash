@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -67,9 +68,16 @@ class DownloadManagementViewModel @Inject constructor(
     private val progressByTrackId = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
     private val message = MutableStateFlow<String?>(null)
 
+    // Mapped once per history emission, not once per progress tick. Progress
+    // updates arrive several times a second per active download and history
+    // never depends on them, so mapping 100 rows inside the combine below was
+    // pure waste on every tick.
+    private val historyItems = downloadQueueDao.observeDownloadHistory(100)
+        .map { rows -> rows.map { it.toItem(null) } }
+
     val uiState: StateFlow<DownloadManagementUiState> = combine(
         downloadQueueDao.observeActiveDownloadRows(),
-        downloadQueueDao.observeDownloadHistory(100),
+        historyItems,
         selectedTab,
         progressByTrackId,
         message,
@@ -78,7 +86,7 @@ class DownloadManagementViewModel @Inject constructor(
             isLoading = false,
             selectedTab = tab,
             active = active.map { it.toItem(progress[it.trackId]) },
-            history = history.map { it.toItem(null) },
+            history = history,
             message = currentMessage,
         )
     }.stateIn(
@@ -151,7 +159,16 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
         completedAt = completedAt,
         errorMessage = errorMessage,
         action = when {
-            status == QueueStatus.PENDING || status == QueueStatus.IN_PROGRESS -> DownloadManagementAction.CANCEL
+            // WAITING_FOR_LOSSLESS is an active queue row the user can be
+            // parked on indefinitely (no lossless source has it yet) — it
+            // needs a way out, and markCancelledIfActive already accepts it.
+            status == QueueStatus.PENDING ||
+                status == QueueStatus.IN_PROGRESS ||
+                status == QueueStatus.WAITING_FOR_LOSSLESS -> DownloadManagementAction.CANCEL
+            // Un-cancel. Without this a cancelled row is a dead end: nothing
+            // re-enqueues it (getUnqueuedTrackIds skips SKIPPED on purpose),
+            // so a mis-tap on Cancel was unrecoverable from this screen.
+            status == QueueStatus.SKIPPED -> DownloadManagementAction.RETRY
             status == QueueStatus.FAILED && failureType != DownloadFailureType.NO_MATCH -> DownloadManagementAction.RETRY
             else -> DownloadManagementAction.NONE
         },

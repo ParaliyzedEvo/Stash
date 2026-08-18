@@ -12,6 +12,7 @@ import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.data.sync.DownloadJobRegistry
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -22,6 +23,7 @@ import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -43,6 +45,20 @@ class DiscoveryDownloadWorkerTest {
     }
     private val syncNotificationManager: SyncNotificationManager = mockk(relaxed = true)
     private val downloadJobs = DownloadJobRegistry()
+
+    /**
+     * The worker now gates every row on an atomic claim and reads the row
+     * status back to settle cancellation races. A relaxed mock answers 0 /
+     * null to both, which reads as "another worker took this row" and
+     * "cancelled" — so without these stubs the worker correctly skips every
+     * item and no behavioural assertion below can fire. Default = the happy
+     * path: this worker owns the row and the row is not cancelled.
+     */
+    @Before fun stubClaimAndStatus() {
+        coEvery { downloadQueueDao.claimForDownload(any()) } returns 1
+        coEvery { downloadQueueDao.completeIfInProgress(any(), any()) } returns 1
+        coEvery { downloadQueueDao.getStatusById(any()) } returns DownloadStatus.COMPLETED
+    }
 
     private fun newWorker() = DiscoveryDownloadWorker(
         appContext, workerParams,
@@ -151,11 +167,7 @@ class DiscoveryDownloadWorkerTest {
             )
         }
         coVerify(exactly = 1) {
-            downloadQueueDao.updateStatus(
-                id = 100L,
-                status = DownloadStatus.COMPLETED,
-                completedAt = any(),
-            )
+            downloadQueueDao.completeIfInProgress(id = 100L, completedAt = any())
         }
     }
 
@@ -171,11 +183,11 @@ class DiscoveryDownloadWorkerTest {
 
         coVerify(exactly = 1) { downloadQueueDao.incrementRetryCount(100L) }
         coVerify(exactly = 1) {
-            downloadQueueDao.updateStatus(
+            downloadQueueDao.failIfInProgress(
                 id = 100L,
-                status = DownloadStatus.FAILED,
-                failureType = any(),
                 errorMessage = any(),
+                failureType = DownloadFailureType.NO_MATCH,
+                completedAt = any(),
                 rejectedVideoId = "abc123",
             )
         }
@@ -193,11 +205,12 @@ class DiscoveryDownloadWorkerTest {
 
         coVerify(exactly = 1) { downloadQueueDao.incrementRetryCount(100L) }
         coVerify(exactly = 1) {
-            downloadQueueDao.updateStatus(
+            downloadQueueDao.failIfInProgress(
                 id = 100L,
-                status = DownloadStatus.FAILED,
-                failureType = any(),
                 errorMessage = match { it.contains("yt-dlp timeout") },
+                failureType = DownloadFailureType.UNKNOWN,
+                completedAt = any(),
+                rejectedVideoId = any(),
             )
         }
     }
@@ -210,8 +223,8 @@ class DiscoveryDownloadWorkerTest {
 
         newWorker().doWork()
 
-        coVerify(exactly = 0) { downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.FAILED, any(), any(), any(), any()) }
-        coVerify(exactly = 0) { downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.COMPLETED, completedAt = any()) }
+        coVerify(exactly = 0) { downloadQueueDao.failIfInProgress(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.completeIfInProgress(any(), any()) }
         coVerify(exactly = 0) { downloadQueueDao.incrementRetryCount(any()) }
     }
 
@@ -235,12 +248,12 @@ class DiscoveryDownloadWorkerTest {
         newWorker().doWork()
 
         coVerify(exactly = 1) {
-            downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.COMPLETED, completedAt = any())
+            downloadQueueDao.completeIfInProgress(id = 100L, completedAt = any())
         }
         coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
     }
 
-    @Test fun `IN_PROGRESS stamp is written BEFORE invoking TrackDownloader`() = runTest {
+    @Test fun `row is claimed IN_PROGRESS BEFORE invoking TrackDownloader`() = runTest {
         val entry = entry(id = 100L, trackId = 1L)
         coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
         coEvery { trackDao.getById(1L) } returns stubTrack(1L)
@@ -248,12 +261,36 @@ class DiscoveryDownloadWorkerTest {
 
         newWorker().doWork()
 
-        // The order matters — IN_PROGRESS must land before the downloader runs.
-        // coVerifyOrder enforces sequence; plain coVerify only checks existence.
+        // The order matters — the IN_PROGRESS claim must land before the
+        // downloader runs. coVerifyOrder enforces sequence; plain coVerify
+        // only checks existence.
         coVerifyOrder {
-            downloadQueueDao.updateStatus(id = 100L, status = DownloadStatus.IN_PROGRESS)
+            downloadQueueDao.claimForDownload(100L)
             trackDownloader.downloadTrack(any(), any())
         }
+    }
+
+    @Test fun `a row claimed by another worker is skipped entirely`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { downloadQueueDao.claimForDownload(100L) } returns 0
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+    }
+
+    @Test fun `a cancelled row is not downloaded even after a successful claim`() = runTest {
+        val entry = entry(id = 100L, trackId = 1L)
+        coEvery { downloadQueueDao.pendingDiscoveryDownloads() } returns listOf(entry)
+        coEvery { trackDao.getById(1L) } returns stubTrack(1L)
+        coEvery { downloadQueueDao.getStatusById(100L) } returns DownloadStatus.SKIPPED
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { trackDownloader.downloadTrack(any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.completeIfInProgress(any(), any()) }
     }
 
     private fun entry(id: Long, trackId: Long) = DownloadQueueEntity(

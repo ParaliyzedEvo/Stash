@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -158,10 +159,10 @@ private fun QueueContent(
         }
         if (state.queued.isNotEmpty()) {
             item(key = "queued_label") { SectionLabel("Up next") }
-            items(state.queued, key = { "queued_${it.queueId}" }) { item ->
+            itemsIndexed(state.queued, key = { _, item -> "queued_${item.queueId}" }) { index, item ->
                 DownloadRowCard(
                     item = item,
-                    queuePosition = state.queued.indexOf(item) + 1,
+                    queuePosition = index + 1,
                     onCancel = onCancel,
                     onRetry = onRetry,
                 )

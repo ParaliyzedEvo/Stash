@@ -69,7 +69,11 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE status = :status ORDER BY created_at ASC")
     fun getByStatus(status: DownloadStatus): Flow<List<DownloadQueueEntity>>
 
-    /** Active queue, including deliberate lossless deferrals, oldest first. */
+    /** Active queue, including deliberate lossless deferrals, oldest first.
+     *  Bounded: a full-library sync queues thousands of rows and this feed
+     *  re-emits on every queue write — an unbounded join would rebuild the
+     *  whole list each tick. 500 is far past what the screen can scroll. */
+    @Transaction
     @Query("""
         SELECT dq.id AS queueId, dq.track_id AS trackId,
                t.title, t.artist, t.album, t.album_art_url AS albumArtUrl,
@@ -80,6 +84,7 @@ interface DownloadQueueDao {
           INNER JOIN tracks t ON t.id = dq.track_id
          WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
          ORDER BY dq.created_at ASC, dq.id ASC
+         LIMIT 500
     """)
     fun observeActiveDownloadRows(): Flow<List<DownloadManagementRow>>
 
@@ -375,11 +380,15 @@ interface DownloadQueueDao {
      * the classified failure_type / error_message in one UPDATE. Returns
      * the number of rows affected so the caller can detect lost races
      * (e.g. another worker already claimed the row).
+     *
+     * SKIPPED is accepted too: a user-cancelled row is otherwise a dead end
+     * (nothing re-enqueues it — see [getUnqueuedTrackIds]), so "Retry" on a
+     * cancelled download in the Downloads screen is the only way back.
      */
     @Query("""
         UPDATE download_queue
            SET status = 'PENDING', error_message = NULL, failure_type = 'NONE'
-         WHERE id = :queueId AND status = 'FAILED'
+         WHERE id = :queueId AND status IN ('FAILED', 'SKIPPED')
     """)
     suspend fun atomicallyClaimForRetry(queueId: Long): Int
 
@@ -553,8 +562,21 @@ interface DownloadQueueDao {
 
     // ── Cleanup ─────────────────────────────────────────────────────────
 
-    /** Delete all completed download entries to free up space. */
-    @Query("DELETE FROM download_queue WHERE status = 'COMPLETED'")
+    /**
+     * Delete terminal history rows to free up space: COMPLETED plus the
+     * user-cancelled SKIPPED rows the Downloads screen accumulates. Without
+     * SKIPPED here, cancelling is a one-way ratchet on table size — nothing
+     * else ever removes those rows.
+     *
+     * ponytail: a SKIPPED row doubles as the tombstone that keeps
+     * [getUnqueuedTrackIds] from re-enqueueing a cancelled track, so purging
+     * it makes the track eligible again on the next reconciliation. That is
+     * acceptable at history-sweep cadence (the user cancelled a while ago,
+     * the track is still in a sync-enabled playlist, so re-offering it is
+     * the sane default). If cancellation must be permanent, move the
+     * tombstone to a dedicated column instead of widening this sweep.
+     */
+    @Query("DELETE FROM download_queue WHERE status IN ('COMPLETED', 'SKIPPED')")
     suspend fun deleteCompleted()
 
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
@@ -639,7 +661,11 @@ interface DownloadQueueDao {
           )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
-              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+              -- SKIPPED = the user cancelled this download on purpose. It is
+              -- an active statement of intent, not a hole to backfill, so it
+              -- suppresses the count exactly like a PENDING row would.
+              -- Must stay in lockstep with getUnqueuedTrackIds.
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED', 'SKIPPED')
           )
         GROUP BY t.source
     """)
@@ -694,7 +720,12 @@ interface DownloadQueueDao {
           )
           AND t.id NOT IN (
               SELECT dq.track_id FROM download_queue dq
-              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED')
+              -- SKIPPED must be here or per-item cancellation is cosmetic:
+              -- the row goes SKIPPED, the very next reconciliation sees the
+              -- track as "undownloaded with no active queue entry" and hands
+              -- it a fresh PENDING row, so the download the user just
+              -- cancelled restarts. Mirrored in getOrphanedTrackCounts.
+              WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'FAILED', 'SKIPPED')
           )
     """)
     suspend fun getUnqueuedTrackIds(sources: List<String>): List<Long>
@@ -718,11 +749,18 @@ interface DownloadQueueDao {
      * — they're queue entries with the same orphan semantics, just paused
      * waiting for a lossless source instead of actively pending.
      *
+     * SKIPPED joins them for the same reason: a cancelled row is kept
+     * around only as the tombstone that stops [getUnqueuedTrackIds]
+     * re-enqueueing the track. Once the track has no sync-enabled parent
+     * there is nothing left to suppress, so the tombstone is just garbage.
+     * (Only orphans are swept — a cancelled row whose track is still in a
+     * sync-enabled playlist survives here and keeps doing its job.)
+     *
      * @return Number of rows deleted.
      */
     @Query("""
         DELETE FROM download_queue
-        WHERE status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+        WHERE status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS', 'SKIPPED')
           -- Sync partition only — see cancelDownloadsWithNoEnabledPlaylist. A
           -- manual (sync_id NULL) row is a download the user asked for; sweeping
           -- it is how search-tab downloads went missing on relaunch.

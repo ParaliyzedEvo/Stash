@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -318,6 +320,24 @@ class TrackDownloadWorker @AssistedInject constructor(
 
                             when (outcome) {
                                 is TrackDownloadOutcome.Success -> {
+                                    // Cancellation can land between "file written" and
+                                    // "row marked COMPLETED". Mirrors the single-track
+                                    // guard below: a cancelled row must not become a
+                                    // downloaded track, and the bytes that arrived after
+                                    // the user said stop don't get to stay on disk.
+                                    // NonCancellable because cancel() also cancels this
+                                    // job — without it the status read throws instead of
+                                    // answering, and the file leaks.
+                                    val cancelledMidFlight = withContext(NonCancellable) {
+                                        if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                                            false
+                                        } else {
+                                            runCatching { File(outcome.filePath).delete() }
+                                            true
+                                        }
+                                    }
+                                    if (cancelledMidFlight) return@launch
+
                                     val fileSize = try {
                                         File(outcome.filePath).length()
                                     } catch (_: Exception) { 0L }
@@ -479,7 +499,16 @@ class TrackDownloadWorker @AssistedInject constructor(
                             // it back to PENDING). Marking thousands of in-flight rows
                             // FAILED on cancel was the root cause of the "2325 failed
                             // rows after Stop" smoke-test crash.
-                            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                            //
+                            // NonCancellable around the read ONLY: this coroutine is
+                            // already cancelled, so a plain suspend DAO call throws
+                            // CancellationException instead of returning a status and
+                            // the per-item cancel could never be told apart from a
+                            // worker-wide stop. The worker body stays cancellable.
+                            val userCancelled = withContext(NonCancellable) {
+                                downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
+                            }
+                            if (userCancelled) {
                                 return@launch
                             }
                             throw ce
@@ -729,7 +758,12 @@ class TrackDownloadWorker @AssistedInject constructor(
             // long). Don't mark the row FAILED — the queue stays in whatever
             // state IN_PROGRESS-with-cancel left it; the next sync's
             // resetStaleInProgress() will flip it back to PENDING.
-            if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+            //
+            // NonCancellable around the read ONLY — see the chain-mode guard.
+            val userCancelled = withContext(NonCancellable) {
+                downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED
+            }
+            if (userCancelled) {
                 return Result.success()
             }
             throw ce
@@ -766,8 +800,17 @@ class TrackDownloadWorker @AssistedInject constructor(
 
         when (outcome) {
             is TrackDownloadOutcome.Success -> {
-                if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
-                    runCatching { File(outcome.filePath).delete() }
+                // NonCancellable: cancel() cancels this job too, so an unwrapped
+                // read would throw and leave the just-landed file behind.
+                val cancelledMidFlight = withContext(NonCancellable) {
+                    if (downloadQueueDao.getStatusById(entry.id) != DownloadStatus.SKIPPED) {
+                        false
+                    } else {
+                        runCatching { File(outcome.filePath).delete() }
+                        true
+                    }
+                }
+                if (cancelledMidFlight) {
                     return Result.success()
                 }
                 // Persist the downloaded state on the TRACK row, mirroring chain

@@ -58,6 +58,49 @@ class DownloadManagementViewModelTest {
         assertEquals(null, state.downloading.single().progress)
     }
 
+    @Test fun `every actionable status offers a way out`() = runTest {
+        every { dao.observeActiveDownloadRows() } returns flowOf(
+            listOf(
+                row(1, DownloadStatus.IN_PROGRESS),
+                row(2, DownloadStatus.PENDING),
+                // Parked with no lossless source in sight — cancellable, or
+                // the user is stuck watching it forever.
+                row(3, DownloadStatus.WAITING_FOR_LOSSLESS),
+            ),
+        )
+        every { dao.observeDownloadHistory(100) } returns flowOf(
+            listOf(
+                // Un-cancel: nothing else re-enqueues a SKIPPED row.
+                row(4, DownloadStatus.SKIPPED),
+                row(5, DownloadStatus.FAILED),
+                row(6, DownloadStatus.FAILED, failureType = DownloadFailureType.NO_MATCH),
+                row(7, DownloadStatus.COMPLETED),
+            ),
+        )
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation)
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertEquals(
+            listOf(
+                DownloadManagementAction.CANCEL,
+                DownloadManagementAction.CANCEL,
+                DownloadManagementAction.CANCEL,
+            ),
+            state.active.map { it.action },
+        )
+        assertEquals(
+            listOf(
+                DownloadManagementAction.RETRY,
+                DownloadManagementAction.RETRY,
+                // NO_MATCH has its own Failed Matches review flow.
+                DownloadManagementAction.NONE,
+                DownloadManagementAction.NONE,
+            ),
+            state.history.map { it.action },
+        )
+        assertEquals("Cancelled", state.history.first().phaseLabel)
+    }
+
     @Test fun `retry enqueues only after atomic claim`() = runTest {
         coEvery { dao.atomicallyClaimForRetry(9) } returns 1
         val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation)
@@ -72,7 +115,11 @@ class DownloadManagementViewModelTest {
         coVerify(exactly = 1) { cancellation.cancel(7) }
     }
 
-    private fun row(id: Long, status: DownloadStatus) = DownloadManagementRow(
+    private fun row(
+        id: Long,
+        status: DownloadStatus,
+        failureType: DownloadFailureType = DownloadFailureType.NONE,
+    ) = DownloadManagementRow(
         queueId = id,
         trackId = id + 100,
         title = "Title $id",
@@ -82,7 +129,7 @@ class DownloadManagementViewModelTest {
         status = status,
         retryCount = 0,
         errorMessage = null,
-        failureType = DownloadFailureType.NONE,
+        failureType = failureType,
         createdAt = id,
         completedAt = null,
     )

@@ -30,10 +30,12 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 
 /**
  * Drains `download_queue` rows produced by [StashDiscoveryWorker]
@@ -136,7 +138,15 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             try {
                 if (processQueueItem(queueItem)) completed++
             } catch (cancelled: CancellationException) {
-                if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                // NonCancellable around the status read ONLY. The child job is
+                // already cancelled, so a bare suspend DAO call throws instead
+                // of answering — and a per-item cancel would be indistinguishable
+                // from WorkManager stopping the whole worker. The rethrow below
+                // still propagates a genuine worker-wide cancellation.
+                val userCancelled = withContext(NonCancellable) {
+                    downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
+                }
+                if (!userCancelled) {
                     throw cancelled
                 }
                 Log.i(TAG, "Cancelled discovery queue item ${queueItem.id}")
@@ -192,8 +202,17 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             }
             when (outcome) {
                 is TrackDownloadOutcome.Success -> {
-                    if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
-                        runCatching { File(outcome.filePath).delete() }
+                    // NonCancellable: cancel() cancels this child, so an unwrapped
+                    // read would throw and strand the file that just landed.
+                    val cancelledMidFlight = withContext(NonCancellable) {
+                        if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                            false
+                        } else {
+                            runCatching { File(outcome.filePath).delete() }
+                            true
+                        }
+                    }
+                    if (cancelledMidFlight) {
                         false
                     } else {
                         handleSuccess(queueItem, trackEntity, outcome)
