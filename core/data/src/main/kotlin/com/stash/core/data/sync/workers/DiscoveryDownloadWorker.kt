@@ -19,6 +19,7 @@ import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
@@ -28,6 +29,13 @@ import com.stash.core.model.Track
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 
 /**
  * Drains `download_queue` rows produced by [StashDiscoveryWorker]
@@ -56,6 +64,7 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     private val audioDurationExtractor: AudioDurationExtractor,
     private val blocklistGuard: BlocklistGuard,
     private val syncNotificationManager: SyncNotificationManager,
+    private val downloadJobs: DownloadJobRegistry,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -126,65 +135,21 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 progress = (index.toFloat() / pending.size),
             )
 
-            // v0.9.20: stamp IN_PROGRESS BEFORE invoking the downloader.
-            // REPLACE policy on UNIQUE_WORK_NAME prevents concurrent instances
-            // of THIS worker; the sync-side partition predicate prevents
-            // TrackDownloadWorker from touching the same row. Defense-in-depth:
-            // a stale IN_PROGRESS row left over from a crashed run gets reset
-            // to PENDING on the next sync (the existing `resetStaleInProgress`
-            // sweep in TrackDownloadWorker's startup) — that path is unchanged.
-            downloadQueueDao.updateStatus(
-                id = queueItem.id,
-                status = DownloadStatus.IN_PROGRESS,
-            )
-
-            val trackEntity = trackDao.getById(queueItem.trackId) ?: continue
-
-            if (blocklistGuard.isBlocked(
-                    artist = trackEntity.artist,
-                    title = trackEntity.title,
-                    spotifyUri = null,
-                    youtubeId = null,
-                )) {
-                Log.d(TAG, "Skipping blocked track ${trackEntity.id}")
-                downloadQueueDao.deleteByTrackId(trackEntity.id)
-                continue
-            }
-
-            if (trackEntity.isDownloaded && trackEntity.filePath != null) {
-                downloadQueueDao.updateStatus(
-                    id = queueItem.id,
-                    status = DownloadStatus.COMPLETED,
-                    completedAt = System.currentTimeMillis(),
-                )
-                // Already-on-disk → newly-COMPLETED queue row = new linkable
-                // playable membership. Counts as progress so the refresh chains.
-                completed++
-                continue
-            }
-
-            val track = trackEntity.toDomain()
-            val outcome = runCatching {
-                trackDownloader.downloadTrack(track = track, preResolvedUrl = queueItem.youtubeUrl)
-            }.getOrElse {
-                Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", it)
-                TrackDownloadOutcome.Failed(error = it.message.orEmpty())
-            }
-
-            when (outcome) {
-                is TrackDownloadOutcome.Success -> {
-                    handleSuccess(queueItem, trackEntity, outcome)
-                    // New audio on disk + COMPLETED row = real progress.
-                    completed++
+            try {
+                if (processQueueItem(queueItem)) completed++
+            } catch (cancelled: CancellationException) {
+                // NonCancellable around the status read ONLY. The child job is
+                // already cancelled, so a bare suspend DAO call throws instead
+                // of answering — and a per-item cancel would be indistinguishable
+                // from WorkManager stopping the whole worker. The rethrow below
+                // still propagates a genuine worker-wide cancellation.
+                val userCancelled = withContext(NonCancellable) {
+                    downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
                 }
-                is TrackDownloadOutcome.Unmatched -> handleUnmatched(queueItem, track, outcome)
-                is TrackDownloadOutcome.Failed -> handleFailed(queueItem, track, outcome)
-                is TrackDownloadOutcome.Deferred -> {
-                    // Lossless deferred — TrackDownloaderImpl already moved the row
-                    // to WAITING_FOR_LOSSLESS. LosslessRetryWorker owns the
-                    // re-attempt. No-op here.
-                    Log.i(TAG, "Deferred (waiting for lossless): ${track.artist} - ${track.title}")
+                if (!userCancelled) {
+                    throw cancelled
                 }
+                Log.i(TAG, "Cancelled discovery queue item ${queueItem.id}")
             }
         }
 
@@ -198,6 +163,74 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             Log.d(TAG, "drained ${pending.size} row(s) but completed 0 — not chaining refresh")
         }
         return Result.success()
+    }
+
+    /** Runs one discovery row in its own cancellable child, never the worker Job. */
+    private suspend fun processQueueItem(queueItem: DownloadQueueEntity): Boolean = supervisorScope {
+        val child = async {
+            if (downloadQueueDao.claimForDownload(queueItem.id) == 0) return@async false
+            val itemJob = currentCoroutineContext().job
+            downloadJobs.register(queueItem.id, itemJob)
+            itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
+            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) return@async false
+
+            val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async false
+            if (blocklistGuard.isBlocked(
+                    artist = trackEntity.artist,
+                    title = trackEntity.title,
+                    spotifyUri = null,
+                    youtubeId = null,
+                )) {
+                downloadQueueDao.deleteByTrackId(trackEntity.id)
+                return@async false
+            }
+            if (trackEntity.isDownloaded && trackEntity.filePath != null) {
+                return@async downloadQueueDao.completeIfInProgress(
+                    id = queueItem.id,
+                    completedAt = System.currentTimeMillis(),
+                ) == 1
+            }
+
+            val track = trackEntity.toDomain()
+            val outcome = try {
+                trackDownloader.downloadTrack(track, queueItem.youtubeUrl)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", error)
+                TrackDownloadOutcome.Failed(error.message.orEmpty())
+            }
+            when (outcome) {
+                is TrackDownloadOutcome.Success -> {
+                    // NonCancellable: cancel() cancels this child, so an unwrapped
+                    // read would throw and strand the file that just landed.
+                    val cancelledMidFlight = withContext(NonCancellable) {
+                        if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                            false
+                        } else {
+                            runCatching { File(outcome.filePath).delete() }
+                            true
+                        }
+                    }
+                    if (cancelledMidFlight) {
+                        false
+                    } else {
+                        handleSuccess(queueItem, trackEntity, outcome)
+                        downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.COMPLETED
+                    }
+                }
+                is TrackDownloadOutcome.Unmatched -> {
+                    handleUnmatched(queueItem, track, outcome)
+                    false
+                }
+                is TrackDownloadOutcome.Failed -> {
+                    handleFailed(queueItem, track, outcome)
+                    false
+                }
+                is TrackDownloadOutcome.Deferred -> false
+            }
+        }
+        child.await()
     }
 
     private suspend fun handleSuccess(
@@ -236,9 +269,8 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 .onFailure { Log.w(TAG, "fillMissingDuration failed for ${trackEntity.id}", it) }
         }
 
-        downloadQueueDao.updateStatus(
+        downloadQueueDao.completeIfInProgress(
             id = queueItem.id,
-            status = DownloadStatus.COMPLETED,
             completedAt = System.currentTimeMillis(),
         )
     }
@@ -251,12 +283,12 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         val err = "No YouTube match for: ${track.artist} - ${track.title}"
         Log.w(TAG, err)
         downloadQueueDao.incrementRetryCount(queueItem.id)
-        downloadQueueDao.updateStatus(
+        downloadQueueDao.failIfInProgress(
             id = queueItem.id,
-            status = DownloadStatus.FAILED,
             failureType = DownloadFailureType.NO_MATCH,
             errorMessage = err,
             rejectedVideoId = outcome.rejectedVideoId,
+            completedAt = System.currentTimeMillis(),
         )
     }
 
@@ -267,11 +299,11 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     ) {
         Log.e(TAG, "Download failed for ${track.artist} - ${track.title}: ${outcome.error}")
         downloadQueueDao.incrementRetryCount(queueItem.id)
-        downloadQueueDao.updateStatus(
+        downloadQueueDao.failIfInProgress(
             id = queueItem.id,
-            status = DownloadStatus.FAILED,
             failureType = DownloadFailureType.UNKNOWN,
             errorMessage = outcome.error.take(500),
+            completedAt = System.currentTimeMillis(),
         )
     }
 
