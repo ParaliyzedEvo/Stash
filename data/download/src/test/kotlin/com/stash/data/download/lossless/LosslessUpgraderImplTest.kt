@@ -21,7 +21,22 @@ class LosslessUpgraderImplTest {
     private val downloadManager: DownloadManager = mockk()
     private val trackDao: TrackDao = mockk(relaxUnitFun = true)
     private val audioExtractor: AudioDurationExtractor = mockk()
-    private val subject = LosslessUpgraderImpl(context, downloadManager, trackDao, audioExtractor)
+    private val losslessPrefs: LosslessSourcePreferences = mockk()
+    private val subject = LosslessUpgraderImpl(
+        context,
+        downloadManager,
+        trackDao,
+        audioExtractor,
+        losslessPrefs,
+    )
+
+    @Test fun `isLosslessEnabled delegates to the master preference`() = runTest {
+        coEvery { losslessPrefs.enabledNow() } returns false
+
+        assertEquals(false, subject.isLosslessEnabled())
+
+        coVerify(exactly = 1) { losslessPrefs.enabledNow() }
+    }
 
     @Test fun `Success maps to Upgraded`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns
@@ -60,10 +75,14 @@ class LosslessUpgraderImplTest {
     }
 
     @Test fun `passes forced = true to bypass global lossless toggle`() = runTest {
-        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns null
-        subject.upgradeToLossless(stubTrack())
-        // mockk's `forced = true` matcher in the coEvery already enforces this;
-        // a separate coVerify is redundant but documents the intent.
+        val track = stubTrack()
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { downloadManager.tryLosslessDownload(track, forced = true) } returns null
+
+        subject.upgradeToLossless(track)
+
+        coVerify(exactly = 1) { downloadManager.tryLosslessDownload(track, forced = true) }
+        coVerify(exactly = 0) { losslessPrefs.enabledNow() }
     }
 
     /**

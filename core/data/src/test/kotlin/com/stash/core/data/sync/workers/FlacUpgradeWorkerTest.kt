@@ -17,6 +17,7 @@ import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
 import io.mockk.mockk
 import io.mockk.verify
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -59,11 +60,19 @@ class FlacUpgradeWorkerTest {
     }
 
     /** Upgrader fake that serves canned results in order; throws when dry. */
-    private fun upgraderReturning(vararg results: UpgradeResult): LosslessUpgrader {
+    private fun upgraderReturning(
+        vararg results: UpgradeResult,
+        enabled: Boolean = true,
+        upgradeCalls: AtomicInteger? = null,
+    ): LosslessUpgrader {
         val queue = ArrayDeque(results.toList())
         return object : LosslessUpgrader {
-            override suspend fun upgradeToLossless(track: Track): UpgradeResult =
-                queue.removeFirst()
+            override suspend fun upgradeToLossless(track: Track): UpgradeResult {
+                upgradeCalls?.incrementAndGet()
+                return queue.removeFirst()
+            }
+
+            override suspend fun isLosslessEnabled(): Boolean = enabled
         }
     }
 
@@ -120,10 +129,33 @@ class FlacUpgradeWorkerTest {
         val untouchable = object : LosslessUpgrader {
             override suspend fun upgradeToLossless(track: Track): UpgradeResult =
                 error("upgrader must not be called for an empty queue")
+
+            override suspend fun isLosslessEnabled(): Boolean = true
         }
 
         val result = buildWorker(untouchable).doWork()
 
         assertTrue(result is ListenableWorker.Result.Success)
+    }
+
+    @Test fun `disabled lossless setting clears pending batch without upgrading`() = runBlocking {
+        val ids = seedTracks(2)
+        val dao = db.flacUpgradeQueueDao()
+        dao.startBatch(ids)
+        val upgradeCalls = AtomicInteger(0)
+
+        val result = buildWorker(
+            upgraderReturning(
+                enabled = false,
+                upgradeCalls = upgradeCalls,
+            ),
+        ).doWork()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(0, upgradeCalls.get())
+        assertEquals(0, dao.countAll())
+        verify(exactly = 0) {
+            syncNotificationManager.showFlacUpgradeSummary(any(), any(), any())
+        }
     }
 }
