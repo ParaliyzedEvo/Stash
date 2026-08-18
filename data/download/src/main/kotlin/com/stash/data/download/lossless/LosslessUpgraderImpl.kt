@@ -10,10 +10,8 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
 import com.stash.data.download.DownloadManager
-import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.TrackDownloadResult
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.first
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,7 +46,7 @@ class LosslessUpgraderImpl @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
 ) : LosslessUpgrader {
 
-    override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabled.first()
+    override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabledNow()
 
     override suspend fun upgradeToLossless(track: Track): UpgradeResult = runCatching {
         // Capture old path BEFORE the download — the row's current file_path

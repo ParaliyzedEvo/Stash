@@ -316,7 +316,7 @@ class FileOrganizer @Inject constructor(
         val size = tempFile.length()
         val externalTree = storagePreference.externalTreeUri.first()
         return if (externalTree == null) {
-            val finalFile = resolveInternalTargetFile(artist, album, title, format)
+            val finalFile = getTrackFile(artist, album, title, format)
             tempFile.copyTo(finalFile, overwrite = true)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
@@ -325,48 +325,6 @@ class FileOrganizer @Inject constructor(
             tempFile.delete()
             CommittedTrack(safUriString, size)
         }
-    }
-
-    /**
-     * Picks the internal-storage destination for a commit. Before defaulting
-     * to `getTrackFile` (which derives the album folder from the track's
-     * CURRENT `album` field), scans every existing album subfolder under
-     * this artist's directory for a file already matching this title's
-     * slug. If found, reuses that location.
-     *
-     * Without this, a redownload of a track whose `album` field changed
-     * since its original download (e.g. blank -> backfilled) computes a
-     * different folder than the one the original file lives in — e.g.
-     * "singles/" -> "that-way/" — silently orphaning the original file
-     * (which is never deleted, just abandoned) while a fresh copy downloads
-     * into the new location. This is a real, observed failure mode: a
-     * downstream reset of a track's `is_downloaded`/`file_path` (whatever
-     * the cause) means the in-memory Track passed into the download
-     * pipeline no longer carries its old path by the time commit runs, so
-     * that path can't be threaded through as a parameter — this has to be
-     * rediscovered from disk at commit time instead.
-     */
-    private fun resolveInternalTargetFile(
-        artist: String,
-        album: String?,
-        title: String,
-        format: String,
-    ): File {
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val artistDir = File(musicDir, artistSlug)
-        val titleSlug = FileOrganizerSlugs.slugify(title)
-
-        if (artistDir.isDirectory) {
-            val existing = artistDir.listFiles { f -> f.isDirectory }
-                ?.asSequence()
-                ?.flatMap { albumDir -> albumDir.listFiles()?.asSequence() ?: emptySequence() }
-                ?.firstOrNull { it.isFile && it.nameWithoutExtension == titleSlug }
-            if (existing != null) {
-                return existing
-            }
-        }
-
-        return getTrackFile(artist, album, title, format)
     }
 
     /**

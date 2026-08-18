@@ -47,6 +47,15 @@ class FlacUpgradeWorker @AssistedInject constructor(
         createForegroundInfo(text = "Preparing…", progress = -1f)
 
     override suspend fun doWork(): Result {
+        // The preference can change after TrackDownloadWorker builds the
+        // persisted batch but before WorkManager starts this worker. Enforce
+        // consent again at execution time and discard the unstarted worklist.
+        if (!losslessUpgrader.isLosslessEnabled()) {
+            queueDao.clearPending()
+            Log.i(TAG, "Lossless disabled in Settings: discarded pending FLAC upgrades")
+            return Result.success()
+        }
+
         val pending = queueDao.pendingTrackIds()
         if (pending.isEmpty()) return Result.success()
         val total = queueDao.countAll()
