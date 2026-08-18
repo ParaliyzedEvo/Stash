@@ -147,8 +147,14 @@ fun LibraryScreen(
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 
     // Home's Liked card queued a focus before the tab switch: land on Liked.
+    // The tab is ALSO handed to the content pager — on a cold restore the
+    // pager re-emits its SAVED page through the settled-page push-back and
+    // would clobber this selectTab (device-reproduced); the pager must be
+    // scrolled explicitly, not just the ViewModel state.
+    var deepLinkFocusTab by remember { mutableStateOf<LibraryTab?>(null) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (viewModel.consumeDeepLinkFocus() == com.stash.core.data.navigation.LibraryFocus.LIKED) {
+            deepLinkFocusTab = LibraryTab.LIKED
             viewModel.selectTab(LibraryTab.LIKED)
         }
     }
@@ -225,6 +231,7 @@ fun LibraryScreen(
             likedSources = likedSources,
             onSelectLikedSource = viewModel::setLikedFilter,
             onPlayLikedTrack = viewModel::playLiked,
+            deepLinkFocusTab = deepLinkFocusTab,
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -471,6 +478,7 @@ private fun LibraryContent(
     likedSources: Set<LikedFilter>,
     onSelectLikedSource: (LikedFilter) -> Unit,
     onPlayLikedTrack: (Track) -> Unit,
+    deepLinkFocusTab: LibraryTab? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -620,6 +628,15 @@ private fun LibraryContent(
                 snapshotFlow { pagerState.settledPage }.collect { page ->
                     onTabSelected(chipTabs[page].second)
                 }
+            }
+            // Deep link (Home's Liked card) must beat the restored pager
+            // page: on a cold restore the push-back above re-emits the SAVED
+            // page and overwrites the deep-link's selectTab. Scrolling the
+            // pager directly is deterministic — the settled emission then
+            // pushes the same tab back, self-consistently.
+            LaunchedEffect(deepLinkFocusTab) {
+                val idx = chipTabs.indexOfFirst { it.second == deepLinkFocusTab }
+                if (idx >= 0) pagerState.scrollToPage(idx)
             }
             HorizontalPager(
                 state = pagerState,
