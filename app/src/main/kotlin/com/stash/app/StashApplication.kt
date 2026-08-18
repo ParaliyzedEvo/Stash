@@ -407,7 +407,7 @@ class StashApplication : Application(), Configuration.Provider {
         // waiting up to 48 hours when Android Doze defers the fire.
         UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
-        applicationScope.launch { maybeEnableYouTubePlaylistSync() }
+        applicationScope.launch { enforceDailyMixSyncDisabled() }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
@@ -776,25 +776,24 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * Retroactively enables `sync_enabled = 1` on every YouTube playlist in
-     * the local DB exactly once. Fixes the parity gap where YouTube
-     * playlists discovered before the Sync-preferences UI was extended to
-     * YouTube got stuck at `sync_enabled = 0` and were silently skipped by
-     * DiffWorker. Gated by [YOUTUBE_SYNC_ENABLE_VERSION] so it runs at most
-     * once per install, no matter how many times the app restarts.
+     * Clears stale download consent from algorithmic mixes on every cold start.
+     *
+     * Older releases auto-enabled YouTube playlists and newly discovered
+     * online mixes. Mix visibility now has its own `hide_from_home` setting,
+     * while every playlist starts sync-disabled, so retaining those legacy
+     * flags makes mixes appear selected without the user choosing them.
+     * Custom and liked playlists are deliberately untouched because their
+     * enabled state may reflect an explicit user choice. This is intentionally
+     * idempotent rather than preference-gated: restoring an older database can
+     * reintroduce stale mix flags while SharedPreferences survives the restore.
      */
-    private suspend fun maybeEnableYouTubePlaylistSync() {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        val stored = prefs.getInt("youtube_sync_enable_version", 0)
-        if (stored < YOUTUBE_SYNC_ENABLE_VERSION) {
-            val updated = playlistDao.enableAllYouTubePlaylistSync()
+    private suspend fun enforceDailyMixSyncDisabled() {
+        val updated = playlistDao.disableLegacyDailyMixSync()
+        if (updated > 0) {
             Log.i(
                 "StashMigration",
-                "maybeEnableYouTubePlaylistSync: flipped $updated rows to sync_enabled=1",
+                "enforceDailyMixSyncDisabled: cleared sync_enabled on $updated mix row(s)",
             )
-            prefs.edit()
-                .putInt("youtube_sync_enable_version", YOUTUBE_SYNC_ENABLE_VERSION)
-                .apply()
         }
     }
 
@@ -883,15 +882,6 @@ class StashApplication : Application(), Configuration.Provider {
 
         /** Bump to re-run [maybePurgeAntraArtifacts] (one-shot antra cleanup). */
         private const val ANTRA_PURGE_VERSION = 1
-
-        /**
-         * Bump when [maybeEnableYouTubePlaylistSync] needs to run again.
-         * Current bump (v1) is the initial rollout that flips every
-         * pre-existing YouTube playlist to `sync_enabled = 1` so the Option
-         * A auto-download default takes effect for users whose playlists
-         * already live in the DB.
-         */
-        private const val YOUTUBE_SYNC_ENABLE_VERSION = 1
 
         /**
          * Bump when [maybeHideEmptyYouTubePlaylists] needs to run again.
