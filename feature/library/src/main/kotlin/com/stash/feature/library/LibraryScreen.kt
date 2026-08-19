@@ -219,6 +219,9 @@ fun LibraryScreen(
             onDeleteArtist = viewModel::deleteArtist,
             onPlayAlbum = viewModel::playAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
+            onOpenAlbum = { album ->
+                onNavigateToAlbum(album.name, album.name, album.artUrl, album.artist)
+            },
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
@@ -468,6 +471,7 @@ private fun LibraryContent(
     onDeleteArtist: (String) -> Unit,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    onOpenAlbum: (AlbumInfo) -> Unit,
     onStartImport: (List<Uri>) -> Unit,
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
@@ -709,6 +713,7 @@ private fun LibraryContent(
                         anyServiceConnected = anyServiceConnected,
                         onPlayAlbum = onPlayAlbum,
                         onAddAlbumToQueue = onAddAlbumToQueue,
+                        onOpenAlbum = onOpenAlbum,
                         header = {},
                     )
                 }
@@ -1845,6 +1850,7 @@ private fun AlbumsGrid(
     anyServiceConnected: Boolean,
     onPlayAlbum: (String, String) -> Unit,
     onAddAlbumToQueue: (String, String) -> Unit,
+    onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
@@ -1880,7 +1886,7 @@ private fun AlbumsGrid(
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .combinedClickable(
-                            onClick = { onPlayAlbum(album.name, album.artist) },
+                            onClick = { onOpenAlbum(album) },
                             onLongClick = { selectedAlbum = album },
                         ),
                 ) {
@@ -1895,7 +1901,25 @@ private fun AlbumsGrid(
                             .fillMaxWidth()
                             .height(120.dp)
                             .clip(RoundedCornerShape(8.dp)),
-                    )
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .clickable { onPlayAlbum(album.name, album.artist) },
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                            shape = CircleShape,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play ${album.name}",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(4.dp),
+                            )
+                        }
+                    }
                     Text(
                         text = album.name,
                         style = MaterialTheme.typography.bodyMedium,
@@ -2025,7 +2049,11 @@ private fun AlbumsGrid(
  * album icon renders on the elevated surface instead of an empty grey box.
  */
 @Composable
-private fun AlbumArtwork(model: Any?, modifier: Modifier = Modifier) {
+private fun AlbumArtwork(
+    model: Any?,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
+) {
     Box(
         modifier = modifier.background(StashTheme.extendedColors.elevatedSurface),
         contentAlignment = Alignment.Center,
@@ -2056,6 +2084,7 @@ private fun AlbumArtwork(model: Any?, modifier: Modifier = Modifier) {
                 modifier = Modifier.size(40.dp),
             )
         }
+        content()
     }
 }
 
