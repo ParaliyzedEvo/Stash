@@ -11,6 +11,7 @@ import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.SyncHistoryDao
+import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
@@ -179,6 +180,105 @@ class DiffWorkerTest {
         val crossRef = db.playlistDao().getCrossRef(playlistId, trackId)
         assertEquals(originalAddedAt, crossRef?.addedAt)
     }
+
+    @Test
+    fun `ACCUMULATE does not requeue an already downloaded track`() = runBlocking {
+        val trackId = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a", "/music/a.flac"))
+        val playlistId = seedAccumulatePlaylist()
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(playlistId, trackId, 0, Instant.parse("2026-07-01T00:00:00Z"))
+        )
+        stubGrowingSnapshot(remoteTrack("Track A", "spotify:track:a", 0))
+
+        val result = buildWorker().doWork()
+
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(trackId, db.playlistDao().getCrossRefsForPlaylist(playlistId).single().trackId)
+        assertEquals("/music/a.flac", db.trackDao().getById(trackId)?.filePath)
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
+    }
+
+    @Test
+    fun `consecutive ACCUMULATE snapshots queue only newly added undownloaded tracks`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val trackA = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a", "/music/a.flac"))
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(playlistId, trackA, 0, Instant.parse("2026-07-01T00:00:00Z"))
+        )
+        val queuedTrackIds = mutableListOf<Long>()
+        coEvery { downloadQueueDao.insertAll(any()) } answers {
+            queuedTrackIds += firstArg<List<DownloadQueueEntity>>().map { it.trackId }
+            emptyList()
+        }
+
+        stubGrowingSnapshot(
+            remoteTrack("Track A", "spotify:track:a", 0),
+            remoteTrack("Track B", "spotify:track:b", 1),
+        )
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        val trackB = db.trackDao().getAllForIntegrityScan().single { it.spotifyUri == "spotify:track:b" }
+        db.trackDao().markAsDownloaded(trackB.id, "/music/b.flac", 1_000L)
+
+        stubGrowingSnapshot(
+            remoteTrack("Track B", "spotify:track:b", 0),
+            remoteTrack("Track C", "spotify:track:c", 1),
+        )
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        val tracksByUri = db.trackDao().getAllForIntegrityScan().associateBy { it.spotifyUri }
+        val trackC = tracksByUri.getValue("spotify:track:c").id
+        assertEquals(setOf("spotify:track:a", "spotify:track:b", "spotify:track:c"), tracksByUri.keys)
+        assertEquals(
+            setOf(trackA, trackB.id, trackC),
+            db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet(),
+        )
+        assertEquals(listOf(trackB.id, trackC), queuedTrackIds)
+    }
+
+    private suspend fun seedAccumulatePlaylist(): Long {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        return db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Growing Playlist",
+                source = MusicSource.SPOTIFY,
+                sourceId = "spotify:playlist:growing",
+                type = PlaylistType.CUSTOM,
+                syncEnabled = true,
+            )
+        )
+    }
+
+    private fun stubGrowingSnapshot(vararg tracks: RemoteTrackSnapshotEntity) {
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 21L,
+            syncId = 1L,
+            source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:playlist:growing",
+            playlistName = "Growing Playlist",
+            playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(21L) } returns tracks.toList()
+    }
+
+    private fun downloadedTrack(title: String, spotifyUri: String, path: String) = TrackEntity(
+        title = title,
+        artist = "Artist",
+        canonicalTitle = title.lowercase(),
+        canonicalArtist = "artist",
+        spotifyUri = spotifyUri,
+        isDownloaded = true,
+        filePath = path,
+    )
+
+    private fun remoteTrack(title: String, spotifyUri: String, position: Int) = RemoteTrackSnapshotEntity(
+        syncId = 1L,
+        snapshotPlaylistId = 21L,
+        title = title,
+        artist = "Artist",
+        spotifyUri = spotifyUri,
+        position = position,
+    )
 
     // ── Batch identity match priority: spotifyUri > youtubeId > canonical ─
 
