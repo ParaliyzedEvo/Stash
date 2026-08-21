@@ -127,15 +127,42 @@ class PreviewUrlExtractor @Inject constructor(
         private const val FAST_CLIENT_FORMAT_SELECTOR = "251/250/140/bestaudio/best"
 
         /**
-         * Client pinned for the fast first attempt. Must be cookie-free (see
-         * [COOKIE_INCOMPATIBLE_CLIENTS]).
+         * Ordered client chain for the pinned fast attempts. The first client
+         * that yields a URL surviving [AudioUrlTailProbe] wins; a gated or
+         * empty answer falls through to the next.
          *
-         * Measured alternatives, same session: `ios` returns no usable URLs at all
-         * (YouTube's SABR-only experiment — yt-dlp #12482), and our own InnerTube
-         * request returns URLs that are PO-token-gated and 403 past the first
-         * megabyte, which [AudioUrlTailProbe] catches and rejects.
+         * ⚠️ 2026-08-21: `android_vr` — the single pinned client since June —
+         * STOPPED being PO-token-free. yt-dlp now warns
+         *   "android_vr client https formats require a GVS PO Token which was
+         *    not provided. They will be skipped as they may yield HTTP Error 403"
+         * so it drops the audio-only itags and serves combined itag 18, whose URL
+         * 403s on open. With InnerTube's own URLs gated too, NOTHING played: every
+         * YouTube-sourced track 403'd at ExoPlayer and skipped (code=2004), for a
+         * week, for every user. That is why this is a LIST now — pinning one
+         * client makes a single YouTube policy change a total outage.
+         *
+         * Candidates are the three clients yt-dlp's PO-Token-Guide lists as
+         * needing no PO token. Order is MEASURED on-device 2026-08-21, not
+         * guessed from the guide:
+         *  - `web_embedded` — **the one that works.** Serves itag 251 (Opus
+         *    ~160k, `vcodec=none`), passes the tail probe, plays. Note it also
+         *    restores AUDIO-ONLY: the broken android_vr path had degraded to
+         *    itag 18, a combined 360p MP4 whose video bytes we downloaded and
+         *    threw away. ~11.7 s.
+         *  - `tv` — leads on paper (token-free, and DRM'd only without cookies,
+         *    which this path has). In practice it failed every attempt with
+         *    "ERROR: [youtube] The page needs to be reloaded", burning 5.2 s
+         *    each time, so it is demoted rather than deleted: it costs nothing
+         *    unless web_embedded has already failed. (Not the same as the
+         *    v0.9.16 DOWNLOAD-path removal, which was the cookie-less DRM case.)
+         *  - `android_vr` — last. Token-free per the guide, but that is exactly
+         *    the claim that expired above; kept only as a long-tail backstop.
+         *
+         * Every entry must be tail-probed before use — "no PO token required" is
+         * a claim about YouTube's current policy, not a guarantee, and this
+         * outage is what an untested claim costs.
          */
-        internal const val FAST_PLAYER_CLIENT = "android_vr"
+        internal val FAST_PLAYER_CLIENTS = listOf("web_embedded", "tv", "android_vr")
 
         /**
          * Concurrency caps for the two extractors. Shared process-wide.
@@ -217,7 +244,7 @@ class PreviewUrlExtractor @Inject constructor(
          * back to a combined stream only if it offers no audio-only format.
          */
         internal fun formatSelectorFor(playerClient: String?): String =
-            if (playerClient in COOKIE_INCOMPATIBLE_CLIENTS) FAST_CLIENT_FORMAT_SELECTOR
+            if (playerClient != null) FAST_CLIENT_FORMAT_SELECTOR
             else FORMAT_SELECTOR
 
         /**
@@ -555,36 +582,61 @@ class PreviewUrlExtractor @Inject constructor(
             withContext(Dispatchers.IO) {
                 ytDlpManager.initialize()
 
-                // Fast path: query ONLY the android_vr client. It returns a
-                // working itag-251 URL directly — no PO token, no m3u8 manifest,
-                // no QuickJS signature/n-challenge solve — so it resolves in
+                // Walk the pinned clients in order and take the first URL that
+                // PROVES it can serve its final byte. Pinning one client is
                 // ~3.6s vs ~12.8s for yt-dlp's default multi-client + m3u8 +
-                // challenge path (measured on-device 2026-06-26, flat across
-                // tracks). Swallow an android_vr-specific failure and fall back
-                // to the default clients so coverage never regresses (the broad
-                // catalog reach is the whole reason YT fallback exists).
-                val fast = try {
-                    runYtDlp(videoId, playerClient = FAST_PLAYER_CLIENT)
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (e: Exception) {
-                    Log.d(TAG, "yt-dlp $FAST_PLAYER_CLIENT attempt failed for $videoId: ${e.message}")
-                    null
+                // challenge path (measured on-device 2026-06-26), so the leader
+                // still pays for itself; the rest of the chain only runs when
+                // YouTube has gated the leader.
+                //
+                // The probe is the point. Before it, this path returned the first
+                // URL any client produced — so when android_vr started handing
+                // back PO-token-gated itag-18 URLs, every one of them sailed
+                // through to ExoPlayer and 403'd there as a skipped track. A URL
+                // that cannot serve its last byte is not a stream, and finding
+                // that out here costs one range request instead of a dead track.
+                for (client in FAST_PLAYER_CLIENTS) {
+                    val stream = try {
+                        runYtDlp(videoId, playerClient = client)
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (e: Exception) {
+                        Log.d(TAG, "yt-dlp $client attempt failed for $videoId: ${e.message}")
+                        null
+                    } ?: continue
+
+                    if (tailProbe.servesFullFile(stream.url, stream.sizeBytes)) {
+                        Log.i(TAG, "yt-dlp: $client served a full-file URL for $videoId")
+                        return@withContext stream.url
+                    }
+                    Log.i(TAG, "yt-dlp: $client URL failed the tail probe for $videoId — next client")
                 }
-                fast ?: (runYtDlp(videoId, playerClient = null)
-                    ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId"))
+
+                // Last resort: yt-dlp's own default client set. Deliberately NOT
+                // probed — nothing follows it, so a false rejection would turn a
+                // playable track into a skip. Let ExoPlayer have its try.
+                (runYtDlp(videoId, playerClient = null)
+                    ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId")).url
             }
         }
     }
 
     /**
+     * A yt-dlp answer: the stream URL plus the format's byte size when yt-dlp
+     * knows it. [sizeBytes] is null for size-less formats (HLS/DASH manifests,
+     * or a `NA` print), which makes [AudioUrlTailProbe] fail open for that URL —
+     * the deliberate bias, since a false rejection costs a working stream.
+     */
+    private data class YtDlpStream(val url: String, val sizeBytes: Long?)
+
+    /**
      * One yt-dlp `execute()` for [videoId]. [playerClient] pins the YouTube
-     * extractor to a single client (e.g. `android_vr`); null leaves yt-dlp's
-     * default client set. Returns the stream URL, or null when this client set
+     * extractor to a single client (e.g. `tv`); null leaves yt-dlp's
+     * default client set. Returns the stream, or null when this client set
      * produced no URL (caller decides whether to fall back). Holds no semaphore
      * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
      */
-    private suspend fun runYtDlp(videoId: String, playerClient: String?): String? {
+    private suspend fun runYtDlp(videoId: String, playerClient: String?): YtDlpStream? {
         val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
         return try {
             val url = "https://www.youtube.com/watch?v=$videoId"
@@ -597,6 +649,10 @@ class PreviewUrlExtractor @Inject constructor(
                 // fails the whole attempt — this makes the next such drift legible
                 // instead of a bare "Requested format is not available".
                 addOption("--print", "fmt=%(format_id)s acodec=%(acodec)s vcodec=%(vcodec)s")
+                // Byte size for the tail probe. Without it the probe has nothing
+                // to seek to and accepts every URL, which is how gated URLs
+                // reached the player. `NA` (size-less formats) parses to null.
+                addOption("--print", "size=%(filesize,filesize_approx)s")
                 addOption("--no-download")
                 playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
 
@@ -654,8 +710,11 @@ class PreviewUrlExtractor @Inject constructor(
                 Log.d(TAG, "yt-dlp: no URL videoId=$videoId client=${playerClient ?: "default"}")
                 null
             } else {
-                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
-                streamUrl
+                val size = stdout.trim().lines()
+                    .firstOrNull { it.startsWith("size=") }
+                    ?.removePrefix("size=")?.trim()?.toLongOrNull()
+                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length} size=$size")
+                YtDlpStream(streamUrl, size)
             }
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
