@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.data.download.files.WebmAudioRemuxer
+import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -97,17 +98,30 @@ class DownloadExecutor @Inject constructor(
         val cookiePath = if (cookie != null) cookieFile.absolutePath else null
 
         try {
-            // Fast path: pin to the android_vr client. It returns a direct
-            // download format with no player-JS fetch, no QuickJS n-sig/JS
-            // challenge solve, and no m3u8 probe — ~8s vs ~30s for the default
-            // multi-client path under 8-way parallel sync load (measured
-            // on-device 2026-06-26; the concurrent challenge solves were also
-            // thrashing the CPU). Fall back to the default client set when
-            // android_vr can't serve the track, so broad-catalog coverage —
-            // the whole reason the YouTube download path exists — never regresses.
-            val fast = runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, "android_vr", onProgress)
-            if (fast is DownloadResult.Success) fast
-            else runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, null, onProgress)
+            // Fast path: pin a single client — a direct download format with no
+            // player-JS fetch, no QuickJS n-sig/JS challenge solve and no m3u8
+            // probe, ~8s vs ~30s for the default multi-client path under 8-way
+            // parallel sync load (measured on-device 2026-06-26; the concurrent
+            // challenge solves were also thrashing the CPU).
+            //
+            // 2026-08-21: this pinned `android_vr` alone, which YouTube moved
+            // behind a GVS PO Token — yt-dlp then skips the audio itags this
+            // path asks for (141/251/140/250) and the attempt dies on "Requested
+            // format is not available". Same wall that took streaming out; see
+            // PreviewUrlExtractor.FAST_PLAYER_CLIENTS, which this deliberately
+            // REUSES rather than copies, so the next client rotation is one edit
+            // in one place instead of a second silent outage over here.
+            //
+            // No tail probe needed (unlike streaming): a download either lands a
+            // non-empty file or it doesn't, and that check IS the verification.
+            // Default client set stays the last resort so broad-catalog coverage
+            // — the whole reason the YouTube download path exists — never regresses.
+            PreviewUrlExtractor.FAST_PLAYER_CLIENTS
+                .firstNotNullOfOrNull { client ->
+                    runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, client, onProgress)
+                        .takeIf { it is DownloadResult.Success }
+                }
+                ?: runYtDlp(url, outputDir, filename, qualityArgs, cookiePath, null, onProgress)
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
         }
