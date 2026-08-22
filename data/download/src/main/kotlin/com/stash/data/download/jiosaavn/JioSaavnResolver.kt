@@ -14,18 +14,31 @@ class JioSaavnResolver @Inject constructor(
     private val rateLimiter: AggregatorRateLimiter,
 ) {
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
-        if (rateLimiter.stateOf(SOURCE_ID).isCircuitBroken) return null
-        if (!bypassRateLimit && !rateLimiter.acquire(SOURCE_ID)) return null
+        val label = "${query.artist} - ${query.title}"
+        if (rateLimiter.stateOf(SOURCE_ID).isCircuitBroken) {
+            Log.i(TAG, "skip '$label': circuit breaker open")
+            return null
+        }
+        if (!bypassRateLimit && !rateLimiter.acquire(SOURCE_ID)) {
+            Log.i(TAG, "skip '$label': rate-limited")
+            return null
+        }
 
         val searchQueries = listOf(
             "${query.artist} ${query.title}".trim(),
             "${query.artist.substringBefore(',').trim()} ${query.title}".trim(),
         ).filter { it.isNotBlank() }.distinct()
 
+        // Counted only so the terminal miss can say whether the catalog had
+        // nothing or the matcher rejected everything — the two look identical
+        // from outside and need very different fixes.
+        var candidatesSeen = 0
+
         for (searchQuery in searchQueries) {
             when (val outcome = client.search(searchQuery, SEARCH_LIMIT)) {
                 JioSaavnSearchOutcome.RateLimited -> {
                     rateLimiter.reportRateLimited(SOURCE_ID)
+                    Log.i(TAG, "skip '$label': search rate-limited")
                     return null
                 }
                 is JioSaavnSearchOutcome.Failure -> {
@@ -34,6 +47,7 @@ class JioSaavnResolver @Inject constructor(
                     return null
                 }
                 is JioSaavnSearchOutcome.Success -> {
+                    candidatesSeen += outcome.songs.size
                     val match = JioSaavnMatcher.best(query, outcome.songs) ?: continue
                     when (val probe = client.isPlayable320(match.media.url)) {
                         JioSaavnProbeOutcome.Playable -> Unit
@@ -73,6 +87,15 @@ class JioSaavnResolver @Inject constructor(
         // Search itself succeeded. An unavailable candidate URL is a catalog
         // miss, not enough evidence to open the provider-wide circuit breaker.
         rateLimiter.reportSuccess(SOURCE_ID)
+        // The miss that was invisible. JioSaavn sits in every fallback chain
+        // and, on a Western-catalog library, misses essentially every track —
+        // but it returned null without a word, so "is JioSaavn even working?"
+        // was unanswerable from a log and it read as silently covering for
+        // the lossless sources. `candidates=0` means the catalog genuinely had
+        // nothing; a non-zero count means the matcher rejected what came back
+        // (usually a wrong-region namesake), which is a matcher question, not
+        // an outage.
+        Log.i(TAG, "no match for '$label': $candidatesSeen candidate(s) over ${searchQueries.size} query/ies")
         return null
     }
 
