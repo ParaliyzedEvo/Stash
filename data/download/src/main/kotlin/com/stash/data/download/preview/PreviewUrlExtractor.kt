@@ -102,6 +102,32 @@ class PreviewUrlExtractor @Inject constructor(
      */
     private val inFlightExtracts = ConcurrentHashMap<String, Deferred<String>>()
 
+    /**
+     * Last observed audio codec per videoId ("opus", "aac", …), written by
+     * whichever lane produced the URL that was actually handed back.
+     *
+     * Exists because [com.stash.core.media.streaming.YouTubeStreamResolver]
+     * hardcoded `codec = "aac"` — an honest guess from when the extractor
+     * really did return nothing but a URL. It has printed the format for a
+     * while now, so Now Playing can state what is playing instead of
+     * mislabelling every Opus stream as AAC (which, since the client chain
+     * settled on itag 251, was every YouTube stream).
+     *
+     * ponytail: plain map with a size cap, not an LRU — values are 3-5 char
+     * strings and the cap exists only so a long session can't grow it without
+     * bound. Swap for an LRU if eviction ORDER ever matters.
+     */
+    private val observedCodecs = ConcurrentHashMap<String, String>()
+
+    /** Codec last seen for [videoId], or null if nothing has resolved it yet. */
+    fun observedCodec(videoId: String): String? = observedCodecs[videoId]
+
+    private fun recordCodec(videoId: String, raw: String?) {
+        val codec = normalizeCodec(raw) ?: return
+        if (observedCodecs.size > OBSERVED_CODEC_CAP) observedCodecs.clear()
+        observedCodecs[videoId] = codec
+    }
+
     companion object {
         private const val TAG = "PreviewUrlExtractor"
         private const val YTDLP_TIMEOUT_MS = 60_000L
@@ -176,6 +202,29 @@ class PreviewUrlExtractor @Inject constructor(
          */
         private const val INNERTUBE_CONCURRENCY = 8
         private const val YTDLP_CONCURRENCY = 1   // was 2 — see spec
+
+        /** Upper bound on [observedCodecs] before it is dropped wholesale. */
+        private const val OBSERVED_CODEC_CAP = 512
+
+        /**
+         * Folds a yt-dlp `acodec` (`opus`, `mp4a.40.2`) or an InnerTube
+         * mimeType codec into the short label the Now Playing badge shows.
+         * `none`/`NA` — what yt-dlp prints for a video-only or unknown track —
+         * map to null so a missing value never overwrites a real one.
+         */
+        internal fun normalizeCodec(raw: String?): String? {
+            val v = raw?.trim()?.trim('"')?.lowercase()
+                ?.takeIf { it.isNotBlank() && it != "none" && it != "na" }
+                ?: return null
+            return when {
+                v.startsWith("opus") -> "opus"
+                v.startsWith("mp4a") || v.contains("aac") -> "aac"
+                v.startsWith("vorbis") -> "vorbis"
+                v.startsWith("flac") -> "flac"
+                v.startsWith("mp3") -> "mp3"
+                else -> v
+            }
+        }
 
         /**
          * Shared so parallel callers (e.g. `PreviewPrefetcher`) respect the
@@ -569,6 +618,12 @@ class PreviewUrlExtractor @Inject constructor(
                 return@withTimeout null
             }
 
+            // Only recorded once the probe has passed — an unusable URL must
+            // not get to name the codec for a track it will never play.
+            recordCodec(
+                videoId,
+                bestFormat["mimeType"]?.jsonPrimitive?.content?.substringAfter("codecs=", ""),
+            )
             Log.d(TAG, "InnerTube: SUCCESS videoId=$videoId urlLen=${streamUrl.length}")
             streamUrl
         }
@@ -701,8 +756,12 @@ class PreviewUrlExtractor @Inject constructor(
             // tells us whether a client served audio-only or fell back to a
             // combined (video-carrying) stream, which matters for a music app's
             // data use.
-            stdout.trim().lines().firstOrNull { it.startsWith("fmt=") }?.let {
-                Log.d(TAG, "yt-dlp: $it client=${playerClient ?: "default"}")
+            stdout.trim().lines().firstOrNull { it.startsWith("fmt=") }?.let { line ->
+                Log.d(TAG, "yt-dlp: $line client=${playerClient ?: "default"}")
+                // The winning client writes last: a client whose URL later fails
+                // the tail probe is overwritten by the one that replaces it, so
+                // the recorded codec always describes the URL actually returned.
+                recordCodec(videoId, line.substringAfter("acodec=", "").substringBefore(' '))
             }
 
             val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }

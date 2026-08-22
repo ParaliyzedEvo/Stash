@@ -130,14 +130,21 @@ class YouTubeStreamResolver @Inject constructor(
         return StreamUrl(
             url = url,
             expiresAtMs = expiresAtMs,
-            // YouTube audio streams are typically Opus or AAC at ~128-160
-            // kbps. We don't get precise codec metadata back from the
-            // extractor (it just hands us a URL), so we report "aac" as a
-            // best-effort label that's correct for the majority of YT
-            // Music tracks. The UI badge derives "lossy via YT" from the
-            // origin field below, not the codec, so this only affects the
-            // format-string display in Now Playing.
-            codec = "aac",
+            // The codec the extractor ACTUALLY served, not a guess.
+            //
+            // This was hardcoded `"aac"`, on the reasoning that the extractor
+            // "just hands us a URL" and AAC was right for most YT Music
+            // tracks. Both halves stopped holding: PreviewUrlExtractor prints
+            // the format and now records it, and since the client chain
+            // settled on itag 251 the answer is Opus essentially every time —
+            // so the badge read "AAC · via YT" over a stream that was Opus,
+            // for every YouTube track. A quality badge that is always wrong is
+            // worse than no badge.
+            //
+            // Falls back to "opus" only when nothing was recorded (e.g. a
+            // cached URL reused across a process restart), because that is
+            // what the format selector asks for first.
+            codec = urlExtractor.observedCodec(videoId) ?: "opus",
             bitsPerSample = null,
             sampleRateHz = null,
             bitrateKbps = null,
