@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.stash.core.model.PlaylistType
 import androidx.room.withTransaction
 import androidx.work.workDataOf
 import com.stash.core.data.db.StashDatabase
@@ -26,6 +25,7 @@ import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncState
 import dagger.assisted.Assisted
@@ -51,6 +51,45 @@ import kotlinx.coroutines.flow.first
  */
 @Suppress("UNUSED_PARAMETER")
 internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
+
+/**
+ * The type to re-write onto an existing playlist row, or null to leave it.
+ *
+ * `playlists.type` used to be write-once, set by whichever fetch pass saw the
+ * `source_id` first. That made one combination permanent and wrong: the
+ * Spotify home-feed mix pass inserts DAILY_MIX, and the library
+ * walk reports the same id as a saved CUSTOM playlist — but nothing ever
+ * updated the row, so it stayed a "mix" and disappeared from every CUSTOM
+ * surface (the Sync tab's "n/n PLAYLISTS" count, the Library Playlists grid).
+ * Issue #437: five Spotify playlists fetched, one shown.
+ *
+ * Deliberately ONE-WAY. Reconciling both directions would flap the type every
+ * run for a Spotify-owned playlist the user has saved: with auto-mix discovery
+ * on, the home feed claims the id and snapshots it DAILY_MIX; with it off, the
+ * library walk claims it and snapshots it CUSTOM. A saved library playlist
+ * wins, so the row settles — and with it the row's download eligibility
+ * ([shouldEnqueueForDownload] excludes DAILY_MIX) and its Home-vs-Library
+ * placement, which would otherwise change under the user run to run.
+ *
+ * Every other pair is left alone. Local-only types (STASH_MIX, STASH_LIKED,
+ * DOWNLOADS_MIX) are owned by Stash and never by a snapshot; LIKED_SONGS is a
+ * per-source singleton with a synthetic source id that no library walk should
+ * ever re-type.
+ *
+ * Known limit: this only sees ids that reach a CUSTOM snapshot, and while
+ * auto-mix discovery is on `keepAsLibraryPlaylist` withholds every id the home
+ * feed claimed. A Spotify-OWNED playlist the user saved therefore stays
+ * DAILY_MIX — which is what it is. A user's OWN playlist is not claimed by the
+ * home feed (isSpotifyMix skips owner-less items as of v0.9.99), so it reaches
+ * the library walk and heals here, which is the #437 case. Reuniting the two
+ * would mean plumbing the library walk's id list into the diff pass; do that
+ * only if a saved Made-For-You playlist ever needs to live under Playlists.
+ */
+internal fun reconciledPlaylistType(
+    existing: PlaylistType,
+    snapshot: PlaylistType,
+): PlaylistType? =
+    if (existing == PlaylistType.DAILY_MIX && snapshot == PlaylistType.CUSTOM) snapshot else null
 
 /**
  * Whether a playlist's tracks should be enqueued for download during this sync.
@@ -347,13 +386,29 @@ class DiffWorker @AssistedInject constructor(
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
         if (existing != null) {
+            // A playlist the home feed once called a mix, and the library walk
+            // now reports as one the user saved, is re-typed here — see
+            // [reconciledPlaylistType] for why this is one-way only. Resolved
+            // BEFORE the art check so a row leaving DAILY_MIX stops rotating
+            // its cover in the same pass.
+            val reconciledType = reconciledPlaylistType(existing.type, snapshot.playlistType)
+            if (reconciledType != null) {
+                playlistDao.updateType(existing.id, reconciledType, mixNumber = null)
+                Log.i(
+                    TAG,
+                    "Re-typed '${existing.name}' ${existing.type} -> $reconciledType " +
+                        "(source_id=${snapshot.sourcePlaylistId})",
+                )
+                syncLog.info("${existing.name} is your playlist, not a mix — moved to Playlists")
+            }
+            val effectiveType = reconciledType ?: existing.type
             // Art refresh: ONLY for DAILY_MIX. Daily Mixes (and Spotify's
             // weekly mixes — Discover Weekly, Release Radar, etc., which
             // share the DAILY_MIX type) rotate, so their cover should
             // follow the tracks. Other playlist types never rotate here;
             // LIKED_SONGS gets only a missing-art repair during metadata
             // finalization below.
-            val rotatesArt = existing.type == PlaylistType.DAILY_MIX
+            val rotatesArt = effectiveType == PlaylistType.DAILY_MIX
             if (rotatesArt && snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
                 playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
             }
@@ -373,6 +428,8 @@ class DiffWorker @AssistedInject constructor(
                 artUrl = if (rotatesArt) snapshot.artUrl ?: existing.artUrl else existing.artUrl,
                 name = snapshot.playlistName.ifBlank { existing.name },
                 isActive = true,
+                type = effectiveType,
+                mixNumber = if (reconciledType != null) null else existing.mixNumber,
             )
         }
 
