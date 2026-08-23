@@ -221,11 +221,15 @@ class YTMusicApiClient @Inject constructor(
         if (paginated.items.isEmpty()) {
             return SyncResult.Empty("Library returned no albums")
         }
+        // Forced until parseSavedAlbumsContinuationPage / extractContinuationToken's
+        // gridContinuation handling is verified against a live paginated response
+        // (see the kdoc on parseSavedAlbumsContinuationPage). This keeps
+        // shouldDeactivateMissingPlaylists from ever firing on this data.
         return SyncResult.Success(
             PagedAlbums(
                 albums = paginated.items,
-                partial = paginated.partial,
-                partialReason = paginated.partialReason,
+                partial = true,
+                partialReason = "grid continuation pagination unverified",
             )
         )
     }

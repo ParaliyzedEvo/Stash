@@ -109,7 +109,8 @@ fun ManagePlaylistsScreen(
     fun matchesQuery(row: ManageRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
     val visibleLiked = liked?.takeIf { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
     val visibleMixes = if (showMixRows(segment)) mixes.filter { matchesQuery(it) } else emptyList()
-    val visibleAlbums = albums.filter { matchesQuery(it) }
+    val albumsBySegment = albums.filter { matchesSegment(segment, it.syncEnabled) }
+    val visibleAlbums = albumsBySegment.filter { matchesQuery(it) }
     val visibleCustom = bySegment.filter { matchesQuery(it) }
 
     Scaffold(
