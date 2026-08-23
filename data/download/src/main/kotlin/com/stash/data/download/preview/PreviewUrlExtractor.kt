@@ -175,20 +175,24 @@ class PreviewUrlExtractor @Inject constructor(
          *    restores AUDIO-ONLY: the broken android_vr path had degraded to
          *    itag 18, a combined 360p MP4 whose video bytes we downloaded and
          *    threw away. ~11.7 s.
-         *  - `tv` — leads on paper (token-free, and DRM'd only without cookies,
-         *    which this path has). In practice it failed every attempt with
-         *    "ERROR: [youtube] The page needs to be reloaded", burning 5.2 s
-         *    each time, so it is demoted rather than deleted: it costs nothing
-         *    unless web_embedded has already failed. (Not the same as the
-         *    v0.9.16 DOWNLOAD-path removal, which was the cookie-less DRM case.)
          *  - `android_vr` — last. Token-free per the guide, but that is exactly
          *    the claim that expired above; kept only as a long-tail backstop.
+         *
+         * `tv` is NOT here, despite leading on paper (token-free, DRM'd only
+         * without cookies, which this path has). It failed EVERY attempt with
+         * "ERROR: [youtube] The page needs to be reloaded" at ~5.2 s a go. A
+         * client with a 0% observed success rate is not a free backstop: this
+         * chain runs inside [LazyResolvingDataSource]'s 45 s
+         * RESOLVE_DEADLINE_MS, so every doomed member is worst-case budget
+         * spent on the way to a SKIPPED TRACK. Two candidates plus the default
+         * client set fit; three did not reliably. Add it back the day
+         * web_embedded dies, not before.
          *
          * Every entry must be tail-probed before use — "no PO token required" is
          * a claim about YouTube's current policy, not a guarantee, and this
          * outage is what an untested claim costs.
          */
-        internal val FAST_PLAYER_CLIENTS = listOf("web_embedded", "tv", "android_vr")
+        internal val FAST_PLAYER_CLIENTS = listOf("web_embedded", "android_vr")
 
         /**
          * Concurrency caps for the two extractors. Shared process-wide.

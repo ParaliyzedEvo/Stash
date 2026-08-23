@@ -67,4 +67,33 @@ class AudioUrlTailProbeTest {
         server.shutdown()
         assertThat(probe.servesFullFile(url, contentLength = 1000L)).isTrue()
     }
+
+    /**
+     * 416 means "not in that shape", NOT "you may not have this" — so it must
+     * pass, like every other non-refusal.
+     *
+     * This is a real regression, not a hypothetical. The probe originally
+     * accepted 200/206 only, which was safe while the sole caller was
+     * InnerTube, supplying an EXACT `contentLength` from adaptiveFormats. The
+     * yt-dlp caller supplies `filesize_approx` when yt-dlp has no exact size,
+     * and an over-estimate puts `contentLength - 1` past EOF: the CDN answers
+     * 416, which proves the URL is alive and honouring ranges, yet the old
+     * check scored it as a gate and demoted a working client to the next one
+     * in the chain — pure latency, for a URL that was fine.
+     */
+    @Test fun `416 past the end of file passes - an approx size is not a gate`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(416))
+        assertThat(probe.servesFullFile(server.url("/a").toString(), contentLength = 5_000_000L))
+            .isTrue()
+    }
+
+    /** The other explicit refusals share 403's meaning and must also reject. */
+    @Test fun `401 and 410 reject like 403`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401))
+        assertThat(probe.servesFullFile(server.url("/a").toString(), contentLength = 5_000_000L))
+            .isFalse()
+        server.enqueue(MockResponse().setResponseCode(410))
+        assertThat(probe.servesFullFile(server.url("/b").toString(), contentLength = 5_000_000L))
+            .isFalse()
+    }
 }

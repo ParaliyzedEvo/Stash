@@ -62,7 +62,18 @@ class AudioUrlTailProbe @Inject constructor(private val client: OkHttpClient) {
         }
 
         if (code == null) return true
-        val ok = code == 206 || code == 200
+        // Reject ONLY an explicit refusal — anything else is evidence the URL is
+        // alive, which is what this class's "absence of evidence must never veto
+        // a URL" contract requires.
+        //
+        // This used to accept 200/206 exclusively. That was safe while the only
+        // caller was InnerTube, which supplies an exact `contentLength` from
+        // adaptiveFormats. The yt-dlp caller supplies `filesize_approx` when
+        // yt-dlp has no exact size, and an over-estimate puts `contentLength - 1`
+        // PAST the end of the file — the CDN then answers 416 Range Not
+        // Satisfiable, which PROVES the URL is live and honouring ranges, yet
+        // scored as a gate and demoted a perfectly good client.
+        val ok = code !in REFUSAL_CODES
         if (!ok) Log.i(TAG, "tail probe rejected a gated URL: code=$code")
         return ok
     }
@@ -70,5 +81,12 @@ class AudioUrlTailProbe @Inject constructor(private val client: OkHttpClient) {
     private companion object {
         private const val TAG = "AudioUrlTailProbe"
         private const val PROBE_TIMEOUT_MS = 2_000L
+
+        /**
+         * The codes that mean "you may not have this", as opposed to "not in
+         * that shape". A PO-token-gated googlevideo URL answers 403 past its
+         * unlocked window; 401/410 are the same species of refusal.
+         */
+        private val REFUSAL_CODES = setOf(401, 403, 410)
     }
 }
