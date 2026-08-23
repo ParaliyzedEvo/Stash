@@ -889,7 +889,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         markYoutubeIncomplete("getUserPlaylists: ${result.message}")
                     }
                 }
-            val albumsDeferred = async { sem.withPermit { fetchAndSnapshotSavedAlbums(syncId, diagnostics) } }
+            val albumsDeferred = async { sem.withPermit { fetchAndSnapshotSavedAlbums(syncId, diagnostics, sem) } }
 
             if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
                 albumsDeferred.await()
@@ -1086,6 +1086,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private suspend fun fetchAndSnapshotSavedAlbums(
         syncId: Long,
         diagnostics: MutableList<SyncStepResult>,
+        sem: Semaphore,
     ) {
         when (val result = ytMusicApiClient.getSavedAlbums()) {
             is SyncResult.Success -> {
@@ -1103,7 +1104,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 Log.d(TAG, "fetchAndSnapshotSavedAlbums: found ${paged.albums.size} saved albums")
                 coroutineScope {
                     paged.albums.map { album ->
-                        async { fetchAndSnapshotSavedAlbum(album, syncId, diagnostics) }
+                        async { sem.withPermit { fetchAndSnapshotSavedAlbum(album, syncId, diagnostics) } }
                     }.awaitAll()
                 }
             }
@@ -1151,7 +1152,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     source = MusicSource.YOUTUBE,
                     sourcePlaylistId = album.id,
                     playlistName = detail.title,
-                    playlistType = PlaylistType.ALBUM,
+                    playlistType = PlaylistType.CUSTOM,
                     trackCount = detail.tracks.size,
                     artUrl = coverUrl,
                 )
