@@ -121,6 +121,34 @@ class NowPlayingCodecOverlayTest {
         assertEquals("antra", result?.streamOrigin)
     }
 
+    /**
+     * A YouTube stream whose real codec IS "opus" must still overlay.
+     *
+     * The old guard was `fileFormat != "opus"`, written when "opus" only ever
+     * appeared as the Room default for a never-downloaded row. Once the YouTube
+     * client chain settled on itag 251 the served codec genuinely IS opus, so
+     * that test rejected the true format as "not real" and skipped the whole
+     * overlay — taking [Track.streamOrigin] with it. Now Playing therefore
+     * showed a bare "OPUS" and never "· via YT", for every YouTube track.
+     *
+     * The value can't separate "unset default" from "genuinely Opus"; the
+     * origin can, which is what this pins.
+     */
+    @Test fun `youtube opus stream still overlays so the via-YT origin survives`() {
+        val base = streamTrack(fileFormat = "opus", origin = null) // stale Room row
+        val streamFormat = streamTrack(fileFormat = "opus", origin = "youtube")
+
+        val result = overlayDisplayTrack(
+            isHttpStreaming = true,
+            streamFormat = streamFormat,
+            baseTrack = base,
+        )
+
+        assertEquals("opus", result?.fileFormat)
+        // The assertion that actually fails against the old guard.
+        assertEquals("youtube", result?.streamOrigin)
+    }
+
     @Test fun `http stream still overlays FLAC`() {
         val base = streamTrack(fileFormat = "opus", origin = null)
         val streamFormat = streamTrack(fileFormat = "flac", origin = "kennyy", bits = 24)

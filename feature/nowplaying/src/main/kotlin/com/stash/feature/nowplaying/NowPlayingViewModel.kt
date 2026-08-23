@@ -1241,7 +1241,19 @@ internal fun overlayDisplayTrack(
     val cameFromStreamResolver = isHttpStreaming || streamFormat.streamOrigin != null
     val idMatches = streamFormat.id == baseTrack.id ||
         (!streamFormat.youtubeId.isNullOrBlank() && streamFormat.youtubeId == baseTrack.youtubeId)
-    val hasRealFormat = streamFormat.fileFormat.isNotBlank() && streamFormat.fileFormat != "opus"
+    // `"opus"` is BOTH the Room default for a never-downloaded row AND a real
+    // codec YouTube serves (itag 251) — so the VALUE alone cannot tell a
+    // resolved format from an unset one. Treating it as "not a real format"
+    // meant that once the YouTube chain settled on Opus, this whole overlay was
+    // skipped for every YouTube track — including [streamOrigin] below, which
+    // is why Now Playing showed a bare "OPUS" and never "· via YT".
+    //
+    // streamOrigin is set only by a stream resolver and never lives in Room, so
+    // its presence is positive proof the format came from a real resolve. Fall
+    // back to the old value test for resolver-less tracks that still carry a
+    // non-default codec.
+    val hasRealFormat = streamFormat.streamOrigin != null ||
+        (streamFormat.fileFormat.isNotBlank() && streamFormat.fileFormat != "opus")
     return if (cameFromStreamResolver && idMatches && hasRealFormat) {
         baseTrack.copy(
             fileFormat = streamFormat.fileFormat,

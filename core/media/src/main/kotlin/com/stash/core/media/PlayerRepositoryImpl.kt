@@ -2027,18 +2027,60 @@ class PlayerRepositoryImpl @Inject constructor(
      * codec extra is present (or there's nothing cached to stamp) it no-ops.
      * Internal as a test seam.
      */
+    /**
+     * Last track id whose media item was stamped. Guards the artwork upgrade
+     * against re-firing on every state refresh — see the note inside
+     * [maybeStampCurrentItemQuality] about the read-back never showing the
+     * write.
+     */
+    @Volatile private var lastStampedTrackId: Long = 0L
+
     internal fun maybeStampCurrentItemQuality(controller: MediaController) {
         val item = controller.currentMediaItem ?: return
-        val extras = item.mediaMetadata.extras ?: return
+        val extras = item.mediaMetadata.extras ?: run {
+            Log.d(STAMP_TAG, "skip: current item has no extras")
+            return
+        }
         if (extras.getString(EXTRA_STREAM_CODEC) != null) return // already stamped
         // Sentinel 0 = absent. Radio/search-synthetic ids are videoId.hashCode(),
         // which is frequently NEGATIVE — the old `<= 0L` guard skipped the stamp
         // for those, so the badge stayed "opus" and the art stayed the low-res
         // placeholder. Allow any non-zero id.
         val trackId = extras.getLong(EXTRA_TRACK_ID, 0L)
-        if (trackId == 0L) return
-        val stream = streamUrlCache.get(trackId) ?: return // downloaded/unresolved: nothing to stamp
-        if (stream.codec == null && stream.origin == null && stream.coverArtUrl == null) return
+        if (trackId == 0L) {
+            Log.d(STAMP_TAG, "skip: no track id in extras")
+            return
+        }
+        // The self-disarm this function's KDoc promises ("once the codec extra
+        // is present it no-ops") DOES NOT HOLD: the extras written by
+        // replaceMediaItem do not survive the session round-trip, so the
+        // read-back never shows the codec just written and the guard above
+        // never trips. Measured on-device 2026-08-23: **1093 stamps for ONE
+        // track in 45 s**, each an IPC that fires onTimelineChanged and
+        // re-enters updateState — a feedback loop, not a no-op.
+        //
+        // Remember the id instead, so the artwork upgrade below (which DOES
+        // stick, because #336 persists it to Room) runs once per track rather
+        // than on every 250 ms position tick. The badge no longer depends on
+        // this landing at all — see [withLiveStreamQuality].
+        if (trackId == lastStampedTrackId) return
+        // Every exit here used to be silent, which is why "Now Playing shows the
+        // Room default instead of what actually streamed" was undiagnosable from
+        // a log: the badge looked plausible and nothing said the stamp had been
+        // skipped or why.
+        val stream = streamUrlCache.get(trackId) ?: run {
+            // Downloaded rows legitimately have nothing to stamp. For a STREAMED
+            // track this is the bug signature: the resolve populated the cache
+            // (LazyResolvingDataSource line ~140) but no player event re-ran
+            // updateState afterwards, so the badge keeps the Room default.
+            Log.d(STAMP_TAG, "skip: nothing cached for track $trackId (downloaded, or resolve hasn't landed yet)")
+            return
+        }
+        if (stream.codec == null && stream.origin == null && stream.coverArtUrl == null) {
+            Log.d(STAMP_TAG, "skip: cached stream for $trackId carries no codec/origin/art")
+            return
+        }
+        Log.i(STAMP_TAG, "stamping track $trackId codec=${stream.codec} origin=${stream.origin}")
         val newExtras = Bundle(extras).apply {
             stream.codec?.let { putString(EXTRA_STREAM_CODEC, it) }
             stream.bitsPerSample?.let { putInt(EXTRA_STREAM_BIT_DEPTH, it) }
@@ -2068,17 +2110,54 @@ class PlayerRepositoryImpl @Inject constructor(
         val stamped = item.buildUpon()
             .setMediaMetadata(metaBuilder.build())
             .build()
+        lastStampedTrackId = trackId
         controller.replaceMediaItem(controller.currentMediaItemIndex, stamped)
     }
 
+    /**
+     * Overlays the live stream metadata from [streamUrlCache] onto [track] when
+     * the media item's extras didn't carry it.
+     *
+     * [maybeStampCurrentItemQuality] writes codec/origin into the item's extras,
+     * but that write does not survive the session round-trip — the same "stamp
+     * dies with the session" that #336 worked around for ARTWORK by persisting
+     * to Room. Codec and origin never got that workaround, so Now Playing fell
+     * back to [Track.fileFormat]'s Room default (`"opus"`, which every
+     * streaming-only row carries) and never rendered the "via YT" / "via
+     * JioSaavn" origin at all — a badge that silently described the database
+     * instead of the audio.
+     *
+     * Reading the cache here makes the badge independent of whether the
+     * round-trip sticks. Cheap: one LRU lookup per state refresh, and it
+     * short-circuits the moment the extras DO carry an origin.
+     */
+    private fun withLiveStreamQuality(track: Track, item: MediaItem?): Track {
+        if (track.streamOrigin != null) return track // extras already carried it
+        val trackId = item?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L) ?: 0L
+        if (trackId == 0L) return track
+        // A downloaded row has no cache entry and must keep Room's truth — its
+        // codec comes from the file on disk, which is more authoritative than
+        // anything a resolver reported.
+        val stream = streamUrlCache.get(trackId) ?: return track
+        return track.copy(
+            fileFormat = stream.codec ?: track.fileFormat,
+            bitsPerSample = stream.bitsPerSample ?: track.bitsPerSample,
+            sampleRateHz = stream.sampleRateHz ?: track.sampleRateHz,
+            qualityKbps = stream.bitrateKbps ?: track.qualityKbps,
+            streamOrigin = stream.origin ?: track.streamOrigin,
+        )
+    }
+
     private fun updateState(controller: MediaController) {
-        // Quality badge for the playing track: see [maybeStampCurrentItemQuality].
-        // The replace fires onTimelineChanged, which re-runs updateState with
-        // the stamped extras — the guard inside makes the second pass a no-op.
+        // Artwork upgrade for the playing track: see [maybeStampCurrentItemQuality].
+        // It is now id-guarded so it runs once per track — its extras write does
+        // NOT survive the session round-trip, so it can never self-disarm on the
+        // read-back the way its KDoc originally assumed.
         maybeStampCurrentItemQuality(controller)
 
         val currentItem = controller.currentMediaItem
-        val track = currentItem?.toTrack()
+        // Badge from the live resolve, not from extras that may not have stuck.
+        val track = currentItem?.toTrack()?.let { withLiveStreamQuality(it, currentItem) }
         // Timeline snapshot rebuilt only when the timeline actually changes
         // (onTimelineChanged sets the dirty flag). updateState fires on every
         // player event, and with the full timeline holding the whole queue a
@@ -2206,6 +2285,13 @@ class PlayerRepositoryImpl @Inject constructor(
 
     companion object {
         private const val TAG = "StashPlayer"
+
+        /**
+         * Separate tag for the Now Playing quality stamp so its (chatty,
+         * per-state-refresh) diagnostics can be filtered independently of
+         * playback errors on the shared [TAG].
+         */
+        private const val STAMP_TAG = "StashQualityStamp"
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
 
         /** Auto-grow fires once the remaining queue tail drops below this many tracks. */

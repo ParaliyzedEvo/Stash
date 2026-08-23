@@ -6,6 +6,7 @@ import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -109,11 +110,13 @@ class YouTubeStreamResolverTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
         coEvery { extractor.extractStreamUrl("abc123", true) } returns "https://raced/abc123"
+        every { extractor.observedCodec("abc123") } returns "opus"
         val resolver = YouTubeStreamResolver(extractor, ytMusic)
 
         val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = true)
 
         assertThat(result?.url).isEqualTo("https://raced/abc123")
+        assertThat(result?.codec).isEqualTo("opus")
         coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", true) }
         coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
@@ -129,11 +132,17 @@ class YouTubeStreamResolverTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
         coEvery { extractor.extractStreamUrl("abc123", false) } returns "https://innertube/abc123"
+        // Deliberately NOT "opus": the resolver used to hardcode a codec, so a
+        // test that only ever expects the default would pass against the bug it
+        // is meant to catch. Asserting a non-default value proves the observed
+        // codec is actually threaded through.
+        every { extractor.observedCodec("abc123") } returns "aac"
         val resolver = YouTubeStreamResolver(extractor, ytMusic)
 
         val result = resolver.resolve(trackWithYoutubeId("abc123"), allowYtDlp = false)
 
         assertThat(result?.url).isEqualTo("https://innertube/abc123")
+        assertThat(result?.codec).isEqualTo("aac")
         coVerify(exactly = 1) { extractor.extractStreamUrl("abc123", false) }
         coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
