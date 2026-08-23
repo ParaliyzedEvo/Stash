@@ -3,7 +3,15 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
-import com.stash.data.download.BuildConfig  
+import com.stash.data.download.BuildConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -94,6 +102,77 @@ class StreamSourceRegistry @Inject constructor(
         track: TrackEntity,
         allowYouTube: Boolean = true,
         allowYtDlp: Boolean = true,
+    ): StreamUrl? {
+        // Single-flight. A foreground tap and the next-up prefetch landing on the
+        // same track within a few hundred ms each ran their OWN full resolver
+        // chain: doubled calls to every source (including rate-limited search
+        // APIs and the qbdlx token pool), and because each drove the YouTube
+        // resolver's own per-videoId coalescing to start and tear down before
+        // the other began, one ~13 s yt-dlp extraction became two sequential
+        // ones. Device-observed 2026-08-22: a track resolved via yt-dlp, then a
+        // second full chain started 325 ms later for the identical track.
+        //
+        // Keyed on the FLAGS as well as the id: background fill calls with
+        // allowYouTube/allowYtDlp = false deliberately accept a narrower source
+        // set, and must never be handed a foreground result (or vice versa).
+        val key = resolveKey(track.id, allowYouTube, allowYtDlp)
+        inFlightResolves[key]?.let { return it.await() }
+
+        val fresh = resolveScope.async(start = CoroutineStart.LAZY) {
+            // The timeout MUST live INSIDE the shared coroutine, not at the
+            // caller. LazyResolvingDataSource wraps its call in
+            // withTimeout(RESOLVE_DEADLINE_MS) as the documented guarantee that
+            // "a hung resolver can NEVER wedge playback" — but that bounds the
+            // caller's await(), not this detached job. Without the timeout here
+            // a wedged chain would run forever, invokeOnCompletion would never
+            // fire, the map entry would never clear, and EVERY later attempt at
+            // that track would coalesce onto the same dead Deferred and time
+            // out — turning a transient hang into a permanently unplayable
+            // track, which is worse than the duplicate resolve this fixes.
+            withTimeout(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
+                doResolve(track, allowYouTube, allowYtDlp)
+            }
+        }
+        val existing = inFlightResolves.putIfAbsent(key, fresh)
+        val deferred = if (existing != null) {
+            // Lost the race. `async` attaches the child to resolveScope's job at
+            // CONSTRUCTION even with CoroutineStart.LAZY, so an unstarted,
+            // uncancelled loser stays in the parent's child list — with its
+            // captured TrackEntity — for the process lifetime.
+            fresh.cancel()
+            existing
+        } else {
+            fresh.also { d ->
+                d.invokeOnCompletion { inFlightResolves.remove(key, d) }
+                d.start()
+            }
+        }
+        // Caller cancellation still propagates out of await(), so tap-preemption
+        // keeps surfacing as a CancellationException rather than a bogus
+        // "Couldn't find this track" — see the chain loop below.
+        return deferred.await()
+    }
+
+    /**
+     * Shared scope for in-flight resolves. Mirrors
+     * [com.stash.data.download.preview.PreviewUrlExtractor]'s `extractorScope`
+     * deliberately: a resolve has to outlive any ONE caller's cancellation, or
+     * coalescing would be pointless — the whole value is that a second waiter on
+     * the same track gets the in-flight result instead of restarting the chain.
+     */
+    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** In-flight resolves, keyed by [resolveKey]; entries self-remove on completion. */
+    private val inFlightResolves = ConcurrentHashMap<String, Deferred<StreamUrl?>>()
+
+    private fun resolveKey(trackId: Long, allowYouTube: Boolean, allowYtDlp: Boolean) =
+        "$trackId:$allowYouTube:$allowYtDlp"
+
+    /** The resolver-chain walk itself; reached only via [resolve]'s single-flight. */
+    private suspend fun doResolve(
+        track: TrackEntity,
+        allowYouTube: Boolean,
+        allowYtDlp: Boolean,
     ): StreamUrl? {
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {

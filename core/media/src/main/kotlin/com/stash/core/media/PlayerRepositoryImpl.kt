@@ -1829,7 +1829,39 @@ class PlayerRepositoryImpl @Inject constructor(
                         // at its current position before giving up on it. The
                         // guard grants one retry per item, so a genuinely-dead
                         // URL falls through to Recover on its next error.
-                        StreamErrorCascadeGuard.Verdict.RetrySameItem -> controller?.retryCurrentItem()
+                        //
+                        // Evict the cached StreamUrl FIRST or the "retry" is not
+                        // one. A URL can 403 BEFORE its own expiresAtMs — a
+                        // PO-token/session-bound YouTube URL dying early — and
+                        // StreamUrlCache only expires on time, so
+                        // LazyResolvingDataSource.open() (:110, cache-before-
+                        // resolve) hands retryCurrentItem() the exact same dead
+                        // URL. It 403s instantly and the guard escalates to
+                        // Recover on what was never a real second attempt.
+                        //
+                        // Sentinel is 0, and the test is `!= 0L`, NOT `> 0L`:
+                        // radio and search-surface tracks carry synthetic ids of
+                        // videoId.hashCode(), which are negative about half the
+                        // time — and those are exactly the streamed rows most
+                        // likely to hit this path. A `> 0L` guard would skip the
+                        // eviction for them, i.e. no-op on its own target
+                        // population. maybeStampCurrentItemQuality (:2045) records
+                        // this codebase making that precise mistake once already.
+                        //
+                        // Scope, so the next reader doesn't over-trust it: this
+                        // only helps `stash-resolve://` placeholder items. Once
+                        // the prefetch upgrades a slot, refreshControllerMediaItem
+                        // bakes the real URL into the MediaItem URI and the cache
+                        // is never consulted — YouTube slots then self-heal via
+                        // RefreshingDataSource, while qbdlx/arcod slots get
+                        // nothing. Closing that is a separate change.
+                        StreamErrorCascadeGuard.Verdict.RetrySameItem -> {
+                            current?.mediaMetadata?.extras
+                                ?.getLong(EXTRA_TRACK_ID, 0L)
+                                ?.takeIf { it != 0L }
+                                ?.let { streamUrlCache.invalidate(it) }
+                            controller?.retryCurrentItem()
+                        }
                         StreamErrorCascadeGuard.Verdict.Recover -> controller?.recoverOrStop()
                         is StreamErrorCascadeGuard.Verdict.Halt -> {
                             controller?.pause()

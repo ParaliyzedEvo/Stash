@@ -664,6 +664,28 @@ class PreviewUrlExtractor @Inject constructor(
                         null
                     } ?: continue
 
+                    // Cheap offline filter BEFORE the probe (credit: ParaliyzedEvo,
+                    // PR #450). A combined audio+video answer is the selector's
+                    // trailing `best` catch-all firing — the fast client had no
+                    // audio-only format to give — and that is the exact shape the
+                    // PO-token gate has been landing on (itag 18). Rejecting it
+                    // costs no network call at all.
+                    //
+                    // Tested on `vcodec` rather than an itag allowlist: the
+                    // selector ends `bestaudio/best`, so a legitimate answer can
+                    // be 139/249/774 or whatever YouTube adds next, and a static
+                    // {251,250,140} list would throw those away. `vcodec` is
+                    // already printed on the same diagnostic line and is correct
+                    // for every itag. Null fails OPEN, matching the probe's bias.
+                    if (stream.vcodec != null && stream.vcodec != "none") {
+                        Log.i(TAG, "yt-dlp: $client returned combined vcodec=${stream.vcodec} for $videoId — next client")
+                        continue
+                    }
+
+                    // Then the probe, which catches what the format check cannot:
+                    // a genuinely audio-only URL that is nonetheless gated. The
+                    // format test has no signal for that case, and it is what
+                    // arrives the next time YouTube rotates the gate.
                     if (tailProbe.servesFullFile(stream.url, stream.sizeBytes)) {
                         Log.i(TAG, "yt-dlp: $client served a full-file URL for $videoId")
                         return@withContext stream.url
@@ -686,7 +708,12 @@ class PreviewUrlExtractor @Inject constructor(
      * or a `NA` print), which makes [AudioUrlTailProbe] fail open for that URL —
      * the deliberate bias, since a false rejection costs a working stream.
      */
-    private data class YtDlpStream(val url: String, val sizeBytes: Long?)
+    private data class YtDlpStream(
+        val url: String,
+        val sizeBytes: Long?,
+        /** yt-dlp's `vcodec`; `"none"` for a true audio-only format, null if unprinted. */
+        val vcodec: String?,
+    )
 
     /**
      * One yt-dlp `execute()` for [videoId]. [playerClient] pins the YouTube
@@ -760,13 +787,23 @@ class PreviewUrlExtractor @Inject constructor(
             // tells us whether a client served audio-only or fell back to a
             // combined (video-carrying) stream, which matters for a music app's
             // data use.
-            stdout.trim().lines().firstOrNull { it.startsWith("fmt=") }?.let { line ->
+            val fmtLine = stdout.trim().lines().firstOrNull { it.startsWith("fmt=") }
+            // The `fmt=` line comes from the diagnostic --print above. Logging it
+            // tells us whether a client served audio-only or fell back to a
+            // combined (video-carrying) stream, which matters for a music app's
+            // data use.
+            fmtLine?.let { line ->
                 Log.d(TAG, "yt-dlp: $line client=${playerClient ?: "default"}")
                 // The winning client writes last: a client whose URL later fails
                 // the tail probe is overwritten by the one that replaces it, so
                 // the recorded codec always describes the URL actually returned.
                 recordCodec(videoId, line.substringAfter("acodec=", "").substringBefore(' '))
             }
+            val vcodec = fmtLine
+                ?.substringAfter("vcodec=", "")
+                ?.substringBefore(' ')
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it != "NA" }
 
             val streamUrl = stdout.trim().lines().firstOrNull { it.startsWith("http") }
             if (streamUrl.isNullOrBlank()) {
@@ -776,8 +813,8 @@ class PreviewUrlExtractor @Inject constructor(
                 val size = stdout.trim().lines()
                     .firstOrNull { it.startsWith("size=") }
                     ?.removePrefix("size=")?.trim()?.toLongOrNull()
-                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length} size=$size")
-                YtDlpStream(streamUrl, size)
+                Log.d(TAG, "yt-dlp: SUCCESS videoId=$videoId urlLen=${streamUrl.length} size=$size vcodec=$vcodec")
+                YtDlpStream(streamUrl, size, vcodec)
             }
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
