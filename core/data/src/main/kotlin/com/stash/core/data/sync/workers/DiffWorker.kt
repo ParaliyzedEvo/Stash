@@ -28,6 +28,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
 import com.stash.core.model.SyncState
+import com.stash.data.spotify.SpotifyApiClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -76,20 +77,50 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = 
  * per-source singleton with a synthetic source id that no library walk should
  * ever re-type.
  *
- * Known limit: this only sees ids that reach a CUSTOM snapshot, and while
- * auto-mix discovery is on `keepAsLibraryPlaylist` withholds every id the home
- * feed claimed. A Spotify-OWNED playlist the user saved therefore stays
- * DAILY_MIX — which is what it is. A user's OWN playlist is not claimed by the
- * home feed (isSpotifyMix skips owner-less items as of v0.9.99), so it reaches
- * the library walk and heals here, which is the #437 case. Reuniting the two
- * would mean plumbing the library walk's id list into the diff pass; do that
- * only if a saved Made-For-You playlist ever needs to live under Playlists.
+ * Scoped to Spotify ids OUTSIDE Spotify's own namespace, because the type pair
+ * alone does not identify the #437 case and the filters that used to stand in
+ * for it are not load-bearing:
+ *
+ * - YouTube reaches the same pair with a real mix. A saved auto-mix tile is a
+ *   `VLRD…` browseId, and `parseSinglePlaylistFromTwoRowRenderer` accepts any
+ *   VL-prefixed id but `VLLM`/`VLSE` and strips the `VL` — yielding the very
+ *   `RD…` id the home-mix pass snapshotted as DAILY_MIX, now arriving again as
+ *   CUSTOM. `getPlaylistTracks` already documents that `getUserPlaylists()`
+ *   returns saved radios. Nothing on the YouTube path filters this.
+ * - On Spotify, `keepAsLibraryPlaylist` only withholds ids in `homeFeedMixIds`,
+ *   and that set is filled solely inside the home-feed `Success` branch. One
+ *   `Empty`, `Error`, thrown exception, or discovery-off run leaves it empty,
+ *   after which every saved mix whose name isn't literally "Daily Mix N" —
+ *   Discover Weekly, Release Radar, On Repeat, daylist, Blends, the yearly
+ *   recaps — is snapshotted CUSTOM.
+ *
+ * A wrong re-type is worse than the bug this fixes, and the rule is one-way so
+ * it never heals: the row leaves the Home mix rails, `mix_number` is gone,
+ * DiffWorker's syncEnabled gate exempts DAILY_MIX only so the row is skipped
+ * forever after, and `shouldEnqueueForDownload(CUSTOM, offline)` is true — so
+ * one "Enable all" queues an entire rotating mix, the #368 regression the
+ * surrounding code exists to prevent.
+ *
+ * [SPOTIFY_OWNED_ID_PREFIX] is the honest discriminator: Spotify generates
+ * every mix inside it, and the #437 playlists — the user's own — are never in
+ * it. So a Spotify-generated mix is protected whether or not the home-feed pass
+ * ran, and YouTube cannot reach the reconcile at all.
  */
 internal fun reconciledPlaylistType(
     existing: PlaylistType,
     snapshot: PlaylistType,
+    source: MusicSource,
+    sourceId: String,
 ): PlaylistType? =
-    if (existing == PlaylistType.DAILY_MIX && snapshot == PlaylistType.CUSTOM) snapshot else null
+    if (source == MusicSource.SPOTIFY &&
+        !sourceId.startsWith(SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
+        existing == PlaylistType.DAILY_MIX &&
+        snapshot == PlaylistType.CUSTOM
+    ) {
+        snapshot
+    } else {
+        null
+    }
 
 /**
  * Whether a playlist's tracks should be enqueued for download during this sync.
@@ -391,7 +422,12 @@ class DiffWorker @AssistedInject constructor(
             // [reconciledPlaylistType] for why this is one-way only. Resolved
             // BEFORE the art check so a row leaving DAILY_MIX stops rotating
             // its cover in the same pass.
-            val reconciledType = reconciledPlaylistType(existing.type, snapshot.playlistType)
+            val reconciledType = reconciledPlaylistType(
+                existing = existing.type,
+                snapshot = snapshot.playlistType,
+                source = snapshot.source,
+                sourceId = snapshot.sourcePlaylistId,
+            )
             if (reconciledType != null) {
                 playlistDao.updateType(existing.id, reconciledType, mixNumber = null)
                 Log.i(
