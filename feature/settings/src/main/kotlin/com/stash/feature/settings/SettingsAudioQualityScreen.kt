@@ -212,13 +212,15 @@ fun SettingsAudioQualityScreen(
                         // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
                         // no UI to flip it back would kill lossless silently.
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            if (qbdlxExpired) {
+                            // Same gate as the card subtitle: qbdlxExpired excludes ARCOD, so
+                            // without the second term an ARCOD-only user would be told nothing
+                            // is configured directly below their "ARCOD — connected" row. With
+                            // it, this fires only when there is genuinely no lossless source,
+                            // which is what makes the broader wording true.
+                            if (qbdlxExpired && !uiState.arcodConnected) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    // Narrow on purpose: qbdlxExpired is !(hasLogin || relay || custom)
-                                    // and excludes ARCOD, so a broader "no lossless source" claim would
-                                    // contradict the "ARCOD — connected" row above it.
-                                    text = "No Qobuz source configured — connect your account below",
+                                    text = "No lossless source configured — connect your Qobuz account below",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
