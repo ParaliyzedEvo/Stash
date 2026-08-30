@@ -122,7 +122,7 @@ android {
                 keyPassword = releaseKeyPassword
             }
         }
-        create("debug") {
+        getByName("debug") {
             storeFile = rootProject.file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
