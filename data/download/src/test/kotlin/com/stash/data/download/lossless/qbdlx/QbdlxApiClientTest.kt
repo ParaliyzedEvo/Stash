@@ -2,11 +2,14 @@ package com.stash.data.download.lossless.qbdlx
 
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -66,6 +69,62 @@ class QbdlxApiClientTest {
         server.takeRequest()
         assertThat(server.takeRequest().getHeader("X-App-Id")).isEqualTo("999999999")
         assertThat(client.catalogAppId).isEqualTo("999999999")
+    }
+
+    /** One heal, then the 401 is real — never a scrape-retry loop. */
+    @Test fun `a 401 retries at most once`() = runTest {
+        coEvery { webCreds.fetch() } returns QobuzWebCreds(appId = "999999999", appSecret = "s")
+        repeat(2) { server.enqueue(MockResponse().setResponseCode(401).setBody("{}")) }
+        try { client.search("anything"); org.junit.Assert.fail("expected QbdlxAuthException") }
+        catch (e: QbdlxAuthException) { assertThat(e.status).isEqualTo(401) }
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    /**
+     * An app_id rotation is a Qobuz deploy, not a burst. Home fires ~6 catalog calls
+     * at once, so an unfloored heal turns one rotation into six page+bundle scrapes.
+     */
+    @Test fun `heal is throttled — a second 401 within the interval does not scrape again`() = runTest {
+        client.clock = { NOW }
+        coEvery { webCreds.fetch() } returns QobuzWebCreds(appId = "999999999", appSecret = "s")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(MockResponse().setBody("""{"tracks":{"items":[]}}"""))
+        client.search("anything")                    // heals: WEB_APP_ID -> 999999999
+        assertThat(client.catalogAppId).isEqualTo("999999999")
+
+        client.catalogAppId = QbdlxApiClient.WEB_APP_ID   // pretend the id went bad again
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        try { client.search("anything"); org.junit.Assert.fail("expected QbdlxAuthException") }
+        catch (e: QbdlxAuthException) { assertThat(e.status).isEqualTo(401) }
+        coVerify(exactly = 1) { webCreds.fetch() }
+        assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    /**
+     * Loser of a heal race: a concurrent caller rotated the field while this request
+     * was in flight, so this one reuses that id instead of scraping a second time.
+     * Comparing the scrape against the CURRENT field instead of the id this call used
+     * made the loser rethrow even though a good id was already sitting there.
+     *
+     * Driven from the server dispatcher rather than two coroutines so the interleaving
+     * is exact rather than hopeful.
+     */
+    @Test fun `a concurrent healer's app_id is reused without scraping`() = runTest {
+        coEvery { webCreds.fetch() } returns QobuzWebCreds(appId = "111111111", appSecret = "s")
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path!!.contains("app_id=${QbdlxApiClient.WEB_APP_ID}")) {
+                    client.catalogAppId = "999999999"    // the winner heals mid-flight
+                    MockResponse().setResponseCode(401).setBody("{}")
+                } else {
+                    MockResponse().setBody("""{"tracks":{"items":[{"id":7,"title":"x"}]}}""")
+                }
+        }
+        assertThat(client.search("anything").single().id).isEqualTo(7)
+        assertThat(server.requestCount).isEqualTo(2)
+        server.takeRequest()
+        assertThat(server.takeRequest().getHeader("X-App-Id")).isEqualTo("999999999")
+        coVerify(exactly = 0) { webCreds.fetch() }
     }
 
     @Test fun `catalog 401 with no fresh app_id throws QbdlxAuthException`() = runTest {
@@ -186,5 +245,10 @@ class QbdlxApiClientTest {
         assertThat(req.path).contains("playlist/get")
         assertThat(req.path).contains("extra=tracks")
         assertThat(d.tracks.items.single().title).isEqualTo("S")
+    }
+
+    private companion object {
+        /** Fixed clock for the heal throttle — any two reads land inside the floor. */
+        const val NOW = 1_000_000L
     }
 }

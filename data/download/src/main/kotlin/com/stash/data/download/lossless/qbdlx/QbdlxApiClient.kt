@@ -3,6 +3,8 @@ package com.stash.data.download.lossless.qbdlx
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -36,8 +38,17 @@ class QbdlxApiClient @Inject constructor(
      * eight catalog endpoints answer 200 tokenless here and 401 under the bundled
      * Android-lineage id). Public — it sits in Qobuz's own JS bundle. Self-heals:
      * a 401 refreshes it once from the live bundle via [QobuzWebCredentialsClient].
+     *
+     * The heal is single-flighted behind [healMutex] and floored at
+     * [HEAL_MIN_INTERVAL_MS]: Home fires ~6 catalog calls at once, so without both
+     * one rotation would touch off six full page+bundle scrapes. Losers of the race
+     * reuse the winner's id instead of scraping; a 401 inside the floor just throws.
      */
     @Volatile internal var catalogAppId: String = WEB_APP_ID
+    private val healMutex = Mutex()
+    @Volatile private var lastHealMs = 0L
+    /** Test seam — the heal throttle's clock. */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
     internal var httpClient: OkHttpClient = sharedClient  // direct www.qobuz.com; no interceptor
     internal var baseUrl: String = ORIGIN
     internal var json: Json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
@@ -191,14 +202,28 @@ class QbdlxApiClient @Inject constructor(
 
     /** Catalog GET under [catalogAppId], no user token; one self-heal on 401. */
     private suspend fun catalogGet(url: String): String {
-        try {
-            return catalogGetOnce(url, catalogAppId)
+        // Capture the id THIS call used: comparing the scrape against the live field
+        // would make a loser rethrow even though the winner already put a good id there.
+        val used = catalogAppId
+        val fresh = try {
+            return catalogGetOnce(url, used)
         } catch (e: QbdlxAuthException) {
-            val fresh = webCreds.fetch()?.appId?.takeIf { it.isNotBlank() && it != catalogAppId } ?: throw e
-            android.util.Log.i(TAG, "catalog app_id rotated ${catalogAppId} -> $fresh after 401")
-            catalogAppId = fresh
-            return catalogGetOnce(url, fresh)
+            healMutex.withLock {
+                if (catalogAppId != used) {
+                    catalogAppId  // another call already healed — reuse it, don't scrape
+                } else {
+                    val now = clock()
+                    if (now - lastHealMs < HEAL_MIN_INTERVAL_MS) throw e
+                    lastHealMs = now
+                    val scraped = webCreds.fetch()?.appId?.takeIf { it.isNotBlank() && it != used } ?: throw e
+                    android.util.Log.i(TAG, "catalog app_id rotated $used -> $scraped after 401")
+                    catalogAppId = scraped
+                    scraped
+                }
+            }
         }
+        // Outside the try on purpose: a second 401 propagates rather than looping.
+        return catalogGetOnce(url, fresh)
     }
 
     private fun catalogGetOnce(url: String, appIdForCall: String): String {
@@ -220,6 +245,9 @@ class QbdlxApiClient @Inject constructor(
     }
 
     /**
+     * Signed/token'd GET — since the catalog moved to [catalogGet], [getFileUrl] is
+     * its only caller. The paragraphs below are the history of why it exists.
+     *
      * Qobuz binds a `user_auth_token` to the app_id it was minted under: send a
      * different app's id and the SAME token answers 401. The pool mixes tokens from
      * two apps, so the id must come from the TOKEN, never from a client-wide
@@ -278,5 +306,7 @@ class QbdlxApiClient @Inject constructor(
         const val UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36"
         /** Qobuz web-player app_id — the tokenless catalog id. See [catalogAppId]. */
         const val WEB_APP_ID = "712109809"
+        /** Floor between catalog app_id scrapes. A rotation is a deploy, not a burst. */
+        private const val HEAL_MIN_INTERVAL_MS = 60_000L
     }
 }
