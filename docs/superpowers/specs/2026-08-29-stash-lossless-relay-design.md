@@ -76,19 +76,32 @@ App ──GET lossless.json (signed) ──▶ static config host
 
 ## Client (Stash)
 
-**`QbdlxApiClient.getFileUrl`** picks its implementation at call time: BYO token → local signing (unchanged code); else relay base from config → `LosslessRelayClient`; else custom base → `LosslessRelayClient`; else `null`. `LosslessRelayClient` (new, small): OkHttp on the shared client, 8 s timeout, sends `X-Stash-Version`; maps `503 busy` → null + `LosslessSourceHealthGate.recordDegraded(RELAY)` (60 s), `404` → null (no cooldown), `502`/timeout → null + cooldown 5 min; parses the 200 body into the existing `QbdlxFileResult`/`StreamUrl` shape with `expiresAtMs = expires_at * 1000`.
+**`QbdlxApiClient.getFileUrl`** picks its implementation at call time: BYO token → local signing (unchanged code); else relay base from config → `LosslessRelayClient`; else custom base → `LosslessRelayClient`; else `null`. `LosslessRelayClient` (new, small): OkHttp on the shared client, 8 s timeout, sends `X-Stash-Version`. **It owns its own cooldown** — one in-memory `cooledUntilMs` per base URL (busy → now + 60 s; 502/timeout → now + 5 min; 404 → no cooldown) and returns null without a request while cooled. It does *not* use `LosslessSourceHealthGate` (fixed 5-min cooldown, and `QbdlxStreamResolver` deliberately doesn't consult it) nor `LosslessSourceHealth` (a miss counter with no cooldown). Because both `QbdlxStreamResolver` (streaming) and `QbdlxQobuzSource` (downloads) reach the relay through the same client instance, the cooldown applies to both paths automatically. A 200 maps to the existing `QbdlxResolveResult.Ok` exactly as a locally signed `getFileUrl` would; no new field — the streaming path keeps deriving `StreamUrl.expiresAtMs` by parsing `etsp=` out of the URL (`parseEtspMs`), so the relay's `expires_at` is informational only.
 
 **Catalog goes tokenless.** The other eight token-bearing `QbdlxApiClient` methods (search, artists, playlists, albums, featured, discography…) drop the token and signature and send `X-App-Id` only.
 
 **Deleted:** `QbdlxPoolProvider`, `QbdlxPoolCipher`, `QbdlxRemotePool`/`HttpQbdlxRemotePool`, the pool/pinned/pasted halves of `QbdlxCredentialStore` (pool, poolForPicker, refreshIfExhausted, tokensForRegion, deadUntil/lastFailedAt bookkeeping, cached-pool DataStore key), the `encryptPool`/`poolFp` functions and `QBDLX_TOKEN_POOL`/`QBDLX_POOL_FP` build fields, and `release.yml`'s pool-fetch and dex-fingerprint-verify steps.
 
-**`QBDLX_CONFIGURED`** is redefined as `app_id && app_secret` (drops the `tokenPool` term — today an empty pool silently disables lossless even for a connected BYO account). The two registry filters keyed on it (`StreamSourceRegistry.kt:249`, `LosslessSourceRegistry.kt:60`) are removed; the source self-gates on "has any way to sign" (`QbdlxStreamResolver` / `QbdlxQobuzSource` already check `allDead()`).
+**`QBDLX_CONFIGURED`** is redefined as `app_id && app_secret` (drops the `tokenPool` term — today an empty pool silently disables lossless even for a connected BYO account). The two registry filters keyed on it (`StreamSourceRegistry.kt:249`, `LosslessSourceRegistry.kt:60`) are removed.
+
+**Enablement gate — `allDead()` is redefined.** Today `QbdlxCredentialStore.allDead()` returns true when there is no BYO login and no pool token, and `QbdlxQobuzSource.isEnabled()` / `isEnabledForStreaming()` gate on `!allDead()`. After the pool deletion that would be the normal state of every relay-only user, so the source must gate on *any way to obtain a file URL*:
+
+```
+allDead() == !( byoTokenLive || relayConfigured || customEndpointSet )
+```
+
+where `relayConfigured` = the cached runtime config lists at least one relay (a relay that is currently `busy` or cooling still counts as configured — availability is handled by the cooldown, not by enablement), and `customEndpointSet` = the Advanced field is non-blank. The credential store gains read access to the config cache and the custom-endpoint pref for this one predicate; nothing else changes its callers.
 
 **`LosslessConfigFetcher`** (new): `GET https://<config-host>/stash/lossless.json` on launch and every 6 h; body `{"v":1,"relays":[{"base":"https://…","priority":1}],"updated_at":<epoch>}` plus a detached Ed25519 signature (public key baked into the app, private key kept off GitHub). Valid → applied and cached in DataStore; invalid signature → ignored, cached copy kept; network failure → cached copy; nothing cached → no relay. A relay entry is "healthy" when its last `/v1/status` said `accounts_live > 0`.
 
 **Precedence:** BYO never touches the relay; custom endpoint outranks the public relay; relay `busy` on one track cools the relay for 60 s and the rest of the queue keeps resolving through the remaining rungs.
 
-**Downloads:** unchanged — `LosslessUrlDownloader` consumes the same `SourceResult.downloadUrl`. The release-build carve-out in `DownloadManager.kt:141` (strict-FLAC users stranded in `WAITING_FOR_LOSSLESS` when no source is configured) is fixed in the groundwork release.
+**Downloads:** unchanged — `LosslessUrlDownloader` consumes the same `SourceResult.downloadUrl`.
+
+**Strict-FLAC ("fallback off") behaviour — specified.** Today `DownloadManager` forces the lossy fallback chain on debug builds only (`forceYoutubeFallbackOnDebugBuilds = BuildConfig.DEBUG`, `DownloadManager.kt:141`, used at ~230–250) and honours strict deferral into `WAITING_FOR_LOSSLESS` on release — which, with no configured source, is a silent forever-wait. The fix is **not** to force lossy on release (that would override the user's own toggle). It is:
+1. Drop the `BuildConfig.DEBUG` keying: debug and release honour the toggle identically.
+2. Split the deferral reason: `WAITING_FOR_LOSSLESS` keeps its current meaning ("a lossless path exists but did not serve — busy/miss; retry on the existing cadence"), and a new visible reason `NO_LOSSLESS_SOURCE` is used when `allDead()` is true (no BYO, no relay configured, no custom endpoint). Same retry cadence (it re-evaluates the gate each pass, so connecting an account or a config update unblocks it), but the Downloads screen row says *"Waiting for a lossless source — none connected"* with a tap-through to Settings › Audio, instead of a spinner.
+Strict-FLAC users therefore still never receive lossy files; they stop being stranded invisibly.
 
 ## Availability semantics & UI
 
@@ -103,7 +116,7 @@ Relay status is fetched on launch and every 5 min while streaming, never on the 
 
 Per-track `no_match` falls to the next rung silently, exactly as a qbdlx miss does today.
 
-**Home banner:** the ARCOD-rescue banner generalises. Shown only when no lossless path served in the last 6 tries **and** none is connected: *"Lossless is offline right now — Stash is playing YouTube audio. Connect your own Qobuz account to keep FLAC."* Same dismissal and flows; the copy no longer assumes a shipped pool. `LosslessRoutingStatus` becomes stateful (a list of sources with real state) instead of the hardcoded "Qobuz — active" row.
+**Home banner:** the ARCOD-rescue banner generalises. Shown only when no lossless path served in the last 6 tries **and** none is connected: *"Lossless is offline right now — Stash is playing YouTube audio. Connect your own Qobuz account to keep FLAC."* Same flows, but a **new dismissal key** (`losslessOfflineDismissed`) rather than the permanent `arcodRescueDismissed` flag — users who dismissed the old ARCOD banner must still see this one once. The copy no longer assumes a shipped pool. `LosslessRoutingStatus` becomes stateful (a list of sources with real state) instead of the hardcoded "Qobuz — active" row.
 
 **Settings › Audio › Lossless** becomes a status list: Qobuz account (connect/disconnect) · Stash lossless (relay status, read-only) · ARCOD · *Advanced:* Custom lossless endpoint (URL + Test). Removed: the "Direct Qobuz" master toggle, the paste-token field, the account picker. Visibility and effect of the custom-endpoint field are gated together (per `StreamingPreference`'s force-toggle lesson): it is a visible release control, so its effect is not debug-gated.
 
@@ -121,13 +134,15 @@ Per-track `no_match` falls to the next rung silently, exactly as a qbdlx miss do
 
 **Accounts:** 3 playback + 1 probe Qobuz Studio Solo (~$52/month monthly, ~$43 annual), each on its own email, created and paid by the operator, logged in on the relay. Add = `relay accounts add`; `dead` = alert → replace.
 
-**Deploy recipe** (`infra/lossless-relay/README.md`, same shape as `infra/lastfm-proxy`): Node 20, `npm ci`, `relay accounts add`, systemd unit, `cloudflared tunnel` to `<relay-domain>`; publish `lossless.json` + signature to the static config host; back up `relay.db` and the signing key.
+**Deploy recipe** (`infra/lossless-relay/README.md`, following `infra/lastfm-proxy/README.md`'s *document* structure only — the runtime is a Node + systemd process on the home box, not a Cloudflare Worker): Node 20, `npm ci`, `relay accounts add`, systemd unit, `cloudflared tunnel` to `<relay-domain>`; publish `lossless.json` + signature to the static config host; back up `relay.db` and the signing key.
 
 **Rollout (each step reversible):**
 1. **Groundwork release** — tokenless catalog, `QBDLX_CONFIGURED` redefinition, registry filters removed, strict-FLAC stranding fix, `LosslessConfigFetcher` wired to an empty list. Pool code still present; users see no change (the shared pool is already dead).
 2. **Relay soft launch** — relay live with 3 + 1 accounts; `lossless.json` lists it; watch busy rate and account health for a week. Rollback = empty the JSON.
 3. **Pool deletion + Settings/Home honesty UI + custom-endpoint field.** Release notes: "Stash no longer ships anyone's tokens; lossless comes from Stash's own relay when available, or your own Qobuz account."
 4. **Budget tuning** from the probe's findings; add accounts only if the first three survive 30 days.
+
+**Planning units:** steps 1–2 (groundwork release + relay server + soft launch) are the first implementation plan; step 3 (pool deletion, Settings/Home honesty UI, custom-endpoint field, download-reason split UI) is a second plan gated on a week of soft-launch data; step 4 is operations, not code.
 
 **Hygiene (same window, separate commits):** README — delete "The FLAC backbone", fix the "only Spotify and YouTube" claim, name every service contacted, state that the relay hosts no audio, add a contact address; the `QbdlxPoolCipher` concealment comment goes with the file; move the repo to an org; publish an Obtainium-compatible release JSON on the operator's domain; move the tipjar Worker off the real-name subdomain when convenient (not blocking).
 
