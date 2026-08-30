@@ -53,13 +53,13 @@ import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -444,11 +444,9 @@ class SettingsViewModel @Inject constructor(
     /**
      * The user's own relay base, normalised, or null. `QbdlxFileUrlRouter` puts it
      * ahead of every relay from runtime config, so this field is the whole feature.
-     * A new value invalidates the last test result — it described the old base.
      */
     val customEndpoint: StateFlow<String?> =
         losslessPrefs.customLosslessEndpoint
-            .onEach { _customEndpointTest.value = EndpointTestState.IDLE }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -465,18 +463,38 @@ class SettingsViewModel @Inject constructor(
             return
         }
         _customEndpointError.value = null
+        // A commit invalidates the last test result — it described the old base.
+        // This lives here and NOT in an `onEach` on [customEndpoint]: that operator
+        // runs inside the WhileSubscribed(5_000) share, so leaving Settings for more
+        // than five seconds and coming back silently wiped a "Reachable" the user
+        // had just earned, with nothing having changed.
+        _customEndpointTest.value = EndpointTestState.IDLE
         viewModelScope.launch { losslessPrefs.setCustomLosslessEndpoint(normalised) }
     }
+
+    /** Typing clears the rejection — it described text that is no longer in the field. */
+    fun onCustomEndpointEdited() { _customEndpointError.value = null }
+
+    /** The in-flight probe, so a second Test cannot be answered by the first. */
+    private var testJob: Job? = null
 
     /** No endpoint set = nothing to test; the button is disabled for the same reason. */
     fun onTestCustomEndpoint() {
         val base = customEndpoint.value ?: return
+        // A probe runs up to 8s and the field stays editable throughout: without
+        // cancelling the previous one AND re-checking what is on screen, a probe of
+        // the OLD base returned and painted a green "Reachable" beside the new one —
+        // a measurement of a URL the user had already replaced.
+        testJob?.cancel()
         _customEndpointTest.value = EndpointTestState.TESTING
-        viewModelScope.launch {
-            _customEndpointTest.value = if (relayClient.probe(base)) {
-                EndpointTestState.REACHABLE
-            } else {
-                EndpointTestState.UNREACHABLE
+        testJob = viewModelScope.launch {
+            val reachable = relayClient.probe(base)
+            if (customEndpoint.value == base) {
+                _customEndpointTest.value = if (reachable) {
+                    EndpointTestState.REACHABLE
+                } else {
+                    EndpointTestState.UNREACHABLE
+                }
             }
         }
     }
@@ -490,9 +508,18 @@ class SettingsViewModel @Inject constructor(
         qbdlxCredentialStore.hasLogin
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Connected Qobuz account email (null = not connected, OR a migrated token). */
-    private val _qobuzConnectedEmail = MutableStateFlow<String?>(null)
-    val qobuzConnectedEmail: StateFlow<String?> = _qobuzConnectedEmail
+    /**
+     * Connected Qobuz account email (null = not connected, OR a migrated token).
+     *
+     * Reactive, so it cannot drift from the routing row that reads the same flow.
+     * It used to be a MutableStateFlow filled by a coroutine off `init`, which lost
+     * the race against [losslessRouting]'s DataStore read often enough to show the
+     * email in the ROUTING row while the connect form 60dp below still read
+     * "Connected (token)" — telling a password user they had pasted a token.
+     */
+    val qobuzConnectedEmail: StateFlow<String?> =
+        qbdlxCredentialStore.connectedEmailFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** True while a connect attempt is in flight (spinner + disabled button). */
     private val _qobuzConnecting = MutableStateFlow(false)
@@ -509,7 +536,6 @@ class SettingsViewModel @Inject constructor(
         // Must follow _localState declaration: Kotlin initializes properties
         // top-to-bottom and refreshDiagnostics() writes to _localState.
         refreshDiagnostics()
-        refreshQobuzConnected()
     }
 
     /**
@@ -1388,10 +1414,6 @@ class SettingsViewModel @Inject constructor(
 
     // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
 
-    private fun refreshQobuzConnected() {
-        viewModelScope.launch { _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail() }
-    }
-
     /**
      * Connect the user's own Qobuz account (bring-your-own-account): logs in,
      * and on success the token is stored with its signing pair so it serves real
@@ -1406,8 +1428,9 @@ class SettingsViewModel @Inject constructor(
             _qobuzConnecting.value = true
             _qobuzConnectError.value = null
             when (qobuzAccountConnector.connect(email, password)) {
-                is QobuzLoginResult.Success ->
-                    _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail()
+                // Nothing to do: connect() wrote DataStore, so [qobuzConnectedEmail]
+                // and the ROUTING row both re-emit off that one write.
+                is QobuzLoginResult.Success -> Unit
                 QobuzLoginResult.InvalidCredentials ->
                     _qobuzConnectError.value = "Wrong email or password."
                 QobuzLoginResult.FreeAccount ->
@@ -1423,7 +1446,7 @@ class SettingsViewModel @Inject constructor(
     fun onDisconnectQobuz() {
         viewModelScope.launch {
             qobuzAccountConnector.disconnect()
-            _qobuzConnectedEmail.value = null
+            // The email clears itself — disconnect() removes the DataStore key.
             _qobuzConnectError.value = null
         }
     }

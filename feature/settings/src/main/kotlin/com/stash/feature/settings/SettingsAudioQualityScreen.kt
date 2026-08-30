@@ -33,9 +33,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -138,10 +140,17 @@ fun SettingsAudioQualityScreen(
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsToggleRow(
                     title = "Lossless downloads",
-                    subtitle = if (uiState.losslessEnabled) {
-                        "FLAC routing active. Files ~10× larger than MP3."
-                    } else {
-                        "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
+                    // Three-way, because keying "FLAC routing active" on the toggle
+                    // alone asserted it for every user with nothing configured — the
+                    // day-one state — twenty lines above three "not connected" rows.
+                    // The middle branch spans ARCOD too (qbdlxExpired excludes it), so
+                    // it cannot fire while a row underneath says "ARCOD — connected".
+                    subtitle = when {
+                        !uiState.losslessEnabled ->
+                            "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
+                        qbdlxExpired && !uiState.arcodConnected ->
+                            "No lossless source configured — see below. Files ~10× larger than MP3."
+                        else -> "FLAC routing active. Files ~10× larger than MP3."
                     },
                     checked = uiState.losslessEnabled,
                     onCheckedChange = viewModel::onLosslessEnabledChanged,
@@ -165,11 +174,10 @@ fun SettingsAudioQualityScreen(
                         // WebView. Restored 2026-08-01 after the operator rotated
                         // the key + moved us to the /v2/stash routes (verified live).
                         SettingsNavRow(
-                            title = if (uiState.arcodConnected) {
-                                "ARCOD — connected"
-                            } else {
-                                "Connect ARCOD"
-                            },
+                            // No "— connected" suffix: the ROUTING row directly above
+                            // owns that fact, and stating it twice adjacently is how
+                            // the two claims drift apart.
+                            title = if (uiState.arcodConnected) "ARCOD" else "Connect ARCOD",
                             subtitle = "Independent Qobuz lossless (2nd source)",
                             onClick = onNavigateToArcodConnect,
                             leadingContent = {
@@ -532,25 +540,45 @@ fun SettingsAudioQualityScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 // The VM's committed value is the seed AND the
-                                // comparison for commit(): re-keying on it means
-                                // the field snaps to what was actually stored
-                                // (a trailing slash normalises away).
-                                var endpointDraft by remember(customEndpoint) {
+                                // comparison for commit(): re-keying on it means the
+                                // field snaps to what was actually stored WHEN THE
+                                // STORED VALUE CHANGES — a trailing slash normalises
+                                // to the same string, so that edit is swallowed by
+                                // distinctUntilChanged and the slash stays on screen.
+                                // Saveable, not remember: MainActivity declares no
+                                // configChanges, so a rotation mid-URL threw the
+                                // half-typed draft away. A relay base is not a secret.
+                                var endpointDraft by rememberSaveable(customEndpoint) {
                                     mutableStateOf(customEndpoint.orEmpty())
                                 }
+                                // The error lives in the VM and outlives this subtree:
+                                // collapsing Advanced and reopening re-seeds the draft
+                                // from storage but left the rejection on screen — an
+                                // empty field painted red. Clear it on (re)entry.
+                                LaunchedEffect(Unit) { viewModel.onCustomEndpointEdited() }
                                 var endpointWasFocused by remember { mutableStateOf(false) }
                                 val focusManager = LocalFocusManager.current
                                 val commitEndpoint = {
                                     val draft = endpointDraft.trim()
                                     // Per keystroke this would persist `https://re` as a
-                                    // base and route every resolve at it.
+                                    // base and route every resolve at it. The guard skips
+                                    // the common no-op; it does NOT make this idempotent,
+                                    // since the Done path commits and then clears focus
+                                    // before `customEndpoint` has re-emitted. The repeat
+                                    // is an identical write, collapsed downstream.
                                     if (draft != customEndpoint.orEmpty()) {
                                         viewModel.onCustomEndpointCommitted(draft)
                                     }
                                 }
                                 OutlinedTextField(
                                     value = endpointDraft,
-                                    onValueChange = { endpointDraft = it },
+                                    onValueChange = {
+                                        endpointDraft = it
+                                        // Otherwise the red "Must be an https:// URL"
+                                        // outlives the text it judged — including onto
+                                        // an empty field after a collapse/reopen.
+                                        viewModel.onCustomEndpointEdited()
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         // `endpointWasFocused` gates the initial unfocused
@@ -613,7 +641,7 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "Or paste the captcha_verified_at cookie value directly:",
+                                    text = "qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value directly.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

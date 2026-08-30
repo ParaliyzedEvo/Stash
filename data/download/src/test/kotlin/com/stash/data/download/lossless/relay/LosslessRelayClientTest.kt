@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.relay
 
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -97,7 +98,9 @@ class LosslessRelayClientTest {
     @Test fun `probe is true on 200 and never cools`() = runTest {
         server.enqueue(MockResponse().setBody("""{"status":"ok"}"""))
         assertThat(client.probe(base)).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/v1/status")
+        // Bounded: an untimed takeRequest() on a probe that stopped issuing the
+        // request would hang to the CI job timeout instead of failing here.
+        assertThat(server.takeRequest(2, TimeUnit.SECONDS)?.path).isEqualTo("/v1/status")
         assertThat(client.isCooled(base)).isFalse()
     }
 

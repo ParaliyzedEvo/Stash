@@ -79,9 +79,12 @@ internal fun LosslessRoutingStatus(
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless comes from your connected account, or a relay you've configured. " +
-                "Misses try JioSaavn AAC 320 before falling back to YouTube, shown as " +
-                "\"via YT\" while it plays.",
+            // Never enumerate sources here: the rows above are the authority, and an
+            // ARCOD-only user read the old copy ("your connected account, or a relay
+            // you've configured") as crediting them with two paths they don't have —
+            // five lines under a row list that denied both.
+            text = "Lossless comes from the sources above. Misses try JioSaavn AAC 320 before " +
+                "falling back to YouTube, shown as \"via YT\" while it plays.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

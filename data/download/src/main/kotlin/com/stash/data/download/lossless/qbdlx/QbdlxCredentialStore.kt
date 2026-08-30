@@ -101,6 +101,12 @@ class QbdlxCredentialStore @Inject constructor(
      * The connected account's email, or null — including for a MIGRATED pasted
      * token, which has none. Settings labels the account with it, so it must never
      * be what "is an account connected?" keys on: see [hasLogin].
+     *
+     * Do NOT reimplement [connectedEmail] on top of this flow: its `catch { emit(null) }`
+     * turns a transient DataStore error into `null`, which [rejectLogin] reads as
+     * "a migrated token" and would DISCONNECT A PAYING ACCOUNT. That function must
+     * keep throwing — a label that briefly reads wrong is survivable; a wiped
+     * credential is not.
      */
     val connectedEmailFlow: Flow<String?> =
         context.qbdlxCredentialsDataStore.data.map { p -> p[loginEmailKey]?.takeIf { it.isNotBlank() } }

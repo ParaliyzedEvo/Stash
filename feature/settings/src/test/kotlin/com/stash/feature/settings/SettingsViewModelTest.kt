@@ -11,8 +11,10 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -190,6 +192,40 @@ class SettingsViewModelTest {
 
         assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
         coVerify(exactly = 0) { relayClient.probe(any()) }
+        job.cancel()
+    }
+
+    /**
+     * The Test button is disabled while a probe runs but the FIELD is not, and a
+     * probe takes up to 8s: without the identity check in `onTestCustomEndpoint`,
+     * endpoint A's verdict came back and painted a green "Reachable" beside the
+     * endpoint B now on screen — a measurement of a URL the user had replaced.
+     */
+    @Test fun `a probe answered after the endpoint changed cannot label the new one`() = runTest {
+        val stored = MutableStateFlow<String?>("https://a.example")
+        every { losslessPrefs.customLosslessEndpoint } returns stored
+        coEvery { losslessPrefs.setCustomLosslessEndpoint(any()) } coAnswers {
+            stored.value = firstArg<String?>()
+        }
+        val probeA = CompletableDeferred<Boolean>()
+        coEvery { relayClient.probe("https://a.example") } coAnswers { probeA.await() }
+        val vm = newVm()
+        val job = launch { vm.customEndpoint.collect {} }
+        advanceUntilIdle()
+
+        vm.onTestCustomEndpoint()
+        advanceUntilIdle()
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.TESTING)
+
+        // The user retypes the base while A is still in flight.
+        vm.onCustomEndpointCommitted("https://b.example")
+        advanceUntilIdle()
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
+
+        probeA.complete(true) // A finally answers, with B on screen.
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
         job.cancel()
     }
 }
