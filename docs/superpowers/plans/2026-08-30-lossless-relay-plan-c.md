@@ -80,7 +80,7 @@ Runs **first** so Task 2 deletes members nothing references, keeping every commi
 
 VM: remove `_qbdlxTokenChoices`/`qbdlxTokenChoices`, `_qbdlxPinnedToken`/`qbdlxPinnedToken`, `onQbdlxTokenPinned`, `onQbdlxTokenPaste`, **and `refreshQbdlxTokens()` together with its call from `init`** (~`:1332-1337`, called ~`:446`). That removes every `poolForPicker()` / `pinnedToken()` / `setPinnedToken()` / `setPastedToken()` call. Keep `qbdlxExpired` (already `!LosslessAvailability.qbdlxEnabled` since A1), `qobuzConnectedEmail`, `onConnectQobuz`, `onDisconnectQobuz`. **Keep the `qbdlxCredentialStore` constructor param** even though it has no remaining use after this task — Task 4 needs it to expose `hasLogin` for the connect-form key. Removing it here would mean editing `newVm` twice.
 
-Screen: remove the `qbdlxTokenChoices.size > 1` picker block (~`:290-314`), the "Paste token" `OutlinedTextField` and all of its `qbdlxToken`/`committed`/`wasFocused`/`commitToken`/`LaunchedEffect` state (~`:315-365`), and the imports that become unused. Reword the badge (~`:205`) from `"No working token — connect your account below"` to `"No lossless source configured — connect your Qobuz account below"`.
+Screen: remove the `qbdlxTokenChoices.size > 1` picker block (~`:290-314`), the "Paste token" `OutlinedTextField` and all of its `qbdlxToken`/`committed`/`wasFocused`/`commitToken`/`LaunchedEffect` state (~`:315-365`), and the imports that become unused. Reword the badge (~`:205`) from `"No working token — connect your account below"` to **`"No Qobuz source configured — connect your account below"`**. It must stay *narrow*: `qbdlxExpired` is `!(hasLogin || relays.isNotEmpty() || custom != null)` and deliberately **excludes ARCOD** (`LosslessAvailability.kt:38`), so a broader "No lossless source configured" would contradict the `"ARCOD — connected"` row ~40 lines above it on the same screen — the exact dishonest-UI class this plan deletes.
 
 - [ ] **Step 2: Update `SettingsViewModelTest`** — delete the two `coVerify { …setPastedToken(…) }` tests (~`:101`, `:108`) and any stub for a removed member. The `qbdlxExpired` tests stay.
 
@@ -281,6 +281,8 @@ Key the Qobuz row on **`hasLogin`, not the email** — a migrated pasted token h
 
 `LosslessRoutingStatus(rows: List<RoutingRow>, modifier: Modifier = Modifier)` keeps its current visual language (mono `ROUTING` header, `↳` rows, status dots) but renders `rows`. Replace the footer's "Lossless comes from Qobuz" with: *"Lossless comes from your connected account, or a relay you've configured. Misses try JioSaavn AAC 320 before falling back to YouTube, shown as \"via YT\" while it plays."* Update the file KDoc: rows describe **configuration**, not liveness; health arrives with the relay's `/v1/status` in Plan B.
 
+**Housekeeping this task must also do:** delete the `@Suppress("unused")` and its comment from `SettingsViewModel.kt` ~`:110` — Task 1 kept the `qbdlxCredentialStore` param for this task, and once `hasLogin` is read the suppression must go (it is the only `@Suppress("unused")` in the codebase; left behind it would permanently blind a real signal). Also delete the stale rationale at ~`:410-411` naming `allDead()`/"the bundled pool", which stops meaning anything once Task 2 removes `allDead()`.
+
 **Also fix the connect form's visibility key** (`SettingsAudioQualityScreen.kt` ~`:224-288`): it currently keys on `qobuzConnectedEmail`, so a migrated token shows the full email/password form and **no Disconnect button** — the user cannot remove a dead token. Key it on `hasLogin` too, and label it `email ?: "Connected (token)"`.
 
 - [ ] **Step 3: Verify** — `:data:download` and `:feature:settings` tests + compile green. Test idiom note: `:feature:settings` has **no turbine** — collect `StateFlow`s with a live `launch { … }` + `advanceUntilIdle()` job as `SettingsViewModelTest.kt:110-116` already does.
@@ -350,7 +352,7 @@ Rename through the UI: `HomeUiState.showArcodRescue` → `showLosslessOffline` (
 
 - [ ] **Step 2: Stale copy and comments** — including the two the obvious grep misses: `SettingsAudioQualityScreen.kt:239` *"your account, not the shared pool"* and `:142` *"Studio-quality FLAC via Qobuz."* Then run, **scoped away from historical plan docs** (which legitimately describe the pool and must not be edited):
 ```bash
-git grep -n -iE "token pool|pooled token|shared pool|QbdlxPool|MAX_TOKEN_ATTEMPTS|QBDLX_CONFIGURED" -- '*.kt' '*.kts' 'README.md'
+git grep -n -iE "token pool|pooled token|shared pool|bundled pool|allDead|QbdlxPool|MAX_TOKEN_ATTEMPTS|QBDLX_CONFIGURED" -- '*.kt' '*.kts' 'README.md'
 ```
 Resolve every hit or explain why it stays. `DownloadManager.kt:231`'s `QBDLX_CONFIGURED` mention: reword to name `LosslessAvailability`, leave the surrounding logic to Plan A2.
 
