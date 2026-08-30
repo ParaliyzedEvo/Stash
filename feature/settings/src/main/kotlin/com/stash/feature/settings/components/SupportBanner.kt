@@ -3,6 +3,8 @@ package com.stash.feature.settings.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,10 +19,13 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashCyan
 import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashPurpleLight
+
+private const val STASH_PAYPAL_URL = "https://www.paypal.com/paypalme/Paraliyzedevo"
 
 /**
  * A premium gradient Support card for the Settings hub. Renders a one-line pitch
@@ -74,20 +81,71 @@ fun SupportBanner(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Button(
-                onClick = onDonate,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.FavoriteBorder,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+            var showDonateMenu by remember { mutableStateOf(false) }
+            val uriHandler = LocalUriHandler.current
+
+            Box(modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = { showDonateMenu = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FavoriteBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+                }
+                DropdownMenu(
+                    expanded = showDonateMenu,
+                    onDismissRequest = { showDonateMenu = false },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "rawnaldclark (rawn)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Owner, main dev",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showDonateMenu = false
+                            onDonate()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Paraliyzed_evo",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Co-dev — makes the beta builds",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showDonateMenu = false
+                            uriHandler.openUri(STASH_PAYPAL_URL)
+                        },
+                    )
+                }
             }
             OutlinedButton(
                 onClick = onStar,
