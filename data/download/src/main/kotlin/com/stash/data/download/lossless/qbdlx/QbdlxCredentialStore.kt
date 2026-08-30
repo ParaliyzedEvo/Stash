@@ -12,7 +12,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import android.util.Log
 
 /** One anonymized pool token for the Settings picker. `token` is the id only, never shown. */
@@ -76,9 +81,12 @@ class QbdlxCredentialStore @Inject constructor(
     private val pastedTokenKey = stringPreferencesKey("pasted_token")
 
     // ── Signing credentials (app_id → app_secret) ───────────────────────────
-    // Read from BuildConfig directly, like QbdlxApiClient.appId, and exposed as
-    // internal vars so tests can override without a constructor param (an @Inject
-    // constructor can't carry defaults). QBDLX_APP_SECRETS is a "appId:secret,
+    // Read from BuildConfig directly and exposed as internal vars so tests can
+    // override without a constructor param (an @Inject constructor can't carry
+    // defaults). Catalog calls carry no token at all and run under the web
+    // player's own id (QbdlxApiClient.catalogAppId); these pairs exist purely so
+    // [signingFor] can sign getFileUrl with the app_id its token was minted
+    // under. QBDLX_APP_SECRETS is a "appId:secret,
     // appId:secret" map (primary first) that build.gradle composes; empty in an
     // older build just leaves the single primary pair, which stays valid.
     internal var primaryAppId: String = com.stash.data.download.BuildConfig.QBDLX_APP_ID
@@ -137,6 +145,28 @@ class QbdlxCredentialStore @Inject constructor(
     suspend fun connectedEmail(): String? =
         context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
 
+    /**
+     * Live view of "a connected account exists" for the availability predicates.
+     * A pasted token awaiting migration counts — it is user-owned and the
+     * migration runs on the first [loginCredential].
+     */
+    val hasLogin: Flow<Boolean> =
+        context.qbdlxCredentialsDataStore.data.map { p ->
+            val t = p[loginTokenKey]
+            val a = p[loginAppIdKey]
+            val s = p[loginAppSecretKey]
+            (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank()) ||
+                !p[pastedTokenKey].isNullOrBlank()
+        }
+            // DataStore re-emits the whole Preferences on every unrelated write
+            // (pool cache, pinned token), and a read error must not terminate the
+            // combine this feeds for the rest of the process — fail closed instead.
+            .distinctUntilChanged()
+            .catch { emit(false) }
+
+    /** A connected account exists and is not inside a dead-cooldown. */
+    suspend fun loginLive(): Boolean = loginCredential()?.let { !isDead(it.token) } ?: false
+
     /** The user-connected account, or null. Cached in memory after the first read. */
     suspend fun loginCredential(): QbdlxLoginCredential? {
         if (!loginLoaded) {
@@ -147,8 +177,38 @@ class QbdlxCredentialStore @Inject constructor(
             cachedLogin = if (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank())
                 QbdlxLoginCredential(t, a, s) else null
             loginLoaded = true
+            if (cachedLogin == null) {
+                try {
+                    migratePastedToken()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // This runs inside a bare viewModelScope.launch (allDead()); an
+                    // edit{} failure here must not take the process down.
+                    Log.w(TAG, "pasted-token migration failed: ${e.javaClass.simpleName}")
+                }
+            }
         }
         return cachedLogin
+    }
+
+    /**
+     * One-shot upgrade path: a user who pasted a token before the pool left the
+     * app keeps working. `pasted_token` is a lone string that always signed under
+     * the primary BuildConfig pair (see [signingFor]'s fallback), so that pair is
+     * what the migrated credential stores. Runs only when no login exists.
+     */
+    private suspend fun migratePastedToken() {
+        val pasted = pastedToken() ?: return
+        if (primaryAppId.isBlank() || primaryAppSecret.isBlank()) {
+            Log.i(TAG, "pasted token not migrated: no primary signing pair")
+            return
+        }
+        Log.i(TAG, "migrating pasted token into the connected-account slot")
+        setUserCredential(pasted, primaryAppId, primaryAppSecret, email = null)
+        // Only drop the value we actually migrated — a token pasted concurrently
+        // must not be swallowed by this cleanup.
+        context.qbdlxCredentialsDataStore.edit { if (it[pastedTokenKey] == pasted) it.remove(pastedTokenKey) }
     }
 
     /** Persist a connected account (token + the app_id/secret it was minted under). */
@@ -287,11 +347,13 @@ class QbdlxCredentialStore @Inject constructor(
      * have never probed sorts ahead of one we know failed, and among failed ones the
      * oldest failure goes first, so successive resolves work DOWN the pool.
      *
-     * Selection used to be canonical order alone, which meant every resolve re-probed
-     * the same head of the list: QbdlxQobuzSource only tries a bounded number of
-     * tokens per resolve, and [DEAD_COOLDOWN_MS] expires between tracks, so anything
-     * past that first handful was unreachable and a live token further down was never
-     * found (device-verified 2026-08-15 against a 17-token pool).
+     * Pool-era ordering. QbdlxQobuzSource no longer rotates tokens at all — the
+     * resolve path takes ONE file-url attempt through QbdlxFileUrlRouter — so the
+     * only token that gets marked today is the user's own login, for which
+     * [deadUntil] is a plain [DEAD_COOLDOWN_MS] cooldown before it is retried.
+     * This ordering still governs the legacy pool, and stays because a pool that
+     * probed only the head of the list never reached a live token further down
+     * (device-verified 2026-08-15 against a 17-token pool).
      *
      * Deliberately SURVIVES a pool refresh: a freshly-added token has no entry here,
      * so it sorts first and is probed immediately instead of queueing behind the
@@ -461,25 +523,28 @@ class QbdlxCredentialStore @Inject constructor(
         context.qbdlxCredentialsDataStore.edit { prefs ->
             if (t.isNullOrEmpty()) prefs.remove(pastedTokenKey) else prefs[pastedTokenKey] = t
         }
+        // This store is a process-wide singleton whose lazy login load is cached
+        // by the FIRST availability/resolve check — by the time the user pastes,
+        // that cache holds its null and nothing would ever migrate the new value.
+        if (!t.isNullOrEmpty()) loginLoaded = false // re-arm: the next loginCredential() re-reads and migrates the paste
     }
 
     /**
      * True when there is NO usable token: none configured at all (no bundled
-     * pool, no paste), or every configured one is currently dead. Drives the
-     * Settings "paste a token" badge AND gates the source off entirely via
-     * isEnabled/isEnabledForStreaming. A tokenless build MUST surface the paste
-     * prompt and drop out of the chain — an earlier "empty pool isn't expired"
-     * guard here returned false instead, which hid the v0.9.65–v0.9.68 blank
-     * BuildConfig credentials as silent per-track no_results.
+     * pool, no paste), or every configured one is currently dead. ZERO production
+     * callers now — `LosslessAvailability` gates the source and drives the Settings
+     * badge; this is kept for the pool-era tests, and Plan C deletes it with the
+     * pool. A tokenless build MUST surface the paste prompt — an earlier "empty
+     * pool isn't expired" guard here returned false instead, which hid the
+     * v0.9.65–v0.9.68 blank BuildConfig credentials as silent per-track no_results.
      */
     suspend fun allDead(): Boolean {
         ensureCacheLoaded()
         // A live connected account is a usable credential all on its own.
         loginCredential()?.let { if (!isDead(it.token)) return false }
         val pasted = pastedToken()
-        // Lets a fully-dead build heal itself: allDead() drives the Settings
-        // badge AND gates the source off entirely, so refreshing here means
-        // qbdlx can come back without the user doing anything.
+        // Lets a fully-dead build heal itself: refreshing here means qbdlx can
+        // come back without the user doing anything.
         refreshIfExhausted()
         val poolTokens = pool().map { it.token }
         if (poolTokens.isEmpty() && pasted == null) return true // no credentials at all
@@ -501,8 +566,10 @@ class QbdlxCredentialStore @Inject constructor(
         const val MAX_REGION_TRIES = 3
 
         // Dead-token cooldown before a token is retried (circuit-breaker style).
-        // 60s, deliberately SHORT: a dead token blacks out BOTH download and
-        // streaming (isEnabled + isEnabledForStreaming gate on allDead), so a
+        // 60s, deliberately SHORT: a cooled login is one fewer file-url path
+        // (LosslessAvailability.fileUrlAvailableNow, which the source's isEnabled
+        // and isEnabledForStreaming now gate on; allDead() has no production
+        // caller left — it is kept for the pool-era tests), so a
         // TRANSIENT failure (a preview/522/timeout on the shared account under
         // the download burst) that trips a mark-dead must not kill qbdlx for
         // long. 60s recovers fast; a genuinely-dead token just re-marks, costing
@@ -519,11 +586,8 @@ class QbdlxCredentialStore @Inject constructor(
 
         /**
          * Consecutive auth failures (no success in between) that trigger a pool
-         * refresh. One resolve's attempt budget in QbdlxQobuzSource is 6, so this is
-         * "a whole resolve found nothing but dead tokens" — the reachable form of
-         * "our pool has rotted", which the all-dead check alone could never observe
-         * on a pool larger than that budget. [REFRESH_MIN_INTERVAL_MS] still bounds
-         * the resulting webhook calls, so a looser trigger costs nothing.
+         * refresh. [REFRESH_MIN_INTERVAL_MS] still bounds the resulting webhook
+         * calls, so a looser trigger costs nothing.
          */
         const val REFRESH_FAILURE_STREAK = 6
 

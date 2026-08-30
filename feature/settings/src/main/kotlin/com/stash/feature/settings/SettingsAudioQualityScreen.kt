@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,9 +42,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
@@ -87,7 +92,6 @@ fun SettingsAudioQualityScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val qbdlxEnabled by viewModel.qbdlxEnabled.collectAsStateWithLifecycle()
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
     val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
     val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
@@ -192,146 +196,173 @@ fun SettingsAudioQualityScreen(
                         )
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
-                        // primary lossless source. Per-source enable toggle gates
-                        // BOTH download and streaming; the token field is the
-                        // refresh path when the bundled pool ages out, and the
-                        // badge surfaces all-dead.
-                        SettingsToggleRow(
-                            title = "Direct Qobuz",
-                            subtitle = "Hi-Res FLAC, straight from Qobuz.",
-                            checked = qbdlxEnabled,
-                            onCheckedChange = viewModel::onQbdlxEnabledChange,
-                        )
-                        AnimatedVisibility(
-                            visible = qbdlxEnabled,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                if (qbdlxExpired) {
+                        // primary lossless source. The token field is the refresh
+                        // path when the bundled pool ages out; the badge shows when
+                        // no lossless path is configured (`LosslessAvailability
+                        // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
+                        // no UI to flip it back would kill lossless silently.
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (qbdlxExpired) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "No working token — connect your account below",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+
+                            // -- Bring your own Qobuz account -------------
+                            // The user's own paid subscription: the one
+                            // credential guaranteed to serve FLAC, since we
+                            // mint + sign its token under a matching app_id.
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Your Qobuz account",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            val connectedEmail = qobuzConnectedEmail
+                            if (connectedEmail != null) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Connected as $connectedEmail",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                TextButton(onClick = viewModel::onDisconnectQobuz) {
+                                    Text("Disconnect")
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Sign in with your own Qobuz subscription for " +
+                                        "guaranteed lossless — your account, not the shared pool.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                var qobuzEmail by remember { mutableStateOf("") }
+                                var qobuzPassword by remember { mutableStateOf("") }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = qobuzEmail,
+                                    onValueChange = { qobuzEmail = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Qobuz email") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = qobuzPassword,
+                                    onValueChange = { qobuzPassword = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Password") },
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                )
+                                qobuzConnectError?.let { err ->
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "No working token — connect your account below",
+                                        text = err,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.error,
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { viewModel.onConnectQobuz(qobuzEmail, qobuzPassword) },
+                                    enabled = !qobuzConnecting,
+                                ) {
+                                    if (qobuzConnecting) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Connecting…")
+                                    } else {
+                                        Text("Connect")
+                                    }
+                                }
+                            }
 
-                                // -- Bring your own Qobuz account -------------
-                                // The user's own paid subscription: the one
-                                // credential guaranteed to serve FLAC, since we
-                                // mint + sign its token under a matching app_id.
-                                Spacer(modifier = Modifier.height(8.dp))
+                            if (qbdlxTokenChoices.size > 1) {
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Your Qobuz account",
+                                    text = "Account",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
-                                val connectedEmail = qobuzConnectedEmail
-                                if (connectedEmail != null) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Connected as $connectedEmail",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary,
+                                Column(modifier = Modifier.selectableGroup()) {
+                                    SettingsPickerRow(
+                                        selected = qbdlxPinnedToken == null,
+                                        title = "Auto",
+                                        subtitle = "Recommended — uses a working account and fails over",
+                                        onClick = { viewModel.onQbdlxTokenPinned(null) },
                                     )
-                                    TextButton(onClick = viewModel::onDisconnectQobuz) {
-                                        Text("Disconnect")
-                                    }
-                                } else {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Sign in with your own Qobuz subscription for " +
-                                            "guaranteed lossless — your account, not the shared pool.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    var qobuzEmail by remember { mutableStateOf("") }
-                                    var qobuzPassword by remember { mutableStateOf("") }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    OutlinedTextField(
-                                        value = qobuzEmail,
-                                        onValueChange = { qobuzEmail = it },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("Qobuz email") },
-                                        singleLine = true,
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    OutlinedTextField(
-                                        value = qobuzPassword,
-                                        onValueChange = { qobuzPassword = it },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("Password") },
-                                        singleLine = true,
-                                        visualTransformation = PasswordVisualTransformation(),
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                    )
-                                    qobuzConnectError?.let { err ->
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = err,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Button(
-                                        onClick = { viewModel.onConnectQobuz(qobuzEmail, qobuzPassword) },
-                                        enabled = !qobuzConnecting,
-                                    ) {
-                                        if (qobuzConnecting) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(16.dp),
-                                                strokeWidth = 2.dp,
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Connecting…")
-                                        } else {
-                                            Text("Connect")
-                                        }
-                                    }
-                                }
-
-                                if (qbdlxTokenChoices.size > 1) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Account",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Column(modifier = Modifier.selectableGroup()) {
+                                    qbdlxTokenChoices.forEach { choice ->
                                         SettingsPickerRow(
-                                            selected = qbdlxPinnedToken == null,
-                                            title = "Auto",
-                                            subtitle = "Recommended — uses a working account and fails over",
-                                            onClick = { viewModel.onQbdlxTokenPinned(null) },
+                                            selected = qbdlxPinnedToken == choice.token,
+                                            title = choice.label,
+                                            subtitle = choice.country +
+                                                if (choice.live) "" else " · offline",
+                                            onClick = { viewModel.onQbdlxTokenPinned(choice.token) },
                                         )
-                                        qbdlxTokenChoices.forEach { choice ->
-                                            SettingsPickerRow(
-                                                selected = qbdlxPinnedToken == choice.token,
-                                                title = choice.label,
-                                                subtitle = choice.country +
-                                                    if (choice.live) "" else " · offline",
-                                                onClick = { viewModel.onQbdlxTokenPinned(choice.token) },
-                                            )
-                                        }
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                var qbdlxToken by remember { mutableStateOf("") }
-                                OutlinedTextField(
-                                    value = qbdlxToken,
-                                    onValueChange = {
-                                        qbdlxToken = it
-                                        viewModel.onQbdlxTokenPaste(it)
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Paste token") },
-                                    singleLine = true,
-                                    placeholder = { Text("user_auth_token") },
-                                )
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            // Commits on Done / focus loss — per-keystroke writes
+                            // would let a background resolve migrate a partial
+                            // token into the connected-account slot.
+                            //
+                            // The field owns its draft (only a disconnect resets it, above),
+                            // so `committed` is what tracks the last value handed to
+                            // the VM — without it, clearing the field back to blank
+                            // would never reach `setPastedToken(null)`.
+                            var qbdlxToken by remember { mutableStateOf("") }
+                            var committed by remember { mutableStateOf("") }
+                            // Disconnect clears the login slot; forget the
+                            // draft/committed pair too so the same token can be
+                            // re-pasted.
+                            LaunchedEffect(qobuzConnectedEmail) {
+                                if (qobuzConnectedEmail == null) {
+                                    qbdlxToken = ""
+                                    committed = ""
+                                }
+                            }
+                            var wasFocused by remember { mutableStateOf(false) }
+                            val focusManager = LocalFocusManager.current
+                            val commitToken = {
+                                val draft = qbdlxToken.trim()
+                                if (draft != committed) {
+                                    committed = draft
+                                    viewModel.onQbdlxTokenPaste(draft)
+                                }
+                            }
+                            OutlinedTextField(
+                                value = qbdlxToken,
+                                onValueChange = { qbdlxToken = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    // `wasFocused` gates the initial unfocused
+                                    // callback, which would otherwise commit "".
+                                    .onFocusChanged { state ->
+                                        if (wasFocused && !state.isFocused) commitToken()
+                                        wasFocused = state.isFocused
+                                    },
+                                label = { Text("Paste token") },
+                                singleLine = true,
+                                placeholder = { Text("user_auth_token") },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        commitToken()
+                                        focusManager.clearFocus()
+                                    },
+                                ),
+                            )
                         }
 
                         // -- Download quality picker --------------------------

@@ -41,6 +41,7 @@ import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.media.streaming.KennyyHealthProbe
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
+import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -164,6 +165,14 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var kennyyHealthProbe: KennyyHealthProbe
 
     /**
+     * The signed runtime relay list — the APK ships no relay hostname. Started
+     * from [onCreate]: loads the cached config, then fetches and signature-checks
+     * a fresh one immediately and every 6 h.
+     */
+    @Inject
+    lateinit var losslessConfigFetcher: LosslessConfigFetcher
+
+    /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
      * later share the latest report from Settings → Diagnostics. Installed
      * as the first thing after super.onCreate() so it catches errors from
@@ -244,6 +253,7 @@ class StashApplication : Application(), Configuration.Provider {
                 }
             },
         )
+        losslessConfigFetcher.start(applicationScope)
         applicationScope.launch {
             // Best-effort: a startup DB write that throws (e.g.
             // SQLiteFullException on a device the user filled with FLAC) must

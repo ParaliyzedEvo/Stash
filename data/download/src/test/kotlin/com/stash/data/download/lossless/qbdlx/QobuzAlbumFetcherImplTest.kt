@@ -2,33 +2,29 @@ package com.stash.data.download.lossless.qbdlx
 
 import io.mockk.coEvery
 import io.mockk.mockk
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for [QobuzAlbumFetcherImpl]. [QbdlxApiClient] + [QbdlxCredentialStore]
- * are MockK'd; the mocked getAlbum returns the real parsed `album_loveless.json`
- * fixture so the Qobuz→AlbumDetail mapping runs against a faithful response.
+ * Unit tests for [QobuzAlbumFetcherImpl]. [QbdlxApiClient] is MockK'd; the mocked
+ * getAlbum returns the real parsed `album_loveless.json` fixture so the
+ * Qobuz→AlbumDetail mapping runs against a faithful response.
  */
 class QobuzAlbumFetcherImplTest {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
     private fun fixture(n: String) = javaClass.classLoader!!.getResourceAsStream("qbdlx/$n")!!.reader().readText()
 
     private val apiClient: QbdlxApiClient = mockk()
-    private val credentialStore: QbdlxCredentialStore = mockk()
 
-    private fun fetcher() = QobuzAlbumFetcherImpl(apiClient, credentialStore)
+    private fun fetcher() = QobuzAlbumFetcherImpl(apiClient)
 
     @Test
     fun `maps qobuz album to AlbumDetail with blank videoIds and real durations`() = runTest {
         val album = json.decodeFromString<QbdlxAlbumDetailResponse>(fixture("album_loveless.json"))
-        coEvery { credentialStore.activeToken() } returns "tok"
-        coEvery { apiClient.getAlbum("123", "tok") } returns album
+        coEvery { apiClient.getAlbum("123") } returns album
 
         val detail = fetcher().getAlbum("123")
 
@@ -40,15 +36,6 @@ class QobuzAlbumFetcherImplTest {
     }
 
     @Test
-    fun `throws when no live token`() {
-        coEvery { credentialStore.activeToken() } returns null
-
-        assertThrows(IllegalStateException::class.java) {
-            runBlocking { fetcher().getAlbum("123") }
-        }
-    }
-
-    @Test
     fun `maps qobuz playlist to AlbumDetail with curator as artist`() = runTest {
         val playlist = json.decodeFromString<QbdlxPlaylistDetailResponse>(
             """{"id":67048110,"name":"Brazilcore II","owner":{"name":"Qobuz France"},
@@ -57,8 +44,7 @@ class QobuzAlbumFetcherImplTest {
                  {"id":1,"title":"Funky Tamborim","performer":{"name":"Tania Maria"},
                   "duration":195,"album":{"title":"Love Explosion","image":{"large":"AL"}}}]}}""",
         )
-        coEvery { credentialStore.activeToken() } returns "tok"
-        coEvery { apiClient.getPlaylist("67048110", "tok") } returns playlist
+        coEvery { apiClient.getPlaylist("67048110") } returns playlist
 
         val detail = fetcher().getPlaylist("67048110")
 

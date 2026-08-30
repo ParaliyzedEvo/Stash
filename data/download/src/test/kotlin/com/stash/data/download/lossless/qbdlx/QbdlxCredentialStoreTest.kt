@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.qbdlx
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -150,5 +151,48 @@ class QbdlxCredentialStoreTest {
     @Test
     fun `poolForPicker is empty for an empty pool`() = runTest {
         assertThat(store("").poolForPicker()).isEmpty()
+    }
+
+    @Test
+    fun `hasLogin reflects the connected account`() = runTest {
+        val s = store("")
+        assertThat(s.hasLogin.first()).isFalse()
+        s.setUserCredential("tok", "798273057", "sec", email = "me@x")
+        assertThat(s.hasLogin.first()).isTrue()
+        assertThat(s.loginLive()).isTrue()
+        s.markDead("tok")
+        assertThat(s.loginLive()).isFalse()
+        s.clearUserCredential()
+        assertThat(s.hasLogin.first()).isFalse()
+    }
+
+    @Test
+    fun `a pasted token is migrated into the login slot with the primary signing pair`() = runTest {
+        val s0 = store("")
+        s0.setPastedToken("pasted-tok")
+        val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
+        val login = s.loginCredential()
+        assertThat(login).isEqualTo(QbdlxLoginCredential("pasted-tok", "798273057", "primary-secret"))
+        assertThat(s.connectedEmail()).isNull()
+        assertThat(s.activeToken()).isEqualTo("pasted-tok")
+        s.clearUserCredential()
+        assertThat(s.activeToken()).isNull()   // pasted key gone: nothing left to serve (empty pool, login cleared)
+    }
+
+    @Test
+    fun `hasLogin is true for a pasted token awaiting migration`() = runTest {
+        val s = store("")
+        assertThat(s.hasLogin.first()).isFalse()
+        s.setPastedToken("legacy")
+        assertThat(s.hasLogin.first()).isTrue()
+    }
+
+    @Test
+    fun `a token pasted after the store has loaded is migrated on the next read`() = runTest {
+        val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
+        assertThat(s.loginCredential()).isNull()          // loginLoaded = true, nothing to migrate
+        s.setPastedToken("late-paste")
+        assertThat(s.loginCredential()?.token).isEqualTo("late-paste")
+        assertThat(s.loginLive()).isTrue()
     }
 }

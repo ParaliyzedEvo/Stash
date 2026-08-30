@@ -36,6 +36,7 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
@@ -106,6 +107,7 @@ class SettingsViewModel @Inject constructor(
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
+    private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
     private val likePreferences: LikePreferences,
     private val trackDao: TrackDao,
@@ -401,19 +403,18 @@ class SettingsViewModel @Inject constructor(
     private val _localState = MutableStateFlow(LocalState())
 
     /**
-     * True when every qbdlx token (pasted + pool) is dead — drives the
-     * Settings "expired, paste a fresh token" badge. The store exposes only a
-     * suspend `allDead()`, so we poll it on construction and after each paste
-     * (the only events that flip it). ponytail: poll-on-change, add a store
-     * Flow if another surface needs live updates.
+     * True when NO lossless path is configured (no connected account, no custom
+     * endpoint, no relay) — drives the Settings "connect your account" line.
+     * Was `qbdlxCredentialStore.allDead()`, which can never be true once the
+     * bundled pool went inert (nothing marks pool tokens dead any more).
      *
-     * MUST be declared above the [init] block: Kotlin initializes properties
-     * top-to-bottom, and `init`'s refreshQbdlxExpired() writes to this field
-     * (synchronously, when allDead()'s DataStore read hits its cache) — a
-     * below-init declaration left it null → NPE opening Settings.
+     * MUST stay declared above the [init] block: Kotlin initializes properties
+     * top-to-bottom, and anything in `init` that touches this field before its
+     * declaration reads null → NPE opening Settings.
      */
-    private val _qbdlxExpired = MutableStateFlow(false)
-    val qbdlxExpired: StateFlow<Boolean> = _qbdlxExpired
+    val qbdlxExpired: StateFlow<Boolean> =
+        losslessAvailability.qbdlxEnabled.map { !it }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val _qbdlxTokenChoices = MutableStateFlow<List<QbdlxTokenChoice>>(emptyList())
     val qbdlxTokenChoices: StateFlow<List<QbdlxTokenChoice>> = _qbdlxTokenChoices
@@ -440,7 +441,6 @@ class SettingsViewModel @Inject constructor(
         // Must follow _localState declaration: Kotlin initializes properties
         // top-to-bottom and refreshDiagnostics() writes to _localState.
         refreshDiagnostics()
-        refreshQbdlxExpired()
         refreshQbdlxTokens()
         refreshQobuzConnected()
     }
@@ -1321,34 +1321,12 @@ class SettingsViewModel @Inject constructor(
 
     // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
 
-    /**
-     * Per-source enable toggle for qbdlx. Gates BOTH download and streaming
-     * (the source reads `qbdlxEnabledNow()` in both `isEnabled()` and
-     * `isEnabledForStreaming()`). Default true.
-     */
-    val qbdlxEnabled: StateFlow<Boolean> =
-        losslessPrefs.qbdlxEnabled.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = true,
-        )
-
-    /** Persist the qbdlx enable flip. */
-    fun onQbdlxEnabledChange(enabled: Boolean) {
-        viewModelScope.launch { losslessPrefs.setQbdlxEnabled(enabled) }
-    }
-
-    /** Store (or clear, on blank) the user-pasted qbdlx token, then re-check expiry. */
+    /** Store (or clear, on blank) the user-pasted qbdlx token. */
     fun onQbdlxTokenPaste(token: String) {
         viewModelScope.launch {
             qbdlxCredentialStore.setPastedToken(token.ifBlank { null })
-            _qbdlxExpired.value = qbdlxCredentialStore.allDead()
             _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
         }
-    }
-
-    private fun refreshQbdlxExpired() {
-        viewModelScope.launch { _qbdlxExpired.value = qbdlxCredentialStore.allDead() }
     }
 
     private fun refreshQbdlxTokens() {
@@ -1359,6 +1337,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Pin a specific pool token (or null = Auto), then refresh the picker state. */
+    // ponytail: account picker + pin are inert until Plan C (activeToken() has no production caller)
     fun onQbdlxTokenPinned(token: String?) {
         viewModelScope.launch {
             qbdlxCredentialStore.setPinnedToken(token)
@@ -1385,10 +1364,8 @@ class SettingsViewModel @Inject constructor(
             _qobuzConnecting.value = true
             _qobuzConnectError.value = null
             when (qobuzAccountConnector.connect(email, password)) {
-                is QobuzLoginResult.Success -> {
+                is QobuzLoginResult.Success ->
                     _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail()
-                    _qbdlxExpired.value = qbdlxCredentialStore.allDead()
-                }
                 QobuzLoginResult.InvalidCredentials ->
                     _qobuzConnectError.value = "Wrong email or password."
                 QobuzLoginResult.FreeAccount ->
@@ -1406,7 +1383,6 @@ class SettingsViewModel @Inject constructor(
             qobuzAccountConnector.disconnect()
             _qobuzConnectedEmail.value = null
             _qobuzConnectError.value = null
-            _qbdlxExpired.value = qbdlxCredentialStore.allDead()
         }
     }
 

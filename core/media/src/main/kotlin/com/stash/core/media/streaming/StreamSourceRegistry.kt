@@ -239,14 +239,13 @@ class StreamSourceRegistry @Inject constructor(
                 // add("kennyy" to kennyy::resolve)
                 // add("squid" to qobuz::resolve)
 
-                // qbdlx (direct Qobuz API, per-account token pool) is the
-                // primary lossless source: plain Range-seekable FLAC, no proxy,
-                // no client-side decrypt — the fastest path. Foreground/next-up
-                // only (allowYtDlp = true), never the speculative background
-                // fill, and only when the build actually bundles qbdlx creds —
-                // an unconfigured build can never get a match here, so skipping
-                // the attempt avoids a wasted round-trip.
-                if (allowYtDlp && BuildConfig.QBDLX_CONFIGURED) {
+                // qbdlx (direct Qobuz API) is the primary lossless source:
+                // plain Range-seekable FLAC, no proxy, no client-side decrypt —
+                // the fastest path. Foreground/next-up only (allowYtDlp = true),
+                // never the speculative background fill.
+                // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
+                // / relay); no build gate.
+                if (allowYtDlp) {
                     add("qbdlx" to qbdlx::resolve)
                 }
                 // PARKED 2026-07-30: amz and arcod are no longer working lossless
@@ -297,12 +296,11 @@ class StreamSourceRegistry @Inject constructor(
         // been tried and failed, or silently excluded before it ever ran. The two
         // gates that can drop a source here are invisible from the outside:
         // `allowYtDlp` (false for speculative background fill) and the
-        // compile-time BuildConfig flags. Info level so a release build says so.
+        // compile-time ARCOD_CONFIGURED flag. Info level so a release build says so.
         Log.i(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
                 "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp " +
-                "qbdlxConfigured=${BuildConfig.QBDLX_CONFIGURED} " +
                 "arcodConfigured=${BuildConfig.ARCOD_CONFIGURED}",
         )
 

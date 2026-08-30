@@ -15,8 +15,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** DataStore for lossless-source preferences (priority order, min quality, etc). */
 private val Context.losslessDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -47,7 +50,7 @@ class LosslessSourcePreferences @Inject constructor(
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
-    private val qbdlxEnabledKey = booleanPreferencesKey("qbdlx_enabled")
+    private val customLosslessEndpointKey = stringPreferencesKey("custom_lossless_endpoint")
     private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
     private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
@@ -84,21 +87,24 @@ class LosslessSourcePreferences @Inject constructor(
     suspend fun enabledNow(): Boolean = enabled.first()
 
     /**
-     * Per-source enable toggle for the qbdlx direct-Qobuz source. Defaults
-     * to true — fresh installs land it ready (it has a bundled token pool).
-     * Gates BOTH download ([QbdlxQobuzSource.isEnabled]) and streaming
-     * ([QbdlxQobuzSource.isEnabledForStreaming]); turning it off blocks the
-     * source everywhere. Mirrors [enabled]/[enabledNow]; no requeue side
-     * effect (it's one source among several, not the master switch).
+     * A user-supplied lossless relay base URL (Settings › Audio › Advanced), or
+     * null. Outranks the public relay from runtime config when set — an explicit
+     * choice beats an implicit one. Stored normalised: https only, no trailing
+     * slash, no query. The APK ships no default. Deduped (the store re-emits on
+     * every unrelated write) and fail-closed (a read error must not terminate a
+     * `combine`).
      */
-    val qbdlxEnabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
-        prefs[qbdlxEnabledKey] ?: true
-    }
+    val customLosslessEndpoint: Flow<String?> = context.losslessDataStore.data.map { prefs ->
+        prefs[customLosslessEndpointKey]?.takeIf { it.isNotBlank() }
+    }.distinctUntilChanged().catch { emit(null) }
 
-    suspend fun qbdlxEnabledNow(): Boolean = qbdlxEnabled.first()
+    suspend fun customLosslessEndpointNow(): String? = customLosslessEndpoint.first()
 
-    suspend fun setQbdlxEnabled(value: Boolean) {
-        context.losslessDataStore.edit { prefs -> prefs[qbdlxEnabledKey] = value }
+    suspend fun setCustomLosslessEndpoint(raw: String?) {
+        val v = normaliseEndpoint(raw)
+        context.losslessDataStore.edit { prefs ->
+            if (v == null) prefs.remove(customLosslessEndpointKey) else prefs[customLosslessEndpointKey] = v
+        }
     }
 
     suspend fun setEnabled(value: Boolean) {
@@ -347,5 +353,17 @@ class LosslessSourcePreferences @Inject constructor(
             "arcod",
             "amz",
         )
+
+        /**
+         * Validates + normalises a relay base URL: must parse as an https URL
+         * (OkHttp's rules — a bad host is rejected here, never at request time),
+         * scheme/host lower-cased, query and fragment dropped, trailing slashes
+         * trimmed. A path prefix is kept (a relay behind a reverse-proxy subpath
+         * is legitimate). Null when unusable.
+         */
+        fun normaliseEndpoint(raw: String?): String? {
+            val u = raw?.trim()?.toHttpUrlOrNull()?.takeIf { it.scheme == "https" } ?: return null
+            return u.newBuilder().query(null).fragment(null).build().toString().trimEnd('/')
+        }
     }
 }

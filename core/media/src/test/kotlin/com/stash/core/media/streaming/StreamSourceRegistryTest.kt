@@ -10,28 +10,27 @@ import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
- * ⚠️ Two resolvers in [StreamSourceRegistry.resolve] are gated on COMPILE-TIME
- * build config, not on anything a test can inject:
+ * ⚠️ One resolver in [StreamSourceRegistry.resolve] is still gated on
+ * COMPILE-TIME build config, not on anything a test can inject:
  *
- *   qbdlx → `BuildConfig.QBDLX_CONFIGURED`   (local.properties qbdlx creds)
- *   arcod → `BuildConfig.ARCOD_CONFIGURED`   (local.properties arcod.streamBase)
+ *   arcod → `BuildConfig.ARCOD_CONFIGURED`   (local.properties arcod.stashKey)
  *
- * A maintainer machine has both, so both are in the chain. CI has neither, so
- * neither is. That makes any UNCONDITIONAL assertion about those two sources
- * environment-dependent — it will pass in one place and fail in the other, which
- * is exactly what happened here: `arcod never called` passed in CI and failed
- * locally, while `qbdlx.resolve was called` passed locally and failed in CI. It
- * went unnoticed for months only because the whole :core:media suite hung before
- * reaching this class (see LoudnessGainProcessorTest).
+ * qbdlx is no longer build-gated; it self-gates on LosslessAvailability, so
+ * every qbdlx expectation below is unconditional.
  *
- * So: guard every qbdlx/arcod expectation with its flag. Use `assumeTrue` when a
- * test's whole premise needs the source (skips), and an `if` when the test still
- * means something without it (narrows). Assertions about amz/youtube/kennyy/qobuz
- * are unconditional — those aren't build-gated.
+ * A maintainer machine has the arcod key; CI does not. That makes any
+ * UNCONDITIONAL assertion about arcod environment-dependent — it will pass in
+ * one place and fail in the other, which is exactly what happened here: `arcod
+ * never called` passed in CI and failed locally. It went unnoticed for months
+ * only because the whole :core:media suite hung before reaching this class (see
+ * LoudnessGainProcessorTest).
+ *
+ * So: guard every arcod expectation with its flag (an `if`, so the test still
+ * means something without it). Assertions about the other sources are
+ * unconditional — those aren't build-gated.
  *
  * If this gets tiresome, the real fix is to have `resolve()` take the chain
  * composition as an injected value instead of reading BuildConfig inline.
@@ -126,8 +125,8 @@ class StreamSourceRegistryTest {
 
         registry().resolve(track, allowYouTube = true)
 
-        // Chain is qbdlx -> arcod -> youtube; the two lossless legs are build-gated.
-        if (BuildConfig.QBDLX_CONFIGURED) coVerify { qbdlx.resolve(track) }
+        // Chain is qbdlx -> arcod -> youtube; only the arcod leg is build-gated.
+        coVerify { qbdlx.resolve(track) }
         if (BuildConfig.ARCOD_CONFIGURED) coVerify { arcod.resolve(track) }
         coVerify { youtube.resolve(track, allowYtDlp = true) }
         // amz/kennyy/qobuz remain parked — a miss must not wait on sources that
@@ -144,10 +143,6 @@ class StreamSourceRegistryTest {
      */
     @Test
     fun resolve_uses_qbdlx_before_amz_and_youtube() = runTest {
-        // This test's entire premise is "qbdlx serves it", which is impossible on a
-        // build that doesn't bundle qbdlx creds — resolve() skips the source
-        // outright. Assume rather than assert, so it SKIPS on CI instead of failing.
-        assumeTrue("needs a qbdlx-configured build", BuildConfig.QBDLX_CONFIGURED)
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
         coEvery { amz.resolve(any()) } returns null
@@ -162,7 +157,7 @@ class StreamSourceRegistryTest {
         coVerify(exactly = 0) { youtube.resolve(any(), any()) }
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
         coVerify(exactly = 0) { qobuz.resolve(any()) } // parked
-        coVerify(exactly = 0) { arcod.resolve(any()) } // parked
+        coVerify(exactly = 0) { arcod.resolve(any()) }
     }
 
     /**
@@ -234,8 +229,8 @@ class StreamSourceRegistryTest {
         val result = registry().resolve(track, allowYouTube = true)
 
         assertThat(result!!.origin).isEqualTo(YouTubeStreamResolver.ORIGIN)
-        if (BuildConfig.QBDLX_CONFIGURED) coVerify { qbdlx.resolve(track) }
-        // arcod is build-gated like qbdlx: only a keyed build can reach it.
+        coVerify { qbdlx.resolve(track) }
+        // arcod is build-gated: only a keyed build can reach it.
         if (BuildConfig.ARCOD_CONFIGURED) coVerify { arcod.resolve(track) }
         coVerify(exactly = 0) { amz.resolve(any()) }
         coVerify(exactly = 0) { kennyy.resolve(any()) }

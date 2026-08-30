@@ -13,6 +13,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -58,10 +60,14 @@ class ArcodCredentialStore @Inject constructor(
     private val refreshTokenKey = stringPreferencesKey("arcod_refresh_token")
     private val expiresAtMsKey = longPreferencesKey("arcod_expires_at_ms")
 
-    /** Emits the current access token, or null when absent/blank. */
+    /**
+     * Emits the current access token, or null when absent/blank. Deduped (the
+     * store re-emits on every unrelated write) and fail-closed (a read error must
+     * not terminate a `combine`).
+     */
     val accessToken: Flow<String?> = context.arcodCredentialsDataStore.data.map { prefs ->
         prefs[accessTokenKey]?.takeIf { it.isNotBlank() }
-    }
+    }.distinctUntilChanged().catch { emit(null) }
 
     /** One-shot read of the current access token (null when absent/blank). */
     suspend fun accessTokenNow(): String? = accessToken.first()

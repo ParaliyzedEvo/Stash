@@ -11,8 +11,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Fetches Home discovery rows from Qobuz featured endpoints via the qbdlx token
- * pool and maps them into [AlbumSummary]/[PlaylistSummary].
+ * Fetches Home discovery rows from Qobuz featured endpoints — tokenless, under the
+ * web-player app_id — and maps them into [AlbumSummary]/[PlaylistSummary].
  *
  * Fail-soft: any failure yields an empty list (never throws) and is NOT cached,
  * so the next visit retries. Successful results (including a legitimately empty
@@ -23,7 +23,6 @@ import javax.inject.Singleton
 @Singleton
 class HomeDiscoveryRepositoryImpl @Inject constructor(
     private val client: QbdlxApiClient,
-    private val credentialStore: QbdlxCredentialStore,
 ) : HomeDiscoveryRepository {
     private val _status = kotlinx.coroutines.flow.MutableStateFlow(QobuzDiscoveryStatus.OK)
     override val status: kotlinx.coroutines.flow.StateFlow<QobuzDiscoveryStatus> = _status.asStateFlow()
@@ -44,24 +43,24 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
 
     override suspend fun communityPlaylists(genreId: Int?): List<PlaylistSummary> =
         cached("playlists:$genreId") {
-            withToken { tok -> client.getFeaturedPlaylists(genreId, tok) }.map { it.toPlaylistSummary() }
+            safely { client.getFeaturedPlaylists(genreId) }.map { it.toPlaylistSummary() }
         }
 
     override suspend fun browsePlaylists(genreId: Int?, offset: Int, limit: Int): List<PlaylistSummary> =
         cached("browse:$genreId:$offset:$limit") {
-            withToken { tok -> client.getFeaturedPlaylists(genreId, tok, limit, offset) }
+            safely { client.getFeaturedPlaylists(genreId, limit, offset) }
                 .map { it.toPlaylistSummary() }
         }
 
     override suspend fun searchPlaylists(query: String, offset: Int, limit: Int): List<PlaylistSummary> =
         cached("psearch:$query:$offset:$limit") {
-            withToken { tok -> client.searchPlaylists(query, tok, limit, offset) }
+            safely { client.searchPlaylists(query, limit, offset) }
                 .map { it.toPlaylistSummary() }
         }
 
     private suspend fun albums(type: String, genreId: Int?): List<AlbumSummary> =
         cached("$type:$genreId") {
-            withToken { tok -> client.getFeaturedAlbums(type, genreId, tok) }.map { it.toAlbumSummary() }
+            safely { client.getFeaturedAlbums(type, genreId) }.map { it.toAlbumSummary() }
         }
 
     /** Fail-soft memoization: throw → empty (uncached); success (incl. empty) → cached. */
@@ -71,42 +70,24 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
         }
         return try {
             load().also { cache[key] = Entry(System.currentTimeMillis(), it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /** One 401 rotation (markDead + next live token). Empty when no live token. */
-    private suspend fun <T> withToken(call: suspend (String) -> List<T>): List<T> {
-        val tok = credentialStore.activeToken()
-        if (tok == null) {
-            _status.value = QobuzDiscoveryStatus.NO_TOKEN
-            return emptyList()
-        }
-        return try {
-            val result = call(tok)
-            _status.value = QobuzDiscoveryStatus.OK
-            result
-        } catch (e: QbdlxAuthException) {
-            credentialStore.markDead(tok)
-            val next = credentialStore.activeToken()
-            if (next == null) {
-                _status.value = QobuzDiscoveryStatus.NO_TOKEN
-                return emptyList()
-            }
-            try {
-                val result = call(next)
-                _status.value = QobuzDiscoveryStatus.OK
-                result
-            } catch (e2: java.io.IOException) {
-                _status.value = QobuzDiscoveryStatus.NO_INTERNET
-                emptyList()
-            }
+    /**
+     * Fail-soft: IOException → NO_INTERNET, rethrown so [cached] leaves it uncached;
+     * success → OK.
+     */
+    private suspend fun <T> safely(call: suspend () -> List<T>): List<T> =
+        try {
+            call().also { _status.value = QobuzDiscoveryStatus.OK }
         } catch (e: java.io.IOException) {
             _status.value = QobuzDiscoveryStatus.NO_INTERNET
-            emptyList()
+            throw e
         }
-    }
 
     private fun QbdlxAlbumItem.toAlbumSummary() = AlbumSummary(
         id = id,

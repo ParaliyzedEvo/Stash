@@ -10,9 +10,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Unit tests for [QobuzDiscographyProvider]. The three collaborators
- * ([QbdlxApiClient], [QbdlxCredentialStore], [QbdlxQobuzSource]) are all final
- * Kotlin classes, so — mirroring [QbdlxQobuzSourceTest] — they are MockK'd
+ * Unit tests for [QobuzDiscographyProvider]. Its only collaborator
+ * ([QbdlxApiClient]) is a final Kotlin class, so — mirroring
+ * [QbdlxQobuzSourceTest] — it is MockK'd
  * (`coEvery` for the suspend calls). The real [DiscographyMerger] and
  * [com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher] run
  * end-to-end so the match gate + merge behave exactly as in production.
@@ -23,10 +23,8 @@ import org.junit.Test
 class QobuzDiscographyProviderTest {
 
     private val apiClient: QbdlxApiClient = mockk()
-    private val credentialStore: QbdlxCredentialStore = mockk()
-    private val qobuzSource: QbdlxQobuzSource = mockk()
 
-    private fun provider() = QobuzDiscographyProvider(apiClient, credentialStore, qobuzSource)
+    private fun provider() = QobuzDiscographyProvider(apiClient)
 
     private fun ytAlbum(title: String, year: String? = "1991") =
         AlbumSummary("yt_$title", title, "My Bloody Valentine", null, year, AlbumSource.YOUTUBE)
@@ -47,44 +45,9 @@ class QobuzDiscographyProviderTest {
         tracks_count = tracksCount,
     )
 
-    /** Usable qbdlx: toggle on, live token. */
-    private fun usable(token: String = "tok1") {
-        coEvery { qobuzSource.isEnabledForStreaming() } returns true
-        coEvery { credentialStore.activeToken() } returns token
-    }
-
-    // (a) ────────────────────────────────────────────────────────────────
-    @Test
-    fun `disabled source returns yt lists unchanged and never fetches`() = runTest {
-        coEvery { qobuzSource.isEnabledForStreaming() } returns false
-        val albums = listOf(ytAlbum("Loveless"))
-        val singles = listOf(ytAlbum("Sunny Sundae Smile"))
-
-        val out = provider().mergeInto("My Bloody Valentine", albums, singles)
-
-        assertThat(out.albums).isEqualTo(albums)
-        assertThat(out.singles).isEqualTo(singles)
-        coVerify(exactly = 0) { apiClient.searchArtists(any(), any()) }
-        coVerify(exactly = 0) { apiClient.getArtistAlbums(any(), any()) }
-    }
-
-    // (b) ────────────────────────────────────────────────────────────────
-    @Test
-    fun `no active token returns yt lists unchanged and never fetches`() = runTest {
-        coEvery { qobuzSource.isEnabledForStreaming() } returns true
-        coEvery { credentialStore.activeToken() } returns null
-        val albums = listOf(ytAlbum("Loveless"))
-
-        val out = provider().mergeInto("My Bloody Valentine", albums, emptyList())
-
-        assertThat(out.albums).isEqualTo(albums)
-        coVerify(exactly = 0) { apiClient.searchArtists(any(), any()) }
-    }
-
     // (c) ────────────────────────────────────────────────────────────────
     @Test
     fun `gap-fill adds the Qobuz-only album and keeps YouTube on collision`() = runTest {
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
         coEvery { apiClient.getArtistAlbums(any(), any()) } returns
@@ -109,7 +72,6 @@ class QobuzDiscographyProviderTest {
         // to OTHER artists (real MBV case: "When You Sleep" by Arcade Golf Scene,
         // "sometimes" by Matt Cantu, all newer than the classics). Only the
         // matched artist's own releases must survive.
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
         coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
@@ -130,7 +92,6 @@ class QobuzDiscographyProviderTest {
     // (c3) singles/EPs filtered out of the album gap-fill ───────────────────
     @Test
     fun `singles and EPs are excluded from the album gap-fill`() = runTest {
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
         coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
@@ -146,7 +107,6 @@ class QobuzDiscographyProviderTest {
     // (c4) features (co-credited) filtered out ──────────────────────────────
     @Test
     fun `features where the artist is only co-credited are excluded`() = runTest {
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(1, "Lil Wayne"))
         coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
@@ -164,7 +124,6 @@ class QobuzDiscographyProviderTest {
     // (c5) singles lane is never supplemented ───────────────────────────────
     @Test
     fun `singles lane stays 100 percent youtube`() = runTest {
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
         coEvery { apiClient.getArtistAlbums(any(), any()) } returns
@@ -179,7 +138,6 @@ class QobuzDiscographyProviderTest {
     // (d) ────────────────────────────────────────────────────────────────
     @Test
     fun `zero yt albums plus two differently-named candidates aborts homonym`() = runTest {
-        usable()
         // "the doors" vs "doors": distinct normalized names, both cross threshold
         // (subset coverage → 1.0). Ambiguous → must NOT graft either discography.
         coEvery { apiClient.searchArtists(any(), any()) } returns
@@ -195,7 +153,6 @@ class QobuzDiscographyProviderTest {
     // (e) ────────────────────────────────────────────────────────────────
     @Test
     fun `various-artists candidates are excluded and treated as no match`() = runTest {
-        usable()
         coEvery { apiClient.searchArtists(any(), any()) } returns
             listOf(QbdlxArtistItem(9, "Various Artists"), QbdlxArtistItem(10, "Verschiedene Interpreten"))
         val albums = listOf(ytAlbum("Loveless"))
@@ -209,7 +166,6 @@ class QobuzDiscographyProviderTest {
     // (f) FLAGSHIP ─────────────────────────────────────────────────────────
     @Test
     fun `zero yt albums plus duplicate same-name rows proceeds MBV case`() = runTest {
-        usable()
         // Qobuz returns the artist's OWN entity twice (same name, different id).
         // These collapse to ONE distinct artist — must NOT be killed as ambiguous.
         coEvery { apiClient.searchArtists(any(), any()) } returns
@@ -227,7 +183,6 @@ class QobuzDiscographyProviderTest {
     // (g) ────────────────────────────────────────────────────────────────
     @Test
     fun `superstring pseudo-artist is excluded so it can't fake ambiguity`() = runTest {
-        usable()
         // "my bloody valentine tribute" strictly contains the query + extra tokens.
         // It must be dropped from the candidate set, leaving ONE real artist → proceed.
         coEvery { apiClient.searchArtists(any(), any()) } returns
