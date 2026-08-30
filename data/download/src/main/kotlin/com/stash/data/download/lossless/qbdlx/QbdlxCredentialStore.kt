@@ -12,7 +12,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import android.util.Log
@@ -146,6 +149,11 @@ class QbdlxCredentialStore @Inject constructor(
                 !p[loginAppIdKey].isNullOrBlank() &&
                 !p[loginAppSecretKey].isNullOrBlank()
         }
+            // DataStore re-emits the whole Preferences on every unrelated write
+            // (pool cache, pinned token), and a read error must not terminate the
+            // combine this feeds for the rest of the process — fail closed instead.
+            .distinctUntilChanged()
+            .catch { emit(false) }
 
     /** A connected account exists and is not inside a dead-cooldown. */
     suspend fun loginLive(): Boolean = loginCredential()?.let { !isDead(it.token) } ?: false
@@ -160,7 +168,17 @@ class QbdlxCredentialStore @Inject constructor(
             cachedLogin = if (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank())
                 QbdlxLoginCredential(t, a, s) else null
             loginLoaded = true
-            if (cachedLogin == null) migratePastedToken()
+            if (cachedLogin == null) {
+                try {
+                    migratePastedToken()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // This runs inside a bare viewModelScope.launch (allDead()); an
+                    // edit{} failure here must not take the process down.
+                    Log.w(TAG, "pasted-token migration failed: ${e.javaClass.simpleName}")
+                }
+            }
         }
         return cachedLogin
     }
@@ -173,10 +191,15 @@ class QbdlxCredentialStore @Inject constructor(
      */
     private suspend fun migratePastedToken() {
         val pasted = pastedToken() ?: return
-        if (primaryAppId.isBlank() || primaryAppSecret.isBlank()) return
+        if (primaryAppId.isBlank() || primaryAppSecret.isBlank()) {
+            Log.i(TAG, "pasted token not migrated: no primary signing pair")
+            return
+        }
         Log.i(TAG, "migrating pasted token into the connected-account slot")
         setUserCredential(pasted, primaryAppId, primaryAppSecret, email = null)
-        context.qbdlxCredentialsDataStore.edit { it.remove(pastedTokenKey) }
+        // Only drop the value we actually migrated — a token pasted concurrently
+        // must not be swallowed by this cleanup.
+        context.qbdlxCredentialsDataStore.edit { if (it[pastedTokenKey] == pasted) it.remove(pastedTokenKey) }
     }
 
     /** Persist a connected account (token + the app_id/secret it was minted under). */

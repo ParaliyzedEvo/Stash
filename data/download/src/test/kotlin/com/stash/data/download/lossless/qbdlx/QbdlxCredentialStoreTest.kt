@@ -153,7 +153,8 @@ class QbdlxCredentialStoreTest {
         assertThat(store("").poolForPicker()).isEmpty()
     }
 
-    @Test fun `hasLogin reflects the connected account`() = runTest {
+    @Test
+    fun `hasLogin reflects the connected account`() = runTest {
         val s = store("")
         assertThat(s.hasLogin.first()).isFalse()
         s.setUserCredential("tok", "798273057", "sec", email = "me@x")
@@ -165,17 +166,16 @@ class QbdlxCredentialStoreTest {
         assertThat(s.hasLogin.first()).isFalse()
     }
 
-    @Test fun `a pasted token is migrated into the login slot with the primary signing pair`() = runTest {
+    @Test
+    fun `a pasted token is migrated into the login slot with the primary signing pair`() = runTest {
         val s0 = store("")
-        s0.primaryAppId = "798273057"; s0.primaryAppSecret = "primary-secret"
         s0.setPastedToken("pasted-tok")
         val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
         val login = s.loginCredential()
         assertThat(login).isEqualTo(QbdlxLoginCredential("pasted-tok", "798273057", "primary-secret"))
         assertThat(s.connectedEmail()).isNull()
         assertThat(s.activeToken()).isEqualTo("pasted-tok")
-        // the pasted key is gone: a fresh store with no login sees nothing
         s.clearUserCredential()
-        assertThat(store("").loginCredential()).isNull()
+        assertThat(s.activeToken()).isNull()   // pasted key gone: nothing left to serve (empty pool, login cleared)
     }
 }
