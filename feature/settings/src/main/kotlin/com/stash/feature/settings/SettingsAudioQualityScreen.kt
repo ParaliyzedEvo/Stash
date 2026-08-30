@@ -89,6 +89,8 @@ fun SettingsAudioQualityScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
     val qobuzConnectedEmail by viewModel.qobuzConnectedEmail.collectAsStateWithLifecycle()
+    val qobuzHasLogin by viewModel.qobuzHasLogin.collectAsStateWithLifecycle()
+    val losslessRouting by viewModel.losslessRouting.collectAsStateWithLifecycle()
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
 
@@ -146,9 +148,10 @@ fun SettingsAudioQualityScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // ROUTING block — Direct Qobuz (primary) + amz fallback.
-                        // kennyy/squid proxies are parked and no longer shown.
-                        LosslessRoutingStatus()
+                        // ROUTING block — one row per configured lossless path,
+                        // built in LosslessAvailability so this list and the
+                        // resolver read the same predicates.
+                        LosslessRoutingStatus(rows = losslessRouting)
 
                         // ARCOD — independent Qobuz lossless (a 2nd live source
                         // alongside qbdlx). Connect via Google login in an in-app
@@ -216,11 +219,15 @@ fun SettingsAudioQualityScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            val connectedEmail = qobuzConnectedEmail
-                            if (connectedEmail != null) {
+                            // Keyed on hasLogin, NOT on the email: a token migrated
+                            // from the old paste field has no email, and keying on
+                            // that showed its owner a sign-in form with no way to
+                            // remove the token when it went dead.
+                            if (qobuzHasLogin) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Connected as $connectedEmail",
+                                    text = qobuzConnectedEmail?.let { "Connected as $it" }
+                                        ?: "Connected (token)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -231,7 +238,7 @@ fun SettingsAudioQualityScreen(
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Sign in with your own Qobuz subscription for " +
-                                        "guaranteed lossless — your account, not the shared pool.",
+                                        "guaranteed lossless.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

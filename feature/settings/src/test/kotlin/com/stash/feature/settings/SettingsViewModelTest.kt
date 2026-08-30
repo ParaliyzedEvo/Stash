@@ -65,6 +65,7 @@ class SettingsViewModelTest {
         qbdlxCredentialStore = qbdlxStore,
         losslessAvailability = mockk<LosslessAvailability> {
             every { qbdlxEnabled } returns flowOf(losslessConfigured)
+            every { routingRows } returns flowOf(emptyList())
         },
         qobuzAccountConnector = mockk(relaxed = true),
         likePreferences = mockk(relaxed = true),

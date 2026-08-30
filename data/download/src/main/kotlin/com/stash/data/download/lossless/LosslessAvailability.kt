@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.first
  *  - [anyUserOwned]       BYO login || custom endpoint || ARCOD → the Home banner
  *                         (a dead PUBLIC relay must not hide the "connect your
  *                         own account" banner — that is the outage it exists for)
+ *  - [routingRows]        the same facts spelled out per path, for Settings › Audio
  */
 @Singleton
 class LosslessAvailability @Inject constructor(
@@ -59,4 +60,64 @@ class LosslessAvailability @Inject constructor(
             l || c != null || a != null
         }
     suspend fun anyUserOwnedNow(): Boolean = anyUserOwned.first()
+
+    /**
+     * The Settings › Audio ROUTING list — one row per lossless path, built here
+     * from the same predicates the source and downloads read, so the screen cannot
+     * disagree with what actually resolves. (It used to be a hardcoded
+     * "Qobuz — active" row, true only while a token pool shipped.)
+     *
+     * Rows describe CONFIGURATION, not liveness, deliberately: relay health needs
+     * the relay's `/v1/status`, which nothing serves yet (Plan B), and a connected
+     * account inside its 60s [QbdlxCredentialStore.DEAD_COOLDOWN_MS] must not
+     * flicker to "offline" over one transient 401.
+     */
+    val routingRows: Flow<List<RoutingRow>> = combine(
+        credentialStore.hasLogin,
+        credentialStore.connectedEmailFlow,
+        config.relays,
+        prefs.customLosslessEndpoint,
+        arcod.accessToken,
+    ) { hasLogin, email, relays, custom, arcodToken ->
+        buildList {
+            add(
+                RoutingRow(
+                    id = "qobuz",
+                    label = "Your Qobuz account",
+                    // Keyed on hasLogin, NEVER on the email: a migrated pasted token
+                    // has none, and keying on it would render "not connected" while
+                    // the badge on the same screen says a source IS configured.
+                    detail = if (hasLogin) (email ?: "connected (token)") else "not connected",
+                    state = if (hasLogin) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
+                ),
+            )
+            add(
+                RoutingRow(
+                    id = "relay",
+                    label = "Stash lossless",
+                    detail = if (relays.isNotEmpty()) "configured" else "not configured",
+                    state = if (relays.isNotEmpty()) RoutingState.CONFIGURED else RoutingState.NOT_CONFIGURED,
+                ),
+            )
+            // Omitted entirely when unset — an empty "Custom endpoint — not configured"
+            // row is noise on the screen of everyone who will never set one.
+            if (custom != null) {
+                add(RoutingRow("custom", "Custom endpoint", "configured", RoutingState.CONFIGURED))
+            }
+            add(
+                RoutingRow(
+                    id = "arcod",
+                    label = "ARCOD",
+                    detail = if (arcodToken != null) "connected" else "not connected",
+                    state = if (arcodToken != null) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
+                ),
+            )
+        }
+    }
 }
+
+/** How a [RoutingRow]'s path is set up — never whether it is reachable right now. */
+enum class RoutingState { CONNECTED, CONFIGURED, NOT_CONFIGURED }
+
+/** One line of the Settings ROUTING block. [id] is stable; the rest is display text. */
+data class RoutingRow(val id: String, val label: String, val detail: String, val state: RoutingState)

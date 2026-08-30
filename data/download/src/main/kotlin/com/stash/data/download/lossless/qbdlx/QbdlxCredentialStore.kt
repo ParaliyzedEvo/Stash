@@ -98,6 +98,19 @@ class QbdlxCredentialStore @Inject constructor(
         context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
 
     /**
+     * The connected account's email, or null — including for a MIGRATED pasted
+     * token, which has none. Settings labels the account with it, so it must never
+     * be what "is an account connected?" keys on: see [hasLogin].
+     */
+    val connectedEmailFlow: Flow<String?> =
+        context.qbdlxCredentialsDataStore.data.map { p -> p[loginEmailKey]?.takeIf { it.isNotBlank() } }
+            // Same reasoning as hasLogin: dedupe DataStore's re-emit on every
+            // unrelated write, and fail closed so one read error cannot terminate
+            // the combine this feeds for the rest of the process.
+            .distinctUntilChanged()
+            .catch { emit(null) }
+
+    /**
      * Live view of "a connected account exists" for the availability predicates.
      * A pasted token awaiting migration counts — it is user-owned and the
      * migration runs on the first [loginCredential].

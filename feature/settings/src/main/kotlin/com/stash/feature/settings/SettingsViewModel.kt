@@ -39,6 +39,7 @@ import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
@@ -105,9 +106,6 @@ class SettingsViewModel @Inject constructor(
     private val losslessRateLimiter: AggregatorRateLimiter,
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
-    // Unused since the shipped token pool's Settings callers went away; kept
-    // because Plan C's connect-form rework needs it back for `hasLogin`.
-    @Suppress("unused")
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
@@ -419,7 +417,25 @@ class SettingsViewModel @Inject constructor(
         losslessAvailability.qbdlxEnabled.map { !it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Connected Qobuz account email (null = not connected) — the bring-your-own-account state. */
+    /**
+     * The ROUTING block's rows. Built in [LosslessAvailability] — the same
+     * predicates the source and downloads read — so Settings cannot claim a source
+     * the resolver does not have. Configuration only, never liveness (see there).
+     */
+    val losslessRouting: StateFlow<List<RoutingRow>> =
+        losslessAvailability.routingRows
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * A connected Qobuz account exists. What the connect form keys on, because
+     * [qobuzConnectedEmail] is null for a MIGRATED pasted token — keying on the
+     * email showed that user a sign-in form and no way to remove a dead token.
+     */
+    val qobuzHasLogin: StateFlow<Boolean> =
+        qbdlxCredentialStore.hasLogin
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Connected Qobuz account email (null = not connected, OR a migrated token). */
     private val _qobuzConnectedEmail = MutableStateFlow<String?>(null)
     val qobuzConnectedEmail: StateFlow<String?> = _qobuzConnectedEmail
 
