@@ -19,7 +19,11 @@ class LosslessSourcePreferencesTest {
     private val prefs = LosslessSourcePreferences(ctx, mockk<DownloadQueueDao>(relaxed = true))
 
     /** The preferencesDataStore delegate is process-wide; start each test clean (codebase convention). */
-    @Before fun clear() = runBlocking { prefs.setCustomLosslessEndpoint(null) }
+    @Before fun clear() = runBlocking {
+        prefs.setCustomLosslessEndpoint(null)
+        prefs.setArcodRescueDismissed(false)
+        prefs.setLosslessOfflineDismissed(false)
+    }
 
     @Test fun `custom endpoint is null by default, normalised on set, cleared on blank`() = runTest {
         assertThat(prefs.customLosslessEndpoint.first()).isNull()
@@ -30,5 +34,18 @@ class LosslessSourcePreferencesTest {
         prefs.setCustomLosslessEndpoint("https://relay.example.org")
         prefs.setCustomLosslessEndpoint("   ")
         assertThat(prefs.customLosslessEndpointNow()).isNull()
+    }
+
+    /**
+     * The new banner says something different from the retired ARCOD one, so
+     * someone who dismissed that is still owed this one once. Two keys, never
+     * shared — the ViewModel tests verify the CALL, not which key it writes,
+     * so only this catches a copy-pasted key.
+     */
+    @Test fun `dismissing the old ARCOD banner does not dismiss the new one`() = runTest {
+        prefs.setArcodRescueDismissed(true)
+        assertThat(prefs.losslessOfflineDismissed.first()).isFalse()
+        prefs.setLosslessOfflineDismissed(true)
+        assertThat(prefs.losslessOfflineDismissed.first()).isTrue()
     }
 }

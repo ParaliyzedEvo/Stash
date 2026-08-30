@@ -176,7 +176,7 @@ class ArtistCache(
      * channel, or the stale-refresh `refreshFailed = true` path). Only the
      * SUPPLEMENT is best-effort — any timeout or failure degrades to the YT-only
      * lists, never escaping. Bounded by [SUPPLEMENT_TIMEOUT_MS] because the qbdlx
-     * token pool can hang and must not stall the artist page.
+     * call can hang and must not stall the artist page.
      */
     private suspend fun fetchAndMerge(artistId: String): ArtistProfile = coroutineScope {
         val yt = api.getArtist(artistId)   // REQUIRED — failure propagates

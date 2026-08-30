@@ -23,10 +23,10 @@ import javax.inject.Singleton
  *
  * Current order:
  *   1. [QbdlxStreamResolver]   — `qbdlx`, the DIRECT Qobuz API (signed
- *      requests + a rotating per-account token pool). Primary lossless source:
- *      plain Range-seekable FLAC, no proxy operator and no client-side decrypt,
- *      so it's the fastest path. Foreground-only (allowYtDlp) since it spends
- *      pool-account quota.
+ *      requests against the user's own connected account, or a relay standing
+ *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
+ *      operator and no client-side decrypt, so it's the fastest path.
+ *      Foreground-only (allowYtDlp) since it spends that account's quota.
  *   2. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless FLAC.
  *      Consulted when qbdlx has no confident match, so an Amazon-only track
  *      still streams lossless before dropping to lossy YouTube. Its resolver
@@ -106,7 +106,7 @@ class StreamSourceRegistry @Inject constructor(
         // Single-flight. A foreground tap and the next-up prefetch landing on the
         // same track within a few hundred ms each ran their OWN full resolver
         // chain: doubled calls to every source (including rate-limited search
-        // APIs and the qbdlx token pool), and because each drove the YouTube
+        // APIs and the qbdlx account's quota), and because each drove the YouTube
         // resolver's own per-videoId coalescing to start and tear down before
         // the other began, one ~13 s yt-dlp extraction became two sequential
         // ones. Device-observed 2026-08-22: a track resolved via yt-dlp, then a
@@ -318,9 +318,9 @@ class StreamSourceRegistry @Inject constructor(
                     Log.w(TAG, "$name threw on resolve for ${track.id} '${track.title}'", e)
                 }
                 .getOrNull()
-            // Feed the Home rescue-banner signal: a qbdlx null here is a miss
-            // (dead token OR catalog gap — the streak threshold tells them
-            // apart), a non-null is a serve that resets the streak.
+            // Feed the Home lossless-offline banner signal: a qbdlx null here
+            // is a miss (dead credential OR catalog gap — the streak threshold
+            // tells them apart), a non-null is a serve that resets the streak.
             if (name == "qbdlx") {
                 if (result != null) {
                     losslessSourceHealth.recordQbdlxServed()

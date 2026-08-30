@@ -157,7 +157,6 @@ private const val HOME_RAIL_LIMIT = 12
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToArcodConnect: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
@@ -935,10 +934,15 @@ private fun LosslessConnectBanner(
 }
 
 /**
- * "Lossless is offline" banner. Same visual grammar as
+ * "No lossless right now" banner. Same visual grammar as
  * [LosslessConnectBanner] but on the error accent: this one isn't an
- * upsell, it's a repair — the user's chosen lossless experience is
- * currently degraded and one tap starts fixing it.
+ * upsell, it's a repair — the user asked for lossless and isn't getting
+ * it, and one tap starts fixing that.
+ *
+ * The copy deliberately does NOT say anything broke. The state that fires
+ * this banner is usually the day-one one — lossless on by default, nothing
+ * ever connected — which is the same state Settings › Audio reports as
+ * "No lossless source configured". One state, one story.
  */
 @Composable
 private fun LosslessOfflineBanner(
@@ -963,13 +967,13 @@ private fun LosslessOfflineBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Lossless is offline",
+                    text = "No lossless right now",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Lossless is offline right now — Stash is playing YouTube audio. " +
-                        "Connect your own Qobuz account to keep FLAC.",
+                    text = "Stash is playing YouTube audio instead. " +
+                        "Connect your own Qobuz account for FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

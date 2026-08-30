@@ -6,12 +6,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Pins [LosslessSourceHealth] — the signal behind the Home "connect ARCOD"
- * rescue banner.
+ * Pins [LosslessSourceHealth] — the signal behind the Home "No lossless right
+ * now" banner.
  *
- * The banner exists because the qbdlx token pool died at scale (community
- * reports of "FLAC down for two days") while the only second lossless
- * source sat unconnected behind a Settings chevron. "Down" here must mean
+ * The banner exists because the shipped qbdlx token pool died at scale
+ * (community reports of "FLAC down for two days") while every lossless source
+ * a user could own sat unconnected behind a Settings chevron. "Down" here must mean
  * a PATTERN — many consecutive resolves where qbdlx produced nothing —
  * not a single miss, because one miss is routinely just a track qbdlx's
  * catalog doesn't carry.

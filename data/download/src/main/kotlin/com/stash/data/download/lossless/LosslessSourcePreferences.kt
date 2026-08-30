@@ -80,10 +80,14 @@ class LosslessSourcePreferences @Inject constructor(
      * The toggle lives on this preferences class (rather than its own
      * DataStore) so all lossless-related settings stay in one place
      * and the schema can evolve together.
+     *
+     * Deduped and fail-closed, like [customLosslessEndpoint]: this feeds two of
+     * Home's banner combines, and a DataStore read error that terminated the
+     * chain would leave Home stuck in `isLoading` forever.
      */
     val enabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[enabledKey] ?: true
-    }
+    }.distinctUntilChanged().catch { emit(true) }
 
     suspend fun enabledNow(): Boolean = enabled.first()
 
@@ -211,22 +215,24 @@ class LosslessSourcePreferences @Inject constructor(
      * forever-dismissed semantics as `LastFmSessionPreference.bannerDismissed`.
      *
      * Defaults to false. Only read by [com.stash.feature.home.HomeViewModel];
-     * Settings has no UI for un-dismissing.
+     * Settings has no UI for un-dismissing. Deduped and fail-closed for the
+     * same reason as [enabled] — it feeds Home's banner combine.
      */
     val bannerDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[bannerDismissedKey] ?: false
-    }
+    }.distinctUntilChanged().catch { emit(false) }
 
     suspend fun setBannerDismissed(dismissed: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[bannerDismissedKey] = dismissed }
     }
 
     /**
-     * Whether the user has dismissed the "connect ARCOD" rescue banner that
-     * Home shows while qbdlx looks dead and no second lossless source is
-     * connected. Forever-dismissed, same semantics as [bannerDismissed] —
-     * the user has seen the offer and said no; the source-health signal
-     * re-detecting an outage must not resurrect it.
+     * Whether the user has dismissed the retired "connect ARCOD" rescue banner
+     * Home used to show while qbdlx looked dead and no second lossless source
+     * was connected. Nothing reads this any more — [losslessOfflineDismissed]
+     * succeeded it — but the key and its setter stay: deleting them would
+     * resurrect nothing, while REUSING them would mean anyone who dismissed the
+     * old banner never sees the new one.
      */
     val arcodRescueDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[arcodRescueDismissedKey] ?: false
@@ -237,7 +243,7 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * Whether the user has dismissed the "lossless is offline" Home banner —
+     * Whether the user has dismissed the "No lossless right now" Home banner —
      * the successor to [arcodRescueDismissed], which keyed on ARCOD alone.
      * Forever-dismissed, same semantics.
      *
@@ -245,10 +251,12 @@ class LosslessSourcePreferences @Inject constructor(
      * ("connect your own Qobuz account", not "connect ARCOD"), so someone who
      * declined the old offer is still owed this one once. The old key stays
      * readable so removing it can't resurrect the retired banner.
+     *
+     * Deduped and fail-closed for the same reason as [enabled].
      */
     val losslessOfflineDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[losslessOfflineDismissedKey] ?: false
-    }
+    }.distinctUntilChanged().catch { emit(false) }
 
     suspend fun setLosslessOfflineDismissed(dismissed: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[losslessOfflineDismissedKey] = dismissed }
@@ -352,7 +360,8 @@ class LosslessSourcePreferences @Inject constructor(
          *
          * Order:
          * 1. qbdlx_qobuz — Qobuz Hi-Res FLAC via a direct www.qobuz.com call
-         *    (MD5 request signing + a rotating token pool). Ranked FIRST: it's
+         *    (MD5 request signing with the user's own credentials, or a relay).
+         *    Ranked FIRST: it's
          *    the fastest lossless path — plain Range-seekable FLAC, no proxy
          *    operator and no client-side decryption (unlike amz).
          * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.

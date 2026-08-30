@@ -32,10 +32,10 @@ data class HomeUiState(
     val losslessPrompt: LosslessPromptState? = null,
 
     /**
-     * True when Home should say lossless is offline: lossless is ON, the
-     * shared path has missed enough consecutive resolves to look dead, the
-     * user owns no lossless source of their own to fall back to, and they
-     * haven't dismissed the notice. Tap opens Settings › Audio.
+     * True when Home should say there's no lossless right now: lossless is
+     * ON, the shared path has missed enough consecutive resolves to look
+     * dead, the user owns no lossless source of their own to fall back to,
+     * and they haven't dismissed the notice. Tap opens Settings › Audio.
      */
     val showLosslessOffline: Boolean = false,
 

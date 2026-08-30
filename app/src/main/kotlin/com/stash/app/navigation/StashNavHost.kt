@@ -68,9 +68,10 @@ fun StashNavHost(
                         launchSingleTop = true
                     }
                 },
-                // ARCOD rescue banner: skip the Settings detour and land
-                // directly in the connect flow the banner is offering.
-                onNavigateToArcodConnect = { navController.navigate(ArcodConnectRoute) },
+                // Home's lossless-offline banner routes through onNavigateToSettings
+                // (Settings › Audio), where every lossless path — your Qobuz account,
+                // a relay endpoint, ARCOD — is set up. ArcodConnectRoute is reached
+                // from there, not from Home.
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },

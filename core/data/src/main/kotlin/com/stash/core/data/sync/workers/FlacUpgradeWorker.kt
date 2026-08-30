@@ -26,7 +26,7 @@ import kotlinx.coroutines.CancellationException
  * the rate limiters, so it needs the DATA_SYNC promotion and a progress
  * notification with a Cancel action (pattern: sync's progress worker).
  *
- * Rate limiting, token pools, and captcha-herd safety all live inside
+ * Rate limiting, credential handling, and captcha-herd safety all live inside
  * [LosslessUpgrader]'s pipeline — this loop adds none of its own pacing.
  *
  * Cancellation: WorkManager cancels the coroutine; the CancellationException

@@ -342,7 +342,7 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * "Lossless is offline" banner: shown exactly when it is both true and
+     * "No lossless right now" banner: shown exactly when it is both true and
      * actionable — lossless is ON, the shared path has missed enough
      * consecutive resolves to look dead, the user owns NO lossless source of
      * their own, and they haven't already declined. Every leg re-emits live,
@@ -498,7 +498,7 @@ class HomeViewModel @Inject constructor(
      * through to DataStore; the prompt Flow re-emits null on the
      * next tick and the banner disappears.
      */
-    /** Hide the "lossless is offline" banner forever (user declined the offer). */
+    /** Hide the "No lossless right now" banner forever (user declined the offer). */
     fun dismissLosslessOffline() {
         viewModelScope.launch {
             losslessPrefs.setLosslessOfflineDismissed(true)

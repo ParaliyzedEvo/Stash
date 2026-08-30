@@ -2,9 +2,13 @@ package com.stash.feature.settings.components
 
 /**
  * Tri-state describing the user's current squid.wtf captcha cookie
- * health, surfaced to `LosslessRoutingStatus` so the UI can render
- * the correct status label and decide whether to show the "solve
- * captcha →" link.
+ * health, computed into `SettingsUiState.squidCaptchaStatus`.
+ *
+ * It no longer reaches `LosslessRoutingStatus`, and there is no
+ * "solve captcha →" link on the lossless card any more: squid is parked
+ * (see `LosslessSourceRegistry.PARKED_SOURCE_IDS`) and the routing rows
+ * now come from `LosslessAvailability`. Nothing renders this today — it
+ * is kept, with its tests, for whenever squid is unparked.
  *
  * Pre-fix, the UI used `cookie.isNotEmpty()` as a proxy for "active",
  * which silently lied after the cookie's server-side expiry — the

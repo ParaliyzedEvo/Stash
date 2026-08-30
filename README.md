@@ -1,15 +1,15 @@
 # Stash
 
-> **Your Spotify + YouTube Music library, on your phone, in FLAC.**
+> **Your Spotify + YouTube Music library, on your phone. In FLAC, if you bring the source.**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
 [![Release](https://img.shields.io/github/v/release/rawnaldclark/Stash?color=purple&include_prereleases)](https://github.com/rawnaldclark/Stash/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/vcbjEby5PC)
 
-Stash mirrors your Spotify and YouTube Music libraries to your Android phone. You connect each service, pick the playlists and mixes you want, and Stash either downloads them as real FLAC files for offline playback or surfaces them as a streaming index so you can stream tracks without filling up your storage. Same library, two modes, one tap to switch.
+Stash mirrors your Spotify and YouTube Music libraries to your Android phone. You connect each service, pick the playlists and mixes you want, and Stash either downloads them for offline playback — as real FLAC files once you've connected a lossless source — or surfaces them as a streaming index so you can stream tracks without filling up your storage. Same library, two modes, one tap to switch.
 
-There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone, encrypted, and the only network traffic Stash makes is to Spotify and YouTube themselves.
+There's no Stash account. No subscription. No ads. No analytics. Your credentials live on your phone, encrypted, and each one is only ever sent back to the service it came from. Spotify and YouTube aren't the only hosts Stash talks to, though — lyrics, scrobbling, artist metadata and lossless all have their own. [The full list is below](#what-stash-talks-to).
 
 <p align="center">
   <img src="docs/screenshots/home.png" width="280" alt="Home screen — Daily Mixes, sync stats, supporter pill">
@@ -22,18 +22,24 @@ There's no Stash account. No subscription. No ads. No analytics. Your credential
 
 Stash has two modes. They decide what a sync actually does.
 
-**Offline mode** Sync downloads each track as a FLAC file (or the closest lossless source available) and stores it on your phone. Once a track is on disk you can play it forever with no connection. It costs storage but no recurring data.
+**Offline mode** Sync downloads each track and stores it on your phone. Once a track is on disk you can play it forever with no connection. It costs storage but no recurring data. Whether a download lands as FLAC depends entirely on the lossless source you've connected — see [Lossless](#lossless). Without one you get the AAC/Opus fallback, or nothing at all if you've turned that fallback off.
 
 **Online mode** is for people who don't want the storage hit. Builds a streamable local index of your library — Almost no storage, but you need a connection to play.
 
 ---
 
-## The FLAC backbone
+## Lossless
 
-- **[QBDLX](https://github.com/ImAiiR/QobuzDownloaderX)** — a program that downloads streams directly from Qobuz.
-- **[arcod](https://arcod.xyz)** 
+**Stash ships no one else's credentials.** There's no bundled account, no shared token pool, nothing inside the APK that hands you access to a service you don't have. FLAC comes from a source *you* own, and you pick which:
 
-These are run by people doing it for the love of it — mostly solo, mostly free. They're the whole reason Stash can hand you a real lossless file instead of a re-encode. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
+- **Your own Qobuz account** — connect it in Settings › Audio. Stash then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
+- **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field and Stash routes through it.
+- **A relay configured at runtime** — a build can be pointed at a signed config that lists relay endpoints. No relay hostname ships in the APK, and a plain source checkout has no config URL, so a Stash you build yourself has this path switched off entirely.
+- **[ARCOD](https://arcod.xyz)** — connect an ARCOD account as a second source. Needs a build carrying ARCOD's integration key, which is likewise not in the repo.
+
+Connect none of them and Stash still works — it just isn't lossless. Playback and downloads fall back to AAC or Opus, and Home tells you so instead of pretending.
+
+These sources are somebody else's infrastructure, mostly run solo and mostly free. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
 
 ---
 
@@ -56,8 +62,32 @@ These are run by people doing it for the love of it — mostly solo, mostly free
 
 - No Stash servers. No accounts. No analytics. No third-party crash reporters.
 - Cookies stored on-device, encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink)
-- The only network requests Stash makes are to Spotify and YouTube directly
+- Your Spotify and YouTube credentials are sent to Spotify and YouTube and nowhere else — no host in the list below ever sees them
 - GPL-3.0, every line of code is open source
+
+---
+
+## What Stash talks to
+
+There are no Stash servers, but Stash isn't a two-service app either. Everything a stock build can reach, and what for:
+
+- **Spotify** (`accounts.`, `open.`, `api-partner.`, `clienttoken.spotify.com`) — login, library sync, likes and history mirroring
+- **YouTube + YouTube Music** (`music.youtube.com`, `www.youtube.com`, and Google's OAuth endpoints if you use the Google sign-in) — library sync, and the audio itself via yt-dlp
+- **yt-dlp** — updates itself from its own nightly release channel
+- **Qobuz** (`www.qobuz.com`, `open.qobuz.com`) — lossless, only once you connect your own account
+- **A lossless relay** — either the endpoint you configure yourself, or one from the signed runtime config described under [Lossless](#lossless). Neither is in the APK, and a plain checkout has neither.
+- **[ARCOD](https://arcod.xyz)** (`api.arcod.xyz`, plus ARCOD's own Supabase project for token refresh) — lossless, only once you connect an ARCOD account
+- **`amz.squid.wtf`** — an Amazon Music lossless fallback, download path only
+- **JioSaavn** (`www.jiosaavn.com`, `aac.saavncdn.com`) — the AAC 320 fallback when nothing lossless matched
+- **LRCLIB** (`lrclib.net`) — synced lyrics
+- **Last.fm** (`ws.audioscrobbler.com`, or a caching proxy the project runs, when a build is configured with one) — optional scrobbling, plus artist bios and images
+- **ListenBrainz** (`api.listenbrainz.org`) — optional scrobbling, only if you connect it
+- **MusicBrainz** (`musicbrainz.org`) — artist metadata
+- **GitHub** (`api.github.com`) — the update check
+- **`stash-tipjar.rawnaldclark.workers.dev`** — the public supporters list behind the Home supporter pill. Fetch only; it's told nothing about you.
+- **Album art CDNs** — `i.scdn.co`, `lh3.googleusercontent.com`, `i.ytimg.com`, and whichever CDN the source that matched a track uses
+
+Two more, `qobuz.squid.wtf` and `qobuz.kennyy.com.br`, still have code in the repo but are parked: the resolve chain skips them, so a stock build never calls them.
 
 ---
 
@@ -212,6 +242,10 @@ If you find a security issue, please use the disclosure process in [SECURITY.md]
 Stash is an independent, unofficial project. It is **not affiliated with, endorsed by, or sponsored by Spotify AB, YouTube LLC, Google LLC, or Alphabet Inc.** All trademarks belong to their respective owners.
 
 Stash is provided **for personal use only** — a tool for managing your own library. You're responsible for complying with the Terms of Service of any music service you use Stash with. Downloading copyrighted content without a license may be illegal in your jurisdiction. The Stash project accepts no responsibility for misuse.
+
+### Takedown and abuse reports
+
+Rights holders, service operators, and anyone else with a takedown or abuse report: open an issue on [GitHub Issues](https://github.com/rawnaldclark/Stash/issues), or reach the maintainer through his GitHub profile, [@rawnaldclark](https://github.com/rawnaldclark). If the report shouldn't be public, file it as a [private security advisory](https://github.com/rawnaldclark/Stash/security/advisories/new) — it's a confidential channel to the maintainers whether or not the issue is strictly a security one. Reports are read, and a source can be removed from the app in a release.
 
 ---
 
