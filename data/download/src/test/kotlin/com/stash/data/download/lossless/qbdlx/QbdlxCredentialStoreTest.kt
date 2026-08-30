@@ -1,6 +1,8 @@
 package com.stash.data.download.lossless.qbdlx
 
 import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
@@ -61,7 +63,7 @@ class QbdlxCredentialStoreTest {
     @Test
     fun `recordAlive clears the dead flag`() = runTest {
         val s = store()
-        s.setUserCredential("tok", "798273057", "sec")
+        s.setUserCredential("tok", "798273057", "sec", email = "me@x")
         s.markDead("tok")
         assertThat(s.loginLive()).isFalse()
         s.recordAlive("tok")
@@ -72,7 +74,7 @@ class QbdlxCredentialStoreTest {
     fun `a cooled login is retried once DEAD_COOLDOWN_MS has elapsed`() = runTest {
         var now = 1_000L
         val s = store().also { it.clock = { now } }
-        s.setUserCredential("tok", "798273057", "sec")
+        s.setUserCredential("tok", "798273057", "sec", email = "me@x")
         s.markDead("tok")
         assertThat(s.loginLive()).isFalse()
         now += QbdlxCredentialStore.DEAD_COOLDOWN_MS + 1
@@ -87,10 +89,32 @@ class QbdlxCredentialStoreTest {
     @Test
     fun `a connected account signs with its own stored pair`() = runTest {
         val s = store()
-        s.setUserCredential("myAccount", "712109809", "589be88e4538daea11f509d29e4a23b1")
+        s.setUserCredential("myAccount", "712109809", "589be88e4538daea11f509d29e4a23b1", email = "me@x")
         val signing = s.signingFor("myAccount")
         assertThat(signing.appId).isEqualTo("712109809")
         assertThat(signing.appSecret).isEqualTo("589be88e4538daea11f509d29e4a23b1")
+    }
+
+    /**
+     * The shipped pool cached its raw `token:country,…` string — plaintext
+     * third-party Qobuz tokens — under `cached_pool`, and pinned one of them under
+     * `pinned_token`. Deleting the pool's CODE left both on every upgrading
+     * device, written by nothing, read by nothing and removed by nothing. The
+     * first load has to take them off the disk. Keys are spelled out literally
+     * here on purpose: this asserts against what is actually in the file.
+     */
+    @Test
+    fun `the removed pool's cached tokens are purged from disk on the first load`() = runTest {
+        val poolKey = stringPreferencesKey("cached_pool")
+        val pinnedKey = stringPreferencesKey("pinned_token")
+        val s = store()
+        s.dataStoreForTest.edit { it[poolKey] = "tok-a:FR,tok-b:US"; it[pinnedKey] = "tok-a" }
+
+        assertThat(s.loginCredential()).isNull()
+
+        val raw = s.dataStoreForTest.data.first()
+        assertThat(raw.contains(poolKey)).isFalse()
+        assertThat(raw.contains(pinnedKey)).isFalse()
     }
 
     @Test
@@ -123,7 +147,7 @@ class QbdlxCredentialStoreTest {
     @Test
     fun `rejectLogin clears a migrated pasted token but only cools a real account`() = runTest {
         val s = store()
-        s.setUserCredential("tok", "712109809", "web-secret")   // no email = migrated paste
+        s.setUserCredential("tok", "712109809", "web-secret", email = null)   // no email = migrated paste
         s.rejectLogin("tok")
         assertThat(s.hasLogin.first()).isFalse()                // terminal: nothing to re-mint from
 

@@ -11,10 +11,10 @@ import java.security.MessageDigest
  *
  * The `app_secret` is a PER-CALL argument, not constructor state: a Qobuz token
  * only returns full-quality FLAC when it is signed with the `app_secret` of the
- * app_id it was minted under. The pool spans more than one app_id (each with its
- * own secret) and a user-connected account carries its own pair, so the correct
- * secret is chosen per request by [QbdlxSigningResolver] — a single bundled
- * secret silently degrades mismatched tokens to 30-second previews.
+ * app_id it was minted under. The user-connected account carries its own pair,
+ * stored with the token at login, so the secret is looked up per request through
+ * [QbdlxSigningResolver] — Stash ships none to hardcode, and a mismatched secret
+ * would silently degrade the token to 30-second previews rather than fail.
  */
 class QbdlxSigner(
     private val clock: () -> Long = { System.currentTimeMillis() / 1000L },

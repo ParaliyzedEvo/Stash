@@ -51,30 +51,9 @@ class QbdlxFileUrlRouterTest {
         coVerify { store.rejectLogin("byo") }
     }
 
-    /**
-     * An email-less login is a MIGRATED pasted token: nothing can re-mint it, so a
-     * rejection is terminal — clearing it is what lets Settings stop claiming a
-     * working account. A real account only cools.
-     */
-    @Test fun `a rejected email-less login is cleared, not just cooled`() = runTest {
-        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
-        coEvery { store.connectedEmail() } returns null
-        coEvery { store.rejectLogin("byo") } answers { callOriginal() }
-        coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
-        router.getFileUrl(42, 27)
-        coVerify { store.clearUserCredential() }
-        coVerify(exactly = 0) { store.markDead(any()) }
-    }
-
-    @Test fun `a rejected login WITH an email is only cooled, never disconnected`() = runTest {
-        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
-        coEvery { store.connectedEmail() } returns "me@x"
-        coEvery { store.rejectLogin("byo") } answers { callOriginal() }
-        coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
-        router.getFileUrl(42, 27)
-        coVerify { store.markDead("byo") }
-        coVerify(exactly = 0) { store.clearUserCredential() }
-    }
+    // What rejectLogin then DOES with the token — terminal for a migrated paste,
+    // a cooldown for a real account — is the store's decision, covered against a
+    // real DataStore in QbdlxCredentialStoreTest. The router's job is only to call it.
 
     @Test fun `BYO network failure falls through to the relays without marking dead`() = runTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true

@@ -13,9 +13,10 @@ data class QbdlxSigning(val appId: String, val appSecret: String)
 
 /**
  * Resolves the [QbdlxSigning] pair to use for a token. Implemented by
- * [QbdlxCredentialStore], which knows each token's origin: the bundled/remote
- * pool tags every token with its app_id, and a user-connected account stores its
- * own pair. Unknown tokens fall back to the primary bundled pair.
+ * [QbdlxCredentialStore], where exactly one token has a pair: the user's own
+ * connected account, which stores the app_id/secret it was minted under. Stash
+ * bundles no app_secret, so there is nothing to fall back to — any other token
+ * throws [QbdlxAuthException] rather than be signed with a pair that isn't its own.
  *
  * Narrow interface (not the whole store) so [QbdlxApiClient] depends only on the
  * one thing it needs and stays trivially fake-able in tests.
