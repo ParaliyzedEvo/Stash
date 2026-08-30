@@ -41,7 +41,6 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import com.stash.data.download.lossless.qbdlx.QbdlxTokenChoice
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
 import com.stash.data.download.lossless.qobuz.QobuzSource
@@ -106,6 +105,9 @@ class SettingsViewModel @Inject constructor(
     private val losslessRateLimiter: AggregatorRateLimiter,
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
+    // Unused since the shipped token pool's Settings callers went away; kept
+    // because Plan C's connect-form rework needs it back for `hasLogin`.
+    @Suppress("unused")
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
@@ -416,12 +418,6 @@ class SettingsViewModel @Inject constructor(
         losslessAvailability.qbdlxEnabled.map { !it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    private val _qbdlxTokenChoices = MutableStateFlow<List<QbdlxTokenChoice>>(emptyList())
-    val qbdlxTokenChoices: StateFlow<List<QbdlxTokenChoice>> = _qbdlxTokenChoices
-
-    private val _qbdlxPinnedToken = MutableStateFlow<String?>(null)
-    val qbdlxPinnedToken: StateFlow<String?> = _qbdlxPinnedToken
-
     /** Connected Qobuz account email (null = not connected) — the bring-your-own-account state. */
     private val _qobuzConnectedEmail = MutableStateFlow<String?>(null)
     val qobuzConnectedEmail: StateFlow<String?> = _qobuzConnectedEmail
@@ -441,7 +437,6 @@ class SettingsViewModel @Inject constructor(
         // Must follow _localState declaration: Kotlin initializes properties
         // top-to-bottom and refreshDiagnostics() writes to _localState.
         refreshDiagnostics()
-        refreshQbdlxTokens()
         refreshQobuzConnected()
     }
 
@@ -1320,31 +1315,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
-
-    /** Store (or clear, on blank) the user-pasted qbdlx token. */
-    fun onQbdlxTokenPaste(token: String) {
-        viewModelScope.launch {
-            qbdlxCredentialStore.setPastedToken(token.ifBlank { null })
-            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
-        }
-    }
-
-    private fun refreshQbdlxTokens() {
-        viewModelScope.launch {
-            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
-            _qbdlxPinnedToken.value = qbdlxCredentialStore.pinnedToken()
-        }
-    }
-
-    /** Pin a specific pool token (or null = Auto), then refresh the picker state. */
-    // ponytail: account picker + pin are inert until Plan C (activeToken() has no production caller)
-    fun onQbdlxTokenPinned(token: String?) {
-        viewModelScope.launch {
-            qbdlxCredentialStore.setPinnedToken(token)
-            _qbdlxPinnedToken.value = qbdlxCredentialStore.pinnedToken()
-            _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
-        }
-    }
 
     private fun refreshQobuzConnected() {
         viewModelScope.launch { _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail() }

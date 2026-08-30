@@ -5,7 +5,6 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -23,10 +22,9 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Focused coverage of the qbdlx Settings wiring (Phase 8): the paste-token
- * field and the "no lossless path configured" badge. The rest of this
- * 30-dependency ViewModel is exercised via its Compose screen + the per-pref
- * unit tests; here we only prove the qbdlx delegations.
+ * Focused coverage of the lossless Settings wiring: the "no lossless path
+ * configured" badge. The rest of this 30-dependency ViewModel is exercised via
+ * its Compose screen + the per-pref unit tests.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -92,20 +90,6 @@ class SettingsViewModelTest {
         vm.refreshStorageUsage()
 
         verify(exactly = 1) { librarySizeHolder.refresh() }
-    }
-
-    @Test fun `onQbdlxTokenPaste stores the pasted token`() = runTest {
-        val vm = newVm()
-        vm.onQbdlxTokenPaste("tok-123")
-        advanceUntilIdle()
-        coVerify { qbdlxStore.setPastedToken("tok-123") }
-    }
-
-    @Test fun `onQbdlxTokenPaste with blank clears the pasted token`() = runTest {
-        val vm = newVm()
-        vm.onQbdlxTokenPaste("   ")
-        advanceUntilIdle()
-        coVerify { qbdlxStore.setPastedToken(null) }
     }
 
     @Test fun `qbdlxExpired is true when no lossless path is configured`() = runTest {

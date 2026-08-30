@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,7 +32,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,12 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
@@ -93,8 +88,6 @@ fun SettingsAudioQualityScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
-    val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
-    val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
     val qobuzConnectedEmail by viewModel.qobuzConnectedEmail.collectAsStateWithLifecycle()
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
@@ -196,16 +189,15 @@ fun SettingsAudioQualityScreen(
                         )
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
-                        // primary lossless source. The token field is the refresh
-                        // path when the bundled pool ages out; the badge shows when
-                        // no lossless path is configured (`LosslessAvailability
+                        // primary lossless source. The badge shows when no
+                        // lossless path is configured (`LosslessAvailability
                         // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
                         // no UI to flip it back would kill lossless silently.
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (qbdlxExpired) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "No working token — connect your account below",
+                                    text = "No lossless source configured — connect your Qobuz account below",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -286,83 +278,6 @@ fun SettingsAudioQualityScreen(
                                     }
                                 }
                             }
-
-                            if (qbdlxTokenChoices.size > 1) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Account",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Column(modifier = Modifier.selectableGroup()) {
-                                    SettingsPickerRow(
-                                        selected = qbdlxPinnedToken == null,
-                                        title = "Auto",
-                                        subtitle = "Recommended — uses a working account and fails over",
-                                        onClick = { viewModel.onQbdlxTokenPinned(null) },
-                                    )
-                                    qbdlxTokenChoices.forEach { choice ->
-                                        SettingsPickerRow(
-                                            selected = qbdlxPinnedToken == choice.token,
-                                            title = choice.label,
-                                            subtitle = choice.country +
-                                                if (choice.live) "" else " · offline",
-                                            onClick = { viewModel.onQbdlxTokenPinned(choice.token) },
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            // Commits on Done / focus loss — per-keystroke writes
-                            // would let a background resolve migrate a partial
-                            // token into the connected-account slot.
-                            //
-                            // The field owns its draft (only a disconnect resets it, above),
-                            // so `committed` is what tracks the last value handed to
-                            // the VM — without it, clearing the field back to blank
-                            // would never reach `setPastedToken(null)`.
-                            var qbdlxToken by remember { mutableStateOf("") }
-                            var committed by remember { mutableStateOf("") }
-                            // Disconnect clears the login slot; forget the
-                            // draft/committed pair too so the same token can be
-                            // re-pasted.
-                            LaunchedEffect(qobuzConnectedEmail) {
-                                if (qobuzConnectedEmail == null) {
-                                    qbdlxToken = ""
-                                    committed = ""
-                                }
-                            }
-                            var wasFocused by remember { mutableStateOf(false) }
-                            val focusManager = LocalFocusManager.current
-                            val commitToken = {
-                                val draft = qbdlxToken.trim()
-                                if (draft != committed) {
-                                    committed = draft
-                                    viewModel.onQbdlxTokenPaste(draft)
-                                }
-                            }
-                            OutlinedTextField(
-                                value = qbdlxToken,
-                                onValueChange = { qbdlxToken = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // `wasFocused` gates the initial unfocused
-                                    // callback, which would otherwise commit "".
-                                    .onFocusChanged { state ->
-                                        if (wasFocused && !state.isFocused) commitToken()
-                                        wasFocused = state.isFocused
-                                    },
-                                label = { Text("Paste token") },
-                                singleLine = true,
-                                placeholder = { Text("user_auth_token") },
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        commitToken()
-                                        focusManager.clearFocus()
-                                    },
-                                ),
-                            )
                         }
 
                         // -- Download quality picker --------------------------
