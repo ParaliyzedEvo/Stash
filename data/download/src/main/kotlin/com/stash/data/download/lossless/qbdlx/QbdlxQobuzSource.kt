@@ -26,6 +26,11 @@ import kotlinx.coroutines.CancellationException
  * resolveImmediate split: background [resolve] respects the rate limiter +
  * breaker; user-initiated [resolveImmediate] bypasses both but still reports
  * outcomes so the breaker state stays accurate.
+ *
+ * The [AggregatorRateLimiter] breaker tracks CATALOG health only: a search
+ * success resets the counter before the file-URL call, a dead credential arrives
+ * as a [QbdlxResolveResult.TokenDead] value, and relay outages are the relay
+ * client's per-base cooldowns. Only repeated catalog failures can open it.
  */
 @Singleton
 class QbdlxQobuzSource @Inject constructor(

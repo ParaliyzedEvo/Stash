@@ -51,6 +51,26 @@ class QbdlxFileUrlRouterTest {
         coVerify { store.markDead("byo") }
     }
 
+    @Test fun `BYO network failure falls through to the relays without marking dead`() = runTest {
+        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
+        coEvery { api.getFileUrl(42, 27, "byo") } throws java.io.IOException("reset")
+        coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://a.example", 1))
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f", 27, 24, 96_000)
+        assertThat(router.getFileUrl(42, 27)).isInstanceOf(QbdlxResolveResult.Ok::class.java)
+        coVerify(exactly = 0) { store.markDead(any()) }
+        coVerify(exactly = 0) { store.recordAlive(any()) }
+    }
+
+    @Test fun `BYO 5xx falls through and yields null when no relay is configured`() = runTest {
+        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
+        coEvery { api.getFileUrl(42, 27, "byo") } throws QbdlxApiException(503)
+        coEvery { prefs.customLosslessEndpointNow() } returns null
+        assertThat(router.getFileUrl(42, 27)).isNull()
+        coVerify(exactly = 0) { store.markDead(any()) }
+    }
+
     @Test fun `a dead-cooled login skips BYO and falls to the relays`() = runTest {
         coEvery { store.loginCredential() } returns login
         coEvery { store.loginLive() } returns false
