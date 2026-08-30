@@ -33,10 +33,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -321,8 +321,17 @@ fun SettingsAudioQualityScreen(
                             // so `committed` is what tracks the last value handed to
                             // the VM — without it, clearing the field back to blank
                             // would never reach `setPastedToken(null)`.
-                            var qbdlxToken by rememberSaveable { mutableStateOf("") }
-                            var committed by rememberSaveable { mutableStateOf("") }
+                            var qbdlxToken by remember { mutableStateOf("") }
+                            var committed by remember { mutableStateOf("") }
+                            // Disconnect clears the login slot; forget the
+                            // draft/committed pair too so the same token can be
+                            // re-pasted.
+                            LaunchedEffect(qobuzConnectedEmail) {
+                                if (qobuzConnectedEmail == null) {
+                                    qbdlxToken = ""
+                                    committed = ""
+                                }
+                            }
                             var wasFocused by remember { mutableStateOf(false) }
                             val focusManager = LocalFocusManager.current
                             val commitToken = {
