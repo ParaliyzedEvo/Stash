@@ -29,13 +29,18 @@ import javax.inject.Singleton
  *
  * Binds [QbdlxQobuzSource] into the `Set<LosslessSource>` multibinding so
  * [com.stash.data.download.lossless.LosslessSourceRegistry] picks it up
- * alongside the other registered sources.
+ * alongside the other registered sources. The binding is UNCONDITIONAL — the
+ * source is always in the registry, and
+ * [com.stash.data.download.lossless.LosslessAvailability] decides at resolve
+ * time whether there is a credential or relay behind it. Nothing here is gated
+ * on a build flag.
  *
  * The ONLY thing this module @Provides is the [QbdlxSigner] (it needs the
  * bundled app secret). Deliberately NOT provided here:
  *  - a bare `String` appId — that would pollute the global Hilt `String`
- *    namespace; [com.stash.data.download.lossless.qbdlx.QbdlxApiClient] reads
- *    `BuildConfig.QBDLX_APP_ID` itself.
+ *    namespace; catalog calls run tokenless under the web player's own id
+ *    ([com.stash.data.download.lossless.qbdlx.QbdlxApiClient.catalogAppId]) and
+ *    [QbdlxCredentialStore] reads `BuildConfig.QBDLX_APP_ID` itself for signing.
  *  - `QbdlxApiClient` / `QbdlxCredentialStore` — both have `@Inject`
  *    constructors, so a second binding here = duplicate-binding error.
  */

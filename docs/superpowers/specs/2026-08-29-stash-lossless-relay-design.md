@@ -95,14 +95,16 @@ App ──GET lossless.json (signed) ──▶ static config host
 
 | Question | Definition | Used by |
 |---|---|---|
-| `qbdlxEnabled` | `byoTokenLive \|\| relayConfigured \|\| customEndpointSet` | replaces `!allDead()` in `QbdlxQobuzSource.isEnabled()`/`isEnabledForStreaming()` (Plan A1); `allDead()` itself is deleted in Plan C together with the Settings token surface that still reads it |
+| `qbdlxEnabled` | `hasLogin \|\| relayConfigured \|\| customEndpointSet` | replaces `!allDead()` in `QbdlxQobuzSource.isEnabled()`/`isEnabledForStreaming()` (Plan A1); `allDead()` itself is deleted in Plan C together with the Settings token surface that still reads it |
 
 The seam that picks BYO-local / custom / relay for a file URL is a small `QbdlxFileUrlRouter` (one class, one method) sitting between `QbdlxQobuzSource` and `QbdlxApiClient`/`LosslessRelayClient`, so the HTTP client stays a plain HTTP client and the routing is unit-testable on its own. Order: BYO → custom endpoint → config relays by priority.
 | `fileUrlAvailableNow` | `byoTokenLive \|\| (relayConfigured && !relayCooled) \|\| (customEndpointSet && !customCooled)` | `QbdlxQobuzSource.resolveInternal` entry check (a cooled relay costs zero HTTP) |
 | `anyConfigured` | `qbdlxEnabled \|\| arcodConnected` | the download deferral reason (`NO_SOURCE_CONFIGURED` when false) |
-| `anyUserOwned` | `byoTokenLive \|\| customEndpointSet \|\| arcodConnected` | the Home banner — a dead public relay must **not** suppress the banner whose CTA is "connect your own account" |
+| `anyUserOwned` | `hasLogin \|\| customEndpointSet \|\| arcodConnected` | the Home banner — a dead public relay must **not** suppress the banner whose CTA is "connect your own account" |
 
 `relayConfigured` = the cached runtime config lists ≥ 1 relay (busy/cooling still counts as configured); `customEndpointSet` = the Advanced field is non-blank; cooldown state comes from `LosslessRelayClient`.
+
+`hasLogin` = an account is PRESENT (including a pasted token awaiting migration), not that it is live. Liveness belongs to `fileUrlAvailableNow` alone: `qbdlxEnabled` and `anyUserOwned` describe configuration, so a login serving its 60 s dead-cooldown must not flip the source off or make the "connect your own account" banner reappear — exactly the flicker a liveness test would cause on every transient 401. A relay entry is "configured" while cooling for the same reason.
 
 **`LosslessConfigFetcher`** (new): `GET https://<config-host>/stash/lossless.json` on launch and every 6 h; body `{"v":1,"relays":[{"base":"https://…","priority":1}],"updated_at":<epoch>}` plus a detached signature fetched from `lossless.json.sig` (base64 DER, **ECDSA P-256 / `SHA256withECDSA`** — Android's JCA has no Ed25519 below API 33 and the app's minSdk is 26; ECDSA needs no dependency; same trust model). Public key baked into the app as `BuildConfig.LOSSLESS_CONFIG_PUBKEY` (base64 X.509 SPKI) alongside `BuildConfig.LOSSLESS_CONFIG_URL`; both empty → fetcher disabled → no relay. Private key kept off GitHub. Valid → applied and cached in DataStore; invalid signature → ignored, cached copy kept; network failure → cached copy; nothing cached → no relay. A relay entry is "healthy" when its last `/v1/status` said `accounts_live > 0`.
 

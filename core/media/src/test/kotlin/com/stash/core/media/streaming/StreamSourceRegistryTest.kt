@@ -157,7 +157,7 @@ class StreamSourceRegistryTest {
         coVerify(exactly = 0) { youtube.resolve(any(), any()) }
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
         coVerify(exactly = 0) { qobuz.resolve(any()) } // parked
-        coVerify(exactly = 0) { arcod.resolve(any()) } // parked
+        coVerify(exactly = 0) { arcod.resolve(any()) }
     }
 
     /**

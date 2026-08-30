@@ -46,7 +46,8 @@ class QbdlxApiClient @Inject constructor(
      */
     @Volatile internal var catalogAppId: String = WEB_APP_ID
     private val healMutex = Mutex()
-    @Volatile private var lastHealMs = 0L
+    /** Sentinel, not a timestamp: the first heal is always outside the floor. */
+    private var lastHealMs = -HEAL_MIN_INTERVAL_MS   // read/written only under [healMutex]
     /** Test seam — the heal throttle's clock. */
     internal var clock: () -> Long = { System.currentTimeMillis() }
     internal var httpClient: OkHttpClient = sharedClient  // direct www.qobuz.com; no interceptor

@@ -37,6 +37,10 @@ internal data class RelayFileResponse(
  * Talks to a Stash lossless relay (`GET {base}/v1/qobuz/file`) and OWNS the
  * per-base cooldown: `busy` → 60 s, anything else non-2xx/404, unreachable, or
  * a 200 whose body is unusable (unparseable, no url, or a plaintext one) → 5 min.
+ * The body is read BEFORE the status branch, so a 404 whose body dies mid-read
+ * cools 5 min rather than returning [RelayMint.NoMatch] — an IOException is an
+ * IOException, and a relay that can't finish a response is sick whatever status
+ * it opened with.
  * Neither [com.stash.data.download.lossless.LosslessSourceHealthGate]
  * (fixed 5 min, not consulted by the streaming resolver) nor
  * `LosslessSourceHealth` (a miss counter) fit, and because both the streaming

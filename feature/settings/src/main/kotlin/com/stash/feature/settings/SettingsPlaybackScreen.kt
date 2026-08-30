@@ -91,7 +91,7 @@ fun SettingsPlaybackScreen(
                     // DEBUG-ONLY row below, not the user-facing control it used to be.
                     // It exists because arcod and qbdlx share the Qobuz catalog: qbdlx
                     // always matches first, so arcod's path is otherwise unreachable
-                    // without disabling Direct Qobuz.
+                    // on a build where qbdlx can serve.
                     //
                     // "Stream via amz (test)" row: REMOVED 2026-07-31. amz is parked,
                     // so the toggle routed every stream and download through a source

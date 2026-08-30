@@ -103,6 +103,8 @@ class LosslessConfigFetcher @Inject constructor(
         val text = String(body)
         val fresh = parse(text) ?: return@withContext false
         // Rollback floor: a valid signature does not stop whoever serves the URL replaying an old file.
+        // A FAILED cache read (missing, unreadable, unparseable) yields floor 0 on
+        // purpose — fail open: a corrupt cache must not pin the device to stale relays.
         val cachedUpdatedAt = readCache()?.let { parse(it)?.updatedAt } ?: 0L
         if (fresh.updatedAt < cachedUpdatedAt) {
             Log.w(TAG, "lossless config older than the cached copy (${fresh.updatedAt} < $cachedUpdatedAt) — rejected")

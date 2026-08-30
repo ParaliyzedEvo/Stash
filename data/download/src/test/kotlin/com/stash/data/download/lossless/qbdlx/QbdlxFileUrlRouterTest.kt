@@ -90,6 +90,17 @@ class QbdlxFileUrlRouterTest {
         assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.RegionLocked)
     }
 
+    /** 6 is CD FLAC — the BOUNDARY of the `< 6` downgrade rule, so it must pass. */
+    @Test fun `a relay format_id of 6 (CD) is accepted`() = runTest {
+        noLogin(); coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://a.example", 1))
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f", 6, 16, 44_100)
+        val r = router.getFileUrl(42, 27)
+        assertThat(r).isInstanceOf(QbdlxResolveResult.Ok::class.java)
+        assertThat((r as QbdlxResolveResult.Ok).bitDepth).isEqualTo(16)
+    }
+
     @Test fun `custom endpoint outranks config relays`() = runTest {
         noLogin()
         coEvery { prefs.customLosslessEndpointNow() } returns "https://mine.example"

@@ -81,9 +81,12 @@ class QbdlxCredentialStore @Inject constructor(
     private val pastedTokenKey = stringPreferencesKey("pasted_token")
 
     // ── Signing credentials (app_id → app_secret) ───────────────────────────
-    // Read from BuildConfig directly, like QbdlxApiClient.appId, and exposed as
-    // internal vars so tests can override without a constructor param (an @Inject
-    // constructor can't carry defaults). QBDLX_APP_SECRETS is a "appId:secret,
+    // Read from BuildConfig directly and exposed as internal vars so tests can
+    // override without a constructor param (an @Inject constructor can't carry
+    // defaults). Catalog calls carry no token at all and run under the web
+    // player's own id (QbdlxApiClient.catalogAppId); these pairs exist purely so
+    // [signingFor] can sign getFileUrl with the app_id its token was minted
+    // under. QBDLX_APP_SECRETS is a "appId:secret,
     // appId:secret" map (primary first) that build.gradle composes; empty in an
     // older build just leaves the single primary pair, which stays valid.
     internal var primaryAppId: String = com.stash.data.download.BuildConfig.QBDLX_APP_ID
@@ -344,11 +347,13 @@ class QbdlxCredentialStore @Inject constructor(
      * have never probed sorts ahead of one we know failed, and among failed ones the
      * oldest failure goes first, so successive resolves work DOWN the pool.
      *
-     * Selection used to be canonical order alone, which meant every resolve re-probed
-     * the same head of the list: QbdlxQobuzSource only tries a bounded number of
-     * tokens per resolve, and [DEAD_COOLDOWN_MS] expires between tracks, so anything
-     * past that first handful was unreachable and a live token further down was never
-     * found (device-verified 2026-08-15 against a 17-token pool).
+     * Pool-era ordering. QbdlxQobuzSource no longer rotates tokens at all — the
+     * resolve path takes ONE file-url attempt through QbdlxFileUrlRouter — so the
+     * only token that gets marked today is the user's own login, for which
+     * [deadUntil] is a plain [DEAD_COOLDOWN_MS] cooldown before it is retried.
+     * This ordering still governs the legacy pool, and stays because a pool that
+     * probed only the head of the list never reached a live token further down
+     * (device-verified 2026-08-15 against a 17-token pool).
      *
      * Deliberately SURVIVES a pool refresh: a freshly-added token has no entry here,
      * so it sorts first and is probed immediately instead of queueing behind the
@@ -558,8 +563,10 @@ class QbdlxCredentialStore @Inject constructor(
         const val MAX_REGION_TRIES = 3
 
         // Dead-token cooldown before a token is retried (circuit-breaker style).
-        // 60s, deliberately SHORT: a dead token blacks out BOTH download and
-        // streaming (isEnabled + isEnabledForStreaming gate on allDead), so a
+        // 60s, deliberately SHORT: a cooled login is one fewer file-url path
+        // (LosslessAvailability.fileUrlAvailableNow, which the source's isEnabled
+        // and isEnabledForStreaming now gate on; allDead() is read only by
+        // Settings, for the "paste a token" surface), so a
         // TRANSIENT failure (a preview/522/timeout on the shared account under
         // the download burst) that trips a mark-dead must not kill qbdlx for
         // long. 60s recovers fast; a genuinely-dead token just re-marks, costing
@@ -576,11 +583,8 @@ class QbdlxCredentialStore @Inject constructor(
 
         /**
          * Consecutive auth failures (no success in between) that trigger a pool
-         * refresh. One resolve's attempt budget in QbdlxQobuzSource is 6, so this is
-         * "a whole resolve found nothing but dead tokens" — the reachable form of
-         * "our pool has rotted", which the all-dead check alone could never observe
-         * on a pool larger than that budget. [REFRESH_MIN_INTERVAL_MS] still bounds
-         * the resulting webhook calls, so a looser trigger costs nothing.
+         * refresh. [REFRESH_MIN_INTERVAL_MS] still bounds the resulting webhook
+         * calls, so a looser trigger costs nothing.
          */
         const val REFRESH_FAILURE_STREAK = 6
 

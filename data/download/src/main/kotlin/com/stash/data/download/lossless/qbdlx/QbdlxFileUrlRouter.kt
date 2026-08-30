@@ -43,7 +43,10 @@ class QbdlxFileUrlRouter @Inject constructor(
             } catch (e: Exception) {
                 // Not a credential problem (5xx / network / bad body): don't mark dead, don't burn the
                 // resolve — the relays take this one. The login is re-tried on the next resolve.
-                Log.w(TAG, "connected account call failed (${e.javaClass.simpleName}) — trying the relays")
+                // Name the status too: a 503, a 500 and a malformed body read identically otherwise.
+                val detail = (e as? QbdlxApiException)?.status?.let { "${e.javaClass.simpleName} $it" }
+                    ?: e.javaClass.simpleName
+                Log.w(TAG, "connected account call failed ($detail) — trying the relays")
                 null
             }
             if (result != null) {
@@ -64,10 +67,14 @@ class QbdlxFileUrlRouter @Inject constructor(
         for (base in bases) {
             if (relayClient.isCooled(base)) continue
             when (val m = relayClient.mint(base, trackId, formatId)) {
-                is RelayMint.Ok ->
+                is RelayMint.Ok -> {
                     // Same downgrade rule as the direct path: a lossy format_id (<6) is not a match.
-                    return if (m.formatId < 6) QbdlxResolveResult.RegionLocked
-                    else QbdlxResolveResult.Ok(m.url, "flac", m.bitDepth, m.sampleRateHz)
+                    return if (m.formatId < 6) {
+                        QbdlxResolveResult.RegionLocked
+                    } else {
+                        QbdlxResolveResult.Ok(m.url, "flac", m.bitDepth, m.sampleRateHz)
+                    }
+                }
                 RelayMint.NoMatch -> return QbdlxResolveResult.RegionLocked
                 RelayMint.Unavailable -> Unit // cooled by the client; try the next base
             }

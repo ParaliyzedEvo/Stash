@@ -1599,7 +1599,7 @@ Expected:
 
 - [ ] **Step 4: Install on the Pixel 5 rig and verify BYO still serves**
 
-`./gradlew :app:installDebug` then `adb -s <redfin-serial> ...`. With a Qobuz account connected in Settings › Audio: tap a track → `adb logcat -d | grep -E "QbdlxStreamResolver|StreamSourceRegistry"` shows `resolved id=… origin=qbdlx` and `qbdlx served`; Now Playing shows the `FLAC` badge. With no account and an empty config: the same tap logs `no file-url path available` **before** any `catalog/search` call (check `QbdlxApiClient` has no `search` log line for that track) and the chain proceeds to JioSaavn/YouTube. Home discovery rows and a Qobuz album page still load with no account (tokenless catalog).
+`./gradlew :app:installDebug` then `adb -s <redfin-serial> ...`. With a Qobuz account connected in Settings › Audio: tap a track → `adb logcat -d | grep -E "QbdlxStreamResolver|StreamSourceRegistry|QbdlxSource"` shows `resolved id=… origin=qbdlx` and `qbdlx served`; Now Playing shows the `FLAC` badge. With no account and an empty config: the same tap logs `no file-url path available` **before** any `catalog/search` call (check `QbdlxApiClient` has no `search` log line for that track) and the chain proceeds to JioSaavn/YouTube. Home discovery rows and a Qobuz album page still load with no account (tokenless catalog).
 
 - [ ] **Step 5: Commit any device-found fix, then hand off**
 

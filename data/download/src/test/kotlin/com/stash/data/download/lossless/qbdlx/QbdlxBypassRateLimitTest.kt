@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.qbdlx
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.LosslessAvailability
+import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
@@ -45,7 +46,7 @@ class QbdlxBypassRateLimitTest {
 
     /** Enabled + a file-URL path available + breaker closed, but the limiter is EXHAUSTED (acquire → false). */
     private fun enabledButThrottled() {
-        coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.MAX
+        coEvery { prefs.qualityTierNow() } returns LosslessQualityTier.MAX
         coEvery { availability.qbdlxEnabledNow() } returns true
         coEvery { availability.fileUrlAvailableNow() } returns true
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
