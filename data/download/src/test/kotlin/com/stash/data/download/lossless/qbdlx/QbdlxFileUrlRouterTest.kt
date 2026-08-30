@@ -36,11 +36,11 @@ class QbdlxFileUrlRouterTest {
         coVerify { store.recordAlive("byo") }
     }
 
-    @Test fun `BYO TokenDead marks the login dead and does NOT fall through to the relay`() = runTest {
+    @Test fun `BYO TokenDead rejects the login and does NOT fall through to the relay`() = runTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
         coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
         assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.TokenDead)
-        coVerify { store.markDead("byo") }
+        coVerify { store.rejectLogin("byo") }
         coVerify(exactly = 0) { relay.mint(any(), any(), any()) }
     }
 
@@ -48,7 +48,32 @@ class QbdlxFileUrlRouterTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
         coEvery { api.getFileUrl(42, 27, "byo") } throws QbdlxAuthException(401)
         assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.TokenDead)
+        coVerify { store.rejectLogin("byo") }
+    }
+
+    /**
+     * An email-less login is a MIGRATED pasted token: nothing can re-mint it, so a
+     * rejection is terminal — clearing it is what lets Settings stop claiming a
+     * working account. A real account only cools.
+     */
+    @Test fun `a rejected email-less login is cleared, not just cooled`() = runTest {
+        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
+        coEvery { store.connectedEmail() } returns null
+        coEvery { store.rejectLogin("byo") } answers { callOriginal() }
+        coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
+        router.getFileUrl(42, 27)
+        coVerify { store.clearUserCredential() }
+        coVerify(exactly = 0) { store.markDead(any()) }
+    }
+
+    @Test fun `a rejected login WITH an email is only cooled, never disconnected`() = runTest {
+        coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
+        coEvery { store.connectedEmail() } returns "me@x"
+        coEvery { store.rejectLogin("byo") } answers { callOriginal() }
+        coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
+        router.getFileUrl(42, 27)
         coVerify { store.markDead("byo") }
+        coVerify(exactly = 0) { store.clearUserCredential() }
     }
 
     @Test fun `BYO network failure falls through to the relays without marking dead`() = runTest {
@@ -59,7 +84,7 @@ class QbdlxFileUrlRouterTest {
         every { relay.isCooled(any()) } returns false
         coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f", 27, 24, 96_000)
         assertThat(router.getFileUrl(42, 27)).isInstanceOf(QbdlxResolveResult.Ok::class.java)
-        coVerify(exactly = 0) { store.markDead(any()) }
+        coVerify(exactly = 0) { store.rejectLogin(any()) }
         coVerify(exactly = 0) { store.recordAlive(any()) }
     }
 
@@ -68,7 +93,7 @@ class QbdlxFileUrlRouterTest {
         coEvery { api.getFileUrl(42, 27, "byo") } throws QbdlxApiException(503)
         coEvery { prefs.customLosslessEndpointNow() } returns null
         assertThat(router.getFileUrl(42, 27)).isNull()
-        coVerify(exactly = 0) { store.markDead(any()) }
+        coVerify(exactly = 0) { store.rejectLogin(any()) }
     }
 
     @Test fun `a dead-cooled login skips BYO and falls to the relays`() = runTest {

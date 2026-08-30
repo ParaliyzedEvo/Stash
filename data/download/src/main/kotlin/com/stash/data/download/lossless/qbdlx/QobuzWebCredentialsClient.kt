@@ -10,6 +10,11 @@ import okhttp3.Request
 /** Qobuz web-player app credentials (the pair its own site signs requests with). */
 data class QobuzWebCreds(val appId: String, val appSecret: String)
 
+/** The live-scraped Qobuz web app_id/secret. A seam so the credential store is testable without OkHttp. */
+fun interface QobuzWebCredentials {
+    suspend fun fetch(): QobuzWebCreds?
+}
+
 /**
  * Scrapes the LIVE Qobuz web-player `app_id` + `app_secret` from its public
  * JS bundle — the same pair `open.qobuz.com` uses.

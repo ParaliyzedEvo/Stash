@@ -407,8 +407,9 @@ class SettingsViewModel @Inject constructor(
     /**
      * True when NO lossless path is configured (no connected account, no custom
      * endpoint, no relay) — drives the Settings "connect your account" line.
-     * Was `qbdlxCredentialStore.allDead()`, which can never be true once the
-     * bundled pool went inert (nothing marks pool tokens dead any more).
+     * Derived from [LosslessAvailability] rather than the credential store: the
+     * store now knows only about the user's own connected account, and a custom
+     * endpoint or a relay is a working lossless path without one.
      *
      * MUST stay declared above the [init] block: Kotlin initializes properties
      * top-to-bottom, and anything in `init` that touches this field before its
