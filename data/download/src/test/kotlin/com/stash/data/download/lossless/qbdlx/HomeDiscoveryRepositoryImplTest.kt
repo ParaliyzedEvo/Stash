@@ -11,12 +11,10 @@ import org.junit.Test
 
 class HomeDiscoveryRepositoryImplTest {
     private val client = mockk<QbdlxApiClient>()
-    private val store = mockk<QbdlxCredentialStore>(relaxed = true)
     private lateinit var repo: HomeDiscoveryRepositoryImpl
 
     @Before fun setup() {
-        coEvery { store.activeToken() } returns "tok"
-        repo = HomeDiscoveryRepositoryImpl(client, store)
+        repo = HomeDiscoveryRepositoryImpl(client)
     }
 
     @Test fun `newReleases maps items to AlbumSummary with QOBUZ source`() = runTest {
@@ -51,9 +49,16 @@ class HomeDiscoveryRepositoryImplTest {
         assertThat(repo.newReleases(null)).isEmpty()
     }
 
-    @Test fun `no live token yields empty list`() = runTest {
-        coEvery { store.activeToken() } returns null
-        assertThat(repo.communityPlaylists(null)).isEmpty()
+    @Test fun `auth failure yields empty list and OK status (no token concept)`() = runTest {
+        coEvery { client.getFeaturedAlbums(any(), any(), any()) } throws QbdlxAuthException(401)
+        assertThat(repo.newReleases(null)).isEmpty()
+        assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.OK)
+    }
+
+    @Test fun `IOException sets NO_INTERNET`() = runTest {
+        coEvery { client.getFeaturedAlbums(any(), any(), any()) } throws java.io.IOException("offline")
+        assertThat(repo.newReleases(null)).isEmpty()
+        assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.NO_INTERNET)
     }
 
     @Test fun `browsePlaylists passes offset+limit through and maps`() = runTest {

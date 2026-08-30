@@ -7,7 +7,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Maps a Qobuz album (via [QbdlxApiClient.getAlbum] + a live token) into the app's
+ * Maps a Qobuz album (via [QbdlxApiClient.getAlbum], tokenless) into the app's
  * existing [AlbumDetail] so the album screen can render + play it.
  *
  * Phase 1 leaves [AlbumDetail]/[TrackSummary] unchanged: Qobuz tracks carry
@@ -18,10 +18,8 @@ import javax.inject.Singleton
 @Singleton
 class QobuzAlbumFetcherImpl @Inject constructor(
     private val apiClient: QbdlxApiClient,
-    private val credentialStore: QbdlxCredentialStore,
 ) : QobuzAlbumFetcher {
     override suspend fun getAlbum(qobuzAlbumId: String): AlbumDetail {
-        val token = credentialStore.activeToken() ?: error("qbdlx: no live token")
         val r = apiClient.getAlbum(qobuzAlbumId)
         val artistName = r.artist?.name.orEmpty()
         val cover = r.image?.large ?: r.image?.small ?: r.image?.thumbnail
@@ -47,7 +45,6 @@ class QobuzAlbumFetcherImpl @Inject constructor(
     }
 
     override suspend fun getPlaylist(playlistId: String): AlbumDetail {
-        val token = credentialStore.activeToken() ?: error("qbdlx: no live token")
         val p = apiClient.getPlaylist(playlistId)
         val cover = p.images300.firstOrNull()
         return AlbumDetail(

@@ -10,21 +10,18 @@ import javax.inject.Singleton
 
 /**
  * [DiscographySupplement] backed by the direct-Qobuz (qbdlx) catalog. Given a YT
- * artist name + its YT albums/singles, it gates on qbdlx being usable, matches
- * the artist on Qobuz, fetches its albums, and unions them into the YT lists via
- * [DiscographyMerger].
+ * artist name + its YT albums/singles, it matches the artist on Qobuz, fetches
+ * its albums, and unions them into the YT lists via [DiscographyMerger].
  *
  * Correctness-critical: the dangerous failure is a FALSE artist match grafting a
- * stranger's discography. The gate therefore FAILS SAFE — on any doubt (source
- * off, no token, blank/VA name, no candidate over threshold, ambiguous homonym,
- * or any thrown exception) it returns the YT lists UNCHANGED. The outer
+ * stranger's discography. The gate therefore FAILS SAFE — on any doubt (blank/VA
+ * name, no candidate over threshold, ambiguous homonym, or any thrown exception)
+ * it returns the YT lists UNCHANGED. The outer
  * `runCatching { … }.getOrElse { unchanged }` guarantees nothing throws out.
  */
 @Singleton
 class QobuzDiscographyProvider @Inject constructor(
     private val apiClient: QbdlxApiClient,
-    private val credentialStore: QbdlxCredentialStore,
-    private val source: QbdlxQobuzSource,
 ) : DiscographySupplement {
 
     override suspend fun mergeInto(
@@ -32,9 +29,6 @@ class QobuzDiscographyProvider @Inject constructor(
         ytAlbums: List<AlbumSummary>,
         ytSingles: List<AlbumSummary>,
     ): MergedDiscography = runCatching {
-        if (!source.isEnabledForStreaming()) return unchanged(ytAlbums, ytSingles)
-        val token = credentialStore.activeToken() ?: return unchanged(ytAlbums, ytSingles)
-
         val nName = QobuzCandidateMatcher.normalize(artistName)
         if (nName.isBlank() || nName in VARIOUS_ARTISTS) return unchanged(ytAlbums, ytSingles)
 
