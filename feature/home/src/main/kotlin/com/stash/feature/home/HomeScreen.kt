@@ -327,17 +327,21 @@ fun HomeScreen(
             }
         }
 
-        // ── ARCOD rescue ─────────────────────────────────────────────
-        // Shown while the qbdlx pool looks dead, lossless is ON and no
-        // ARCOD account is connected — the one moment the second source
-        // is the difference between FLAC and a silent YouTube fallback.
-        // Tap goes STRAIGHT into the connect flow; X declines forever.
-        if (uiState.showArcodRescue) {
+        // ── Lossless offline ─────────────────────────────────────────
+        // Shown while lossless is ON, the shared path looks dead and
+        // the user owns no lossless source of their own — the one
+        // moment connecting an account is the difference between FLAC
+        // and a silent YouTube fallback. Tap opens Settings › Audio;
+        // X declines forever.
+        if (uiState.showLosslessOffline) {
             item {
                 Spacer(Modifier.height(6.dp))
-                ArcodRescueBanner(
-                    onConnect = onNavigateToArcodConnect,
-                    onDismiss = viewModel::dismissArcodRescue,
+                LosslessOfflineBanner(
+                    onConnect = {
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onDismiss = viewModel::dismissLosslessOffline,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -931,13 +935,13 @@ private fun LosslessConnectBanner(
 }
 
 /**
- * "Connect ARCOD" rescue banner. Same visual grammar as
+ * "Lossless is offline" banner. Same visual grammar as
  * [LosslessConnectBanner] but on the error accent: this one isn't an
  * upsell, it's a repair — the user's chosen lossless experience is
- * currently degraded and one tap fixes it.
+ * currently degraded and one tap starts fixing it.
  */
 @Composable
-private fun ArcodRescueBanner(
+private fun LosslessOfflineBanner(
     onConnect: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -959,12 +963,13 @@ private fun ArcodRescueBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Lossless is struggling",
+                    text = "Lossless is offline",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "The main FLAC source isn't responding. Connect ARCOD — a free second source — to keep hi-res going.",
+                    text = "Lossless is offline right now — Stash is playing YouTube audio. " +
+                        "Connect your own Qobuz account to keep FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -983,7 +988,7 @@ private fun ArcodRescueBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss ARCOD banner",
+                    contentDescription = "Dismiss lossless-offline banner",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )

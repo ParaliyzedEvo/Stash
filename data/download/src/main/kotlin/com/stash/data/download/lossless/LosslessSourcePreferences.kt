@@ -55,6 +55,7 @@ class LosslessSourcePreferences @Inject constructor(
     private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
     private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
+    private val losslessOfflineDismissedKey = booleanPreferencesKey("lossless_offline_dismissed")
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
     private val youtubeFallbackKey = booleanPreferencesKey("youtube_fallback_enabled")
     // Retained only so [purgeAntraCredentials] can delete the harvested
@@ -233,6 +234,24 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun setArcodRescueDismissed(dismissed: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[arcodRescueDismissedKey] = dismissed }
+    }
+
+    /**
+     * Whether the user has dismissed the "lossless is offline" Home banner —
+     * the successor to [arcodRescueDismissed], which keyed on ARCOD alone.
+     * Forever-dismissed, same semantics.
+     *
+     * Its own key deliberately: the new banner says something different
+     * ("connect your own Qobuz account", not "connect ARCOD"), so someone who
+     * declined the old offer is still owed this one once. The old key stays
+     * readable so removing it can't resurrect the retired banner.
+     */
+    val losslessOfflineDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
+        prefs[losslessOfflineDismissedKey] ?: false
+    }
+
+    suspend fun setLosslessOfflineDismissed(dismissed: Boolean) {
+        context.losslessDataStore.edit { prefs -> prefs[losslessOfflineDismissedKey] = dismissed }
     }
 
     /**

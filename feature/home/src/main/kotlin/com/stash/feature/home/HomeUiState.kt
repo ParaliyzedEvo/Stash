@@ -32,12 +32,12 @@ data class HomeUiState(
     val losslessPrompt: LosslessPromptState? = null,
 
     /**
-     * True when Home should offer the "connect ARCOD" rescue: lossless is
-     * ON but the qbdlx pool has missed enough consecutive resolves to look
-     * dead, no ARCOD account is connected, and the user hasn't dismissed
-     * the offer. Tap routes straight into the ARCOD connect flow.
+     * True when Home should say lossless is offline: lossless is ON, the
+     * shared path has missed enough consecutive resolves to look dead, the
+     * user owns no lossless source of their own to fall back to, and they
+     * haven't dismissed the notice. Tap opens Settings › Audio.
      */
-    val showArcodRescue: Boolean = false,
+    val showLosslessOffline: Boolean = false,
 
     /**
      * v0.9.13: live tip-jar state. Drives the Home pill (compact

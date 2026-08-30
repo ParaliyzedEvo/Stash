@@ -88,7 +88,7 @@ class HomeViewModel @Inject constructor(
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
-    private val arcodCredentialStore: com.stash.data.download.lossless.arcod.ArcodCredentialStore,
+    private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -342,21 +342,23 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * "Connect ARCOD" rescue banner: offered exactly when it helps —
-     * lossless is ON but qbdlx (the shared-pool source) has missed enough
-     * consecutive resolves to look dead, no ARCOD session is connected to
-     * take over, and the user hasn't already declined. Every leg re-emits
-     * live, so connecting ARCOD (token appears) or the pool recovering
-     * (streak resets) retires the banner on its own.
+     * "Lossless is offline" banner: shown exactly when it is both true and
+     * actionable — lossless is ON, the shared path has missed enough
+     * consecutive resolves to look dead, the user owns NO lossless source of
+     * their own, and they haven't already declined. Every leg re-emits live,
+     * so connecting an account or the source recovering retires it on its own.
+     *
+     * Keyed on [LosslessAvailability.anyUserOwned], deliberately not
+     * `anyConfigured`: a configured-but-dead PUBLIC relay is precisely the
+     * outage this banner exists for, and its call to action — connect your own
+     * account — is exactly what that user still needs to do.
      */
-    private val arcodRescueFlow = combine(
+    private val losslessOfflineFlow = combine(
         losslessSourceHealth.qbdlxLooksDown,
-        arcodCredentialStore.accessToken,
+        losslessAvailability.anyUserOwned,
         losslessPrefs.enabled,
-        losslessPrefs.arcodRescueDismissed,
-    ) { qbdlxDown, arcodToken, losslessOn, dismissed ->
-        qbdlxDown && arcodToken == null && losslessOn && !dismissed
-    }
+        losslessPrefs.losslessOfflineDismissed,
+    ) { down, userOwned, losslessOn, dismissed -> down && !userOwned && losslessOn && !dismissed }
 
     /**
      * The two lossless banners travel as a pair so [uiState]'s combine
@@ -364,8 +366,8 @@ class HomeViewModel @Inject constructor(
      */
     private val losslessBannersFlow = combine(
         losslessPromptFlow,
-        arcodRescueFlow,
-    ) { prompt, arcodRescue -> prompt to arcodRescue }
+        losslessOfflineFlow,
+    ) { prompt, losslessOffline -> prompt to losslessOffline }
 
     /**
      * v0.9.35: drives [HomeUiState.metadataBackfillBanner]. Pure-mapped
@@ -463,12 +465,12 @@ class HomeViewModel @Inject constructor(
         tipJarRepository.state,
         metadataBackfillBannerFlow,
         discoveryFlow,
-    ) { (home, likedCard), (losslessPrompt, showArcodRescue), tipJar, metadataBackfillBanner, discovery ->
+    ) { (home, likedCard), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
             hero = home.hero,
             isLoading = false,
             losslessPrompt = losslessPrompt,
-            showArcodRescue = showArcodRescue,
+            showLosslessOffline = showLosslessOffline,
             tipJar = tipJar,
             metadataBackfillBanner = metadataBackfillBanner,
             selectedGenre = discovery.selectedGenre,
@@ -496,10 +498,10 @@ class HomeViewModel @Inject constructor(
      * through to DataStore; the prompt Flow re-emits null on the
      * next tick and the banner disappears.
      */
-    /** Hide the "connect ARCOD" rescue banner forever (user declined the offer). */
-    fun dismissArcodRescue() {
+    /** Hide the "lossless is offline" banner forever (user declined the offer). */
+    fun dismissLosslessOffline() {
         viewModelScope.launch {
-            losslessPrefs.setArcodRescueDismissed(true)
+            losslessPrefs.setLosslessOfflineDismissed(true)
         }
     }
 
