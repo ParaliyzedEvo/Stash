@@ -279,7 +279,7 @@ Key the Qobuz row on **`hasLogin`, not the email** — a migrated pasted token h
 
 `SettingsViewModel` exposes `val losslessRouting: StateFlow<List<RoutingRow>> = losslessAvailability.routingRows.stateIn(viewModelScope, WhileSubscribed(5_000), emptyList())`.
 
-`LosslessRoutingStatus(rows: List<RoutingRow>, modifier: Modifier = Modifier)` keeps its current visual language (mono `ROUTING` header, `↳` rows, status dots) but renders `rows`. Replace the footer's "Lossless comes from Qobuz" with: *"Lossless comes from your connected account, or a relay you've configured. Misses try JioSaavn AAC 320 before falling back to YouTube, shown as \"via YT\" while it plays."* Update the file KDoc: rows describe **configuration**, not liveness; health arrives with the relay's `/v1/status` in Plan B.
+`LosslessRoutingStatus(rows: List<RoutingRow>, modifier: Modifier = Modifier)` keeps its current visual language (mono `ROUTING` header, `↳` rows, status dots) but renders `rows`. Replace the footer's "Lossless comes from Qobuz" with: *"Lossless comes from the sources above. Misses try JioSaavn AAC 320 before falling back to YouTube, shown as \"via YT\" while it plays."* **Do not enumerate sources in the footer.** An enumeration ("your connected account, or a relay you've configured") contradicts the row list it sits under: an ARCOD-only user reads `ARCOD — connected` five lines above a sentence crediting them with things they don't have, and "a relay *you've* configured" mislabels the `Stash lossless` row nobody configured. The rows are the authority; the footer must defer to them. Update the file KDoc: rows describe **configuration**, not liveness; health arrives with the relay's `/v1/status` in Plan B.
 
 **Housekeeping this task must also do:** delete the `@Suppress("unused")` and its comment from `SettingsViewModel.kt` ~`:110` — Task 1 kept the `qbdlxCredentialStore` param for this task, and once `hasLogin` is read the suppression must go (it is the only `@Suppress("unused")` in the codebase; left behind it would permanently blind a real signal). Also delete the stale rationale at ~`:410-411` naming `allDead()`/"the bundled pool", which stops meaning anything once Task 2 removes `allDead()`.
 
@@ -315,6 +315,22 @@ Screen: an "Advanced" section under the routing list with an `OutlinedTextField`
 - [ ] **Step 4: Commit** — `git commit -m "feat(settings): custom lossless endpoint with a reachability test"`
 
 ---
+
+### Task 5b: Honesty fixes the Task 4 review found
+
+Runs after Task 5 (it edits the same two Settings files). All three are states where the screen contradicts itself — the defect class this plan exists to remove.
+
+- [ ] **The lossless card's subtitle says "FLAC routing active" whenever the toggle is on**, regardless of whether anything is configured (`SettingsAudioQualityScreen.kt:135`). With nothing set up it sits ~20 lines above three "not connected" rows and the "No Qobuz source configured" badge — and per scope decision #2 that is **every shipping user on day one**. Make it three-way using the predicate the VM already exposes:
+```kotlin
+subtitle = when {
+    !uiState.losslessEnabled -> "Studio-quality FLAC from your own Qobuz account. Files ~10× larger than MP3."
+    qbdlxExpired -> "No lossless source configured — see below. Files ~10× larger than MP3."
+    else -> "FLAC routing active. Files ~10× larger than MP3."
+},
+```
+- [ ] **Two sources of truth for the connected email.** `SettingsViewModel._qobuzConnectedEmail` is imperative (filled by an `init`-launched coroutine) while `losslessRouting` reads the reactive `connectedEmailFlow` added in Task 4. During the race the ROUTING row shows `me@example.com` while the connect form below shows **"Connected (token)"** — telling a password user they pasted a token. Net deletion: point `qobuzConnectedEmail` at `qbdlxCredentialStore.connectedEmailFlow.stateIn(viewModelScope, WhileSubscribed(5_000), null)` and delete `_qobuzConnectedEmail`, `refreshQobuzConnected()`, its `init` call, and both assignment sites (~10 lines).
+- [ ] **Guard the `connectedEmailFlow` trap with a KDoc line.** The obvious future dedupe — `connectedEmail() = connectedEmailFlow.first()` — would be a *bug*: the flow's `catch { emit(null) }` turns a transient DataStore error into `null`, which `rejectLogin` reads as "migrated" and **disconnects a paying account**, defeating its explicit fail-closed contract. Add: *"Do not reimplement `connectedEmail()` on this — `rejectLogin` needs the throw, not a null."*
+- [ ] Drop the `— connected` suffix from the ARCOD **nav** row now that the routing list owns that fact (both read the same token, so it is redundant rather than wrong).
 
 ### Task 6: The Home banner generalises
 
@@ -354,7 +370,7 @@ Rename through the UI: `HomeUiState.showArcodRescue` → `showLosslessOffline` (
 ```bash
 git grep -n -iE "token pool|pooled token|shared pool|bundled pool|allDead|QbdlxPool|MAX_TOKEN_ATTEMPTS|QBDLX_CONFIGURED" -- '*.kt' '*.kts' 'README.md'
 ```
-Resolve every hit or explain why it stays. `DownloadManager.kt:231`'s `QBDLX_CONFIGURED` mention: reword to name `LosslessAvailability`, leave the surrounding logic to Plan A2.
+Resolve every hit or explain why it stays. `DownloadManager.kt:231`'s `QBDLX_CONFIGURED` mention: reword to name `LosslessAvailability`, leave the surrounding logic to Plan A2. **Two hits are accurate historical context and must NOT be churned:** `LosslessAvailability.kt:68` and `LosslessRoutingStatus.kt:36` ("true only while a token pool shipped"). `SettingsAudioQualityScreen.kt`'s "not the shared pool" was already deleted in Task 4. Also fix `components/SquidCaptchaStatus.kt:5-7`, whose KDoc still says the tri-state is surfaced to `LosslessRoutingStatus` to show a "solve captcha →" link — that link and that coupling no longer exist.
 
 - [ ] **Step 3: Commit** — `git commit -m "docs: README states what Stash actually contacts and what lossless needs"`
 
