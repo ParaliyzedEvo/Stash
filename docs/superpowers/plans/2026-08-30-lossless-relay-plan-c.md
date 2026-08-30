@@ -56,10 +56,14 @@
 
 - [ ] **Step 1:** From the worktree at its base commit, run and save:
 ```bash
+S="$SCRATCH"   # the session scratchpad dir; /tmp is not portable on this win32 box
 ./gradlew testDebugUnitTest --max-workers=3 -Dorg.gradle.jvmargs=-Xmx4096m --continue \
-  > /tmp/plan-c-baseline.log 2>&1; grep -E " FAILED$" /tmp/plan-c-baseline.log | sort -u > /tmp/plan-c-baseline-failures.txt
+  > "$S/plan-c-baseline.log" 2>&1
+grep -E "^[A-Za-z].* FAILED$" "$S/plan-c-baseline.log" | sort -u > "$S/plan-c-baseline-failures.txt"
 ```
-Record the count in this file under Task 8 and keep the file for the final diff. Do not fix any of them here.
+If gradle dies with `java.net.BindException: Address already in use: bind` inside `FileLockCommunicator`, that is the shell sandbox, not a wedged daemon — rerun with the sandbox disabled. Record the count under Task 8 and keep `plan-c-baseline-failures.txt` for the final diff. Do not fix any of them here.
+
+**Measured on `4622a142`, 2026-08-30: 11 failures** — `HomeViewModelTest` playHero ×2, `:feature:search` `AlbumDiscoveryViewModel*`/`ArtistProfileViewModelTest` ×8, `TrackDownloaderImplDeferredTest` ×1. Re-measure anyway; treat this line as a sanity check, not the source of truth.
 
 ---
 
@@ -74,7 +78,7 @@ Runs **first** so Task 2 deletes members nothing references, keeping every commi
 
 - [ ] **Step 1: Delete the dead members**
 
-VM: remove `_qbdlxTokenChoices`/`qbdlxTokenChoices`, `_qbdlxPinnedToken`/`qbdlxPinnedToken`, `onQbdlxTokenPinned`, `onQbdlxTokenPaste`, **and `refreshQbdlxTokens()` together with its call from `init`** (~`:1332-1337`, called ~`:446`). That removes every `poolForPicker()` / `pinnedToken()` / `setPinnedToken()` / `setPastedToken()` call. Keep `qbdlxExpired` (already `!LosslessAvailability.qbdlxEnabled` since A1), `qobuzConnectedEmail`, `onConnectQobuz`, `onDisconnectQobuz`.
+VM: remove `_qbdlxTokenChoices`/`qbdlxTokenChoices`, `_qbdlxPinnedToken`/`qbdlxPinnedToken`, `onQbdlxTokenPinned`, `onQbdlxTokenPaste`, **and `refreshQbdlxTokens()` together with its call from `init`** (~`:1332-1337`, called ~`:446`). That removes every `poolForPicker()` / `pinnedToken()` / `setPinnedToken()` / `setPastedToken()` call. Keep `qbdlxExpired` (already `!LosslessAvailability.qbdlxEnabled` since A1), `qobuzConnectedEmail`, `onConnectQobuz`, `onDisconnectQobuz`. **Keep the `qbdlxCredentialStore` constructor param** even though it has no remaining use after this task — Task 4 needs it to expose `hasLogin` for the connect-form key. Removing it here would mean editing `newVm` twice.
 
 Screen: remove the `qbdlxTokenChoices.size > 1` picker block (~`:290-314`), the "Paste token" `OutlinedTextField` and all of its `qbdlxToken`/`committed`/`wasFocused`/`commitToken`/`LaunchedEffect` state (~`:315-365`), and the imports that become unused. Reword the badge (~`:205`) from `"No working token — connect your account below"` to `"No lossless source configured — connect your Qobuz account below"`.
 
@@ -195,6 +199,8 @@ and in `QbdlxFileUrlRouter` replace `credentialStore.markDead(login.token)` with
 
 Delete the three pool files and the three test files. In `QbdlxModule`: delete `bindQbdlxRemotePool`, `provideQbdlxPoolProvider`, and the `QbdlxPoolCipher`/`BuildConfig` imports.
 
+**Rewrite two KDocs that Task 3's grep gate would otherwise fail on** (they name BuildConfig fields and both become false here): `QbdlxModule.kt:38-43` — "the ONLY thing this module @Provides is the [QbdlxSigner] (it needs the bundled app secret)" and "[QbdlxCredentialStore] reads `BuildConfig.QBDLX_APP_ID` itself for signing" (after this task the store reads no BuildConfig at all, and the module provides a second thing); and `QbdlxCredentialStore.kt:50` — "pairs (from [BuildConfig.QBDLX_TOKEN_POOL]) plus an optional user-pasted token", which still describes the pool as the class's architecture. Neither is caught by Task 7's hygiene grep (`TOKEN_POOL` is not `token pool`).
+
 - [ ] **Step 4: Verify** — `./gradlew :data:download:testDebugUnitTest :feature:settings:compileDebugKotlin --max-workers=3 -Dorg.gradle.jvmargs=-Xmx4096m` → green (Task 1 already removed the callers, so nothing should be red).
 
 - [ ] **Step 5: Commit**
@@ -234,14 +240,16 @@ git commit -m "chore(build): stop shipping Qobuz app credentials and the token p
 
 ### Task 4: The routing list reports real state
 
-**Design note:** the row list is built in `LosslessAvailability`, **not** in `SettingsViewModel`. `LosslessAvailability` already injects every input (`QbdlxCredentialStore`, `LosslessConfigFetcher`, `LosslessSourcePreferences`, `ArcodCredentialStore`) and exists precisely so the source, downloads and UI cannot disagree. `SettingsViewModel` already has `LosslessAvailability` (added in A1) — so this needs **no new Settings constructor dependency** and no test-builder surgery.
+**Design note:** the row list is built in `LosslessAvailability`, **not** in `SettingsViewModel`. `LosslessAvailability` already injects every input (`QbdlxCredentialStore`, `LosslessConfigFetcher`, `LosslessSourcePreferences`, `ArcodCredentialStore`) and exists precisely so the source, downloads and UI cannot disagree. `SettingsViewModel` already has `LosslessAvailability` (added in A1), so this needs **no new Settings constructor dependency**. It does need two **strict-mockk stubs**, because `losslessRouting`/`routingRows` are eager `val` initialisers read at construction — an unstubbed member fails every test in the file, not just the new one:
+- `SettingsViewModelTest.kt:68-70` — add `every { routingRows } returns flowOf(emptyList())` to the `losslessAvailability` mockk.
+- `LosslessAvailabilityTest.kt:21` — add `every { connectedEmailFlow } returns MutableStateFlow(null)` to the `store` mockk (`connectedEmailFlow` is a **fifth** input; `combine` has a 5-arg overload).
 
 **Files:**
 - Modify: `data/download/src/main/kotlin/com/stash/data/download/lossless/LosslessAvailability.kt`
 - Modify: `feature/settings/…/SettingsViewModel.kt`, `SettingsAudioQualityScreen.kt`, `components/LosslessRoutingStatus.kt`
 - Test: `data/download/src/test/…/lossless/LosslessAvailabilityTest.kt`
 
-- [ ] **Step 1: Write the failing test** in `LosslessAvailabilityTest` (it already fakes all four inputs): nothing configured → the `qobuz` and `relay` rows are `NOT_CONFIGURED`; a connected account → `qobuz` is `CONNECTED` with the email as detail; a **migrated token (no email)** → `qobuz` is `CONNECTED` with detail `"connected (token)"`; a config listing one relay → `relay` is `CONFIGURED`; a custom endpoint adds its own row.
+- [ ] **Step 1: Write the failing test** in `LosslessAvailabilityTest` (stub `connectedEmailFlow` on the store mockk first — see the design note): nothing configured → the `qobuz` and `relay` rows are `NOT_CONFIGURED`; a connected account → `qobuz` is `CONNECTED` with the email as detail; a **migrated token (no email)** → `qobuz` is `CONNECTED` with detail `"connected (token)"`; a config listing one relay → `relay` is `CONFIGURED`; a custom endpoint adds its own row.
 
 - [ ] **Step 2: Implement**
 
@@ -353,7 +361,7 @@ Resolve every hit or explain why it stays. `DownloadManager.kt:231`'s `QBDLX_CON
 ### Task 8: Release gate, full tests, device check
 
 - [ ] **Step 1:** `./gradlew compileDebugUnitTestKotlin --max-workers=3 -Dorg.gradle.jvmargs=-Xmx4096m` → BUILD SUCCESSFUL (the gate CI runs).
-- [ ] **Step 2:** `./gradlew testDebugUnitTest --max-workers=3 -Dorg.gradle.jvmargs=-Xmx4096m --continue`, then **diff the failures against `/tmp/plan-c-baseline-failures.txt` from Task 0**. Any failure not in that file is this plan's.
+- [ ] **Step 2:** `./gradlew testDebugUnitTest --max-workers=3 -Dorg.gradle.jvmargs=-Xmx4096m --continue`, then **diff the failures against `plan-c-baseline-failures.txt` from Task 0** (same scratchpad path). Any failure not in that file is this plan's.
 - [ ] **Step 3:** `git grep -n "QBDLX_APP_ID\|QBDLX_TOKEN_POOL\|allDead()\|activeToken()\|poolForPicker\|tokensForRegion" -- '*.kt' '*.kts'` → no production matches.
 - [ ] **Step 4: Device check** (Pixel 6, debug build). **Prove the APK is fresh first** — gradle exit code, APK mtime, `adb shell dumpsys package com.stash.app.debug | grep versionName` (per `feedback_verify_apk_freshness_before_device_proof`; a silent build failure once made a three-week-old APK look like a passing test). Then, with the account still connected: play a track **not touched this session** (`StreamUrlCache` hides re-resolves) → `qbdlx served` + `FLAC` badge; Settings shows "Your Qobuz account · connected as …" and "Stash lossless · not configured"; Disconnect → qbdlx leaves the chain and the Home banner appears.
 - [ ] **Step 5:** Report, then `superpowers:finishing-a-development-branch`.
