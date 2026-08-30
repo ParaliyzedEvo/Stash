@@ -17,6 +17,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** DataStore for lossless-source preferences (priority order, min quality, etc). */
 private val Context.losslessDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -349,10 +350,16 @@ class LosslessSourcePreferences @Inject constructor(
             "amz",
         )
 
-        /** https only; trims; strips trailing slashes and any query/fragment. Null when unusable. */
+        /**
+         * Validates + normalises a relay base URL: must parse as an https URL
+         * (OkHttp's rules — a bad host is rejected here, never at request time),
+         * scheme/host lower-cased, query and fragment dropped, trailing slashes
+         * trimmed. A path prefix is kept (a relay behind a reverse-proxy subpath
+         * is legitimate). Null when unusable.
+         */
         fun normaliseEndpoint(raw: String?): String? {
-            val t = raw?.trim()?.substringBefore('?')?.substringBefore('#')?.trimEnd('/') ?: return null
-            return t.takeIf { it.startsWith("https://") && it.length > "https://".length }
+            val u = raw?.trim()?.toHttpUrlOrNull()?.takeIf { it.scheme == "https" } ?: return null
+            return u.newBuilder().query(null).fragment(null).build().toString().trimEnd('/')
         }
     }
 }
