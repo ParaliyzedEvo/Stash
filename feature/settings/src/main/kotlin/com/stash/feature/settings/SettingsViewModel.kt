@@ -36,6 +36,7 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
 import com.stash.data.download.files.MoveLibraryState
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
@@ -106,7 +107,7 @@ class SettingsViewModel @Inject constructor(
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
-    private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
+    private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
     private val likePreferences: LikePreferences,
     private val trackDao: TrackDao,

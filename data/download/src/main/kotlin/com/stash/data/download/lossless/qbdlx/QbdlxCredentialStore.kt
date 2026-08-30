@@ -523,19 +523,20 @@ class QbdlxCredentialStore @Inject constructor(
         context.qbdlxCredentialsDataStore.edit { prefs ->
             if (t.isNullOrEmpty()) prefs.remove(pastedTokenKey) else prefs[pastedTokenKey] = t
         }
-        // Settings resolves loginCredential() at construction, so by the time the
-        // user pastes, the lazy load has already cached its null and nothing would
-        // ever migrate the new value.
+        // This store is a process-wide singleton whose lazy login load is cached
+        // by the FIRST availability/resolve check — by the time the user pastes,
+        // that cache holds its null and nothing would ever migrate the new value.
         if (!t.isNullOrEmpty()) loginLoaded = false // re-arm: the next loginCredential() re-reads and migrates the paste
     }
 
     /**
      * True when there is NO usable token: none configured at all (no bundled
-     * pool, no paste), or every configured one is currently dead. Read only by
-     * Settings now — `LosslessAvailability` is what gates the source. A tokenless
-     * build MUST surface the paste prompt — an earlier "empty pool isn't expired"
-     * guard here returned false instead, which hid the v0.9.65–v0.9.68 blank
-     * BuildConfig credentials as silent per-track no_results.
+     * pool, no paste), or every configured one is currently dead. ZERO production
+     * callers now — `LosslessAvailability` gates the source and drives the Settings
+     * badge; this is kept for the pool-era tests, and Plan C deletes it with the
+     * pool. A tokenless build MUST surface the paste prompt — an earlier "empty
+     * pool isn't expired" guard here returned false instead, which hid the
+     * v0.9.65–v0.9.68 blank BuildConfig credentials as silent per-track no_results.
      */
     suspend fun allDead(): Boolean {
         ensureCacheLoaded()
@@ -567,8 +568,8 @@ class QbdlxCredentialStore @Inject constructor(
         // Dead-token cooldown before a token is retried (circuit-breaker style).
         // 60s, deliberately SHORT: a cooled login is one fewer file-url path
         // (LosslessAvailability.fileUrlAvailableNow, which the source's isEnabled
-        // and isEnabledForStreaming now gate on; allDead() is read only by
-        // Settings, for the "paste a token" surface), so a
+        // and isEnabledForStreaming now gate on; allDead() has no production
+        // caller left — it is kept for the pool-era tests), so a
         // TRANSIENT failure (a preview/522/timeout on the shared account under
         // the download burst) that trips a mark-dead must not kill qbdlx for
         // long. 60s recovers fast; a genuinely-dead token just re-marks, costing

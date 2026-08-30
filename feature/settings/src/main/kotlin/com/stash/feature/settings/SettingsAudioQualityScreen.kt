@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,14 +36,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
@@ -192,8 +197,9 @@ fun SettingsAudioQualityScreen(
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
                         // primary lossless source. The token field is the refresh
-                        // path when the bundled pool ages out; the badge surfaces
-                        // all-dead. No per-source toggle: a stale saved `false` with
+                        // path when the bundled pool ages out; the badge shows when
+                        // no lossless path is configured (`LosslessAvailability
+                        // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
                         // no UI to flip it back would kill lossless silently.
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (qbdlxExpired) {
@@ -307,17 +313,46 @@ fun SettingsAudioQualityScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(4.dp))
-                            var qbdlxToken by remember { mutableStateOf("") }
+                            // Commits on Done / focus loss — per-keystroke writes
+                            // would let a background resolve migrate a partial
+                            // token into the connected-account slot.
+                            //
+                            // The field owns its draft (nothing external writes it),
+                            // so `committed` is what tracks the last value handed to
+                            // the VM — without it, clearing the field back to blank
+                            // would never reach `setPastedToken(null)`.
+                            var qbdlxToken by rememberSaveable { mutableStateOf("") }
+                            var committed by rememberSaveable { mutableStateOf("") }
+                            var wasFocused by remember { mutableStateOf(false) }
+                            val focusManager = LocalFocusManager.current
+                            val commitToken = {
+                                val draft = qbdlxToken.trim()
+                                if (draft != committed) {
+                                    committed = draft
+                                    viewModel.onQbdlxTokenPaste(draft)
+                                }
+                            }
                             OutlinedTextField(
                                 value = qbdlxToken,
-                                onValueChange = {
-                                    qbdlxToken = it
-                                    viewModel.onQbdlxTokenPaste(it)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
+                                onValueChange = { qbdlxToken = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    // `wasFocused` gates the initial unfocused
+                                    // callback, which would otherwise commit "".
+                                    .onFocusChanged { state ->
+                                        if (wasFocused && !state.isFocused) commitToken()
+                                        wasFocused = state.isFocused
+                                    },
                                 label = { Text("Paste token") },
                                 singleLine = true,
                                 placeholder = { Text("user_auth_token") },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        commitToken()
+                                        focusManager.clearFocus()
+                                    },
+                                ),
                             )
                         }
 
