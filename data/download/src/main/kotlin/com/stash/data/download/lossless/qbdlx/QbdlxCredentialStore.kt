@@ -12,7 +12,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import android.util.Log
 
 /** One anonymized pool token for the Settings picker. `token` is the id only, never shown. */
@@ -137,6 +139,17 @@ class QbdlxCredentialStore @Inject constructor(
     suspend fun connectedEmail(): String? =
         context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
 
+    /** Live view of "a connected account exists" for the availability predicates. */
+    val hasLogin: Flow<Boolean> =
+        context.qbdlxCredentialsDataStore.data.map { p ->
+            !p[loginTokenKey].isNullOrBlank() &&
+                !p[loginAppIdKey].isNullOrBlank() &&
+                !p[loginAppSecretKey].isNullOrBlank()
+        }
+
+    /** A connected account exists and is not inside a dead-cooldown. */
+    suspend fun loginLive(): Boolean = loginCredential()?.let { !isDead(it.token) } ?: false
+
     /** The user-connected account, or null. Cached in memory after the first read. */
     suspend fun loginCredential(): QbdlxLoginCredential? {
         if (!loginLoaded) {
@@ -147,8 +160,23 @@ class QbdlxCredentialStore @Inject constructor(
             cachedLogin = if (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank())
                 QbdlxLoginCredential(t, a, s) else null
             loginLoaded = true
+            if (cachedLogin == null) migratePastedToken()
         }
         return cachedLogin
+    }
+
+    /**
+     * One-shot upgrade path: a user who pasted a token before the pool left the
+     * app keeps working. `pasted_token` is a lone string that always signed under
+     * the primary BuildConfig pair (see [signingFor]'s fallback), so that pair is
+     * what the migrated credential stores. Runs only when no login exists.
+     */
+    private suspend fun migratePastedToken() {
+        val pasted = pastedToken() ?: return
+        if (primaryAppId.isBlank() || primaryAppSecret.isBlank()) return
+        Log.i(TAG, "migrating pasted token into the connected-account slot")
+        setUserCredential(pasted, primaryAppId, primaryAppSecret, email = null)
+        context.qbdlxCredentialsDataStore.edit { it.remove(pastedTokenKey) }
     }
 
     /** Persist a connected account (token + the app_id/secret it was minted under). */
