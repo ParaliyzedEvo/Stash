@@ -197,7 +197,10 @@ fun SettingsAudioQualityScreen(
                             if (qbdlxExpired) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "No lossless source configured — connect your Qobuz account below",
+                                    // Narrow on purpose: qbdlxExpired is !(hasLogin || relay || custom)
+                                    // and excludes ARCOD, so a broader "no lossless source" claim would
+                                    // contradict the "ARCOD — connected" row above it.
+                                    text = "No Qobuz source configured — connect your account below",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
