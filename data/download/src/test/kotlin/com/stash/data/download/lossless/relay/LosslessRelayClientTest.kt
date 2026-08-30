@@ -27,6 +27,7 @@ class LosslessRelayClientTest {
         assertThat(r).isEqualTo(RelayMint.Ok("https://cdn.example/f.flac?etsp=1", 27, 24, 96_000))
         val req = server.takeRequest()
         assertThat(req.path).isEqualTo("/v1/qobuz/file?track_id=42&format_id=27")
+        assertThat(req.getHeader("X-Stash-Version")).isEqualTo("1")
         assertThat(req.getHeader("X-Stash-Version")).isEqualTo(LosslessRelayClient.PROTOCOL_VERSION)
         assertThat(client.isCooled(base)).isFalse()
     }
@@ -63,11 +64,33 @@ class LosslessRelayClientTest {
     @Test fun `200 with a non-https url is Unavailable`() = runTest {
         server.enqueue(MockResponse().setBody("""{"url":"http://cdn.example/f.flac","format_id":27,"bit_depth":16,"sample_rate":44100}"""))
         assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(client.isCooled(base)).isTrue()
     }
 
     @Test fun `malformed base is Unavailable without a request`() = runTest {
         assertThat(client.mint("https://bad host", 1, 27)).isEqualTo(RelayMint.Unavailable)
         assertThat(server.requestCount).isEqualTo(0)
         assertThat(client.isCooled("https://bad host")).isFalse()
+    }
+
+    @Test fun `200 with an unusable body cools the base`() = runTest {
+        server.enqueue(MockResponse().setBody("<html>gateway error</html>"))
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
+    @Test fun `a body that dies mid-read cools the base`() = runTest {
+        server.enqueue(MockResponse()
+            .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            .setBody("""{"url":"https://cdn.example/f.flac?etsp=1","format_id":27,"bit_depth":16,"sample_rate":44100}"""))
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
+    @Test fun `omitted format_id echoes the requested one`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1"}"""))
+        val r = client.mint(base, 42, 27) as RelayMint.Ok
+        assertThat(r.formatId).isEqualTo(27)
+        assertThat(r.bitDepth).isEqualTo(0); assertThat(r.sampleRateHz).isEqualTo(0)
     }
 }

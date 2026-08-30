@@ -35,12 +35,18 @@ internal data class RelayFileResponse(
 
 /**
  * Talks to a Stash lossless relay (`GET {base}/v1/qobuz/file`) and OWNS the
- * per-base cooldown: `busy` → 60 s, anything else non-2xx/404 or unreachable →
- * 5 min. Neither [com.stash.data.download.lossless.LosslessSourceHealthGate]
+ * per-base cooldown: `busy` → 60 s, anything else non-2xx/404, unreachable, or
+ * a 200 whose body is unusable (unparseable, no url, or a plaintext one) → 5 min.
+ * Neither [com.stash.data.download.lossless.LosslessSourceHealthGate]
  * (fixed 5 min, not consulted by the streaming resolver) nor
  * `LosslessSourceHealth` (a miss counter) fit, and because both the streaming
  * and download paths reach a relay through this one @Singleton, the cooldown
  * covers both automatically.
+ *
+ * `base` arrives already normalised — both write paths (the custom-endpoint
+ * preference and the signed runtime config) run it through
+ * `LosslessSourcePreferences.normaliseEndpoint`, so this class only has to
+ * survive a junk value, not sanitise one.
  */
 @Singleton
 class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
@@ -86,47 +92,56 @@ class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
             .header("X-Stash-Version", PROTOCOL_VERSION)
             .header("Accept", "application/json")
             .get().build()
-        val resp = try {
-            httpClient.newCall(req).execute()
-        } catch (e: IOException) {
-            Log.w(TAG, "relay unreachable (${e.javaClass.simpleName}) — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
-            cool(base, UNAVAILABLE_COOLDOWN_MS)
-            return@withContext RelayMint.Unavailable
-        }
-        resp.use { r ->
-            val body = r.body?.string().orEmpty()
-            when (r.code) {
-                200 -> {
-                    val file = runCatching { json.decodeFromString<RelayFileResponse>(body) }.getOrNull()
-                    // https only: a relay handing back a plaintext CDN URL is either
-                    // misconfigured or being MITM'd — treat the base as sick, don't stream it.
-                    val u = file?.url?.takeIf { it.startsWith("https://") }
-                    if (u == null) {
-                        Log.w(TAG, "relay 200 with an unusable body — cooling")
+        // The body read stays INSIDE the try: a relay that returns 200 headers and then
+        // stalls throws out of string(), and that must cool this base — not escape into
+        // the caller's breaker (QbdlxQobuzSource.callLimited trips qbdlx wholesale).
+        try {
+            httpClient.newCall(req).execute().use { r ->
+                val body = r.body?.string().orEmpty()
+                when (r.code) {
+                    200 -> {
+                        val file = runCatching { json.decodeFromString<RelayFileResponse>(body) }.getOrNull()
+                        // https only: a relay handing back a plaintext CDN URL is either
+                        // misconfigured or being MITM'd — treat the base as sick, don't stream it.
+                        val u = file?.url?.takeIf { it.startsWith("https://") }
+                        if (u == null) {
+                            Log.w(TAG, "relay ${host(base)} 200 with an unusable body — cooling")
+                            cool(base, UNAVAILABLE_COOLDOWN_MS)
+                            RelayMint.Unavailable
+                        } else {
+                            // An omitted format_id decodes to 0, and 0 reads as region-locked
+                            // downstream (QbdlxApiClient.classify treats < 6 that way) — echo
+                            // what we asked for instead.
+                            RelayMint.Ok(u, file.formatId.takeIf { it > 0 } ?: formatId, file.bitDepth, file.sampleRateHz)
+                        }
+                    }
+                    404 -> RelayMint.NoMatch
+                    503 -> {
+                        Log.i(TAG, "relay ${host(base)} busy — cooling ${BUSY_COOLDOWN_MS / 1000}s")
+                        cool(base, BUSY_COOLDOWN_MS)
+                        RelayMint.Unavailable
+                    }
+                    else -> {
+                        Log.w(TAG, "relay ${host(base)} HTTP ${r.code}: ${body.take(120)} — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
                         cool(base, UNAVAILABLE_COOLDOWN_MS)
                         RelayMint.Unavailable
-                    } else {
-                        RelayMint.Ok(u, file.formatId, file.bitDepth, file.sampleRateHz)
                     }
                 }
-                404 -> RelayMint.NoMatch
-                503 -> {
-                    Log.i(TAG, "relay busy — cooling ${BUSY_COOLDOWN_MS / 1000}s")
-                    cool(base, BUSY_COOLDOWN_MS)
-                    RelayMint.Unavailable
-                }
-                else -> {
-                    Log.w(TAG, "relay HTTP ${r.code}: ${body.take(120)} — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
-                    cool(base, UNAVAILABLE_COOLDOWN_MS)
-                    RelayMint.Unavailable
-                }
             }
+        } catch (e: IOException) {
+            // Also covers a body that dies mid-read (callTimeout firing during string()) — that IS a sick relay.
+            Log.w(TAG, "relay ${host(base)} unreachable (${e.javaClass.simpleName}) — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
+            cool(base, UNAVAILABLE_COOLDOWN_MS)
+            RelayMint.Unavailable
         }
     }
 
     private fun cool(base: String, ms: Long) {
         cooledUntil[base] = clock() + ms
     }
+
+    /** Logs name the host only — a full base can carry an endpoint literal that must never be logged. */
+    private fun host(base: String) = base.toHttpUrlOrNull()?.host ?: "?"
 
     companion object {
         private const val TAG = "LosslessRelay"
