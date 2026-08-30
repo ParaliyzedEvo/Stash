@@ -11,13 +11,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /**
- * The ONE place that answers "is lossless available, and whose is it?" — four
- * questions, each as a Flow (for Home's combine) and a suspend getter (for the
- * download pipeline). Defined once so the source, the download deferral reason
- * and the Home banner can never disagree.
+ * The ONE place that answers "is lossless available, and whose is it?" — three
+ * as a Flow (for Home's combine) each with a suspend getter (for the download
+ * pipeline), plus one per-call check ([fileUrlAvailableNow] — relay cooldowns are
+ * in-memory and not observable). Defined once so the source, the download
+ * deferral reason and the Home banner can never disagree.
  *
  *  - [qbdlxEnabled]       BYO login || relay configured || custom endpoint set
- *  - [fileUrlAvailableNow] the same, minus anything currently cooled (per-call)
+ *  - [fileUrlAvailableNow] login LIVE (not merely present) || custom endpoint not
+ *                         cooled || any config relay not cooled — per call
  *  - [anyConfigured]      qbdlxEnabled || ARCOD connected  → download deferral reason
  *  - [anyUserOwned]       BYO login || custom endpoint || ARCOD → the Home banner
  *                         (a dead PUBLIC relay must not hide the "connect your

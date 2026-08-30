@@ -178,4 +178,12 @@ class QbdlxCredentialStoreTest {
         s.clearUserCredential()
         assertThat(s.activeToken()).isNull()   // pasted key gone: nothing left to serve (empty pool, login cleared)
     }
+
+    @Test
+    fun `hasLogin is true for a pasted token awaiting migration`() = runTest {
+        val s = store("")
+        assertThat(s.hasLogin.first()).isFalse()
+        s.setPastedToken("legacy")
+        assertThat(s.hasLogin.first()).isTrue()
+    }
 }

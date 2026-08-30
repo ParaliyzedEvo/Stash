@@ -142,12 +142,18 @@ class QbdlxCredentialStore @Inject constructor(
     suspend fun connectedEmail(): String? =
         context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
 
-    /** Live view of "a connected account exists" for the availability predicates. */
+    /**
+     * Live view of "a connected account exists" for the availability predicates.
+     * A pasted token awaiting migration counts — it is user-owned and the
+     * migration runs on the first [loginCredential].
+     */
     val hasLogin: Flow<Boolean> =
         context.qbdlxCredentialsDataStore.data.map { p ->
-            !p[loginTokenKey].isNullOrBlank() &&
-                !p[loginAppIdKey].isNullOrBlank() &&
-                !p[loginAppSecretKey].isNullOrBlank()
+            val t = p[loginTokenKey]
+            val a = p[loginAppIdKey]
+            val s = p[loginAppSecretKey]
+            (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank()) ||
+                !p[pastedTokenKey].isNullOrBlank()
         }
             // DataStore re-emits the whole Preferences on every unrelated write
             // (pool cache, pinned token), and a read error must not terminate the

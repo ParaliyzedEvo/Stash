@@ -15,6 +15,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -88,11 +90,13 @@ class LosslessSourcePreferences @Inject constructor(
      * A user-supplied lossless relay base URL (Settings › Audio › Advanced), or
      * null. Outranks the public relay from runtime config when set — an explicit
      * choice beats an implicit one. Stored normalised: https only, no trailing
-     * slash, no query. The APK ships no default.
+     * slash, no query. The APK ships no default. Deduped (the store re-emits on
+     * every unrelated write) and fail-closed (a read error must not terminate a
+     * `combine`).
      */
     val customLosslessEndpoint: Flow<String?> = context.losslessDataStore.data.map { prefs ->
         prefs[customLosslessEndpointKey]?.takeIf { it.isNotBlank() }
-    }
+    }.distinctUntilChanged().catch { emit(null) }
 
     suspend fun customLosslessEndpointNow(): String? = customLosslessEndpoint.first()
 
