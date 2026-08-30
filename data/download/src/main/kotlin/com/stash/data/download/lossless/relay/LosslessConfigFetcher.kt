@@ -56,15 +56,21 @@ private val Context.losslessRelayConfigDataStore: DataStore<Preferences> by pref
  * `<configUrl>` + `<configUrl>.sig` (ECDSA P-256 over the exact JSON bytes),
  * verifies against the baked-in public key, caches the JSON, and exposes
  * [relays] sorted by priority. Invalid signature / network failure → the cached
- * copy stays; no cache → no relays. Both BuildConfig values empty → disabled.
+ * copy stays; a config older than the cached one (by `updated_at`) is rejected;
+ * no cache → no relays. Both BuildConfig values empty → disabled.
  */
 @Singleton
 class LosslessConfigFetcher @Inject constructor(
     @ApplicationContext private val context: Context,
     sharedClient: OkHttpClient,
 ) {
+    /** Test seam. */
     internal var configUrl: String = BuildConfig.LOSSLESS_CONFIG_URL
+
+    /** Test seam. */
     internal var publicKeyB64: String = BuildConfig.LOSSLESS_CONFIG_PUBKEY
+
+    /** Test seam. */
     internal var httpClient: OkHttpClient = sharedClient
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonKey = stringPreferencesKey("config_json")
@@ -74,27 +80,37 @@ class LosslessConfigFetcher @Inject constructor(
 
     val enabled: Boolean get() = configUrl.isNotBlank() && publicKeyB64.isNotBlank()
 
-    /** Populate [relays] from the cached JSON, if any. Cheap; call before the first resolve. */
+    /**
+     * Populate [relays] from the cached JSON, if any. Cheap; call before the first resolve.
+     * The cache is not re-verified: it is only ever written from bytes that passed [verify],
+     * into app-private storage (`allowBackup=false`).
+     */
     suspend fun loadCached() {
-        val cached = ioCatching { context.losslessRelayConfigDataStore.data.first()[jsonKey] } ?: return
-        parse(cached)?.let { _relays.value = it }
+        val cached = readCache() ?: return
+        parse(cached)?.let { _relays.value = it.relays }
     }
 
     /** Fetch + verify + apply. Returns true only when a fresh, valid config was applied. Never throws. */
     suspend fun refresh(): Boolean = withContext(Dispatchers.IO) {
         if (!enabled) return@withContext false
-        val body = ioCatching { getBytes(configUrl) } ?: return@withContext false
-        val sig = ioCatching { String(getBytes("$configUrl.sig")).trim() } ?: return@withContext false
+        val body = ioCatching("config") { getBytes(configUrl) } ?: return@withContext false
+        val sig = ioCatching("sig") { String(getBytes("$configUrl.sig")).trim() } ?: return@withContext false
         // Verified over the bytes exactly as fetched — never a re-serialisation.
         if (!verify(body, sig)) {
             Log.w(TAG, "lossless.json signature invalid — keeping the cached copy")
             return@withContext false
         }
         val text = String(body)
-        val parsed = parse(text) ?: return@withContext false
-        _relays.value = parsed
-        ioCatching { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
-        Log.i(TAG, "lossless config applied: ${parsed.size} relay(s)")
+        val fresh = parse(text) ?: return@withContext false
+        // Rollback floor: a valid signature does not stop whoever serves the URL replaying an old file.
+        val cachedUpdatedAt = readCache()?.let { parse(it)?.updatedAt } ?: 0L
+        if (fresh.updatedAt < cachedUpdatedAt) {
+            Log.w(TAG, "lossless config older than the cached copy (${fresh.updatedAt} < $cachedUpdatedAt) — rejected")
+            return@withContext false
+        }
+        _relays.value = fresh.relays
+        ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
+        Log.i(TAG, "lossless config applied: ${fresh.relays.size} relay(s)")
         true
     }
 
@@ -114,17 +130,27 @@ class LosslessConfigFetcher @Inject constructor(
         Signature.getInstance("SHA256withECDSA").run { initVerify(pub); update(bytes); verify(Base64.getDecoder().decode(sigB64)) }
     }.getOrDefault(false)
 
-    private fun parse(text: String): List<RelayEntry>? = runCatching {
-        json.decodeFromString<LosslessConfig>(text).relays
-            .mapNotNull { e -> LosslessSourcePreferences.normaliseEndpoint(e.base)?.let { RelayEntry(it, e.priority) } }
-            .sortedBy { it.priority }
+    private suspend fun readCache(): String? =
+        ioCatching("cache read") { context.losslessRelayConfigDataStore.data.first()[jsonKey] }
+
+    /** The config with its relays already normalised and sorted; null when the JSON is unusable. */
+    private fun parse(text: String): LosslessConfig? = runCatching {
+        val cfg = json.decodeFromString<LosslessConfig>(text)
+        cfg.copy(
+            relays = cfg.relays
+                .mapNotNull { e -> LosslessSourcePreferences.normaliseEndpoint(e.base)?.let { RelayEntry(it, e.priority) } }
+                .sortedBy { it.priority },
+        )
     }.getOrNull()
 
     private fun getBytes(url: String): ByteArray {
         val req = Request.Builder().url(url).header("Accept", "*/*").get().build()
         httpClient.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-            return r.body?.bytes() ?: ByteArray(0)
+            val src = r.body?.source() ?: throw IOException("empty body")
+            // request(n) reads until n bytes are buffered or EOF; true = at least n available.
+            if (src.request(MAX_CONFIG_BYTES + 1)) throw IOException("body over $MAX_CONFIG_BYTES bytes")
+            return src.readByteArray()
         }
     }
 
@@ -132,13 +158,18 @@ class LosslessConfigFetcher @Inject constructor(
      * Fetching config must never crash the app, so anything short of a
      * cancellation degrades to null — but a cancelled scope has to stay
      * cancelled (same rule as `HomeDiscoveryRepositoryImpl.cached`).
+     * [label] names the step; only our own synthetic messages are logged, never a
+     * library one (an `UnknownHostException` message carries the host).
      */
-    private inline fun <T> ioCatching(block: () -> T): T? = try {
+    private inline fun <T> ioCatching(label: String, block: () -> T): T? = try {
         block()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        Log.w(TAG, "lossless config I/O failed (${e.javaClass.simpleName})")
+        val detail = e.message?.takeIf {
+            it.startsWith("HTTP ") || it.startsWith("body over") || it == "empty body"
+        } ?: e.javaClass.simpleName
+        Log.w(TAG, "lossless config $label failed: $detail")
         null
     }
 
@@ -150,5 +181,8 @@ class LosslessConfigFetcher @Inject constructor(
     private companion object {
         const val TAG = "LosslessConfig"
         const val REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L
+
+        /** A hostile/misconfigured host must not OOM us — an `Error` would escape [ioCatching]. */
+        const val MAX_CONFIG_BYTES = 64L * 1024
     }
 }

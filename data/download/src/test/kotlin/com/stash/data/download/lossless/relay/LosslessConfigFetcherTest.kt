@@ -57,16 +57,16 @@ class LosslessConfigFetcherTest {
         val evil = body.replace("a.example", "evil.example")
         server.enqueue(MockResponse().setBody(evil)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
         assertThat(f.refresh()).isFalse()
-        assertThat(f.relays.value.map { it.base }).contains("https://a.example")
+        assertThat(f.relays.value.map { it.base }).containsExactly("https://a.example", "https://b.example").inOrder()
     }
 
-    @Test fun `network failure keeps the cached copy, and no cache means no relays`() = runTest {
+    @Test fun `network failure keeps the cached copy`() = runTest {
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
         val f = fetcher()
-        f.loadCached()
-        assertThat(f.relays.value).isEmpty()
+        assertThat(f.refresh()).isTrue()
         server.shutdown()
         assertThat(f.refresh()).isFalse()
-        assertThat(f.relays.value).isEmpty()
+        assertThat(f.relays.value.map { it.base }).containsExactly("https://a.example", "https://b.example").inOrder()
     }
 
     @Test fun `disabled when url or key is blank`() = runTest {
@@ -74,6 +74,48 @@ class LosslessConfigFetcherTest {
         assertThat(f.enabled).isFalse()
         assertThat(f.refresh()).isFalse()
         assertThat(server.requestCount).isEqualTo(0)
+        f.loadCached() // no cache means no relays
+        assertThat(f.relays.value).isEmpty()
+    }
+
+    @Test fun `an oversized config body is rejected without applying`() = runTest {
+        server.enqueue(MockResponse().setBody("x".repeat(70_000)))
+        val f = fetcher()
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.relays.value).isEmpty()
+        assertThat(server.requestCount).isEqualTo(1) // the .sig is never fetched
+    }
+
+    @Test fun `an older validly-signed config is rejected`() = runTest {
+        val newer = """{"v":1,"relays":[{"base":"https://c.example","priority":1}],"updated_at":2}"""
+        server.enqueue(MockResponse().setBody(newer)); server.enqueue(MockResponse().setBody(sign(newer.toByteArray())))
+        val f = fetcher()
+        assertThat(f.refresh()).isTrue()
+
+        val older = """{"v":1,"relays":[{"base":"https://d.example","priority":1}],"updated_at":1}"""
+        server.enqueue(MockResponse().setBody(older)); server.enqueue(MockResponse().setBody(sign(older.toByteArray())))
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.relays.value.map { it.base }).containsExactly("https://c.example")
+
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.relays.value.map { it.base }).containsExactly("https://c.example")
+    }
+
+    @Test fun `missing sig fails closed`() = runTest {
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setResponseCode(404))
+        val f = fetcher()
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.relays.value).isEmpty()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `empty sig fails closed`() = runTest {
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(""))
+        val f = fetcher()
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.relays.value).isEmpty()
+        assertThat(server.requestCount).isEqualTo(2)
     }
 
     @Test fun `non-https or malformed bases are dropped`() = runTest {
