@@ -53,9 +53,8 @@ class QbdlxQobuzSourceTest {
     private fun ok(url: String = "https://cdn/file?fmt=27") =
         QbdlxResolveResult.Ok(url, codec = "flac", bitDepth = 24, sampleRateHz = 96_000)
 
-    /** Toggle on, pool live, breaker closed, tokens available, MAX tier (qobuzCode 27). */
+    /** Pool live, breaker closed, tokens available, MAX tier (qobuzCode 27). */
     private fun enabledAndAcquired() {
-        coEvery { prefs.qbdlxEnabledNow() } returns true
         coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.MAX
         coEvery { credentialStore.allDead() } returns false
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
@@ -121,7 +120,6 @@ class QbdlxQobuzSourceTest {
 
     @Test
     fun `whole pool dead disables source and resolve returns null`() = runTest {
-        coEvery { prefs.qbdlxEnabledNow() } returns true
         coEvery { credentialStore.allDead() } returns true
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
 
@@ -132,7 +130,6 @@ class QbdlxQobuzSourceTest {
 
     @Test
     fun `resolveImmediate succeeds even when circuit broken and bypasses acquire`() = runTest {
-        coEvery { prefs.qbdlxEnabledNow() } returns true
         // resolveImmediate(query) with no explicit quality falls back to the tier.
         coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.MAX
         coEvery { credentialStore.allDead() } returns false
@@ -149,15 +146,6 @@ class QbdlxQobuzSourceTest {
         coVerify { rateLimiter.reportSuccess(sid) }
     }
 
-    @Test
-    fun `disabled toggle blocks both download and streaming gates`() = runTest {
-        coEvery { prefs.qbdlxEnabledNow() } returns false
-        coEvery { credentialStore.allDead() } returns false
-        coEvery { rateLimiter.stateOf(sid) } returns notBroken
-
-        assertThat(source().isEnabled()).isFalse()
-        assertThat(source().isEnabledForStreaming()).isFalse()
-    }
 
     @Test
     fun `429 reports rate limited not failure`() = runTest {
@@ -175,7 +163,6 @@ class QbdlxQobuzSourceTest {
     @Test
     fun `download path requests the user quality tier not always hi-res`() = runTest {
         // CD tier → qobuzCode 6. resolve() (download) must request 6, not a hardcoded 27.
-        coEvery { prefs.qbdlxEnabledNow() } returns true
         coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.CD
         coEvery { credentialStore.allDead() } returns false
         coEvery { rateLimiter.stateOf(sid) } returns notBroken

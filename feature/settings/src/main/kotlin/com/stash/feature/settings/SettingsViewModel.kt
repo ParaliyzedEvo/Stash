@@ -1321,23 +1321,6 @@ class SettingsViewModel @Inject constructor(
 
     // -- qbdlx (direct-Qobuz lossless, 5th source) ---------------------------
 
-    /**
-     * Per-source enable toggle for qbdlx. Gates BOTH download and streaming
-     * (the source reads `qbdlxEnabledNow()` in both `isEnabled()` and
-     * `isEnabledForStreaming()`). Default true.
-     */
-    val qbdlxEnabled: StateFlow<Boolean> =
-        losslessPrefs.qbdlxEnabled.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = true,
-        )
-
-    /** Persist the qbdlx enable flip. */
-    fun onQbdlxEnabledChange(enabled: Boolean) {
-        viewModelScope.launch { losslessPrefs.setQbdlxEnabled(enabled) }
-    }
-
     /** Store (or clear, on blank) the user-pasted qbdlx token, then re-check expiry. */
     fun onQbdlxTokenPaste(token: String) {
         viewModelScope.launch {

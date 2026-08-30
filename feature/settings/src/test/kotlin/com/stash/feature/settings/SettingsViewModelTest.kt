@@ -6,12 +6,10 @@ import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -22,8 +20,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Focused coverage of the qbdlx Settings wiring (Phase 8): the enable toggle,
- * the paste-token field, and the all-dead "expired" badge. The rest of this
+ * Focused coverage of the qbdlx Settings wiring (Phase 8): the paste-token
+ * field and the all-dead "expired" badge. The rest of this
  * 30-dependency ViewModel is exercised via its Compose screen + the per-pref
  * unit tests; here we only prove the qbdlx delegations.
  */
@@ -34,10 +32,7 @@ class SettingsViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private val qbdlxEnabledFlow = MutableStateFlow(true)
-    private val losslessPrefs = mockk<LosslessSourcePreferences>(relaxed = true).also {
-        every { it.qbdlxEnabled } returns qbdlxEnabledFlow
-    }
+    private val losslessPrefs = mockk<LosslessSourcePreferences>(relaxed = true)
     private val qbdlxStore = mockk<QbdlxCredentialStore>(relaxed = true).also {
         coEvery { it.allDead() } returns false
     }
@@ -86,13 +81,6 @@ class SettingsViewModelTest {
         listenSinkCoordinator = mockk(relaxed = true),
         listenSubmissionDao = mockk(relaxed = true),
     )
-
-    @Test fun `onQbdlxEnabledChange persists via setQbdlxEnabled`() = runTest {
-        val vm = newVm()
-        vm.onQbdlxEnabledChange(false)
-        advanceUntilIdle()
-        coVerify { losslessPrefs.setQbdlxEnabled(false) }
-    }
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {
         val vm = newVm()

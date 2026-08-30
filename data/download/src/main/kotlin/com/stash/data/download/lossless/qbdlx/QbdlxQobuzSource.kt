@@ -46,18 +46,14 @@ class QbdlxQobuzSource @Inject constructor(
     override val displayName: String = "Direct Qobuz"
 
     override suspend fun isEnabled(): Boolean =
-        losslessPrefs.qbdlxEnabledNow() &&
-            !rateLimiter.stateOf(id).isCircuitBroken &&
-            !credentialStore.allDead()
+        !rateLimiter.stateOf(id).isCircuitBroken && !credentialStore.allDead()
 
     /**
-     * Streaming-only gate: same toggle + pool check as [isEnabled] but
-     * WITHOUT the breaker — a user stream tap bypasses the breaker (see
+     * Streaming-only gate: same pool check as [isEnabled] but WITHOUT the
+     * breaker — a user stream tap bypasses the breaker (see
      * [resolveImmediate]), so gating enablement on it would be inconsistent.
-     * A disabled toggle still blocks streaming.
      */
-    suspend fun isEnabledForStreaming(): Boolean =
-        losslessPrefs.qbdlxEnabledNow() && !credentialStore.allDead()
+    suspend fun isEnabledForStreaming(): Boolean = !credentialStore.allDead()
 
     override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         if (!isEnabled()) return null

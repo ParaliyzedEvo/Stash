@@ -43,7 +43,6 @@ class QbdlxBypassRateLimitTest {
 
     /** Enabled + pool live + breaker closed, but the limiter is EXHAUSTED (acquire → false). */
     private fun enabledButThrottled() {
-        coEvery { prefs.qbdlxEnabledNow() } returns true
         coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.MAX
         coEvery { credentialStore.allDead() } returns false
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
