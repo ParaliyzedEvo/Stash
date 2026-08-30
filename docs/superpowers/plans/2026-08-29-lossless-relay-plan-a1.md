@@ -66,7 +66,7 @@ coVerify { qbdlx.resolve(track) }
 ```
 Update the class KDoc at L20 to say: `qbdlx is no longer build-gated; it self-gates on LosslessAvailability.` The `BuildConfig` import stays (the ARCOD guards at ~L131/L239 still use it); `import org.junit.Assume.assumeTrue` (L13) becomes unused — delete it.
 
-In `LosslessSourceRegistryTest.kt` delete L113 (`assumeTrue(... QBDLX_CONFIGURED)`) and fix the KDoc at L16; keep its `assumeTrue` import only if the ARCOD guard still uses it.
+In `LosslessSourceRegistryTest.kt` delete L113 (`assumeTrue(... QBDLX_CONFIGURED)`) and fix the KDoc at L16. That file has no ARCOD guard, so both `import org.junit.Assume.assumeTrue` (L10) and `import com.stash.data.download.BuildConfig` (L9) become unused — delete them.
 
 - [ ] **Step 2: Compile the test sources**
 
@@ -171,6 +171,7 @@ private val webCreds: QobuzWebCredentialsClient = mockk()
 Existing `getFileUrl` tests keep the `token = "tok"` argument — that method is unchanged. **Update the nine existing catalog calls in this test file** (they still pass `token = "tok"`): `search(…, token = "tok")` at ~L33, L109, L122, L131; `getFeaturedAlbums(…, "tok", …)` at ~L139, L150; `getFeaturedPlaylists(…, "tok", …)` at ~L157, L164; `getPlaylist(…, "tok")` at ~L177 — drop the token argument from each. Three of them change meaning, not just arity:
 - `403 USER_BLOCKED is a dead token, not a service failure` (~L102) and `other 403s remain transient api errors` (~L117) exercise the `USER_BLOCKED` branch of `get()` **through `search`**; the tokenless `catalogGetOnce` has no such branch. Re-point both at `client.getFileUrl(42, 27, token = "tok")` (which still uses `get()`), keeping their assertions.
 - `search 401 throws TokenDead-signalling exception` (~L129) now enters `catalogGet`'s self-heal and calls `webCreds.fetch()` — add `coEvery { webCreds.fetch() } returns null` to it (an unstubbed `mockk()` throws `MockKException`, not the expected `QbdlxAuthException`). This test is now the same case as the new `catalog 401 with no fresh app_id throws QbdlxAuthException` — keep one, delete the other.
+- `search parses track items` (~L31-37): its last assertion `getHeader("X-User-Auth-Token")).isEqualTo("tok")` inverts — tokenless catalog sends no such header. Change it to `.isNull()`.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -254,9 +255,13 @@ Add the tokenless getter:
 ```
 and in the companion: `const val WEB_APP_ID = "712109809"`. Update the class-level comment on `appId` (it is now only the BYO `getFileUrl` fallback). Delete the now-stale comment about "catalog/search answers 401 on an app_id mismatch" — replace with one line pointing at `catalogAppId`.
 
-**Keep the module compiling (Gradle compiles ALL main + test sources of `:data:download` before any `--tests` filter applies):**
+**Keep the module compiling (Gradle compiles ALL main + test sources of `:data:download` before any `--tests` filter applies).** These are arity-only edits — the semantic clean-up of the consumers is Task 3:
 - `QbdlxQobuzSource.kt:115`: `apiClient.search(term, token)` → `apiClient.search(term)`. Leave the token loop otherwise untouched — Task 10 removes it; a 401 from the tokenless search still lands in the existing `catch (e: QbdlxAuthException)` and rotates harmlessly.
-- `QbdlxQobuzSourceTest.kt` (~L69, 94, 110, 126-127, 146, 158, 182, 200, 213) and `QbdlxBypassRateLimitTest.kt:52`: every `apiClient.search(any(), "tok1")` / `search(any(), any())` / `search(any(), "tok")` stub → `apiClient.search(any())`.
+- `HomeDiscoveryRepositoryImpl.kt:47,52,58,64`: keep `withToken { … }` for now but stop passing the token: `withToken { _ -> client.getFeaturedPlaylists(genreId) }`, `withToken { _ -> client.getFeaturedPlaylists(genreId, limit, offset) }`, `withToken { _ -> client.searchPlaylists(query, limit, offset) }`, `withToken { _ -> client.getFeaturedAlbums(type, genreId) }`.
+- `QobuzAlbumFetcherImpl.kt:25,51`: `apiClient.getAlbum(qobuzAlbumId)`, `apiClient.getPlaylist(playlistId)` (leave the `activeToken() ?: error(…)` lines; Task 3 deletes them).
+- `QobuzDiscographyProvider.kt:41,67`: `apiClient.searchArtists(artistName)`, `apiClient.getArtistAlbums(best.id)`.
+- Test stubs — drop the token argument only: `QbdlxQobuzSourceTest.kt` (~L69, 94, 110, 126-127, 146, 158, 182, 200, 213) and `QbdlxBypassRateLimitTest.kt:52` (`apiClient.search(any(), …)` → `apiClient.search(any())`); `HomeDiscoveryRepositoryImplTest.kt:24,39,41,45,47,51,57,58,69` (`getFeaturedAlbums(x, y, "tok", any())`/`(any(), any(), any(), any())` → `getFeaturedAlbums(x, y, any())`/`(any(), any(), any())`; `getFeaturedPlaylists(133, "tok", 30, 60)` → `(133, 30, 60)`); `QobuzAlbumFetcherImplTest.kt:31,61` (`getAlbum("id", "tok")` → `getAlbum("id")`, same for `getPlaylist`); `QobuzDiscographyProviderTest` stubs `searchArtists(name, "tok")`/`getArtistAlbums(id, "tok")` → drop the token (a `String` where `limit: Int` sits would not compile).
+- `QbdlxApiClient.kt:255`: `private companion object` → `internal companion object` (the tests reference `QbdlxApiClient.WEB_APP_ID`; the test source set already sees `internal` members like `appId`/`baseUrl`).
 
 - [ ] **Step 4: Run the test class — and confirm the module compiles**
 
@@ -266,7 +271,7 @@ Expected: BUILD SUCCESSFUL, both classes PASS (the source tests still pass: thei
 - [ ] **Step 5: Commit**
 
 ```bash
-git add data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxApiClient.kt data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxQobuzSource.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxApiClientTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxQobuzSourceTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxBypassRateLimitTest.kt
+git add data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxApiClient.kt data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxQobuzSource.kt data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/HomeDiscoveryRepositoryImpl.kt data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QobuzAlbumFetcherImpl.kt data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QobuzDiscographyProvider.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxApiClientTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxQobuzSourceTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QbdlxBypassRateLimitTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/HomeDiscoveryRepositoryImplTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QobuzAlbumFetcherImplTest.kt data/download/src/test/kotlin/com/stash/data/download/lossless/qbdlx/QobuzDiscographyProviderTest.kt
 git commit -m "feat(qbdlx): catalog calls go tokenless under the Qobuz web app_id with one self-heal"
 ```
 
@@ -295,8 +300,8 @@ git commit -m "feat(qbdlx): catalog calls go tokenless under the Qobuz web app_i
     assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.NO_INTERNET)
 }
 ```
-`QobuzAlbumFetcherImplTest`: construct with `(apiClient)` only; stubs `apiClient.getAlbum("id")` / `getPlaylist("id")` without token; delete any "no live token → error" test.
-`QobuzDiscographyProviderTest`: construct with `(apiClient)` only; delete the `isEnabledForStreaming`/`activeToken` stubs and any test asserting "source disabled → unchanged"; stubs become `apiClient.searchArtists(name)` / `getArtistAlbums(id)`.
+`QobuzAlbumFetcherImplTest`: construct with `(apiClient)` only; remove the `credentialStore.activeToken()` stubs at ~L30 and ~L60 (the `getAlbum("id")`/`getPlaylist("id")` stubs already lost their token arg in Task 2); delete the test `throws when no live token` (~L42-49).
+`QobuzDiscographyProviderTest`: construct with `(apiClient)` only; delete the `source.isEnabledForStreaming()` and `credentialStore.activeToken()` stubs; delete BOTH gate tests — (a) the one asserting "source disabled → unchanged" and (b) `no active token returns yt lists unchanged and never fetches` (~L74-82). The `searchArtists(name)` / `getArtistAlbums(id)` stubs already lost their token arg in Task 2.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -361,7 +366,9 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.DownloadQueueDao
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -370,6 +377,9 @@ import org.robolectric.RobolectricTestRunner
 class LosslessSourcePreferencesTest {
     private val ctx = ApplicationProvider.getApplicationContext<Context>()
     private val prefs = LosslessSourcePreferences(ctx, mockk<DownloadQueueDao>(relaxed = true))
+
+    /** The preferencesDataStore delegate is process-wide; start each test clean (codebase convention). */
+    @Before fun clear() = runBlocking { prefs.setCustomLosslessEndpoint(null) }
 
     @Test fun `custom endpoint is null by default, normalised on set, cleared on blank`() = runTest {
         assertThat(prefs.customLosslessEndpoint.first()).isNull()
@@ -430,9 +440,7 @@ In `LosslessSourcePreferences.kt` delete `qbdlxEnabledKey`, the `qbdlxEnabled` f
 
 `feature/settings/src/test/kotlin/com/stash/feature/settings/SettingsViewModelTest.kt`: delete the `qbdlxEnabledFlow` field (~L37), the `every { it.qbdlxEnabled } returns qbdlxEnabledFlow` stub (~L39) and the whole test `onQbdlxEnabledChange persists via setQbdlxEnabled` (~L90-94).
 
-**Keep the module compiling:** `QbdlxQobuzSource.kt:49,60` — remove the `losslessPrefs.qbdlxEnabledNow() &&` term from both `isEnabled()` and `isEnabledForStreaming()` (they gate on the breaker / `!credentialStore.allDead()` alone until Task 10 swaps in `LosslessAvailability`). Remove the `coEvery { prefs.qbdlxEnabledNow() } returns true` stubs from `QbdlxQobuzSourceTest.kt` (`enabledAndAcquired()`) and `QbdlxBypassRateLimitTest.kt:46`.
-
-Add to the new `LosslessSourcePreferencesTest` a `@Before` that wipes the shared DataStore, matching `QbdlxCredentialStoreTest`'s convention: `@Before fun clear() = runBlocking { prefs.setCustomLosslessEndpoint(null) }`.
+**Keep the module compiling:** `QbdlxQobuzSource.kt:49,60` — remove the `losslessPrefs.qbdlxEnabledNow() &&` term from both `isEnabled()` and `isEnabledForStreaming()` (they gate on the breaker / `!credentialStore.allDead()` alone until Task 10 swaps in `LosslessAvailability`). In `QbdlxQobuzSourceTest.kt` remove **all five** `coEvery { prefs.qbdlxEnabledNow() } returns …` stubs (L58 in `enabledAndAcquired()`, and L140, L151, L170, L194), and **delete the test `disabled toggle blocks both download and streaming gates` (~L168-176)** — with the toggle term gone its `isFalse()` assertions cannot hold (Task 10 replaces it with `disabled when availability says no`). Remove the stub at `QbdlxBypassRateLimitTest.kt:46` too.
 
 - [ ] **Step 4: Run tests in both modules**
 
@@ -1584,7 +1592,7 @@ Expected: green except the two known-red `HomeViewModelTest` playHero matcher te
 Run: `git grep -n -E "QBDLX_CONFIGURED|qbdlxEnabledNow|NO_TOKEN|activeToken\(\)" -- "*.kt"`
 Expected:
 - `QBDLX_CONFIGURED` — only the `DownloadManager.kt:231` comment (Plan A2 rewrites that block).
-- `qbdlxEnabledNow` — only `LosslessAvailability.kt` (its own method) and `QbdlxQobuzSourceTest.kt` (stubbing it). No `LosslessSourcePreferences` hit.
+- `qbdlxEnabledNow` — four files: `LosslessAvailability.kt` (its own method), `QbdlxQobuzSource.kt` (calling `availability.qbdlxEnabledNow()`), `QbdlxQobuzSourceTest.kt` and `QbdlxBypassRateLimitTest.kt` (stubbing it). No `LosslessSourcePreferences` hit.
 - `NO_TOKEN` — no matches.
 - `activeToken()` — only `QbdlxCredentialStore.kt` itself and the pool-era tests `QbdlxCredentialStoreTest`, `QbdlxPoolRefreshTest`, `QbdlxSigningTest` (all deleted with the pool in Plan C). No production caller outside the store.
 
