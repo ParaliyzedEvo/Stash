@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,9 +41,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
@@ -93,6 +97,9 @@ fun SettingsAudioQualityScreen(
     val losslessRouting by viewModel.losslessRouting.collectAsStateWithLifecycle()
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
+    val customEndpoint by viewModel.customEndpoint.collectAsStateWithLifecycle()
+    val customEndpointError by viewModel.customEndpointError.collectAsStateWithLifecycle()
+    val customEndpointTest by viewModel.customEndpointTest.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -511,7 +518,100 @@ fun SettingsAudioQualityScreen(
                             exit = shrinkVertically() + fadeOut(),
                         ) {
                             Column(modifier = Modifier.fillMaxWidth()) {
+                                // -- Custom lossless endpoint -----------------
+                                // Outranks every relay from runtime config in
+                                // QbdlxFileUrlRouter, so a typo here silently
+                                // costs the user their first lossless attempt —
+                                // hence Test, and hence commit-on-Done.
                                 Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Point Stash at your own lossless relay. " +
+                                        "It takes priority over Stash's.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                // The VM's committed value is the seed AND the
+                                // comparison for commit(): re-keying on it means
+                                // the field snaps to what was actually stored
+                                // (a trailing slash normalises away).
+                                var endpointDraft by remember(customEndpoint) {
+                                    mutableStateOf(customEndpoint.orEmpty())
+                                }
+                                var endpointWasFocused by remember { mutableStateOf(false) }
+                                val focusManager = LocalFocusManager.current
+                                val commitEndpoint = {
+                                    val draft = endpointDraft.trim()
+                                    // Per keystroke this would persist `https://re` as a
+                                    // base and route every resolve at it.
+                                    if (draft != customEndpoint.orEmpty()) {
+                                        viewModel.onCustomEndpointCommitted(draft)
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = endpointDraft,
+                                    onValueChange = { endpointDraft = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        // `endpointWasFocused` gates the initial unfocused
+                                        // callback, which would otherwise commit "".
+                                        .onFocusChanged { state ->
+                                            if (endpointWasFocused && !state.isFocused) commitEndpoint()
+                                            endpointWasFocused = state.isFocused
+                                        },
+                                    label = { Text("Custom lossless endpoint") },
+                                    singleLine = true,
+                                    isError = customEndpointError != null,
+                                    placeholder = { Text("https://…") },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Uri,
+                                        imeAction = ImeAction.Done,
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            commitEndpoint()
+                                            focusManager.clearFocus()
+                                        },
+                                    ),
+                                )
+                                customEndpointError?.let { err ->
+                                    Text(
+                                        text = err,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val testing =
+                                        customEndpointTest == SettingsViewModel.EndpointTestState.TESTING
+                                    TextButton(
+                                        onClick = viewModel::onTestCustomEndpoint,
+                                        enabled = customEndpoint != null && !testing,
+                                    ) {
+                                        Text("Test")
+                                    }
+                                    // Reachability, not health: any HTTP reply counts.
+                                    when (customEndpointTest) {
+                                        SettingsViewModel.EndpointTestState.TESTING -> Text(
+                                            text = "Testing…",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        SettingsViewModel.EndpointTestState.REACHABLE -> Text(
+                                            text = "Reachable",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = StashTheme.extendedColors.success,
+                                        )
+                                        SettingsViewModel.EndpointTestState.UNREACHABLE -> Text(
+                                            text = "Not reachable",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                        SettingsViewModel.EndpointTestState.IDLE -> Unit
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "Or paste the captcha_verified_at cookie value directly:",
                                     style = MaterialTheme.typography.bodySmall,

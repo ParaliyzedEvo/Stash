@@ -45,6 +45,7 @@ import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.feature.settings.components.squidCaptchaStatus
 import com.stash.core.data.repository.MusicRepository
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -120,6 +122,7 @@ class SettingsViewModel @Inject constructor(
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
     private val listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator,
     private val listenSubmissionDao: com.stash.core.data.db.dao.ListenSubmissionDao,
+    private val relayClient: LosslessRelayClient,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -425,6 +428,58 @@ class SettingsViewModel @Inject constructor(
     val losslessRouting: StateFlow<List<RoutingRow>> =
         losslessAvailability.routingRows
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // -- Custom lossless endpoint --------------------------------------------
+
+    /** Result of the manual "Test" — reachability only, never health. */
+    enum class EndpointTestState { IDLE, TESTING, REACHABLE, UNREACHABLE }
+
+    private val _customEndpointTest = MutableStateFlow(EndpointTestState.IDLE)
+    val customEndpointTest: StateFlow<EndpointTestState> = _customEndpointTest
+
+    /** "Must be an https:// URL" while the last commit was rejected, else null. */
+    private val _customEndpointError = MutableStateFlow<String?>(null)
+    val customEndpointError: StateFlow<String?> = _customEndpointError
+
+    /**
+     * The user's own relay base, normalised, or null. `QbdlxFileUrlRouter` puts it
+     * ahead of every relay from runtime config, so this field is the whole feature.
+     * A new value invalidates the last test result — it described the old base.
+     */
+    val customEndpoint: StateFlow<String?> =
+        losslessPrefs.customLosslessEndpoint
+            .onEach { _customEndpointTest.value = EndpointTestState.IDLE }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Commits the field on IME Done / focus loss (the screen never calls this per
+     * keystroke — `https://re` must never be persisted as a base). Blank means
+     * "clear it", which is a valid instruction and not an error; anything else
+     * that [LosslessSourcePreferences.normaliseEndpoint] rejects is.
+     */
+    fun onCustomEndpointCommitted(raw: String) {
+        val trimmed = raw.trim()
+        val normalised = LosslessSourcePreferences.normaliseEndpoint(trimmed)
+        if (trimmed.isNotEmpty() && normalised == null) {
+            _customEndpointError.value = "Must be an https:// URL"
+            return
+        }
+        _customEndpointError.value = null
+        viewModelScope.launch { losslessPrefs.setCustomLosslessEndpoint(normalised) }
+    }
+
+    /** No endpoint set = nothing to test; the button is disabled for the same reason. */
+    fun onTestCustomEndpoint() {
+        val base = customEndpoint.value ?: return
+        _customEndpointTest.value = EndpointTestState.TESTING
+        viewModelScope.launch {
+            _customEndpointTest.value = if (relayClient.probe(base)) {
+                EndpointTestState.REACHABLE
+            } else {
+                EndpointTestState.UNREACHABLE
+            }
+        }
+    }
 
     /**
      * A connected Qobuz account exists. What the connect form keys on, because

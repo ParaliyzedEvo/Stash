@@ -5,6 +5,9 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.data.download.lossless.relay.LosslessRelayClient
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -36,6 +39,7 @@ class SettingsViewModelTest {
     private val losslessPrefs = mockk<LosslessSourcePreferences>(relaxed = true)
     private val qbdlxStore = mockk<QbdlxCredentialStore>(relaxed = true)
     private val librarySizeHolder = mockk<LibrarySizeHolder>(relaxed = true)
+    private val relayClient = mockk<LosslessRelayClient>(relaxed = true)
 
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
@@ -83,6 +87,7 @@ class SettingsViewModelTest {
         listenBrainzApiClient = mockk(relaxed = true),
         listenSinkCoordinator = mockk(relaxed = true),
         listenSubmissionDao = mockk(relaxed = true),
+        relayClient = relayClient,
     )
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {
@@ -107,6 +112,84 @@ class SettingsViewModelTest {
         val job = launch { vm.qbdlxExpired.collect {} }
         advanceUntilIdle()
         assertThat(vm.qbdlxExpired.value).isFalse()
+        job.cancel()
+    }
+
+    // -- Custom lossless endpoint --------------------------------------------
+
+    @Test fun `committing a valid endpoint stores it normalised`() = runTest {
+        val vm = newVm()
+
+        vm.onCustomEndpointCommitted("https://relay.example/")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { losslessPrefs.setCustomLosslessEndpoint("https://relay.example") }
+        assertThat(vm.customEndpointError.value).isNull()
+    }
+
+    @Test fun `committing a non-https endpoint errors and stores nothing`() = runTest {
+        val vm = newVm()
+
+        vm.onCustomEndpointCommitted("http://x")
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointError.value).isEqualTo("Must be an https:// URL")
+        coVerify(exactly = 0) { losslessPrefs.setCustomLosslessEndpoint(any()) }
+    }
+
+    @Test fun `committing blank clears the endpoint without an error`() = runTest {
+        val vm = newVm()
+        vm.onCustomEndpointCommitted("http://x")
+        assertThat(vm.customEndpointError.value).isNotNull()
+
+        vm.onCustomEndpointCommitted("")
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointError.value).isNull()
+        coVerify(exactly = 1) { losslessPrefs.setCustomLosslessEndpoint(null) }
+    }
+
+    @Test fun `testing an endpoint goes IDLE to TESTING to REACHABLE`() = runTest {
+        every { losslessPrefs.customLosslessEndpoint } returns flowOf("https://relay.example")
+        coEvery { relayClient.probe("https://relay.example") } returns true
+        val vm = newVm()
+        val job = launch { vm.customEndpoint.collect {} }
+        advanceUntilIdle()
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
+
+        vm.onTestCustomEndpoint()
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.TESTING)
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.REACHABLE)
+        job.cancel()
+    }
+
+    @Test fun `a probe that fails reports UNREACHABLE`() = runTest {
+        every { losslessPrefs.customLosslessEndpoint } returns flowOf("https://relay.example")
+        coEvery { relayClient.probe("https://relay.example") } returns false
+        val vm = newVm()
+        val job = launch { vm.customEndpoint.collect {} }
+        advanceUntilIdle()
+
+        vm.onTestCustomEndpoint()
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.UNREACHABLE)
+        job.cancel()
+    }
+
+    @Test fun `testing with no endpoint set is a no-op`() = runTest {
+        every { losslessPrefs.customLosslessEndpoint } returns flowOf(null)
+        val vm = newVm()
+        val job = launch { vm.customEndpoint.collect {} }
+        advanceUntilIdle()
+
+        vm.onTestCustomEndpoint()
+        advanceUntilIdle()
+
+        assertThat(vm.customEndpointTest.value).isEqualTo(SettingsViewModel.EndpointTestState.IDLE)
+        coVerify(exactly = 0) { relayClient.probe(any()) }
         job.cancel()
     }
 }
