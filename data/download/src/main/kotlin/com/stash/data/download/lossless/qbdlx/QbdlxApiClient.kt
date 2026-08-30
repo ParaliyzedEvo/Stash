@@ -28,45 +28,41 @@ class QbdlxApiClient @Inject constructor(
     sharedClient: OkHttpClient,
     private val signer: QbdlxSigner,
     private val signingResolver: QbdlxSigningResolver,
+    private val webCreds: QobuzWebCredentialsClient,
 ) {
-    // appId read from BuildConfig directly (like ArcodClient reads ARCOD_STREAM_BASE) —
-    // NOT a constructor String param, to avoid polluting the global Hilt String namespace.
-    // internal var so tests can override.
-    //
-    // Only a FALLBACK for tokens the resolver doesn't know: [get] sends each token's
-    // own app_id. This used to be the catalog-wide default, on the belief (written
-    // here, and wrong) that "search/metadata work under any valid app_id" — live
-    // probing on 2026-08-15 showed catalog/search answers 401 on an app_id mismatch
-    // exactly like getFileUrl does, which is what made two thirds of the pool look
-    // permanently dead.
-    internal var appId: String = com.stash.data.download.BuildConfig.QBDLX_APP_ID
+    /**
+     * The app_id catalog calls run under, with NO user token. Qobuz's web player
+     * browses its catalog logged-out under this id (verified live 2026-08-29: all
+     * eight catalog endpoints answer 200 tokenless here and 401 under the bundled
+     * Android-lineage id). Public — it sits in Qobuz's own JS bundle. Self-heals:
+     * a 401 refreshes it once from the live bundle via [QobuzWebCredentialsClient].
+     */
+    @Volatile internal var catalogAppId: String = WEB_APP_ID
     internal var httpClient: OkHttpClient = sharedClient  // direct www.qobuz.com; no interceptor
     internal var baseUrl: String = ORIGIN
     internal var json: Json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
     /** Search the Qobuz catalog. Throws [QbdlxAuthException] on 401, [QbdlxApiException] otherwise. */
-    suspend fun search(query: String, token: String, limit: Int = 10): List<QbdlxTrack> =
+    suspend fun search(query: String, limit: Int = 10): List<QbdlxTrack> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/catalog/search".toHttpUrl().newBuilder()
                 .addQueryParameter("query", query)
                 .addQueryParameter("type", "tracks")
                 .addQueryParameter("limit", limit.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxSearchResponse>(body).tracks.items }.getOrDefault(emptyList())
         }
 
     /** Search the Qobuz catalog for artists (read-only metadata). */
-    suspend fun searchArtists(query: String, token: String, limit: Int = 10): List<QbdlxArtistItem> =
+    suspend fun searchArtists(query: String, limit: Int = 10): List<QbdlxArtistItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/catalog/search".toHttpUrl().newBuilder()
                 .addQueryParameter("query", query)
                 .addQueryParameter("type", "artists")
                 .addQueryParameter("limit", limit.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxArtistSearchResponse>(body).artists.items }.getOrDefault(emptyList())
         }
 
@@ -76,41 +72,38 @@ class QbdlxApiClient @Inject constructor(
      * shares the featured-playlists envelope. Search is catalog-global:
      * the endpoint has no genre filter.
      */
-    suspend fun searchPlaylists(query: String, token: String, limit: Int = 30, offset: Int = 0): List<QbdlxPlaylistItem> =
+    suspend fun searchPlaylists(query: String, limit: Int = 30, offset: Int = 0): List<QbdlxPlaylistItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/catalog/search".toHttpUrl().newBuilder()
                 .addQueryParameter("query", query)
                 .addQueryParameter("type", "playlists")
                 .addQueryParameter("limit", limit.toString())
                 .addQueryParameter("offset", offset.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxFeaturedPlaylistsResponse>(body).playlists.items }.getOrDefault(emptyList())
         }
 
     /** Fetch an artist's albums (read-only discography metadata). */
-    suspend fun getArtistAlbums(artistId: Long, token: String, limit: Int = 100): List<QbdlxAlbumItem> =
+    suspend fun getArtistAlbums(artistId: Long, limit: Int = 100): List<QbdlxAlbumItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/artist/get".toHttpUrl().newBuilder()
                 .addQueryParameter("artist_id", artistId.toString())
                 .addQueryParameter("extra", "albums")
                 .addQueryParameter("limit", limit.toString())
                 .addQueryParameter("offset", "0")
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
         }
 
     /** Fetch an album's detail incl. its tracks (read-only metadata). */
-    suspend fun getAlbum(albumId: String, token: String): QbdlxAlbumDetailResponse =
+    suspend fun getAlbum(albumId: String): QbdlxAlbumDetailResponse =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/album/get".toHttpUrl().newBuilder()
                 .addQueryParameter("album_id", albumId)
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             json.decodeFromString<QbdlxAlbumDetailResponse>(body)
         }
 
@@ -118,15 +111,14 @@ class QbdlxApiClient @Inject constructor(
      * Featured albums (`type` = `new-releases-full` / `best-sellers`). Unsigned
      * GET; [genreId] null = all genres. Reuses the album-list envelope. Read-only.
      */
-    suspend fun getFeaturedAlbums(type: String, genreId: Int?, token: String, limit: Int = 20): List<QbdlxAlbumItem> =
+    suspend fun getFeaturedAlbums(type: String, genreId: Int?, limit: Int = 20): List<QbdlxAlbumItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/album/getFeatured".toHttpUrl().newBuilder()
                 .addQueryParameter("type", type)
                 .apply { if (genreId != null) addQueryParameter("genre_id", genreId.toString()) }
                 .addQueryParameter("limit", limit.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
         }
 
@@ -139,29 +131,27 @@ class QbdlxApiClient @Inject constructor(
      * genres) — so this must send the plural form or the genre chips don't
      * actually filter the playlist row.
      */
-    suspend fun getFeaturedPlaylists(genreId: Int?, token: String, limit: Int = 15, offset: Int = 0): List<QbdlxPlaylistItem> =
+    suspend fun getFeaturedPlaylists(genreId: Int?, limit: Int = 15, offset: Int = 0): List<QbdlxPlaylistItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/playlist/getFeatured".toHttpUrl().newBuilder()
                 .addQueryParameter("type", "editor-picks")
                 .apply { if (genreId != null) addQueryParameter("genre_ids", genreId.toString()) }
                 .addQueryParameter("limit", limit.toString())
                 .addQueryParameter("offset", offset.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            val body = get(url.toString(), token)
+            val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxFeaturedPlaylistsResponse>(body).playlists.items }.getOrDefault(emptyList())
         }
 
     /** Playlist detail incl. its tracks. Unsigned GET (read-only metadata). */
-    suspend fun getPlaylist(playlistId: String, token: String, limit: Int = 500): QbdlxPlaylistDetailResponse =
+    suspend fun getPlaylist(playlistId: String, limit: Int = 500): QbdlxPlaylistDetailResponse =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/playlist/get".toHttpUrl().newBuilder()
                 .addQueryParameter("playlist_id", playlistId)
                 .addQueryParameter("extra", "tracks")
                 .addQueryParameter("limit", limit.toString())
-                .addQueryParameter("app_id", appId)
                 .build()
-            json.decodeFromString<QbdlxPlaylistDetailResponse>(get(url.toString(), token))
+            json.decodeFromString<QbdlxPlaylistDetailResponse>(catalogGet(url.toString()))
         }
 
     /** Resolve a track id to a signed FLAC URL, classified. */
@@ -197,6 +187,36 @@ class QbdlxApiClient @Inject constructor(
         if (f.url.isNullOrBlank() || f.formatId < 6) return QbdlxResolveResult.RegionLocked
         // formatId >= 6 here (5 already returned TokenDead) → always FLAC.
         return QbdlxResolveResult.Ok(f.url, "flac", f.bitDepth, (f.samplingRate * 1000f).toInt())
+    }
+
+    /** Catalog GET under [catalogAppId], no user token; one self-heal on 401. */
+    private suspend fun catalogGet(url: String): String {
+        try {
+            return catalogGetOnce(url, catalogAppId)
+        } catch (e: QbdlxAuthException) {
+            val fresh = webCreds.fetch()?.appId?.takeIf { it.isNotBlank() && it != catalogAppId } ?: throw e
+            android.util.Log.i(TAG, "catalog app_id rotated ${catalogAppId} -> $fresh after 401")
+            catalogAppId = fresh
+            return catalogGetOnce(url, fresh)
+        }
+    }
+
+    private fun catalogGetOnce(url: String, appIdForCall: String): String {
+        val req = Request.Builder()
+            .url(url.toHttpUrl().newBuilder().setQueryParameter("app_id", appIdForCall).build())
+            .header("X-App-Id", appIdForCall)
+            .header("Accept", "application/json")
+            .header("User-Agent", UA)
+            .get().build()
+        httpClient.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (resp.code == 401) throw QbdlxAuthException(401, body.take(120))
+            if (!resp.isSuccessful) {
+                android.util.Log.w(TAG, "HTTP ${resp.code} on ${url.substringBefore('?').substringAfterLast('/')}: ${body.take(160)}")
+                throw QbdlxApiException(resp.code, body.take(120))
+            }
+            return body
+        }
     }
 
     /**
@@ -252,9 +272,11 @@ class QbdlxApiClient @Inject constructor(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "QbdlxApiClient"
         const val ORIGIN = "https://www.qobuz.com"
         const val UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36"
+        /** Qobuz web-player app_id — the tokenless catalog id. See [catalogAppId]. */
+        const val WEB_APP_ID = "712109809"
     }
 }

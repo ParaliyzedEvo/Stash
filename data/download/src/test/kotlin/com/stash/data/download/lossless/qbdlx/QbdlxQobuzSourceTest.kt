@@ -66,7 +66,7 @@ class QbdlxQobuzSourceTest {
     fun `match yields SourceResult with response format`() = runTest {
         enabledAndAcquired()
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns ok()
 
         val r = source().resolve(query)
@@ -91,7 +91,7 @@ class QbdlxQobuzSourceTest {
     fun `TokenDead marks token dead rotates and succeeds on second token`() = runTest {
         enabledAndAcquired()
         coEvery { credentialStore.activeToken() } returnsMany listOf("tok1", "tok2")
-        coEvery { apiClient.search(any(), any()) } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns QbdlxResolveResult.TokenDead
         coEvery { apiClient.getFileUrl(42, 27, "tok2") } returns ok()
 
@@ -107,7 +107,7 @@ class QbdlxQobuzSourceTest {
         enabledAndAcquired()
         coEvery { credentialStore.activeToken() } returns "tok1"
         coEvery { credentialStore.tokensForRegion(null) } returns listOf("tok1", "tok2")
-        coEvery { apiClient.search(any(), any()) } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns QbdlxResolveResult.RegionLocked
         coEvery { apiClient.getFileUrl(42, 27, "tok2") } returns ok()
 
@@ -120,22 +120,6 @@ class QbdlxQobuzSourceTest {
     }
 
     @Test
-    fun `search auth failure marks token dead and rotates without tripping breaker`() = runTest {
-        enabledAndAcquired()
-        coEvery { credentialStore.activeToken() } returnsMany listOf("tok1", "tok2")
-        coEvery { apiClient.search(any(), "tok1") } throws QbdlxAuthException(401)
-        coEvery { apiClient.search(any(), "tok2") } returns listOf(candidate())
-        coEvery { apiClient.getFileUrl(42, 27, "tok2") } returns ok()
-
-        val r = source().resolve(query)
-
-        assertThat(r).isNotNull()
-        coVerify { credentialStore.markDead("tok1") }
-        // A dead token is not a source-health failure.
-        coVerify(exactly = 0) { rateLimiter.reportFailure(sid) }
-    }
-
-    @Test
     fun `whole pool dead disables source and resolve returns null`() = runTest {
         coEvery { prefs.qbdlxEnabledNow() } returns true
         coEvery { credentialStore.allDead() } returns true
@@ -143,7 +127,7 @@ class QbdlxQobuzSourceTest {
 
         assertThat(source().isEnabled()).isFalse()
         assertThat(source().resolve(query)).isNull()
-        coVerify(exactly = 0) { apiClient.search(any(), any()) }
+        coVerify(exactly = 0) { apiClient.search(any()) }
     }
 
     @Test
@@ -155,7 +139,7 @@ class QbdlxQobuzSourceTest {
         coEvery { rateLimiter.stateOf(sid) } returns
             RateLimitState(0.0, 0L, isCircuitBroken = true, msUntilUnblock = 60_000L, recentFailures = 5)
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns ok()
 
         val r = source().resolveImmediate(query)
@@ -179,7 +163,7 @@ class QbdlxQobuzSourceTest {
     fun `429 reports rate limited not failure`() = runTest {
         enabledAndAcquired()
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } throws QbdlxApiException(429, "Too Many Requests")
+        coEvery { apiClient.search(any()) } throws QbdlxApiException(429, "Too Many Requests")
 
         val r = source().resolve(query)
 
@@ -197,7 +181,7 @@ class QbdlxQobuzSourceTest {
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
         coEvery { rateLimiter.acquire(sid) } returns true
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 6, "tok1") } returns ok()
 
         val r = source().resolve(query)
@@ -210,7 +194,7 @@ class QbdlxQobuzSourceTest {
     fun `cancellation propagates and is not swallowed as a failure`() = runTest {
         enabledAndAcquired()
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } throws kotlinx.coroutines.CancellationException("cancelled")
+        coEvery { apiClient.search(any()) } throws kotlinx.coroutines.CancellationException("cancelled")
 
         org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
             kotlinx.coroutines.runBlocking { source().resolve(query) }

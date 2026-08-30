@@ -44,24 +44,24 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
 
     override suspend fun communityPlaylists(genreId: Int?): List<PlaylistSummary> =
         cached("playlists:$genreId") {
-            withToken { tok -> client.getFeaturedPlaylists(genreId, tok) }.map { it.toPlaylistSummary() }
+            withToken { _ -> client.getFeaturedPlaylists(genreId) }.map { it.toPlaylistSummary() }
         }
 
     override suspend fun browsePlaylists(genreId: Int?, offset: Int, limit: Int): List<PlaylistSummary> =
         cached("browse:$genreId:$offset:$limit") {
-            withToken { tok -> client.getFeaturedPlaylists(genreId, tok, limit, offset) }
+            withToken { _ -> client.getFeaturedPlaylists(genreId, limit, offset) }
                 .map { it.toPlaylistSummary() }
         }
 
     override suspend fun searchPlaylists(query: String, offset: Int, limit: Int): List<PlaylistSummary> =
         cached("psearch:$query:$offset:$limit") {
-            withToken { tok -> client.searchPlaylists(query, tok, limit, offset) }
+            withToken { _ -> client.searchPlaylists(query, limit, offset) }
                 .map { it.toPlaylistSummary() }
         }
 
     private suspend fun albums(type: String, genreId: Int?): List<AlbumSummary> =
         cached("$type:$genreId") {
-            withToken { tok -> client.getFeaturedAlbums(type, genreId, tok) }.map { it.toAlbumSummary() }
+            withToken { _ -> client.getFeaturedAlbums(type, genreId) }.map { it.toAlbumSummary() }
         }
 
     /** Fail-soft memoization: throw → empty (uncached); success (incl. empty) → cached. */

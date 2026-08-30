@@ -112,7 +112,7 @@ class QbdlxQobuzSource @Inject constructor(
             try {
                 for (term in query.searchTerms()) {
                     val candidates = callLimited(bypassRateLimit) {
-                        apiClient.search(term, token)
+                        apiClient.search(term)
                     } ?: continue // api error / 429 / acquire-denied (already reported)
                     val match = candidates
                         .map { it to confidence(query, it) }

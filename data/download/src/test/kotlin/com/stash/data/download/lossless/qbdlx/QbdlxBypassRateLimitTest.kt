@@ -49,7 +49,7 @@ class QbdlxBypassRateLimitTest {
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
         coEvery { rateLimiter.acquire(sid) } returns false
         coEvery { credentialStore.activeToken() } returns "tok1"
-        coEvery { apiClient.search(any(), "tok1") } returns listOf(candidate())
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
         coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns ok()
     }
 

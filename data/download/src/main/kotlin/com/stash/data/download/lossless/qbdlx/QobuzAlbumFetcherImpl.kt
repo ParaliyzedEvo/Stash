@@ -22,7 +22,7 @@ class QobuzAlbumFetcherImpl @Inject constructor(
 ) : QobuzAlbumFetcher {
     override suspend fun getAlbum(qobuzAlbumId: String): AlbumDetail {
         val token = credentialStore.activeToken() ?: error("qbdlx: no live token")
-        val r = apiClient.getAlbum(qobuzAlbumId, token)
+        val r = apiClient.getAlbum(qobuzAlbumId)
         val artistName = r.artist?.name.orEmpty()
         val cover = r.image?.large ?: r.image?.small ?: r.image?.thumbnail
         return AlbumDetail(
@@ -48,7 +48,7 @@ class QobuzAlbumFetcherImpl @Inject constructor(
 
     override suspend fun getPlaylist(playlistId: String): AlbumDetail {
         val token = credentialStore.activeToken() ?: error("qbdlx: no live token")
-        val p = apiClient.getPlaylist(playlistId, token)
+        val p = apiClient.getPlaylist(playlistId)
         val cover = p.images300.firstOrNull()
         return AlbumDetail(
             id = playlistId,

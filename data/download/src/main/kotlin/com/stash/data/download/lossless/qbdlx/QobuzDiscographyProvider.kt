@@ -38,7 +38,7 @@ class QobuzDiscographyProvider @Inject constructor(
         val nName = QobuzCandidateMatcher.normalize(artistName)
         if (nName.isBlank() || nName in VARIOUS_ARTISTS) return unchanged(ytAlbums, ytSingles)
 
-        val candidates = apiClient.searchArtists(artistName, token)
+        val candidates = apiClient.searchArtists(artistName)
             .filter { QobuzCandidateMatcher.normalize(it.name) !in VARIOUS_ARTISTS }
             .filterNot { isSuperstringPseudo(nName, QobuzCandidateMatcher.normalize(it.name)) }
             .distinctBy { it.id }
@@ -64,7 +64,7 @@ class QobuzDiscographyProvider @Inject constructor(
         //   2. album-length — enough tracks to be an album, not a single/EP.
         //      release_type is null from this endpoint, so track count is the
         //      only reliable signal (real albums ~8-24 tracks; singles 1-3).
-        val ownAlbums = apiClient.getArtistAlbums(best.id, token).filter {
+        val ownAlbums = apiClient.getArtistAlbums(best.id).filter {
             QobuzCandidateMatcher.normalize(it.artist?.name.orEmpty()) == nBest &&
                 it.tracks_count >= ALBUM_MIN_TRACKS
         }

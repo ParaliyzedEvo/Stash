@@ -28,7 +28,7 @@ class QobuzAlbumFetcherImplTest {
     fun `maps qobuz album to AlbumDetail with blank videoIds and real durations`() = runTest {
         val album = json.decodeFromString<QbdlxAlbumDetailResponse>(fixture("album_loveless.json"))
         coEvery { credentialStore.activeToken() } returns "tok"
-        coEvery { apiClient.getAlbum("123", "tok") } returns album
+        coEvery { apiClient.getAlbum("123") } returns album
 
         val detail = fetcher().getAlbum("123")
 
@@ -58,7 +58,7 @@ class QobuzAlbumFetcherImplTest {
                   "duration":195,"album":{"title":"Love Explosion","image":{"large":"AL"}}}]}}""",
         )
         coEvery { credentialStore.activeToken() } returns "tok"
-        coEvery { apiClient.getPlaylist("67048110", "tok") } returns playlist
+        coEvery { apiClient.getPlaylist("67048110") } returns playlist
 
         val detail = fetcher().getPlaylist("67048110")
 
