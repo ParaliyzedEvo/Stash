@@ -82,122 +82,6 @@ jobs:
           echo "Decoded keystore to $RUNNER_TEMP/stash-release.jks"
           ls -la "$RUNNER_TEMP/stash-release.jks"
 
-      - name: Fetch qbdlx token pool
-        env:
-          QBDLX_TOKEN_POOL_SECRET: ${{ secrets.QBDLX_TOKEN_POOL }}
-          # Needed by the liveness probe below — it signs a real getFileUrl call.
-          QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
-          QBDLX_APP_SECRET: ${{ secrets.QBDLX_APP_SECRET }}
-          # Extra appId:secret pairs. Without these the second app_id's tokens
-          # can't be signed, so they must not be shipped either.
-          QBDLX_APP_SECRETS: ${{ secrets.QBDLX_APP_SECRETS }}
-        run: |
-          # Fetch the CURRENT shared pool so every release ships live tokens.
-          # Reachable from datacenter IPs (verified). Any failure → fall back to
-          # the QBDLX_TOKEN_POOL secret; the build must NEVER break on this.
-          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
-          # app_id -> secret for everything THIS BUILD can sign. Mirrors the
-          # runtime's QbdlxRemotePool.knownAppIdsFromBuildConfig(): the primary
-          # pair plus each extra. The two must agree — CI validating a token the
-          # app can't sign is worse than dropping it, because a mismatched secret
-          # doesn't error, it silently returns a 30-second preview.
-          declare -A SECRETS
-          SECRETS["$QBDLX_APP_ID"]="$QBDLX_APP_SECRET"
-          IFS=',' read -ra _PAIRS <<< "${QBDLX_APP_SECRETS:-}"
-          for _P in "${_PAIRS[@]}"; do
-            _ID="${_P%%:*}"; _SEC="${_P#*:}"
-            [ -n "$_ID" ] && [ "$_ID" != "$_P" ] && SECRETS["$_ID"]="$_SEC"
-          done
-          KNOWN=$(printf '%s\n' "${!SECRETS[@]}" | paste -sd, -)
-          echo "Can sign for app_id(s): $KNOWN"
-
-          # The endpoint serves several app_ids. Pinning one threw away every
-          # token minted under the other — 13 of 21 as measured 2026-08-02, while
-          # the pinned app_id was down to 1 live token. Keep everything signable
-          # and TAG it token:country:appId so the runtime signer picks the right
-          # secret (QbdlxSigningResolver) instead of mismatching into a preview.
-          POOL=$(curl -sf -A "$UA" \
-                   -H "Origin: https://qbdlx.launchpd.cloud" \
-                   -H "Referer: https://qbdlx.launchpd.cloud/" \
-                   https://citegptapi.f5.si/webhook/qbdlx/shared \
-                 | jq -r --arg primary "$QBDLX_APP_ID" --arg known "$KNOWN" '
-                     ($known | split(",")) as $ids
-                     | [ .[]
-                         | select(.token != null and .token != ""
-                                  and .country != null and .country != "")
-                         | . + {app_id: ((.app_id // $primary) | tostring)}
-                         | select(.app_id | IN($ids[]))
-                       ]
-                     | unique_by(.token)
-                     | map(.token + ":" + .country + ":" + .app_id) | join(",")' 2>/dev/null) || POOL=""
-          if [ -n "$POOL" ]; then
-            FETCHED=$(echo "$POOL" | tr ',' '\n' | wc -l)
-            echo "Fetched $FETCHED qbdlx tokens from the shared pool"
-
-            # Keep only tokens that can actually DELIVER LOSSLESS AUDIO.
-            #
-            # The pool accumulates rotated-out accounts and is mostly dead at any
-            # given moment — measured 2026-08-02: 1 live of 8 on the primary
-            # app_id alone, which is exactly why the second app_id's tokens above
-            # are no longer discarded. Shipping the dead ones isn't harmless:
-            # failover has to walk them, burning a 401 and a retry per resolve
-            # before landing on a working account, so first plays after an update
-            # are slow and flaky.
-            #
-            # Deliberately NOT an auth check. A token can authenticate perfectly
-            # and still be useless: a downgraded/free account returns 200 with
-            # "sample": true and format_id 5 — it logs in, then plays a 30-second
-            # preview. Checking /user/get would happily keep those. So probe the
-            # exact call the app makes at play time, signed the same way, and
-            # demand a real lossless format back (>= 6 = CD or better).
-            TRACK_ID=8767428   # a stable, widely-available catalog track
-            FMT=27
-            LIVE=""
-            for ENTRY in $(echo "$POOL" | tr ',' ' '); do
-              # Entries are token:country:appId. Peel from the RIGHT — a token may
-              # itself contain ':' (the runtime parser drops the last two fields
-              # for the same reason), so ${ENTRY%%:*} would truncate it.
-              APPID="${ENTRY##*:}"
-              _REST="${ENTRY%:*}"
-              TOK="${_REST%:*}"
-              SEC="${SECRETS[$APPID]}"
-              TS=$(date +%s)
-              # Sign with THIS token's app_id secret. Using the primary secret for
-              # a token minted elsewhere doesn't fail loudly — it comes back 200
-              # with sample:true, so a mis-signed probe would drop every good
-              # token on the second app_id as "sample/lossy".
-              SIG=$(printf '%s' "trackgetFileUrlformat_id${FMT}intentstreamtrack_id${TRACK_ID}${TS}${SEC}" | md5sum | cut -d' ' -f1)
-              BODY=$(curl -s --max-time 20 -A "$UA" \
-                       -H "X-App-Id: ${APPID}" \
-                       -H "X-User-Auth-Token: $TOK" \
-                       "https://www.qobuz.com/api.json/0.2/track/getFileUrl?request_ts=${TS}&request_sig=${SIG}&track_id=${TRACK_ID}&format_id=${FMT}&intent=stream" || echo '{}')
-              VERDICT=$(echo "$BODY" | jq -r 'if (.sample == true) or ((.format_id // 0) < 6) then "sample/lossy" else "ok" end' 2>/dev/null || echo "unparseable")
-              if [ "$VERDICT" = "ok" ]; then
-                LIVE="${LIVE:+$LIVE,}$ENTRY"
-              else
-                echo "  token ${TOK:0:8}… (app_id $APPID) — dropped ($VERDICT)"
-              fi
-              sleep 1
-            done
-
-            if [ -n "$LIVE" ]; then
-              echo "Live qbdlx tokens: $(echo "$LIVE" | tr ',' '\n' | wc -l) of $FETCHED"
-              echo "QBDLX_TOKEN_POOL=$LIVE" >> "$GITHUB_ENV"
-            else
-              # Every probe failed. That is far more likely to mean Qobuz is
-              # blocking this runner's IP than that the pool is genuinely 100%
-              # dead — and shipping an EMPTY pool would be strictly worse than
-              # shipping an unverified one. Fall back to the unfiltered pool and
-              # make some noise.
-              echo "::warning::qbdlx liveness probe matched 0 of $FETCHED tokens — shipping the UNFILTERED pool (runner IP blocked?)"
-              echo "QBDLX_TOKEN_POOL=$POOL" >> "$GITHUB_ENV"
-            fi
-          else
-            echo "::warning::qbdlx pool fetch failed/empty — falling back to the QBDLX_TOKEN_POOL secret"
-            echo "QBDLX_TOKEN_POOL=$QBDLX_TOKEN_POOL_SECRET" >> "$GITHUB_ENV"
-          fi
-
       - name: Assemble release APK
         env:
           STASH_KEYSTORE_FILE: ${{ runner.temp }}/stash-release.jks
@@ -229,22 +113,11 @@ jobs:
           # ARCOD_CONFIGURED keys off: without it the shipped APK can only 403 and
           # both registries skip arcod entirely.
           ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
-          # qbdlx (direct-Qobuz) app credentials, consumed by data/download
-          # BuildConfig (QBDLX_*). These MUST be set: without them the shipped
-          # APK has blank credentials and qbdlx is dead on arrival — exactly what
-          # shipped in v0.9.65–v0.9.68 before this env existed. The token pool
-          # (QBDLX_TOKEN_POOL) is NOT declared here — the "Fetch qbdlx token
-          # pool" step above exports it to $GITHUB_ENV (live pool, secret
-          # fallback) and Gradle inherits it. The verify step refuses to publish
-          # an APK missing these.
-          QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
-          QBDLX_APP_SECRET: ${{ secrets.QBDLX_APP_SECRET }}
-          # Extra "appId:secret,…" pairs for pool tokens minted under a second
-          # Qobuz app_id. Without this the shipped APK can't sign those tokens and
-          # drops them (the pre-v0.9.89 behaviour) — so the multi-credential pool
-          # quietly reverts to one app_id. Optional (empty = primary only), but
-          # set it or #1's extra capacity never reaches users.
-          QBDLX_APP_SECRETS: ${{ secrets.QBDLX_APP_SECRETS }}
+          # Runtime lossless config (Plan A1). Both are optional: unset secrets
+          # yield empty BuildConfig strings and LosslessConfigFetcher stays
+          # disabled, so a build without them is valid — it just ships no relays.
+          LOSSLESS_CONFIG_URL: ${{ secrets.LOSSLESS_CONFIG_URL }}
+          LOSSLESS_CONFIG_PUBKEY: ${{ secrets.LOSSLESS_CONFIG_PUBKEY }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK
@@ -261,43 +134,16 @@ jobs:
 
       - name: Verify bundled credentials embedded in APK
         env:
-          QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
           ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
-          # QBDLX_TOKEN_POOL comes from $GITHUB_ENV (the fetch step) — do NOT
-          # redeclare it as the secret here, or the fingerprint would be computed
-          # over the secret while the dex carries the fetched pool → false-fail.
         run: |
-          if [ -z "$QBDLX_APP_ID" ] || [ -z "$QBDLX_TOKEN_POOL" ]; then
-            echo "::error::QBDLX_APP_ID / QBDLX_TOKEN_POOL not available"
-            exit 1
-          fi
           DEX_DIR="$RUNNER_TEMP/dexcheck"
           mkdir -p "$DEX_DIR"
           unzip -o -q "${{ steps.find_apk.outputs.apk_path }}" 'classes*.dex' -d "$DEX_DIR"
 
-          # 1. app_id must be present (BuildConfig wired; still plaintext).
-          if ! grep -a -q -F -- "$QBDLX_APP_ID" "$DEX_DIR"/classes*.dex; then
-            echo "::error::app_id missing from APK dex — blank BuildConfig?"
-            exit 1
-          fi
-          # 2. The plaintext first token must be ABSENT (encryption actually ran).
-          FIRST_TOKEN="${QBDLX_TOKEN_POOL%%:*}"
-          if grep -a -q -F -- "$FIRST_TOKEN" "$DEX_DIR"/classes*.dex; then
-            echo "::error::plaintext qbdlx token found in dex — pool was NOT encrypted"
-            exit 1
-          fi
-          # 3. The pool fingerprint must be present (current, non-blank pool shipped).
-          FP=$(printf %s "$QBDLX_TOKEN_POOL" | sha256sum | head -c 8)
-          if ! grep -a -q -F -- "$FP" "$DEX_DIR"/classes*.dex; then
-            echo "::error::QBDLX_POOL_FP ($FP) missing from dex — stale/blank/mismatched pool"
-            exit 1
-          fi
-          echo "qbdlx pool verified: app_id present, token encrypted, fp $FP embedded"
-
-          # 4. ARCOD: same class of bug as the blank qbdlx creds above — an unset
-          # secret yields a blank BuildConfig, ARCOD_CONFIGURED goes false and both
-          # registries silently skip arcod, so the APK quietly loses a lossless
-          # source instead of failing the build.
+          # 1. ARCOD: an unset secret yields a blank BuildConfig, so
+          # ARCOD_CONFIGURED goes false and both registries silently skip arcod
+          # — the APK quietly loses a lossless source instead of failing the
+          # build.
           if [ -z "$ARCOD_STASH_KEY" ]; then
             echo "::error::ARCOD_STASH_KEY not available — arcod would ship disabled"
             exit 1
