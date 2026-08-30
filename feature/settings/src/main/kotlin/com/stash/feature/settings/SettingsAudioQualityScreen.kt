@@ -317,7 +317,7 @@ fun SettingsAudioQualityScreen(
                             // would let a background resolve migrate a partial
                             // token into the connected-account slot.
                             //
-                            // The field owns its draft (nothing external writes it),
+                            // The field owns its draft (only a disconnect resets it, above),
                             // so `committed` is what tracks the last value handed to
                             // the VM — without it, clearing the field back to blank
                             // would never reach `setPastedToken(null)`.
