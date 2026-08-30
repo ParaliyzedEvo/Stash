@@ -33,6 +33,8 @@ class LosslessAvailability @Inject constructor(
     private val relayClient: LosslessRelayClient,
     private val arcod: ArcodCredentialStore,
 ) {
+    // ponytail: config.relays is empty until loadCached() completes, so a tap in the
+    // first tens of ms after a cold start can see false and fall to the next rung once.
     val qbdlxEnabled: Flow<Boolean> =
         combine(credentialStore.hasLogin, config.relays, prefs.customLosslessEndpoint) { login, relays, custom ->
             login || relays.isNotEmpty() || custom != null
@@ -47,6 +49,8 @@ class LosslessAvailability @Inject constructor(
         return config.relays.value.any { !relayClient.isCooled(it.base) }
     }
 
+    // ponytail: anyConfigured / anyUserOwned have no consumer yet — Plan A2 (download
+    // deferral reason) and Plan C (Home banner) are what read them.
     val anyConfigured: Flow<Boolean> = combine(qbdlxEnabled, arcod.accessToken) { q, a -> q || a != null }
     suspend fun anyConfiguredNow(): Boolean = anyConfigured.first()
 

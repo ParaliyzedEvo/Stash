@@ -124,4 +124,10 @@ class LosslessConfigFetcherTest {
         val f = fetcher(); f.refresh()
         assertThat(f.relays.value.map { it.base }).containsExactly("https://ok.example")
     }
+
+    @Test fun `a failed refresh schedules the short retry`() {
+        val f = fetcher()
+        assertThat(f.nextDelayMs(false)).isEqualTo(15 * 60 * 1000L)
+        assertThat(f.nextDelayMs(true)).isEqualTo(6 * 60 * 60 * 1000L)
+    }
 }

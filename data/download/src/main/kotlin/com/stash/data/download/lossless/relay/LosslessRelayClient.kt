@@ -19,7 +19,11 @@ import okhttp3.Request
 sealed interface RelayMint {
     /** [sampleRateHz] is already Hz — the relay converts Qobuz's kHz; never multiply here. */
     data class Ok(val url: String, val formatId: Int, val bitDepth: Int, val sampleRateHz: Int) : RelayMint
-    /** 404: not streamable / region-locked for the relay's accounts. Next rung; no cooldown. */
+    /**
+     * 404: not streamable / region-locked for the relay's accounts. Ends the
+     * router for this track — the next lossless SOURCE, not the next relay base
+     * (every base fronts the same catalog). No cooldown: the base is healthy.
+     */
     object NoMatch : RelayMint
     /** The base is unavailable right now and has been cooled; try the next base. */
     object Unavailable : RelayMint

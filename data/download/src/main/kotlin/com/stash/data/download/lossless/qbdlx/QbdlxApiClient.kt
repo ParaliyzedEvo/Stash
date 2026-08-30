@@ -201,7 +201,12 @@ class QbdlxApiClient @Inject constructor(
         return QbdlxResolveResult.Ok(f.url, "flac", f.bitDepth, (f.samplingRate * 1000f).toInt())
     }
 
-    /** Catalog GET under [catalogAppId], no user token; one self-heal on 401. */
+    /**
+     * Catalog GET under [catalogAppId], no user token; one self-heal on 401.
+     * [lastHealMs] is stamped BEFORE the scrape on purpose — that bounds
+     * concurrent scrapes, at the cost that one FAILED scrape burns the whole
+     * [HEAL_MIN_INTERVAL_MS] window: 401s inside it rethrow without a retry.
+     */
     private suspend fun catalogGet(url: String): String {
         // Capture the id THIS call used: comparing the scrape against the live field
         // would make a loser rethrow even though the winner already put a good id there.

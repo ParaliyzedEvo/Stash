@@ -186,4 +186,13 @@ class QbdlxCredentialStoreTest {
         s.setPastedToken("legacy")
         assertThat(s.hasLogin.first()).isTrue()
     }
+
+    @Test
+    fun `a token pasted after the store has loaded is migrated on the next read`() = runTest {
+        val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
+        assertThat(s.loginCredential()).isNull()          // loginLoaded = true, nothing to migrate
+        s.setPastedToken("late-paste")
+        assertThat(s.loginCredential()?.token).isEqualTo("late-paste")
+        assertThat(s.loginLive()).isTrue()
+    }
 }

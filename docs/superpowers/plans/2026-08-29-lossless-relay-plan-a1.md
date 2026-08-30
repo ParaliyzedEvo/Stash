@@ -1301,9 +1301,11 @@ import javax.inject.Singleton
  * priority. Returns null when no path is available right now (the source then
  * falls to the next rung).
  *
- * BYO outcomes do NOT fall through: a dead login is the user's account problem,
- * surfaced as [QbdlxResolveResult.TokenDead], not silently papered over by the
- * public relay.
+ * Only a 401 is terminal for the BYO path: it surfaces as
+ * [QbdlxResolveResult.TokenDead] and marks the login dead, rather than being
+ * silently papered over by the public relay. Any OTHER failure on the connected
+ * account (network, 5xx, unparseable body) falls through to the relays and does
+ * NOT mark it dead — the login is retried on the next resolve (commit 2d377c78).
  */
 @Singleton
 class QbdlxFileUrlRouter @Inject constructor(
@@ -1337,7 +1339,10 @@ class QbdlxFileUrlRouter @Inject constructor(
         for (base in bases) {
             if (relayClient.isCooled(base)) continue
             when (val m = relayClient.mint(base, trackId, formatId)) {
-                is RelayMint.Ok -> return QbdlxResolveResult.Ok(m.url, "flac", m.bitDepth, m.sampleRateHz)
+                // Same downgrade rule as the direct path: format_id < 6 is lossy, so it is
+                // not a lossless match — RegionLocked, not Ok.
+                is RelayMint.Ok -> return if (m.formatId < 6) QbdlxResolveResult.RegionLocked
+                    else QbdlxResolveResult.Ok(m.url, "flac", m.bitDepth, m.sampleRateHz)
                 RelayMint.NoMatch -> return QbdlxResolveResult.RegionLocked
                 RelayMint.Unavailable -> Unit // cooled by the client; try the next base
             }

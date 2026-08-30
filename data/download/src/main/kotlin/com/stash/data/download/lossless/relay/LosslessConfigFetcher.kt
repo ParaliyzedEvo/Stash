@@ -116,16 +116,20 @@ class LosslessConfigFetcher @Inject constructor(
         true
     }
 
-    /** Load the cache, then refresh now and every [REFRESH_INTERVAL_MS]. */
+    /** Load the cache, then refresh now and every [REFRESH_INTERVAL_MS] — [RETRY_INTERVAL_MS] after a failure. */
     fun start(scope: CoroutineScope) {
+        if (!enabled) return // both BuildConfig values blank: nothing to fetch, don't spin a coroutine
         scope.launch {
             loadCached()
             while (true) {
-                refresh()
-                delay(REFRESH_INTERVAL_MS)
+                val ok = refresh()
+                delay(nextDelayMs(ok))
             }
         }
     }
+
+    /** 6 h after a good refresh; a failed one (offline at launch, captive portal) retries in 15 min. */
+    internal fun nextDelayMs(refreshed: Boolean): Long = if (refreshed) REFRESH_INTERVAL_MS else RETRY_INTERVAL_MS
 
     internal fun verify(bytes: ByteArray, sigB64: String): Boolean = runCatching {
         val pub = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyB64)))
@@ -183,6 +187,7 @@ class LosslessConfigFetcher @Inject constructor(
     private companion object {
         const val TAG = "LosslessConfig"
         const val REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L
+        const val RETRY_INTERVAL_MS = 15 * 60 * 1000L
 
         /** A hostile/misconfigured host must not OOM us — an `Error` would escape [ioCatching]. */
         const val MAX_CONFIG_BYTES = 64L * 1024

@@ -523,14 +523,17 @@ class QbdlxCredentialStore @Inject constructor(
         context.qbdlxCredentialsDataStore.edit { prefs ->
             if (t.isNullOrEmpty()) prefs.remove(pastedTokenKey) else prefs[pastedTokenKey] = t
         }
+        // Settings resolves loginCredential() at construction, so by the time the
+        // user pastes, the lazy load has already cached its null and nothing would
+        // ever migrate the new value.
+        if (!t.isNullOrEmpty()) loginLoaded = false // re-arm: the next loginCredential() re-reads and migrates the paste
     }
 
     /**
      * True when there is NO usable token: none configured at all (no bundled
-     * pool, no paste), or every configured one is currently dead. Drives the
-     * Settings "paste a token" badge AND gates the source off entirely via
-     * isEnabled/isEnabledForStreaming. A tokenless build MUST surface the paste
-     * prompt and drop out of the chain — an earlier "empty pool isn't expired"
+     * pool, no paste), or every configured one is currently dead. Read only by
+     * Settings now — `LosslessAvailability` is what gates the source. A tokenless
+     * build MUST surface the paste prompt — an earlier "empty pool isn't expired"
      * guard here returned false instead, which hid the v0.9.65–v0.9.68 blank
      * BuildConfig credentials as silent per-track no_results.
      */
@@ -539,9 +542,8 @@ class QbdlxCredentialStore @Inject constructor(
         // A live connected account is a usable credential all on its own.
         loginCredential()?.let { if (!isDead(it.token)) return false }
         val pasted = pastedToken()
-        // Lets a fully-dead build heal itself: allDead() drives the Settings
-        // badge AND gates the source off entirely, so refreshing here means
-        // qbdlx can come back without the user doing anything.
+        // Lets a fully-dead build heal itself: refreshing here means qbdlx can
+        // come back without the user doing anything.
         refreshIfExhausted()
         val poolTokens = pool().map { it.token }
         if (poolTokens.isEmpty() && pasted == null) return true // no credentials at all

@@ -2,14 +2,17 @@ package com.stash.feature.settings
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.files.LibrarySizeHolder
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -21,7 +24,7 @@ import org.junit.Test
 
 /**
  * Focused coverage of the qbdlx Settings wiring (Phase 8): the paste-token
- * field and the all-dead "expired" badge. The rest of this
+ * field and the "no lossless path configured" badge. The rest of this
  * 30-dependency ViewModel is exercised via its Compose screen + the per-pref
  * unit tests; here we only prove the qbdlx delegations.
  */
@@ -33,12 +36,10 @@ class SettingsViewModelTest {
     @After fun tearDown() { Dispatchers.resetMain() }
 
     private val losslessPrefs = mockk<LosslessSourcePreferences>(relaxed = true)
-    private val qbdlxStore = mockk<QbdlxCredentialStore>(relaxed = true).also {
-        coEvery { it.allDead() } returns false
-    }
+    private val qbdlxStore = mockk<QbdlxCredentialStore>(relaxed = true)
     private val librarySizeHolder = mockk<LibrarySizeHolder>(relaxed = true)
 
-    private fun newVm() = SettingsViewModel(
+    private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
         tokenManager = mockk(relaxed = true),
         musicRepository = mockk(relaxed = true),
@@ -64,6 +65,9 @@ class SettingsViewModelTest {
         qobuzSource = mockk(relaxed = true),
         arcodCredentialStore = mockk(relaxed = true),
         qbdlxCredentialStore = qbdlxStore,
+        losslessAvailability = mockk<LosslessAvailability> {
+            every { qbdlxEnabled } returns flowOf(losslessConfigured)
+        },
         qobuzAccountConnector = mockk(relaxed = true),
         likePreferences = mockk(relaxed = true),
         trackDao = mockk(relaxed = true),
@@ -104,11 +108,20 @@ class SettingsViewModelTest {
         coVerify { qbdlxStore.setPastedToken(null) }
     }
 
-    @Test fun `qbdlxExpired reflects allDead after a paste`() = runTest {
-        coEvery { qbdlxStore.allDead() } returns true
-        val vm = newVm()
-        vm.onQbdlxTokenPaste("dead")
+    @Test fun `qbdlxExpired is true when no lossless path is configured`() = runTest {
+        val vm = newVm(losslessConfigured = false)
+        // WhileSubscribed: the flow only runs while collected.
+        val job = launch { vm.qbdlxExpired.collect {} }
         advanceUntilIdle()
         assertThat(vm.qbdlxExpired.value).isTrue()
+        job.cancel()
+    }
+
+    @Test fun `qbdlxExpired is false once any lossless path is configured`() = runTest {
+        val vm = newVm(losslessConfigured = true)
+        val job = launch { vm.qbdlxExpired.collect {} }
+        advanceUntilIdle()
+        assertThat(vm.qbdlxExpired.value).isFalse()
+        job.cancel()
     }
 }
