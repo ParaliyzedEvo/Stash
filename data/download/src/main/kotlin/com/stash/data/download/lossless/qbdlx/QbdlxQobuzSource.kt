@@ -3,6 +3,7 @@ package com.stash.data.download.lossless.qbdlx
 import android.util.Log
 import com.stash.data.download.lossless.AggregatorRateLimiter
 import com.stash.data.download.lossless.AudioFormat
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
@@ -15,59 +16,42 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 
 /**
- * [LosslessSource] backed by the Qobuz catalog via the DIRECT Qobuz API
- * (MD5-signed requests + a rotating `X-User-Auth-Token` pool), as opposed to
- * the squid.wtf proxy that [com.stash.data.download.lossless.qobuz.QobuzSource]
- * uses. Searches, scores candidates with the shared [QobuzCandidateMatcher],
- * and resolves the best match to a signed Hi-Res FLAC URL.
+ * [LosslessSource] backed by the Qobuz catalog through the DIRECT Qobuz API.
+ * Catalog search is tokenless (web app_id); the file URL comes from
+ * [QbdlxFileUrlRouter] (BYO login → custom endpoint → config relays);
+ * [LosslessAvailability] gates both enablement and every resolve so an
+ * unavailable file-URL path costs zero catalog HTTP.
  *
- * Token health is per-account (Qobuz bans accounts, not IPs), so this source
- * rotates across a pool ([QbdlxCredentialStore]) and persists dead tokens. The
- * [AggregatorRateLimiter] breaker is a per-source health signal — a dead token
- * (auth failure / `UserUnauthenticated` preview) must NOT trip it (it's a
- * credential problem, not a service-down problem), so those paths rotate
- * without reporting a failure.
- *
- * Mirrors [QobuzSource]'s resolve / resolveImmediate split: background
- * [resolve] respects the rate limiter + breaker; user-initiated
- * [resolveImmediate] (streaming) bypasses both but still reports outcomes so
- * the breaker state stays accurate.
+ * Keeps [com.stash.data.download.lossless.qobuz.QobuzSource]'s resolve /
+ * resolveImmediate split: background [resolve] respects the rate limiter +
+ * breaker; user-initiated [resolveImmediate] bypasses both but still reports
+ * outcomes so the breaker state stays accurate.
  */
 @Singleton
 class QbdlxQobuzSource @Inject constructor(
     private val apiClient: QbdlxApiClient,
-    private val credentialStore: QbdlxCredentialStore,
+    private val router: QbdlxFileUrlRouter,
+    private val availability: LosslessAvailability,
     private val rateLimiter: AggregatorRateLimiter,
     private val losslessPrefs: LosslessSourcePreferences,
 ) : LosslessSource {
 
     override val id: String = SOURCE_ID
-
     override val displayName: String = "Direct Qobuz"
 
     override suspend fun isEnabled(): Boolean =
-        !rateLimiter.stateOf(id).isCircuitBroken && !credentialStore.allDead()
+        !rateLimiter.stateOf(id).isCircuitBroken && availability.qbdlxEnabledNow()
 
-    /**
-     * Streaming-only gate: same pool check as [isEnabled] but WITHOUT the
-     * breaker — a user stream tap bypasses the breaker (see
-     * [resolveImmediate]), so gating enablement on it would be inconsistent.
-     */
-    suspend fun isEnabledForStreaming(): Boolean = !credentialStore.allDead()
+    /** Streaming gate: same predicate without the breaker (a user tap bypasses it). */
+    suspend fun isEnabledForStreaming(): Boolean = availability.qbdlxEnabledNow()
 
     override suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean): SourceResult? {
         if (!isEnabled()) return null
         return resolveInternal(query, bypassRateLimit = bypassRateLimit, requestedQuality = null)
     }
 
-    /**
-     * User-initiated immediate resolve for the streaming path. Skips the
-     * token bucket AND the breaker (mirrors [QobuzSource.resolveImmediate]).
-     */
-    suspend fun resolveImmediate(
-        query: TrackQuery,
-        requestedQuality: Int? = null,
-    ): SourceResult? {
+    /** User-initiated immediate resolve for the streaming path. Skips the token bucket AND the breaker. */
+    suspend fun resolveImmediate(query: TrackQuery, requestedQuality: Int? = null): SourceResult? {
         if (!isEnabledForStreaming()) return null
         return resolveInternal(query, bypassRateLimit = true, requestedQuality = requestedQuality)
     }
@@ -76,145 +60,41 @@ class QbdlxQobuzSource @Inject constructor(
 
     // ── Internals ───────────────────────────────────────────────────────
 
-    private suspend fun resolveInternal(
-        query: TrackQuery,
-        bypassRateLimit: Boolean,
-        requestedQuality: Int?,
-    ): SourceResult? {
-        val (track, conf, token) = search(query, bypassRateLimit) ?: return null
-        // Honor the user's quality tier on the download path (CD/Hi-Res/Max →
-        // qobuzCode 6/7/27), mirroring QobuzSource. The stream path passes an
-        // explicit requestedQuality (the streaming tier); only fall back to the
-        // download tier preference when none was given.
+    private suspend fun resolveInternal(query: TrackQuery, bypassRateLimit: Boolean, requestedQuality: Int?): SourceResult? {
+        // Availability FIRST: a cooled relay / dead login must cost zero catalog HTTP.
+        if (!availability.fileUrlAvailableNow()) {
+            Log.d(TAG, "no file-url path available right now — skipping '${query.title}'")
+            return null
+        }
+        val (track, conf) = search(query, bypassRateLimit) ?: return null
+        // Honor the user's quality tier on the download path (CD/Hi-Res/Max → qobuzCode 6/7/27); the
+        // stream path passes the streaming tier explicitly.
         val formatId = requestedQuality ?: losslessPrefs.qualityTierNow().qobuzCode
-        return resolveFile(track, conf, token, formatId, bypassRateLimit)
-    }
-
-    /**
-     * Search + match. Returns the best candidate, its confidence, and the live
-     * token that found it. Rotates on auth failure (dead token), bounded by the
-     * live pool (each tried token is recorded; a repeat or an exhausted pool
-     * ends the loop). Null when no token is live or nothing crosses threshold.
-     */
-    private suspend fun search(
-        query: TrackQuery,
-        bypassRateLimit: Boolean,
-    ): Triple<QbdlxTrack, Float, String>? {
-        var token = credentialStore.activeToken() ?: return null
-        val tried = mutableSetOf<String>()
-        var guard = 0
-        while (guard++ < MAX_TOKEN_ATTEMPTS) {
-            tried += token
-            try {
-                for (term in query.searchTerms()) {
-                    val candidates = callLimited(bypassRateLimit) {
-                        apiClient.search(term)
-                    } ?: continue // api error / 429 / acquire-denied (already reported)
-                    val match = candidates
-                        .map { it to confidence(query, it) }
-                        .filter { it.second >= QobuzCandidateMatcher.MIN_CONFIDENCE }
-                        .maxByOrNull { it.second }
-                    if (match != null) return Triple(match.first, match.second, token)
-                }
-                return null // searched all terms, no match (search itself succeeded)
-            } catch (e: QbdlxAuthException) {
-                // Dead token, not a health failure: mark + rotate, don't trip breaker.
-                Log.w(TAG, "search auth-failed (${e.status}); marking token dead + rotating")
-                credentialStore.markDead(token)
-                token = credentialStore.activeToken()?.takeUnless { it in tried } ?: return null
-            }
-        }
-        return null
-    }
-
-    /**
-     * Resolve [track] to a signed FLAC URL, rotating tokens on death/region
-     * lock. TokenDead → markDead + next live token (sticky-advance); RegionLocked →
-     * iterate [QbdlxCredentialStore.tokensForRegion] (bounded). Bounded by the
-     * tried-set + [MAX_TOKEN_ATTEMPTS].
-     */
-    private suspend fun resolveFile(
-        track: QbdlxTrack,
-        conf: Float,
-        startToken: String,
-        formatId: Int,
-        bypassRateLimit: Boolean,
-    ): SourceResult? {
-        val tried = mutableSetOf<String>()
-        var token: String? = startToken
-        var guard = 0
-        while (token != null && guard++ < MAX_TOKEN_ATTEMPTS) {
-            if (!tried.add(token)) {
-                token = credentialStore.activeToken()?.takeUnless { it in tried }
-                continue
-            }
-            val outcome = resolveOnce(track, token, formatId, bypassRateLimit)
-            when (outcome) {
-                is Outcome.Resolved -> {
-                    credentialStore.recordAlive(token)
-                    return build(track, conf, outcome.ok)
-                }
-                Outcome.Dead -> {
-                    credentialStore.markDead(token)
-                    token = credentialStore.activeToken()?.takeUnless { it in tried }
-                }
-                // RegionLocked: the token is fine, the track just isn't licensed
-                // for it — try region-matched tokens, don't mark anything dead.
-                Outcome.Region -> return resolveRegion(track, conf, tried, formatId, bypassRateLimit)
-                Outcome.Abort -> return null // rate-limit/api error, already reported
-            }
-        }
-        return null
-    }
-
-    private suspend fun resolveRegion(
-        track: QbdlxTrack,
-        conf: Float,
-        tried: MutableSet<String>,
-        formatId: Int,
-        bypassRateLimit: Boolean,
-    ): SourceResult? {
-        // TrackQuery has no country today → null just yields bounded live tokens.
-        for (rt in credentialStore.tokensForRegion(null)) {
-            if (!tried.add(rt)) continue
-            when (val outcome = resolveOnce(track, rt, formatId, bypassRateLimit)) {
-                is Outcome.Resolved -> {
-                    credentialStore.recordAlive(rt)
-                    return build(track, conf, outcome.ok)
-                }
-                Outcome.Dead -> credentialStore.markDead(rt)
-                Outcome.Region -> Unit // still locked on this token, try the next
-                Outcome.Abort -> return null
-            }
-        }
-        return null
-    }
-
-    /** One getFileUrl attempt, translating exceptions + classification into an [Outcome]. */
-    private suspend fun resolveOnce(
-        track: QbdlxTrack,
-        token: String,
-        formatId: Int,
-        bypassRateLimit: Boolean,
-    ): Outcome {
-        val result = try {
-            callLimited(bypassRateLimit) { apiClient.getFileUrl(track.id, formatId, token) }
-        } catch (e: QbdlxAuthException) {
-            // 401 on getFileUrl is the same signal as a UserUnauthenticated body.
-            return Outcome.Dead
-        } ?: return Outcome.Abort
+        val result = callLimited(bypassRateLimit) { router.getFileUrl(track.id, formatId) } ?: return null
         return when (result) {
-            is QbdlxResolveResult.Ok -> Outcome.Resolved(result)
-            QbdlxResolveResult.TokenDead -> Outcome.Dead
-            QbdlxResolveResult.RegionLocked -> Outcome.Region
+            is QbdlxResolveResult.Ok -> build(track, conf, result)
+            QbdlxResolveResult.TokenDead -> { Log.w(TAG, "connected account dead for '${query.title}'"); null }
+            QbdlxResolveResult.RegionLocked -> { Log.d(TAG, "not streamable/region-locked: '${query.title}'"); null }
         }
     }
 
-    private sealed interface Outcome {
-        data class Resolved(val ok: QbdlxResolveResult.Ok) : Outcome
-        object Dead : Outcome
-        object Region : Outcome
-        object Abort : Outcome
+    /** Tokenless catalog search + match. Null when nothing crosses threshold or the catalog rejects us. */
+    private suspend fun search(query: TrackQuery, bypassRateLimit: Boolean): Pair<QbdlxTrack, Float>? {
+        try {
+            for (term in query.searchTerms()) {
+                val candidates = callLimited(bypassRateLimit) { apiClient.search(term) } ?: continue
+                val match = candidates
+                    .map { it to confidence(query, it) }
+                    .filter { it.second >= QobuzCandidateMatcher.MIN_CONFIDENCE }
+                    .maxByOrNull { it.second }
+                if (match != null) return match
+            }
+            return null
+        } catch (e: QbdlxAuthException) {
+            // Catalog 401 after the client's own self-heal: nothing to rotate to.
+            Log.w(TAG, "catalog auth-failed (${e.status}) even under the web app_id")
+            return null
+        }
     }
 
     private fun build(track: QbdlxTrack, conf: Float, ok: QbdlxResolveResult.Ok): SourceResult {
@@ -248,9 +128,12 @@ class QbdlxQobuzSource @Inject constructor(
 
     /**
      * Wraps an API call with rate-limiter bookkeeping (mirrors
-     * [QobuzSource.callLimited]). Returns null on rate-limit denial / api
-     * error (already reported). [QbdlxAuthException] is RETHROWN — token
-     * rotation is the caller's concern and a dead token must not trip the
+     * [com.stash.data.download.lossless.qobuz.QobuzSource]'s `callLimited`).
+     * Returns null on rate-limit denial / api error (already reported) — and
+     * also when the block itself returns null (the router having no path), which
+     * is not a health failure. [QbdlxAuthException] is RETHROWN — only [search]
+     * can raise it now (the router converts a 401 into
+     * [QbdlxResolveResult.TokenDead]) and a dead credential must not trip the
      * breaker.
      */
     private suspend fun <T> callLimited(
@@ -261,7 +144,7 @@ class QbdlxQobuzSource @Inject constructor(
         return try {
             block().also { rateLimiter.reportSuccess(id) }
         } catch (e: QbdlxAuthException) {
-            throw e // rotation concern; do NOT report (not a health failure)
+            throw e // caller's concern; do NOT report (not a health failure)
         } catch (e: CancellationException) {
             throw e // never swallow cancellation as a failure
         } catch (e: QbdlxApiException) {
@@ -278,13 +161,5 @@ class QbdlxQobuzSource @Inject constructor(
     companion object {
         const val SOURCE_ID = "qbdlx_qobuz"
         private const val TAG = "QbdlxSource" // no "Qobuz" — keeps the source out of shared logcat diagnostics
-
-        /**
-         * Hard ceiling on token rotations per phase. The tried-set is the real
-         * terminator (a finite pool exhausts); this just bounds a misbehaving
-         * credential store from spinning the retry loop.
-         * ponytail: fixed cap; tried-set already guarantees termination.
-         */
-        private const val MAX_TOKEN_ATTEMPTS = 6
     }
 }

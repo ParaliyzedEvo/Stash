@@ -9,12 +9,13 @@ import javax.inject.Singleton
 
 /**
  * Stream-URL resolver backed by the DIRECT Qobuz API via [QbdlxQobuzSource]
- * (`qbdlx` — MD5-signed requests + a rotating `X-User-Auth-Token` pool).
+ * (`qbdlx` — tokenless catalog under the web app_id; file URL via the user's
+ * account, a custom endpoint, or the configured relays).
  * Counterpart to [QobuzStreamResolver]: same shape, same `etsp` expiry
  * parsing, different upstream operator.
  *
- * Delegates entirely to [QbdlxQobuzSource.resolveImmediate] — search/match/
- * token-rotation all live in the source; this only maps [TrackEntity] →
+ * Delegates entirely to [QbdlxQobuzSource.resolveImmediate] — search/match
+ * live in the source; this only maps [TrackEntity] →
  * [TrackQuery], requests the policy tier, and parses the CDN URL's `etsp`.
  *
  * No [com.stash.data.download.lossless.LosslessSourceHealthGate] gate here
@@ -26,8 +27,8 @@ import javax.inject.Singleton
  * ponytail: gate omitted because qbdlx never records degradation; nothing to gate on.
  *
  * Returns null when:
- *  - qbdlx is not currently enabled for streaming (toggle off, or every
- *    pooled token is dead — see [QbdlxQobuzSource.isEnabledForStreaming]).
+ *  - qbdlx is not currently enabled for streaming (no connected account,
+ *    custom endpoint or relay — see [QbdlxQobuzSource.isEnabledForStreaming]).
  *  - qbdlx has no confident match for the track.
  *  - The returned URL has no `etsp` parameter (un-refreshable URLs aren't
  *    safe to cache — see [KennyyStreamResolver] KDoc).
@@ -40,7 +41,7 @@ class QbdlxStreamResolver @Inject constructor(
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         Log.d(TAG, "resolve attempt id=${track.id} title='${track.title}'")
         if (!source.isEnabledForStreaming()) {
-            Log.d(TAG, "disabled id=${track.id} (toggle off or pool dead)")
+            Log.d(TAG, "disabled id=${track.id} (no lossless path configured)")
             return null
         }
 

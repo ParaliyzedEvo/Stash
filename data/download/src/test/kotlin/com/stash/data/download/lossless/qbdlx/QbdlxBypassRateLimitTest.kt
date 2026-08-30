@@ -2,6 +2,7 @@ package com.stash.data.download.lossless.qbdlx
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.AggregatorRateLimiter
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RateLimitState
 import com.stash.data.download.lossless.TrackQuery
@@ -19,11 +20,12 @@ import org.junit.Test
 class QbdlxBypassRateLimitTest {
 
     private val apiClient: QbdlxApiClient = mockk()
-    private val credentialStore: QbdlxCredentialStore = mockk(relaxUnitFun = true)
+    private val router: QbdlxFileUrlRouter = mockk()
+    private val availability: LosslessAvailability = mockk()
     private val rateLimiter: AggregatorRateLimiter = mockk(relaxUnitFun = true)
     private val prefs: LosslessSourcePreferences = mockk()
 
-    private fun source() = QbdlxQobuzSource(apiClient, credentialStore, rateLimiter, prefs)
+    private fun source() = QbdlxQobuzSource(apiClient, router, availability, rateLimiter, prefs)
     private val sid = QbdlxQobuzSource.SOURCE_ID
 
     private val notBroken =
@@ -41,15 +43,15 @@ class QbdlxBypassRateLimitTest {
 
     private fun ok() = QbdlxResolveResult.Ok("https://cdn/file?fmt=27", codec = "flac", bitDepth = 24, sampleRateHz = 96_000)
 
-    /** Enabled + pool live + breaker closed, but the limiter is EXHAUSTED (acquire → false). */
+    /** Enabled + a file-URL path available + breaker closed, but the limiter is EXHAUSTED (acquire → false). */
     private fun enabledButThrottled() {
         coEvery { prefs.qualityTierNow() } returns com.stash.data.download.lossless.LosslessQualityTier.MAX
-        coEvery { credentialStore.allDead() } returns false
+        coEvery { availability.qbdlxEnabledNow() } returns true
+        coEvery { availability.fileUrlAvailableNow() } returns true
         coEvery { rateLimiter.stateOf(sid) } returns notBroken
         coEvery { rateLimiter.acquire(sid) } returns false
-        coEvery { credentialStore.activeToken() } returns "tok1"
         coEvery { apiClient.search(any()) } returns listOf(candidate())
-        coEvery { apiClient.getFileUrl(42, 27, "tok1") } returns ok()
+        coEvery { router.getFileUrl(42, 27) } returns ok()
     }
 
     @Test
