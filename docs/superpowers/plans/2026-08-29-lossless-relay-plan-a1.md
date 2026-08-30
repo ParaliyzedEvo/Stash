@@ -190,7 +190,6 @@ class QbdlxApiClient @Inject constructor(
     private val signingResolver: QbdlxSigningResolver,
     private val webCreds: QobuzWebCredentialsClient,
 ) {
-    internal var appId: String = com.stash.data.download.BuildConfig.QBDLX_APP_ID   // BYO getFileUrl fallback only
     /**
      * The app_id catalog calls run under, with NO user token. Qobuz's web player
      * browses its catalog logged-out under this id (verified live 2026-08-29: all
@@ -253,15 +252,17 @@ Add the tokenless getter:
         }
     }
 ```
-and in the companion: `const val WEB_APP_ID = "712109809"`. Update the class-level comment on `appId` (it is now only the BYO `getFileUrl` fallback). Delete the now-stale comment about "catalog/search answers 401 on an app_id mismatch" — replace with one line pointing at `catalogAppId`.
+and in the companion: `const val WEB_APP_ID = "712109809"`. Delete the now-stale comment about "catalog/search answers 401 on an app_id mismatch" — replace with one line pointing at `catalogAppId`.
 
 **Keep the module compiling (Gradle compiles ALL main + test sources of `:data:download` before any `--tests` filter applies).** These are arity-only edits — the semantic clean-up of the consumers is Task 3:
 - `QbdlxQobuzSource.kt:115`: `apiClient.search(term, token)` → `apiClient.search(term)`. Leave the token loop otherwise untouched — Task 10 removes it; a 401 from the tokenless search still lands in the existing `catch (e: QbdlxAuthException)` and rotates harmlessly.
 - `HomeDiscoveryRepositoryImpl.kt:47,52,58,64`: keep `withToken { … }` for now but stop passing the token: `withToken { _ -> client.getFeaturedPlaylists(genreId) }`, `withToken { _ -> client.getFeaturedPlaylists(genreId, limit, offset) }`, `withToken { _ -> client.searchPlaylists(query, limit, offset) }`, `withToken { _ -> client.getFeaturedAlbums(type, genreId) }`.
 - `QobuzAlbumFetcherImpl.kt:25,51`: `apiClient.getAlbum(qobuzAlbumId)`, `apiClient.getPlaylist(playlistId)` (leave the `activeToken() ?: error(…)` lines; Task 3 deletes them).
 - `QobuzDiscographyProvider.kt:41,67`: `apiClient.searchArtists(artistName)`, `apiClient.getArtistAlbums(best.id)`.
-- Test stubs — drop the token argument only: `QbdlxQobuzSourceTest.kt` (~L69, 94, 110, 126-127, 146, 158, 182, 200, 213) and `QbdlxBypassRateLimitTest.kt:52` (`apiClient.search(any(), …)` → `apiClient.search(any())`); `HomeDiscoveryRepositoryImplTest.kt:24,39,41,45,47,51,57,58,69` (`getFeaturedAlbums(x, y, "tok", any())`/`(any(), any(), any(), any())` → `getFeaturedAlbums(x, y, any())`/`(any(), any(), any())`; `getFeaturedPlaylists(133, "tok", 30, 60)` → `(133, 30, 60)`); `QobuzAlbumFetcherImplTest.kt:31,61` (`getAlbum("id", "tok")` → `getAlbum("id")`, same for `getPlaylist`); `QobuzDiscographyProviderTest` stubs `searchArtists(name, "tok")`/`getArtistAlbums(id, "tok")` → drop the token (a `String` where `limit: Int` sits would not compile).
-- `QbdlxApiClient.kt:255`: `private companion object` → `internal companion object` (the tests reference `QbdlxApiClient.WEB_APP_ID`; the test source set already sees `internal` members like `appId`/`baseUrl`).
+- Test stubs — drop the token argument only: `QbdlxQobuzSourceTest.kt` (~L69, 94, 110, 146, 158, 182, 200, 213) and `QbdlxBypassRateLimitTest.kt:52` (`apiClient.search(any(), …)` → `apiClient.search(any())`); `HomeDiscoveryRepositoryImplTest.kt:24,39,41,45,47,51,69` (`getFeaturedAlbums(x, y, "tok", any())`/`(any(), any(), any(), any())` → `getFeaturedAlbums(x, y, any())`/`(any(), any(), any())`; `getFeaturedPlaylists(133, "tok", 30, 60)` → `(133, 30, 60)`); `QobuzAlbumFetcherImplTest.kt:31,61` (`getAlbum("id", "tok")` → `getAlbum("id")`, same for `getPlaylist`). `QobuzDiscographyProviderTest` needs NO edit — every stub there is already `any(), any()`, which still matches `(String, Int = default)`.
+- **Delete two token-rotation tests here, not later** — dropping the token makes their throwing stub and their returning stub the same `coEvery { … search(any()) }`, and MockK's last stub wins, so they cannot pass: `QbdlxQobuzSourceTest` `search auth failure marks token dead and rotates without tripping breaker` (~L124-133; Task 10 replaces it with `catalog 401 after self-heal is a plain miss`) and `HomeDiscoveryRepositoryImplTest` `401 rotates the token then retries once` (~L56-62).
+- `QbdlxApiClient.kt:255`: `private companion object` → `internal companion object` (the tests reference `QbdlxApiClient.WEB_APP_ID`; the test source set already sees `internal` members like `baseUrl`).
+- `QbdlxApiClient.appId` has no reader after this task (`getFileUrl` always passes `signing.appId`; `get()`'s fallback goes through `signingResolver`) — delete the field and its comment, and delete `it.appId = "798273057"` from both `QbdlxApiClientTest` constructions.
 
 - [ ] **Step 4: Run the test class — and confirm the module compiles**
 
@@ -286,7 +287,7 @@ git commit -m "feat(qbdlx): catalog calls go tokenless under the Qobuz web app_i
 
 - [ ] **Step 1: Update the tests to the tokenless contract**
 
-`HomeDiscoveryRepositoryImplTest`: construct `HomeDiscoveryRepositoryImpl(client)` (no store; delete the `store` field and the `coEvery { store.activeToken() }` line in `setup()`); every `client.getFeaturedAlbums(type, genre, "tok", any())` stub becomes `client.getFeaturedAlbums(type, genre, any())`; the `browsePlaylists passes offset+limit through and maps` stub `client.getFeaturedPlaylists(133, "tok", 30, 60)` becomes `client.getFeaturedPlaylists(133, 30, 60)`; delete the tests `no live token yields empty list` (~L63-66, stubs a collaborator that no longer exists) and `401 rotates the token then retries once`; add:
+`HomeDiscoveryRepositoryImplTest`: construct `HomeDiscoveryRepositoryImpl(client)` (no store; delete the `store` field and the `coEvery { store.activeToken() }` line in `setup()`); every `client.getFeaturedAlbums(type, genre, "tok", any())` stub becomes `client.getFeaturedAlbums(type, genre, any())`; the `browsePlaylists passes offset+limit through and maps` stub `client.getFeaturedPlaylists(133, "tok", 30, 60)` becomes `client.getFeaturedPlaylists(133, 30, 60)`; delete the test `no live token yields empty list` (~L63-66, stubs a collaborator that no longer exists; `401 rotates the token then retries once` was already deleted in Task 2); add:
 
 ```kotlin
 @Test fun `auth failure yields empty list and OK status (no token concept)`() = runTest {
@@ -1013,7 +1014,7 @@ In the "User-connected account" section:
 
 - [ ] **Step 4: Run the test class**
 
-Run: same as Step 2. Expected: PASS (existing 14 + 2 new). If `pasted token takes priority over pool` now fails because the pasted token was migrated into the login slot — that is the intended new behaviour; update that test's assertion to expect `activeToken()` == the pasted value via the login path (it still wins).
+Run: same as Step 2. Expected: PASS (existing 14 + 2 new). `pasted token takes priority over pool` still passes unchanged: `activeToken()` calls `loginCredential()` first, the migration turns the pasted string into the login token, and that is exactly the value the assertion expects. The other pasted-token tests call `allDead()`/`activeToken()` before pasting, so `loginLoaded` is already true and migration never re-runs for them.
 
 - [ ] **Step 5: Commit**
 
