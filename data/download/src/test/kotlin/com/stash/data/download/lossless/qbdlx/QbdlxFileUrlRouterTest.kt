@@ -51,6 +51,25 @@ class QbdlxFileUrlRouterTest {
         coVerify { store.markDead("byo") }
     }
 
+    @Test fun `a dead-cooled login skips BYO and falls to the relays`() = runTest {
+        coEvery { store.loginCredential() } returns login
+        coEvery { store.loginLive() } returns false
+        coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://a.example", 1))
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f", 27, 24, 96_000)
+        assertThat(router.getFileUrl(42, 27)).isInstanceOf(QbdlxResolveResult.Ok::class.java)
+        coVerify(exactly = 0) { api.getFileUrl(any(), any(), any()) }
+    }
+
+    @Test fun `a relay that serves a lossy format_id is RegionLocked`() = runTest {
+        noLogin(); coEvery { prefs.customLosslessEndpointNow() } returns null
+        configRelays.value = listOf(RelayEntry("https://a.example", 1))
+        every { relay.isCooled(any()) } returns false
+        coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f.mp3", 5, 0, 0)
+        assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.RegionLocked)
+    }
+
     @Test fun `custom endpoint outranks config relays`() = runTest {
         noLogin()
         coEvery { prefs.customLosslessEndpointNow() } returns "https://mine.example"
