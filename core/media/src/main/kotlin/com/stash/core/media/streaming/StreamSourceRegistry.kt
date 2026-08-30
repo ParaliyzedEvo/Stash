@@ -180,11 +180,12 @@ class StreamSourceRegistry @Inject constructor(
                 // so qbdlx can be exercised even when the proxies are healthy.
                 // Takes precedence over the other force toggles. Gated by
                 // allowYtDlp like arcod/amz so speculative background fill spends
-                // no pool-account quota (only foreground/next-up resolves hit it).
+                // none of that account's quota (only foreground/next-up resolves
+                // hit it).
                 if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
                 // Same guarantee as the force-arcod branch below: a force toggle
-                // is a TEST instrument, but the pref outlives the build — and the
-                // qbdlx pool can die under it (it did; #429's reporter had this
+                // is a TEST instrument, but the pref outlives the build — and
+                // qbdlx can die under it (it did; #429's reporter had this
                 // toggle on and got an infinite spinner on every track). Keep the
                 // lossy safety net so no stale preference means silence.
                 if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)

@@ -39,8 +39,8 @@ The following are **out of scope** (but please still mention them in a regular i
 Stash is designed so that you never have to trust the project maintainers with your accounts. Here's how credentials are handled:
 
 - **Storage**: All tokens and cookies are encrypted at rest using Google's [Tink](https://developers.google.com/tink) library with AES-256-GCM. The encryption key is generated per-install and stored in Android's hardware-backed Keystore.
-- **Transport**: Credentials are only sent to `open.spotify.com`, `clienttoken.spotify.com`, and `music.youtube.com` (the same hosts your web browser uses). TLS 1.2 or higher is enforced.
-- **No server**: Stash has no backend. There is no Stash account. There is no telemetry. There is no "cloud sync." Your credentials never leave your phone except when authenticating with the actual music service.
+- **Transport**: Each credential is only ever sent to the service it belongs to, over TLS 1.2 or higher. Spotify cookies go to `accounts.`/`open.`/`api-partner.`/`api.spotify.com` and `clienttoken.spotify.com`; YouTube cookies to `music.youtube.com` and `www.youtube.com`; a connected Qobuz account's token to `www.qobuz.com`; a connected ARCOD account's tokens to `api.arcod.xyz` and ARCOD's Supabase project; Last.fm and ListenBrainz tokens to their own APIs. No credential is ever sent anywhere else, and none is sent to a Stash-run host. The full host list is in the README under "What Stash talks to".
+- **No account server**: There is no Stash account, no telemetry, and no "cloud sync". Two hosts the project runs are contacted, and neither ever receives a credential: a Cloudflare Worker serving the public supporters list (fetch only, told nothing about you), and — in official release builds — a caching proxy in front of Last.fm's read API, which sees the artist and track names being looked up and nothing else.
 - **Open source**: Every line of code that touches credentials is in this repo and can be audited. See `core/auth/` and `data/spotify/` and `data/ytmusic/`.
 
 ## Response Timeline

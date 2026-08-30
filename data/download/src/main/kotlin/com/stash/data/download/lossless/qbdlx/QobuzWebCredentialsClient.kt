@@ -23,7 +23,7 @@ fun interface QobuzWebCredentials {
  * with the app_id it was minted under. Minting it ourselves via THIS pair means
  * the signing pair always matches the token, so the account keeps returning FLAC
  * even if Qobuz rotates the web creds (we just re-scrape). It's the self-healing
- * half — a bundled pair would eventually rot the same way the token pool does.
+ * half — a bundled pair would eventually rot the same way the token pool did.
  *
  * Best-effort: any failure returns null and the caller surfaces "couldn't reach
  * Qobuz, try again". [extractCreds] is pure so the parse is tested without a network.

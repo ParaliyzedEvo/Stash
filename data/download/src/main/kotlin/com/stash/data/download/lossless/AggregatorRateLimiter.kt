@@ -134,15 +134,15 @@ class AggregatorRateLimiter @Inject constructor() {
             circuitBreakDurationMs = 5 * 60_000L, // 5 min
         )
 
-        // qbdlx (direct www.qobuz.com on shared real accounts + rotating token
-        // pool). Slowest of the lossless sources: it hits Qobuz directly with
+        // qbdlx (direct www.qobuz.com on the user's own connected account, or a
+        // relay). Slowest of the lossless sources: it hits Qobuz directly with
         // signed requests on accounts whose abuse heuristics we must not trip,
         // so 1 token / 3s, burst 2. CRITICAL: a Qobuz 429 = "slow down", NOT a
         // health failure, so `rateLimitTripsBreaker = false` (a 429 applies the
         // 1-min backoff but must not trip the breaker). Genuine failures
         // (5xx/network via reportFailure) still cool the source for 10 min.
         configs["qbdlx_qobuz"] = Config(
-            tokensPerSecond = 1.0 / 3.0,   // slow — direct-to-Qobuz on shared real accounts
+            tokensPerSecond = 1.0 / 3.0,   // slow — direct-to-Qobuz on the user's own account
             burstCapacity = 2.0,
             backoff429Ms = 60_000L,
             circuitBreakAfter = 5,

@@ -81,9 +81,16 @@ class LosslessSourcePreferences @Inject constructor(
      * DataStore) so all lossless-related settings stay in one place
      * and the schema can evolve together.
      *
-     * Deduped and fail-closed, like [customLosslessEndpoint]: this feeds two of
-     * Home's banner combines, and a DataStore read error that terminated the
-     * chain would leave Home stuck in `isLoading` forever.
+     * Deduped, and caught so a read error cannot terminate the chain: this feeds
+     * two of Home's banner combines, and a DataStore IOException that killed the
+     * flow would leave Home stuck in `isLoading` forever.
+     *
+     * The catch fails OPEN — `emit(true)`, the same default the `map` documents
+     * above. Deliberate: failing to `false` would switch lossless off for a
+     * paying user on one transient IOException. (Contrast [customLosslessEndpoint]
+     * and the dismissal flags below, whose defaults happen to be the closed ones.)
+     * Note `catch {}` COMPLETES the flow: after an error these emit their fallback
+     * once and never re-emit for the process lifetime.
      */
     val enabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[enabledKey] ?: true
@@ -367,12 +374,18 @@ class LosslessSourcePreferences @Inject constructor(
          * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
          * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
          * 4. arcod — Qobuz Hi-Res FLAC via arcod.xyz (per-user Supabase session).
-         *    2–4 are currently PARKED (hosts down for us) — see
+         *    2–3 are currently PARKED (hosts down for us) — see
          *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
-         *    stay so re-enabling is a one-line change when they recover.
-         * 5. amz — Amazon Music FLAC via amz.squid.wtf. Ranked LAST: its stream
-         *    path decrypts the whole file client-side (tens of seconds), so it's
-         *    the slow, different-catalog fallback after every Qobuz source.
+         *    stay so re-enabling is a one-line change when they recover. 4 is
+         *    live, gated on the build carrying ARCOD's key and on the user
+         *    connecting an account.
+         * 5. amz — Amazon Music FLAC via amz.squid.wtf. Ranked LAST on paper:
+         *    its stream path decrypts the whole file client-side (tens of
+         *    seconds), so it sits behind every Qobuz source.
+         *    In practice it runs FIRST on a stock build with nothing connected:
+         *    2 and 3 are parked, 1 self-gates off without a connected account or
+         *    relay, and 4 is build-gated off — so amz is the only rung left, and
+         *    the only lossless source such a build ever contacts.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",

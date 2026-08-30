@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,9 +36,16 @@ class HomeDiscoveryPreference @Inject constructor(
 ) {
     private val enabledKey = booleanPreferencesKey("qobuz_discovery_enabled")
 
+    /**
+     * Deduped, and caught to the documented default: this feeds `HomeViewModel`'s
+     * and `SettingsViewModel`'s `combine` directly, and a DataStore IOException
+     * that terminated the chain would leave Home stuck in `isLoading` forever.
+     * Note `catch {}` COMPLETES the flow: after an error it emits `true` once and
+     * never re-emits for the process lifetime.
+     */
     val enabled: Flow<Boolean> = context.homeDiscoveryDataStore.data.map { prefs ->
         prefs[enabledKey] ?: true
-    }
+    }.distinctUntilChanged().catch { emit(true) }
 
     suspend fun setEnabled(value: Boolean) {
         context.homeDiscoveryDataStore.edit { it[enabledKey] = value }

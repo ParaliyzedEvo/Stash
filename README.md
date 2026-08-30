@@ -30,18 +30,21 @@ Stash has two modes. They decide what a sync actually does.
 
 ## Lossless
 
-**Stash ships no one else's credentials.** There's no bundled account, no shared token pool, nothing inside the APK that hands you access to a service you don't have. FLAC comes from a source *you* own, and you pick which:
+**Stash ships no one else's credentials.** There's no bundled account and no shared token pool — nothing in the APK that logs you into a service as somebody else. FLAC normally comes from a source *you* own, and you pick which:
 
 - **Your own Qobuz account** — connect it in Settings › Audio. Stash then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
 - **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field and Stash routes through it.
 - **A relay configured at runtime** — a build can be pointed at a signed config that lists relay endpoints. No relay hostname ships in the APK, and a plain source checkout has no config URL, so a Stash you build yourself has this path switched off entirely.
-- **[ARCOD](https://arcod.xyz)** — connect an ARCOD account as a second source. Needs a build carrying ARCOD's integration key, which is likewise not in the repo.
+- **[ARCOD](https://arcod.xyz)** — connect an ARCOD account as a second source. Enabled in the official release APK; a build you make yourself has no ARCOD key and skips it entirely.
+- **`amz.squid.wtf`** — a public proxy for Amazon Music lossless, run by someone else. This one needs nothing from you and is on by default: with no source of your own connected, it is the only lossless source Stash contacts. It is a download- and browse-path source only (never streaming playback), it works around the proxy's bot check, and it decrypts each file on your device. If you'd rather not use it, turn Lossless downloads off in Settings › Audio.
 
-Connect none of them and Stash still works — it just isn't lossless. Playback and downloads fall back to AAC or Opus, and Home tells you so instead of pretending.
+Connect none of them and Stash still works. Downloads will try `amz.squid.wtf` for FLAC and otherwise fall back to AAC or Opus; playback goes straight to the lossy fallback, and Home tells you so instead of pretending.
 
 These sources are somebody else's infrastructure, mostly run solo and mostly free. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
 
 ---
+
+## Features
 
 ### Library
 
@@ -60,7 +63,7 @@ These sources are somebody else's infrastructure, mostly run solo and mostly fre
 
 ### Privacy
 
-- No Stash servers. No accounts. No analytics. No third-party crash reporters.
+- No Stash account server, no login, no analytics, no third-party crash reporters. Two hosts the project runs are fetched from; neither ever sees a credential.
 - Cookies stored on-device, encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink)
 - Your Spotify and YouTube credentials are sent to Spotify and YouTube and nowhere else — no host in the list below ever sees them
 - GPL-3.0, every line of code is open source
@@ -69,25 +72,34 @@ These sources are somebody else's infrastructure, mostly run solo and mostly fre
 
 ## What Stash talks to
 
-There are no Stash servers, but Stash isn't a two-service app either. Everything a stock build can reach, and what for:
+Stash has no account server, but it isn't a two-service app either. Everything the official release APK can reach, and what for. A build you make yourself from a plain checkout reaches strictly less: it has no Last.fm keys or proxy, no ARCOD key, and no relay config.
 
-- **Spotify** (`accounts.`, `open.`, `api-partner.`, `clienttoken.spotify.com`) — login, library sync, likes and history mirroring
+- **Spotify** (`accounts.`, `open.`, `api-partner.`, `api.spotify.com`, `www.spotify.com`, `clienttoken.spotify.com`) — login, library sync, likes and history mirroring
+- **Google reCAPTCHA** (`www.google.com`, `www.gstatic.com`) — loaded by Spotify's own login page inside the sign-in window. Stash never calls them; Spotify's page does.
 - **YouTube + YouTube Music** (`music.youtube.com`, `www.youtube.com`, and Google's OAuth endpoints if you use the Google sign-in) — library sync, and the audio itself via yt-dlp
-- **yt-dlp** — updates itself from its own nightly release channel
-- **Qobuz** (`www.qobuz.com`, `open.qobuz.com`) — lossless, only once you connect your own account
+- **`m.youtube.com`** — the YouTube sign-in window
+- **`*.googlevideo.com`** — YouTube's audio CDN; the URL comes back in the player response, so no hostname for it ships in the app
+- **Google OAuth** (`oauth2.googleapis.com`) — only if you use the YouTube device-code sign-in
+- **yt-dlp** — updates itself from its own nightly release channel (GitHub)
+- **GitHub release downloads** (`github.com`, `objects.githubusercontent.com`) — the yt-dlp nightly binary itself, refreshed every 24 hours whether or not you use streaming
+- **Qobuz — catalog** (`www.qobuz.com`, and `open.qobuz.com` to refresh its public web-player key) — the New Releases, Top Albums and Qobuz Playlists rows on Home. No account needed and **on by default**; turn it off with the Qobuz toggle in Settings › Home, or hide those rows in Home layout.
+- **Qobuz — lossless** (`www.qobuz.com`) — FLAC streams and downloads, only once you connect your own account
 - **A lossless relay** — either the endpoint you configure yourself, or one from the signed runtime config described under [Lossless](#lossless). Neither is in the APK, and a plain checkout has neither.
 - **[ARCOD](https://arcod.xyz)** (`api.arcod.xyz`, plus ARCOD's own Supabase project for token refresh) — lossless, only once you connect an ARCOD account
-- **`amz.squid.wtf`** — an Amazon Music lossless fallback, download path only
+- **`arcod.xyz`** — ARCOD's older download-job API and the account-connect window, alongside `api.arcod.xyz`
+- **`amz.squid.wtf`** — a third-party proxy for Amazon Music lossless. On by default and needs nothing from you, so with no source of your own connected this is the only lossless host Stash contacts. Reached when a download resolves, and also while you browse — search, artist and album rows pre-resolve the track you're scrolling past. Stash works around the proxy's bot check and decrypts each file on your device. Never used for streaming playback.
 - **JioSaavn** (`www.jiosaavn.com`, `aac.saavncdn.com`) — the AAC 320 fallback when nothing lossless matched
 - **LRCLIB** (`lrclib.net`) — synced lyrics
-- **Last.fm** (`ws.audioscrobbler.com`, or a caching proxy the project runs, when a build is configured with one) — optional scrobbling, plus artist bios and images
+- **Last.fm** (`ws.audioscrobbler.com`) — optional scrobbling, plus artist bios and images. In official release builds the read lookups route through `stash-lastfm-proxy.rawnaldclark.workers.dev`, a caching Worker the project runs: it sees the artist or track being looked up, never your account.
 - **ListenBrainz** (`api.listenbrainz.org`) — optional scrobbling, only if you connect it
 - **MusicBrainz** (`musicbrainz.org`) — artist metadata
 - **GitHub** (`api.github.com`) — the update check
 - **`stash-tipjar.rawnaldclark.workers.dev`** — the public supporters list behind the Home supporter pill. Fetch only; it's told nothing about you.
-- **Album art CDNs** — `i.scdn.co`, `lh3.googleusercontent.com`, `i.ytimg.com`, and whichever CDN the source that matched a track uses
+- **Album art CDNs** — `i.scdn.co`, `lh3.googleusercontent.com`, `yt3.googleusercontent.com`, `yt3.ggpht.com`, `i.ytimg.com`, `static.qobuz.com`, `c.saavncdn.com`, and whichever CDN the source that matched a track uses
 
-Two more, `qobuz.squid.wtf` and `qobuz.kennyy.com.br`, still have code in the repo but are parked: the resolve chain skips them, so a stock build never calls them.
+Two of these run without being asked: Stash warms its connection to `music.youtube.com` at launch, and checks for a new yt-dlp once a day, whether or not you stream anything.
+
+Two more, `qobuz.squid.wtf` and `qobuz.kennyy.com.br`, still have code in the repo but are parked: the resolve chain skips them, so a release build never calls them.
 
 ---
 

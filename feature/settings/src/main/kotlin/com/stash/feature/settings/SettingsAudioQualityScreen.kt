@@ -147,7 +147,7 @@ fun SettingsAudioQualityScreen(
                     // it cannot fire while a row underneath says "ARCOD — connected".
                     subtitle = when {
                         !uiState.losslessEnabled ->
-                            "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
+                            "Studio-quality FLAC from your own Qobuz account. Files ~10× larger than MP3."
                         qbdlxExpired && !uiState.arcodConnected ->
                             "No lossless source configured — see below. Files ~10× larger than MP3."
                         else -> "FLAC routing active. Files ~10× larger than MP3."

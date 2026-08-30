@@ -942,7 +942,18 @@ private fun LosslessConnectBanner(
  * The copy deliberately does NOT say anything broke. The state that fires
  * this banner is usually the day-one one — lossless on by default, nothing
  * ever connected — which is the same state Settings › Audio reports as
- * "No lossless source configured". One state, one story.
+ * "No lossless source configured".
+ *
+ * The two surfaces agree on the states that matter, but they are NOT the same
+ * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
+ * (BYO login || custom endpoint || ARCOD) so a dead PUBLIC relay cannot hide
+ * the "connect your own account" offer — that outage is what the banner is
+ * for. Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
+ * endpoint || a config relay), which counts relays and excludes ARCOD, and its
+ * call sites re-add `&& !arcodConnected`. So they diverge on exactly one case:
+ * a user with nothing but a public config relay still gets this banner, and
+ * should — Home asks "is there anything of yours to connect?", Settings asks
+ * "is what you configured still a path?".
  */
 @Composable
 private fun LosslessOfflineBanner(
@@ -972,7 +983,7 @@ private fun LosslessOfflineBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Stash is playing YouTube audio instead. " +
+                    text = "Stash is falling back to lossy audio. " +
                         "Connect your own Qobuz account for FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
