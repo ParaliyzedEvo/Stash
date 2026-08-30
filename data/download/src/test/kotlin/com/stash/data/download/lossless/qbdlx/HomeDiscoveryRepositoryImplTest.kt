@@ -51,6 +51,7 @@ class HomeDiscoveryRepositoryImplTest {
 
     @Test fun `auth failure yields empty list and OK status (no token concept)`() = runTest {
         coEvery { client.getFeaturedAlbums(any(), any(), any()) } throws QbdlxAuthException(401)
+        assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.OK)
         assertThat(repo.newReleases(null)).isEmpty()
         assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.OK)
     }
@@ -59,6 +60,15 @@ class HomeDiscoveryRepositoryImplTest {
         coEvery { client.getFeaturedAlbums(any(), any(), any()) } throws java.io.IOException("offline")
         assertThat(repo.newReleases(null)).isEmpty()
         assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.NO_INTERNET)
+    }
+
+    @Test fun `an offline failure is not cached - the next call retries and recovers`() = runTest {
+        coEvery { client.getFeaturedAlbums(any(), any(), any()) } throws java.io.IOException("offline") andThen emptyList()
+        assertThat(repo.newReleases(null)).isEmpty()
+        assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.NO_INTERNET)
+        assertThat(repo.newReleases(null)).isEmpty() // retried, not served from cache
+        assertThat(repo.status.value).isEqualTo(com.stash.core.model.discovery.QobuzDiscoveryStatus.OK)
+        coVerify(exactly = 2) { client.getFeaturedAlbums("new-releases-full", null, any()) }
     }
 
     @Test fun `browsePlaylists passes offset+limit through and maps`() = runTest {

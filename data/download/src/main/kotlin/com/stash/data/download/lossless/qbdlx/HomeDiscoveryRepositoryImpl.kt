@@ -70,18 +70,23 @@ class HomeDiscoveryRepositoryImpl @Inject constructor(
         }
         return try {
             load().also { cache[key] = Entry(System.currentTimeMillis(), it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /** Fail-soft: IOException → NO_INTERNET; anything else → empty (status OK). */
+    /**
+     * Fail-soft: IOException → NO_INTERNET, rethrown so [cached] leaves it uncached;
+     * success → OK.
+     */
     private suspend fun <T> safely(call: suspend () -> List<T>): List<T> =
         try {
             call().also { _status.value = QobuzDiscoveryStatus.OK }
         } catch (e: java.io.IOException) {
             _status.value = QobuzDiscoveryStatus.NO_INTERNET
-            emptyList()
+            throw e
         }
 
     private fun QbdlxAlbumItem.toAlbumSummary() = AlbumSummary(
