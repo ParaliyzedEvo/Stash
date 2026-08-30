@@ -96,6 +96,20 @@ class QbdlxCredentialStoreTest {
     }
 
     /**
+     * Reachable when the account is disconnected or swapped mid-resolve: the router
+     * captured one token and the client re-reads another. Throwing beats returning an
+     * empty pair, which would spend a doomed round-trip and log a misleading auth 401.
+     */
+    @Test
+    fun `signing a token that is not the connected account throws instead of signing blank`() = runTest {
+        val s = store()
+        s.setUserCredential("myAccount", "712109809", "589be88e4538daea11f509d29e4a23b1", email = "me@x")
+        val thrown = runCatching { s.signingFor("some-other-token") }.exceptionOrNull()
+        assertThat(thrown).isInstanceOf(QbdlxAuthException::class.java)
+        assertThat((thrown as QbdlxAuthException).status).isEqualTo(401)
+    }
+
+    /**
      * The shipped pool cached its raw `token:country,…` string — plaintext
      * third-party Qobuz tokens — under `cached_pool`, and pinned one of them under
      * `pinned_token`. Deleting the pool's CODE left both on every upgrading

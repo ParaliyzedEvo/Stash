@@ -145,7 +145,10 @@ class QbdlxCredentialStore @Inject constructor(
                 runCatching {
                     context.qbdlxCredentialsDataStore.edit { it.remove(STALE_POOL_KEY); it.remove(STALE_PINNED_KEY) }
                 }
-                Log.i(TAG, "purged cached pool credentials left over from the shipped token pool")
+                    // Only claim the purge when it actually happened — logging success over a
+                    // failed edit would assert that plaintext tokens are gone while they remain.
+                    .onSuccess { Log.i(TAG, "purged cached pool credentials left over from the shipped token pool") }
+                    .onFailure { if (it is CancellationException) throw it }
             }
 
             val t = p?.get(loginTokenKey)
