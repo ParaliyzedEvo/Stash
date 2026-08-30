@@ -54,6 +54,14 @@ val qbdlxTokenPool = qbdlxProp("qbdlx.tokenPool", "QBDLX_TOKEN_POOL")
 // web/app bundles), but kept out of the repo like the primary — build-injected.
 val qbdlxAppSecrets = qbdlxProp("qbdlx.appSecrets", "QBDLX_APP_SECRETS")
 
+// ── Stash Lossless Relay runtime config ────────────────────────────────────
+// URL of the ECDSA-signed lossless.json (the app fetches `<url>` and `<url>.sig`)
+// and the base64 X.509 SPKI public key that verifies it. Both empty → the
+// fetcher is disabled and the app has no relay (BYO / custom endpoint only).
+// The APK never contains a relay hostname; the list lives behind this URL.
+val losslessConfigUrl = qbdlxProp("lossless.configUrl", "LOSSLESS_CONFIG_URL")
+val losslessConfigPubKey = qbdlxProp("lossless.configPubKey", "LOSSLESS_CONFIG_PUBKEY")
+
 // AES-256-GCM encrypt the pool at build time (mirrors the runtime
 // QbdlxPoolCipher — keep the two in sync). The fixture test guards the RUNTIME
 // decrypt only; nothing statically re-runs THIS encrypt, so a build-side-only
@@ -84,7 +92,6 @@ fun poolFp(plain: String): String =
 val qbdlxTokenPoolEnc = encryptPool(qbdlxTokenPool)
 val qbdlxPoolFp = poolFp(qbdlxTokenPool)
 
-val qbdlxConfigured = qbdlxAppId.isNotBlank() && qbdlxAppSecret.isNotBlank() && qbdlxTokenPool.isNotBlank()
 // What makes an ARCOD build usable is the /v2/stash integration key — the old
 // private stream base is no longer the gate (those routes were retired when the
 // operator moved Stash to /v2/stash). Keyless build → arcod can only 403, so the
@@ -108,7 +115,8 @@ android {
         buildConfigField("String", "QBDLX_APP_SECRETS", "\"$qbdlxAppSecrets\"")
         buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPoolEnc\"")
         buildConfigField("String", "QBDLX_POOL_FP", "\"$qbdlxPoolFp\"")
-        buildConfigField("Boolean", "QBDLX_CONFIGURED", "$qbdlxConfigured")
+        buildConfigField("String", "LOSSLESS_CONFIG_URL", "\"$losslessConfigUrl\"")
+        buildConfigField("String", "LOSSLESS_CONFIG_PUBKEY", "\"$losslessConfigPubKey\"")
         buildConfigField("Boolean", "ARCOD_CONFIGURED", "$arcodConfigured")
     }
 

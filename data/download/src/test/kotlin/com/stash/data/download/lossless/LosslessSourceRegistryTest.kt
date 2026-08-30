@@ -6,26 +6,22 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import com.stash.data.download.BuildConfig
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
  * ⚠️ Same build-config trap as `StreamSourceRegistryTest` in :core:media —
- * [LosslessSourceRegistry.resolve] drops `qbdlx_qobuz` unless
- * `BuildConfig.QBDLX_CONFIGURED`, and `arcod` unless `ARCOD_CONFIGURED`, both
- * fed from local.properties. A maintainer box has them; CI does not. So any
- * assertion that one of those two IS used passes locally and fails in CI.
+ * [LosslessSourceRegistry.resolve] drops `arcod` unless
+ * `BuildConfig.ARCOD_CONFIGURED`, fed from local.properties. A maintainer box
+ * has the key; CI does not. So any assertion that arcod IS used passes locally
+ * and fails in CI; guard it with the flag.
  *
- * That is exactly how this file broke: the sibling was fixed on 2026-07-25 and
- * nobody checked for other instances of the pattern, so the first CI run that
- * executed :data:download (after the gate was widened past :core:media) went
- * straight to red.
+ * qbdlx is no longer build-gated; it self-gates on LosslessAvailability, so the
+ * qbdlx expectations below are unconditional.
  *
- * Guard every "qbdlx/arcod was used" expectation with its flag. Assertions that
- * one of them is NOT used are safe unguarded — an unconfigured build filters it
- * out, which satisfies them for a different reason. Force-X toggles
- * deliberately bypass the filter (see the registry), so those tests are safe too.
+ * Assertions that a source is NOT used are safe unguarded — an unconfigured
+ * build filters it out, which satisfies them for a different reason. Force-X
+ * toggles deliberately bypass the filter (see the registry), so those tests are
+ * safe too.
  */
 class LosslessSourceRegistryTest {
 
@@ -107,10 +103,6 @@ class LosslessSourceRegistryTest {
 
     @Test
     fun `qbdlx is tried ahead of amz in the normal chain`() = runTest {
-        // Premise is "qbdlx serves it", impossible on a build without qbdlx
-        // creds — resolve() filters the source out entirely. Skip rather than
-        // fail. See the class KDoc.
-        assumeTrue("needs a qbdlx-configured build", BuildConfig.QBDLX_CONFIGURED)
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
