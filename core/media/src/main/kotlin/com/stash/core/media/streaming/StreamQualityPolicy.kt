@@ -23,10 +23,8 @@ class StreamQualityPolicy @Inject constructor(
      * Save Data returns the lossy floor, not the lowest lossless tier.
      *
      * This used to return [LosslessQualityTier.CD], which is still FLAC — roughly
-     * 28 MB for a four-minute track. That saved real bytes only on the amz path
-     * (where CD maps to 256 kbps AAC), and qbdlx is the only working lossless
-     * provider, so the setting effectively did nothing: a user on a metered plan
-     * enabling "Save Data" still pulled full lossless.
+     * 28 MB for a four-minute track — so the setting effectively did nothing: a
+     * user on a metered plan enabling "Save Data" still pulled full lossless.
      *
      * [LosslessQualityTier.DATA_SAVER] asks Qobuz for `format_id = 5` (MP3 320,
      * ~10 MB), verified live against the API. Tracks with no lossless match fall to

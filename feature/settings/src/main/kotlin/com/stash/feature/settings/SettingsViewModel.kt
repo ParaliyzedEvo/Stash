@@ -341,18 +341,6 @@ class SettingsViewModel @Inject constructor(
             initialValue = false,
         )
 
-    /**
-     * Test-only "Stream via amz" toggle. When on, BOTH the streaming and
-     * lossless-download registries route through the amz (Amazon Music)
-     * source only — used to exercise the amz source on demand.
-     */
-    val forceAmzOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
-        streamingPreference.forceAmzOnly.stateIn(
-            scope = viewModelScope,
-            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
-        )
-
     val forceQbdlxOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
         streamingPreference.forceQbdlxOnly.stateIn(
             scope = viewModelScope,
@@ -395,11 +383,6 @@ class SettingsViewModel @Inject constructor(
     /** Persist the crossfade duration (clamped on write). */
     fun onCrossfadeDurationChange(ms: Long) = viewModelScope.launch {
         crossfadePreference.setDurationMs(ms)
-    }
-
-    /** Persist the force-amz-only test toggle flip. */
-    fun setForceAmzOnly(v: Boolean) = viewModelScope.launch {
-        streamingPreference.setForceAmzOnly(v)
     }
 
     /** Internal mutable UI state that is combined with token-manager flows. */

@@ -249,7 +249,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 .distinctUntilChanged()
                 .collect { idx ->
                     // Quality layer: upgrade the immediate next-up via the full
-                    // chain (arcod/amz FLAC) so the common auto-advance never
+                    // chain (qbdlx/arcod FLAC) so the common auto-advance never
                     // falls back to the cold LazyResolvingDataSource path.
                     prefetchNextTrack()
                 }

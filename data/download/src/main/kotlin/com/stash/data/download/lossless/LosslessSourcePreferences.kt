@@ -370,7 +370,7 @@ class LosslessSourcePreferences @Inject constructor(
          *    (MD5 request signing with the user's own credentials, or a relay).
          *    Ranked FIRST: it's
          *    the fastest lossless path — plain Range-seekable FLAC, no proxy
-         *    operator and no client-side decryption (unlike amz).
+         *    operator and no client-side decryption.
          * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
          * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
          * 4. arcod — Qobuz Hi-Res FLAC via arcod.xyz (per-user Supabase session).
@@ -379,20 +379,17 @@ class LosslessSourcePreferences @Inject constructor(
          *    stay so re-enabling is a one-line change when they recover. 4 is
          *    live, gated on the build carrying ARCOD's key and on the user
          *    connecting an account.
-         * 5. amz — Amazon Music FLAC via amz.squid.wtf. Ranked LAST on paper:
-         *    its stream path decrypts the whole file client-side (tens of
-         *    seconds), so it sits behind every Qobuz source.
-         *    In practice it runs FIRST on a stock build with nothing connected:
-         *    2 and 3 are parked, 1 self-gates off without a connected account or
-         *    relay, and 4 is build-gated off — so amz is the only rung left, and
-         *    the only lossless source such a build ever contacts.
+         *
+         * Every rung is user-owned: 1 self-gates off without a connected account
+         * or relay, 2 and 3 are parked, and 4 is build-gated. A stock build with
+         * nothing connected therefore reaches NO lossless source at all and falls
+         * back to lossy — it never contacts a source of its own accord.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",
             "squid_qobuz",
             "kennyy_qobuz",
             "arcod",
-            "amz",
         )
 
         /**

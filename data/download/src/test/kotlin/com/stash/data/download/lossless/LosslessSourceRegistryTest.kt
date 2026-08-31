@@ -22,6 +22,10 @@ import org.junit.Test
  * build filters it out, which satisfies them for a different reason. Force-X
  * toggles deliberately bypass the filter (see the registry), so those tests are
  * safe too.
+ *
+ * Tests that need a source guaranteed to be consulted (neither parked nor
+ * build-gated) use a synthetic id (`"lucida"`) — the registry only special-cases
+ * the known parked/gated ids, so an unrecognised id always survives the filter.
  */
 class LosslessSourceRegistryTest {
 
@@ -32,7 +36,6 @@ class LosslessSourceRegistryTest {
             // Normal use: all force-only toggles off so the full chain is consulted.
             coEvery { isForceQbdlxOnly() } returns false
             coEvery { isForceArcodOnly() } returns false
-            coEvery { isForceAmzOnly() } returns false
         }
 
     private val query = TrackQuery(artist = "A", title = "B")
@@ -67,42 +70,23 @@ class LosslessSourceRegistryTest {
     fun `degraded source is skipped without resolving and the next source wins`() = runTest {
         acceptAnyQuality()
         // Use active (non-parked) sources so the normal chain reaches them.
-        val amzResult = flacResult("amz")
+        val lucidaResult = flacResult("lucida")
         val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
-        val amz = fakeSource("amz", amzResult)
+        val lucida = fakeSource("lucida", lucidaResult)
         coEvery { healthGate.isDegraded("qbdlx_qobuz") } returns true
-        coEvery { healthGate.isDegraded("amz") } returns false
+        coEvery { healthGate.isDegraded("lucida") } returns false
 
         // priorityOrder empty → registration order; ensure qbdlx is tried first.
-        val registry = registry(linkedSetOf(qbdlx, amz))
+        val registry = registry(linkedSetOf(qbdlx, lucida))
         val result = registry.resolve(query)
 
-        assertThat(result).isEqualTo(amzResult)
+        assertThat(result).isEqualTo(lucidaResult)
         coVerify(exactly = 0) { qbdlx.resolve(any()) } // skipped before resolving
-        coVerify(exactly = 1) { amz.resolve(any()) }
+        coVerify(exactly = 1) { lucida.resolve(any()) }
     }
 
     @Test
-    fun `default priority places amz last among lossless`() = runTest {
-        // DEFAULT_PRIORITY = [squid_qobuz, kennyy_qobuz, amz]; verify the
-        // registry honours it and amz lands after both Qobuz proxies.
-        coEvery { prefs.priorityOrderNow() } returns
-            LosslessSourcePreferences.DEFAULT_PRIORITY
-
-        val amz = fakeSource("amz", flacResult("amz"))
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
-
-        // Pass them in a deliberately scrambled set so ordering can only
-        // come from the priority list, not registration order.
-        val registry = registry(linkedSetOf(amz, kennyy, squid))
-
-        val orderedIds = registry.orderedSources().map { it.id }
-        assertThat(orderedIds).containsExactly("squid_qobuz", "kennyy_qobuz", "amz").inOrder()
-    }
-
-    @Test
-    fun `qbdlx is tried ahead of amz in the normal chain`() = runTest {
+    fun `qbdlx is tried ahead of lower-priority sources in the normal chain`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
@@ -110,39 +94,39 @@ class LosslessSourceRegistryTest {
 
         val qbdlxResult = flacResult("qbdlx_qobuz")
         // Both would match; qbdlx must win because it's ranked first (fast,
-        // no decrypt) — amz is never consulted.
+        // no proxy) — arcod (ranked last) is never consulted.
         val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
-        val amz = fakeSource("amz", flacResult("amz"))
+        val arcod = fakeSource("arcod", flacResult("arcod"))
 
-        val registry = registry(linkedSetOf(amz, qbdlx)) // scrambled on purpose
+        val registry = registry(linkedSetOf(arcod, qbdlx)) // scrambled on purpose
         val result = registry.resolve(query)
 
         assertThat(result).isEqualTo(qbdlxResult)
         coVerify(exactly = 1) { qbdlx.resolve(any()) }
-        coVerify(exactly = 0) { amz.resolve(any()) }
+        coVerify(exactly = 0) { arcod.resolve(any()) }
     }
 
     @Test
-    fun `parked qobuz proxies are skipped and amz serves the normal chain`() = runTest {
+    fun `parked qobuz proxies are skipped and an active source serves the normal chain`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
         coEvery { healthGate.isDegraded(any()) } returns false
 
-        val amzResult = flacResult("amz")
+        val lucidaResult = flacResult("lucida")
         // squid + kennyy are parked (PARKED_SOURCE_IDS): the normal resolve
         // chain must skip them entirely, never even calling resolve().
         val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
         val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val amz = fakeSource("amz", amzResult)
+        val lucida = fakeSource("lucida", lucidaResult)
 
-        val registry = registry(linkedSetOf(squid, kennyy, amz))
+        val registry = registry(linkedSetOf(squid, kennyy, lucida))
         val result = registry.resolve(query)
 
-        assertThat(result).isEqualTo(amzResult)
+        assertThat(result).isEqualTo(lucidaResult)
         coVerify(exactly = 0) { squid.resolve(any()) } // parked
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
-        coVerify(exactly = 1) { amz.resolve(any()) }
+        coVerify(exactly = 1) { lucida.resolve(any()) }
     }
 
     @Test
@@ -160,47 +144,22 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `arcod is ordered after the qobuz proxies and before amz under default priority`() = runTest {
+    fun `arcod is ordered last after the qobuz proxies under default priority`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
 
         // Register sources out of order to prove the priority list (not the
-        // Set's iteration order) drives ranking. Includes amz so the full
-        // default order [squid, kennyy, arcod, amz] is exercised.
+        // Set's iteration order) drives ranking.
         val arcod = fakeSource("arcod", flacResult("arcod"))
-        val amz = fakeSource("amz", flacResult("amz"))
         val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
         val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
 
-        val registry = registry(linkedSetOf(amz, arcod, kennyy, squid))
+        val registry = registry(linkedSetOf(arcod, kennyy, squid))
 
         val orderedIds = registry.orderedSources().map { it.id }
         assertThat(orderedIds)
-            .containsExactly("squid_qobuz", "kennyy_qobuz", "arcod", "amz").inOrder()
-        // amz is the final lossless source the chain tries before YouTube;
-        // arcod sits immediately before it.
-        assertThat(orderedIds.last()).isEqualTo("amz")
-    }
-
-    @Test
-    fun `force-amz-only resolves via amz and never consults the qobuz proxies`() = runTest {
-        coEvery { streamingPreference.isForceAmzOnly() } returns true
-        coEvery { prefs.priorityOrderNow() } returns
-            LosslessSourcePreferences.DEFAULT_PRIORITY
-        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
-        coEvery { healthGate.isDegraded(any()) } returns false
-
-        val amzResult = flacResult("amz")
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val amz = fakeSource("amz", amzResult)
-
-        val registry = registry(linkedSetOf(squid, kennyy, amz))
-        val result = registry.resolve(query)
-
-        assertThat(result).isEqualTo(amzResult)
-        coVerify(exactly = 1) { amz.resolve(any()) }
-        coVerify(exactly = 0) { squid.resolve(any()) }
-        coVerify(exactly = 0) { kennyy.resolve(any()) }
+            .containsExactly("squid_qobuz", "kennyy_qobuz", "arcod").inOrder()
+        // arcod is the final lossless source the chain tries before YouTube.
+        assertThat(orderedIds.last()).isEqualTo("arcod")
     }
 
     @Test

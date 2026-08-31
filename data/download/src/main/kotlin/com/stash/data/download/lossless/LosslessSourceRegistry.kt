@@ -37,16 +37,14 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
-        // Test toggles (outage drills). ARCOD-only takes precedence over
-        // amz-only: filter the chain to a single source so a forced download
-        // exercises that source even when the Qobuz proxies are healthy. A
-        // miss falls through to a normal null return (no quota to protect).
+        // Test toggles (outage drills): filter the chain to a single source so a
+        // forced download exercises that source even when the Qobuz proxies are
+        // healthy. A miss falls through to a normal null return (no quota to
+        // protect).
         val ordered = if (streamingPreference.isForceQbdlxOnly()) {
             orderedSources().filter { it.id == "qbdlx_qobuz" }
         } else if (streamingPreference.isForceArcodOnly()) {
             orderedSources().filter { it.id == "arcod" }
-        } else if (streamingPreference.isForceAmzOnly()) {
-            orderedSources().filter { it.id == "amz" }
         } else {
             // Normal chain skips (a) parked (host-down) sources and (b) ARCOD
             // on a build without the private integration key — a keyless ARCOD

@@ -121,19 +121,6 @@ class AggregatorRateLimiter @Inject constructor() {
             rateLimitTripsBreaker = false,
         )
 
-        // amz.squid.wtf (Amazon Music proxy) — structurally one paid account
-        // serving everyone, same DDoS-risk economics as the Qobuz proxies, so
-        // deliberately conservative: ~1 request / 2s, tiny burst. A 429 means
-        // real over-rate (it counts toward the breaker, default
-        // rateLimitTripsBreaker=true), so 5 failures cool the source for 5 min.
-        configs["amz"] = Config(
-            tokensPerSecond = 1.0 / 2.0,   // ~1 request / 2s
-            burstCapacity = 2.0,
-            backoff429Ms = 10_000L,        // 10s pause on 429
-            circuitBreakAfter = 5,
-            circuitBreakDurationMs = 5 * 60_000L, // 5 min
-        )
-
         // qbdlx (direct www.qobuz.com on the user's own connected account, or a
         // relay). Slowest of the lossless sources: it hits Qobuz directly with
         // signed requests on accounts whose abuse heuristics we must not trip,

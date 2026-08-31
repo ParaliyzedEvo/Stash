@@ -93,12 +93,6 @@ fun SettingsPlaybackScreen(
                     // always matches first, so arcod's path is otherwise unreachable
                     // on a build where qbdlx can serve.
                     //
-                    // "Stream via amz (test)" row: REMOVED 2026-07-31. amz is parked,
-                    // so the toggle routed every stream and download through a source
-                    // no longer in the chain — it could only break playback. The pref
-                    // and registry branch stay for re-enablement; the row does not
-                    // come back as a user-facing control.
-                    //
                     // Force-Qobuz is a DEVELOPER instrument and is debug-only below.
                     // Shipping one of these cost a real outage: a force toggle left on
                     // in a release install silently disabled lossless, and the hunt for

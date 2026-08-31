@@ -93,10 +93,10 @@ class StreamingPreferenceTest {
     // #429: a user enabled force-Qobuz back when it was a visible control, the
     // row later became debug-only, and the PREF outlived its UI — honored by
     // both registries on a release build, invisible, with no way to turn it
-    // off. Fourth incident of this class (force-YT release install, force-amz
-    // parked, force-arcod parked). The accessors now enforce the same contract
-    // the Settings UI declares: developer instruments exist only on debuggable
-    // builds. Force-YouTube is a USER-FACING recovery control and stays live.
+    // off. Fourth incident of this class (force-YT release install, force-arcod
+    // parked). The accessors now enforce the same contract the Settings UI
+    // declares: developer instruments exist only on debuggable builds.
+    // Force-YouTube is a USER-FACING recovery control and stays live.
 
     // The preferencesDataStore delegate is a per-process singleton, so writes
     // leak across tests unless undone (see the reset calls in the existing
@@ -106,18 +106,15 @@ class StreamingPreferenceTest {
         prefs.devInstrumentsEnabled = false
         prefs.setForceQbdlxOnly(true)
         prefs.setForceArcodOnly(true)
-        prefs.setForceAmzOnly(true)
 
         assertFalse(prefs.isForceQbdlxOnly())
         assertFalse(prefs.isForceArcodOnly())
-        assertFalse(prefs.isForceAmzOnly())
         // The raw flow still reports the stored value — the debug Settings UI
         // (hidden on release) must reflect reality, and nothing is deleted.
         assertTrue(prefs.forceQbdlxOnly.first())
 
         prefs.setForceQbdlxOnly(false)
         prefs.setForceArcodOnly(false)
-        prefs.setForceAmzOnly(false)
     }
 
     @Test fun devForceToggles_honoredOnDebuggableBuilds() = runTest {

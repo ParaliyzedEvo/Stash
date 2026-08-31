@@ -33,25 +33,14 @@ import com.stash.core.data.db.dao.TrackDao
  * track id when the item should use the refresh chain (YouTube http(s) stream
  * with a valid id), or null otherwise. The service owns that predicate because
  * the metadata-extra keys live there.
- *
- * **amz routing.** amz-origin http(s) items get a third branch: a progressive
- * [androidx.media3.datasource.okhttp.OkHttpDataSource] built on the shared,
- * interceptor-bearing [okhttp3.OkHttpClient]. amz playback is gated by an
- * `x-captcha-token` header (added by `AmzCaptchaInterceptor`); routing through
- * OkHttp makes that header ride every request — initial and each Range/seek —
- * and a stale-token response is transparently re-minted + retried by the
- * interceptor. No [RefreshingDataSource] (the auth is a header, not a URL) and
- * no disk cache (large FLAC, same as how lossless already streams). The amz
- * predicate [isAmzOrigin] is likewise owned by the service.
  */
 @OptIn(UnstableApi::class)
 class StashMediaSourceFactory(
     context: Context,
     private val streamingFactory: StreamingMediaSourceFactory,
     private val streamingTrackId: (MediaItem) -> Long?,
-    private val isAmzOrigin: (MediaItem) -> Boolean,
     private val isJioSaavnOrigin: (MediaItem) -> Boolean,
-    amzHttpClient: okhttp3.OkHttpClient,
+    httpClient: okhttp3.OkHttpClient,
     resolver: StreamSourceRegistry,
     urlCache: StreamUrlCache,
     trackDao: TrackDao,
@@ -59,16 +48,7 @@ class StashMediaSourceFactory(
 
     private val localFactory = DefaultMediaSourceFactory(context)
 
-    // amz: progressive HTTP via OkHttpDataSource on the interceptor-bearing
-    // shared client, so the x-captcha-token header rides every (range) request
-    // and a mid-stream stale-token response is transparently re-minted + retried
-    // by AmzCaptchaInterceptor. No RefreshingDataSource (amz auth is a header,
-    // not a URL — URL-refresh would be wrong), no disk cache (large FLAC, matches
-    // how lossless Kennyy/Squid already streams).
-    private val amzFactory = DefaultMediaSourceFactory(
-        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient),
-    )
-    internal val jioSaavnHttpClient = amzHttpClient.newBuilder()
+    internal val jioSaavnHttpClient = httpClient.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
@@ -91,10 +71,6 @@ class StashMediaSourceFactory(
                         .setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
                         .createDataSource()
                 },
-                amzDelegate = {
-                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(amzHttpClient)
-                        .createDataSource()
-                },
                 jioSaavnDelegate = {
                     androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
                         .createDataSource()
@@ -107,7 +83,6 @@ class StashMediaSourceFactory(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
-        amzFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
         return this
@@ -117,7 +92,6 @@ class StashMediaSourceFactory(
         policy: LoadErrorHandlingPolicy,
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
-        amzFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
         return this
@@ -133,13 +107,9 @@ class StashMediaSourceFactory(
             return lazyFactory.createMediaSource(mediaItem)
         }
         // Order matches existing precedence: YouTube-trackId refresh chain first,
-        // then amz authed-HTTP, then local/default. youtube and amz origins are
-        // mutually exclusive, so order between them is moot.
+        // then JioSaavn authed-HTTP, then local/default.
         streamingTrackId(mediaItem)?.let { trackId ->
             return streamingFactory.create(trackId).createMediaSource(mediaItem)
-        }
-        if (isAmzOrigin(mediaItem)) {
-            return amzFactory.createMediaSource(mediaItem)
         }
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)

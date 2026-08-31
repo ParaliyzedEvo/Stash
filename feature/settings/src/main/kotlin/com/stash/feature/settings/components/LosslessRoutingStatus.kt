@@ -36,14 +36,14 @@ import com.stash.data.download.lossless.RoutingState
  * ever true while a token pool shipped.
  *
  * Two rules this block has to follow, both learned the hard way:
- *  - **Say what is true right now.** It previously advertised "amz.squid.wtf fills
- *    in when a track isn't on Qobuz", which stayed on screen after amz was parked.
- *    A panel that explains where the user's audio comes from is worse than useless
- *    when it is wrong. Hence: no hardcoded rows here, ever.
+ *  - **Say what is true right now.** It previously advertised a second source that
+ *    "fills in when a track isn't on Qobuz", and that line stayed on screen long
+ *    after the source was gone. A panel that explains where the user's audio comes
+ *    from is worse than useless when it is wrong. Hence: no hardcoded rows here, ever.
  *  - **Name what the user recognises, not our plumbing.** "Qobuz" is a service they
- *    can look up; `amz.squid.wtf` is a proxy hostname that means nothing to them and
- *    exposes our supply chain. When a source is parked, its row goes — do not leave
- *    it greyed out as decoration.
+ *    can look up; a proxy hostname means nothing to them and exposes our supply
+ *    chain. When a source is retired, its row goes — do not leave it greyed out as
+ *    decoration.
  *
  * Visual: mono caps header, indented `↳` rows, small status dots.
  *

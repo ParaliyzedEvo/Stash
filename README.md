@@ -30,15 +30,14 @@ Stash has two modes. They decide what a sync actually does.
 
 ## Lossless
 
-**Stash ships no one else's credentials.** There's no bundled account and no shared token pool — nothing in the APK that logs you into a service as somebody else. FLAC normally comes from a source *you* own, and you pick which:
+**Stash ships no one else's credentials.** There's no bundled account and no shared token pool — nothing inside the APK that hands you access to a service you don't have. FLAC comes from a source *you* own, and you pick which:
 
 - **Your own Qobuz account** — connect it in Settings › Audio. Stash then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
 - **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field and Stash routes through it.
 - **A relay configured at runtime** — a build can be pointed at a signed config that lists relay endpoints. No relay hostname ships in the APK, and a plain source checkout has no config URL, so a Stash you build yourself has this path switched off entirely.
 - **[ARCOD](https://arcod.xyz)** — connect an ARCOD account as a second source. Enabled in the official release APK; a build you make yourself has no ARCOD key and skips it entirely.
-- **`amz.squid.wtf`** — a public proxy for Amazon Music lossless, run by someone else. This one needs nothing from you and is on by default: with no source of your own connected, it is the only lossless source Stash contacts. It is a download- and browse-path source only (never streaming playback), it works around the proxy's bot check, and it decrypts each file on your device. If you'd rather not use it, turn Lossless downloads off in Settings › Audio.
 
-Connect none of them and Stash still works. Downloads will try `amz.squid.wtf` for FLAC and otherwise fall back to AAC or Opus; playback goes straight to the lossy fallback, and Home tells you so instead of pretending.
+Connect none of them and Stash still works — it just isn't lossless. Playback and downloads fall back to AAC or Opus, and Home tells you so instead of pretending.
 
 These sources are somebody else's infrastructure, mostly run solo and mostly free. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
 
@@ -87,7 +86,6 @@ Stash has no account server, but it isn't a two-service app either. Everything t
 - **A lossless relay** — either the endpoint you configure yourself, or one from the signed runtime config described under [Lossless](#lossless). Neither is in the APK, and a plain checkout has neither.
 - **[ARCOD](https://arcod.xyz)** (`api.arcod.xyz`, plus ARCOD's own Supabase project for token refresh) — lossless, only once you connect an ARCOD account
 - **`arcod.xyz`** — ARCOD's older download-job API and the account-connect window, alongside `api.arcod.xyz`
-- **`amz.squid.wtf`** — a third-party proxy for Amazon Music lossless. On by default and needs nothing from you, so with no source of your own connected this is the only lossless host Stash contacts. Reached when a download resolves, and also while you browse — search, artist and album rows pre-resolve the track you're scrolling past. Stash works around the proxy's bot check and decrypts each file on your device. Never used for streaming playback.
 - **JioSaavn** (`www.jiosaavn.com`, `aac.saavncdn.com`) — the AAC 320 fallback when nothing lossless matched
 - **LRCLIB** (`lrclib.net`) — synced lyrics
 - **Last.fm** (`ws.audioscrobbler.com`) — optional scrobbling, plus artist bios and images. In official release builds the read lookups route through `stash-lastfm-proxy.rawnaldclark.workers.dev`, a caching Worker the project runs: it sees the artist or track being looked up, never your account.

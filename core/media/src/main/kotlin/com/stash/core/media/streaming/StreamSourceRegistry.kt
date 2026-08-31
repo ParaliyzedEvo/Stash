@@ -27,12 +27,7 @@ import javax.inject.Singleton
  *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
  *      operator and no client-side decrypt, so it's the fastest path.
  *      Foreground-only (allowYtDlp) since it spends that account's quota.
- *   2. [AmzStreamResolver]     — `amz.squid.wtf`, Amazon Music lossless FLAC.
- *      Consulted when qbdlx has no confident match, so an Amazon-only track
- *      still streams lossless before dropping to lossy YouTube. Its resolver
- *      decrypts the whole file client-side (slow), so it sits LAST among the
- *      lossless sources and is foreground-only too.
- *   3. [ArcodStreamResolver]   — ARCOD, an authenticated per-user-account
+ *   2. [ArcodStreamResolver]   — ARCOD, an authenticated per-user-account
  *      lossless fallback. NOT parked, but conditional: [resolve] only adds it
  *      when the build bundles the private stream base
  *      (`BuildConfig.ARCOD_CONFIGURED`), so an unconfigured build skips it
@@ -41,7 +36,7 @@ import javax.inject.Singleton
  *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
  *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
  *   [QobuzStreamResolver] (`qobuz.squid.wtf`).
- *   4. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   3. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -60,12 +55,8 @@ import javax.inject.Singleton
  * Test toggles (off for normal use):
  *  - [StreamingPreference.isForceArcodOnly]: [resolve] routes through arcod
  *    ONLY — kennyy/squid/youtube removed from play so a track either streams
- *    via arcod or fails visibly. Takes precedence over force-amz and
- *    force-YouTube. Used to exercise the arcod source on demand.
- *  - [StreamingPreference.isForceAmzOnly]: [resolve] routes through amz
- *    ONLY — kennyy/squid/youtube removed from play so a track either streams
- *    via amz or fails visibly. Takes precedence over force-YouTube. Used to
- *    exercise the amz source on demand.
+ *    via arcod or fails visibly. Takes precedence over force-YouTube. Used to
+ *    exercise the arcod source on demand.
  *  - [StreamingPreference.isForceYouTubeFallback]: [resolve] skips Kennyy
  *    and Squid entirely and routes every track through the YouTube resolver
  *    only — reproduces the lossless-down fallback path on demand.
@@ -75,7 +66,6 @@ class StreamSourceRegistry @Inject constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
     private val arcod: ArcodStreamResolver,
-    private val amz: AmzStreamResolver,
     private val qbdlx: QbdlxStreamResolver,
     private val jiosaavn: JioSaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
@@ -179,7 +169,7 @@ class StreamSourceRegistry @Inject constructor(
                 // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
                 // so qbdlx can be exercised even when the proxies are healthy.
                 // Takes precedence over the other force toggles. Gated by
-                // allowYtDlp like arcod/amz so speculative background fill spends
+                // allowYtDlp like arcod so speculative background fill spends
                 // none of that account's quota (only foreground/next-up resolves
                 // hit it).
                 if (allowYtDlp) add("qbdlx" to qbdlx::resolve)
@@ -193,8 +183,8 @@ class StreamSourceRegistry @Inject constructor(
             } else if (streamingPreference.isForceArcodOnly()) {
                 // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
                 // ARCOD path can be exercised even when the Qobuz proxies are
-                // healthy. Takes precedence over forceAmzOnly and
-                // forceYouTubeFallback. Still gated by allowYtDlp so the
+                // healthy. Takes precedence over forceYouTubeFallback.
+                // Still gated by allowYtDlp so the
                 // speculative background fill resolves NOTHING (matching
                 // forceYt) — without this, flipping the toggle and tapping a
                 // playlist would spend a search call + the user's arcod account
@@ -206,7 +196,7 @@ class StreamSourceRegistry @Inject constructor(
                 // every track resolved through a dead source with no fallback and
                 // no UI left to switch it off — silence, permanently. arcod is
                 // live again now, but the guarantee has to survive the NEXT time a
-                // source is parked, which is the amz failure described below.
+                // source is parked.
                 //
                 // Keeping the fallback costs the toggle a little of its "fails
                 // visibly" sharpness and buys back the guarantee that no
@@ -214,19 +204,12 @@ class StreamSourceRegistry @Inject constructor(
                 // That trade is not close.
                 if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-                // NOTE: the force-amz branch is deliberately gone (2026-07-31).
-                //
-                // amz is parked, and its Settings toggle was removed with it — but a
-                // user who had already switched it on still has `force_amz_only = true`
-                // sitting in DataStore, with no UI left to switch it off. Had this
-                // branch survived, those users would route every track through a
-                // parked source and get silence, permanently, with no way out.
-                //
-                // Parking a source therefore has to mean parking its force branch in
-                // the same change. This is the exact failure shape that took a full
-                // debugging session when force-YouTube was left enabled in a release
-                // install: a stale preference quietly disabling lossless. The pref key
-                // and StreamingPreference accessor stay for re-enablement.
+                // NOTE: retiring a source has to mean retiring its force branch in
+                // the same change, or a user who set that toggle keeps a stale pref
+                // in DataStore with no UI left to clear it — routing every track
+                // through a dead source, silence permanently. This is the exact
+                // failure shape that took a full debugging session when
+                // force-YouTube was left enabled in a release install.
             } else if (streamingPreference.isForceYouTubeFallback()) {
                 // Test toggle: skip the lossless sources, forcing the
                 // YouTube fallback path. Still gated by allowYouTube so the
@@ -249,23 +232,6 @@ class StreamSourceRegistry @Inject constructor(
                 if (allowYtDlp) {
                     add("qbdlx" to qbdlx::resolve)
                 }
-                // PARKED 2026-07-30: amz and arcod are no longer working lossless
-                // providers — qbdlx is the only one. Leaving them in the chain cost
-                // every YouTube-fallback play a wait for two sources that cannot
-                // succeed. Measured on-device that day:
-                //
-                //   57.772  chain [qbdlx,amz,arcod,youtube]
-                //   58.148  qbdlx 403                     (0.4s)
-                //   59.391  amz attempted                 (1.2s)
-                //   02.991  youtube served                (arcod 3.6s)
-                //
-                // ~4.8s of the 5.2s resolve spent on dead sources, on top of the
-                // yt-dlp extraction itself. Removing them is a larger win than the
-                // extraction fix that preceded it.
-                //
-                // amz stays parked (client-side decrypt, no working operator).
-                // add("amz" to amz::resolve)
-                //
                 // arcod UNPARKED 2026-08-01: the operator rotated the integration
                 // key and moved us to /v2/stash — verified live (stream returns
                 // audio/flac, fLaC-magic byte-checked). Sits AFTER qbdlx (qbdlx is

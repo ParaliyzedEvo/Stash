@@ -40,10 +40,9 @@ class StreamQualityPolicyTest {
     /**
      * Save Data must reach the LOSSY floor, not merely the lowest lossless tier.
      *
-     * These asserted CD before, which is still FLAC (~28 MB / 4 min). That only
-     * saved bytes on the amz path where CD maps to 256 kbps AAC — and qbdlx is the
-     * only working lossless provider, so the setting saved a user on a metered plan
-     * essentially nothing. Qobuz format_id 5 (MP3 320, ~10 MB) is the real floor,
+     * These asserted CD before, which is still FLAC (~28 MB / 4 min), so the
+     * setting saved a user on a metered plan essentially nothing. Every lossless
+     * provider serves FLAC at CD. Qobuz format_id 5 (MP3 320, ~10 MB) is the real floor,
      * verified live against the API.
      */
     @Test fun `save data drops to the lossy floor on wifi`() = runTest {
