@@ -36,11 +36,11 @@ class QbdlxFileUrlRouterTest {
         coVerify { store.recordAlive("byo") }
     }
 
-    @Test fun `BYO TokenDead marks the login dead and does NOT fall through to the relay`() = runTest {
+    @Test fun `BYO TokenDead rejects the login and does NOT fall through to the relay`() = runTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
         coEvery { api.getFileUrl(42, 27, "byo") } returns QbdlxResolveResult.TokenDead
         assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.TokenDead)
-        coVerify { store.markDead("byo") }
+        coVerify { store.rejectLogin("byo") }
         coVerify(exactly = 0) { relay.mint(any(), any(), any()) }
     }
 
@@ -48,8 +48,12 @@ class QbdlxFileUrlRouterTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
         coEvery { api.getFileUrl(42, 27, "byo") } throws QbdlxAuthException(401)
         assertThat(router.getFileUrl(42, 27)).isEqualTo(QbdlxResolveResult.TokenDead)
-        coVerify { store.markDead("byo") }
+        coVerify { store.rejectLogin("byo") }
     }
+
+    // What rejectLogin then DOES with the token — terminal for a migrated paste,
+    // a cooldown for a real account — is the store's decision, covered against a
+    // real DataStore in QbdlxCredentialStoreTest. The router's job is only to call it.
 
     @Test fun `BYO network failure falls through to the relays without marking dead`() = runTest {
         coEvery { store.loginCredential() } returns login; coEvery { store.loginLive() } returns true
@@ -59,7 +63,7 @@ class QbdlxFileUrlRouterTest {
         every { relay.isCooled(any()) } returns false
         coEvery { relay.mint("https://a.example", 42, 27) } returns RelayMint.Ok("https://cdn/f", 27, 24, 96_000)
         assertThat(router.getFileUrl(42, 27)).isInstanceOf(QbdlxResolveResult.Ok::class.java)
-        coVerify(exactly = 0) { store.markDead(any()) }
+        coVerify(exactly = 0) { store.rejectLogin(any()) }
         coVerify(exactly = 0) { store.recordAlive(any()) }
     }
 
@@ -68,7 +72,7 @@ class QbdlxFileUrlRouterTest {
         coEvery { api.getFileUrl(42, 27, "byo") } throws QbdlxApiException(503)
         coEvery { prefs.customLosslessEndpointNow() } returns null
         assertThat(router.getFileUrl(42, 27)).isNull()
-        coVerify(exactly = 0) { store.markDead(any()) }
+        coVerify(exactly = 0) { store.rejectLogin(any()) }
     }
 
     @Test fun `a dead-cooled login skips BYO and falls to the relays`() = runTest {

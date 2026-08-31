@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -73,21 +75,31 @@ class HomeSectionsPreference @Inject constructor(
      */
     val showLikedOnHome: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
         prefs[showLikedKey] ?: false
-    }
+    }.distinctUntilChanged().catch { emit(false) }
 
     val order: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         resolveHomeSectionOrder(prefs[orderKey].toKeys())
-    }
+    }.distinctUntilChanged().catch { emit(resolveHomeSectionOrder(emptyList())) }
 
     val hidden: Flow<Set<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
-    }
+    }.distinctUntilChanged().catch { emit(emptySet()) }
 
-    /** What Home actually renders: [order] minus [hidden]. */
+    /**
+     * What Home actually renders: [order] minus [hidden].
+     *
+     * All four flows here are deduped (the store re-emits on every unrelated
+     * write) and catch to the same default the `map` already uses: they feed
+     * `HomeViewModel`'s and `SettingsViewModel`'s `combine` directly, and a
+     * DataStore IOException that terminated the chain would leave those screens
+     * stuck in `isLoading` forever. Note `catch {}` COMPLETES the flow: after an
+     * error each emits its default once and never re-emits for the process
+     * lifetime.
+     */
     val visibleSections: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         val hiddenSet = prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
         resolveHomeSectionOrder(prefs[orderKey].toKeys()).filter { it !in hiddenSet }
-    }
+    }.distinctUntilChanged().catch { emit(resolveHomeSectionOrder(emptyList())) }
 
     suspend fun setOrder(order: List<HomeSection>) {
         context.homeSectionsDataStore.edit { prefs ->

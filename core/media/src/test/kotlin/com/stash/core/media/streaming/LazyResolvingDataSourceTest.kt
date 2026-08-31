@@ -34,7 +34,6 @@ class LazyResolvingDataSourceTest {
     private val urlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val trackDao: TrackDao = mockk()
     private val httpSource: DataSource = mockk(relaxed = true)
-    private val amzSource: DataSource = mockk(relaxed = true)
     private val jioSaavnSource: DataSource = mockk(relaxed = true)
 
     private fun source(deadlineMs: Long = 45_000L) = LazyResolvingDataSource(
@@ -42,7 +41,6 @@ class LazyResolvingDataSourceTest {
         urlCache = urlCache,
         trackDao = trackDao,
         httpDelegate = { httpSource },
-        amzDelegate = { amzSource },
         jioSaavnDelegate = { jioSaavnSource },
         resolveDeadlineMs = deadlineMs,
     )
@@ -79,17 +77,6 @@ class LazyResolvingDataSourceTest {
 
         verify { urlCache.put(42L, any()) }
         verify { httpSource.open(any()) }
-    }
-
-    @Test
-    fun `amz origin routes to the amz delegate not the http delegate`() {
-        every { urlCache.get(7L) } returns stream("https://amz/z.flac", "amz")
-        every { amzSource.open(any()) } returns 100L
-
-        source().open(placeholderSpec(7L))
-
-        verify(exactly = 1) { amzSource.open(any()) }
-        verify(exactly = 0) { httpSource.open(any()) }
     }
 
     @Test

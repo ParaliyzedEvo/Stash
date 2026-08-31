@@ -185,8 +185,8 @@ class TrackActionsDelegate @Inject constructor(
             if (!isActivePreviewRequest(generation, videoId)) return@launch
             if (streamingEnabled) {
                 // Drive the row-level spinner while the stream resolves. The
-                // resolve can take seconds (worst for amz, which fetch+decrypts
-                // a whole FLAC), so without this the row sits silent and looks
+                // resolve can take seconds (a cold yt-dlp extraction is the
+                // worst case), so without this the row sits silent and looks
                 // broken. Mirrors the preview path's _previewLoadingId handling.
                 // Idempotency guard: a second tap on the same in-flight row is a
                 // no-op (matches the preview path).

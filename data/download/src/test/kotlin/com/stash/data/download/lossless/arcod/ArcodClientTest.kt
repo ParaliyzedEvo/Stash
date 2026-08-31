@@ -41,6 +41,11 @@ class ArcodClientTest {
             streamBaseUrl = server.url("/strm").toString().trimEnd('/')
             // The /v2/stash routes issued to Stash: search + stream both live here.
             stashBaseUrl = server.url("/v2/stash").toString().trimEnd('/')
+            // CI builds this module with an EMPTY BuildConfig.ARCOD_STASH_KEY, which
+            // makes `isConfigured` false and every streamUrl call return null before
+            // it reaches the server. Set the seam so these tests exercise real code
+            // in CI instead of passing (or failing) vacuously.
+            stashKey = TEST_STASH_KEY
         }
     }
 
@@ -150,12 +155,9 @@ class ArcodClientTest {
     @Test fun `stash requests carry the X-Stash-Key header when configured`() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody(SEARCH_BODY))
         client.search("Ja Rule Murderers")
-        val sent = server.takeRequest().getHeader("X-Stash-Key")
-        if (com.stash.data.download.BuildConfig.ARCOD_STASH_KEY.isNotBlank()) {
-            assertEquals(com.stash.data.download.BuildConfig.ARCOD_STASH_KEY, sent)
-        } else {
-            assertNull(sent)
-        }
+        // Asserted unconditionally now that `stashKey` is a seam: the old
+        // BuildConfig branch made this test assert NOTHING in CI.
+        assertEquals(TEST_STASH_KEY, server.takeRequest().getHeader("X-Stash-Key"))
     }
 
     @Test fun `streamUrl parses flat json url`() = runTest {
@@ -215,6 +217,11 @@ class ArcodClientTest {
     }
 
     private companion object {
+        const val TEST_STASH_KEY = "test-stash-key"
+        const val QUOTA_BODY = """{"error":"Daily quota reached","resetAt":"midnight UTC"}"""
+        /** Arbitrary fixed instant, mid-UTC-day so the midnight boundary is unambiguous. */
+        const val FIXED_NOW = 1_788_200_000_000L
+
         val SAMPLE_REQUEST = ArcodJobRequest(
             albumId = "0093624804567",
             trackId = "8767428",
@@ -253,4 +260,60 @@ class ArcodClientTest {
             {"id":"abc","status":"completed","progress":100,"fileName":"x.flac","fileSize":16416910,"downloadUrl":"https://dl.arcod.xyz/downloads/abc/x.flac"}
         """.trimIndent()
     }
+    // --- daily-quota gate -------------------------------------------------
+    //
+    // Driven through `search` deliberately: `streamUrl` self-gates on
+    // BuildConfig.ARCOD_STASH_KEY, which is EMPTY in CI unit tests, so a gate
+    // test written against it would pass vacuously without ever hitting the net.
+
+    @Test fun `daily quota 429 blocks later calls without another request`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setBody(QUOTA_BODY))
+        client.nowMs = { FIXED_NOW }
+
+        try {
+            client.search("first")
+            fail("expected ArcodRateLimitedException")
+        } catch (e: ArcodRateLimitedException) {
+            // expected
+        }
+        assertEquals(1, server.requestCount)
+
+        // Second call must throw from the gate, spending NO request. This is the
+        // whole point: a spent quota used to cost a guaranteed-429 round trip on
+        // every single tap until midnight.
+        try {
+            client.search("second")
+            fail("expected ArcodRateLimitedException from the gate")
+        } catch (e: ArcodRateLimitedException) {
+            // expected
+        }
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `quota gate reopens after the next UTC midnight`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setBody(QUOTA_BODY))
+        var now = FIXED_NOW
+        client.nowMs = { now }
+        try { client.search("first") } catch (e: ArcodRateLimitedException) { /* expected */ }
+
+        // One ms past the next UTC midnight: the gate is open and the call goes out.
+        now = (FIXED_NOW / 86_400_000L + 1) * 86_400_000L + 1
+        server.enqueue(MockResponse().setResponseCode(200).setBody(SEARCH_BODY))
+        assertTrue(client.search("after midnight").isNotEmpty())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun `non-quota 429 backs off only briefly`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":"slow down"}"""))
+        var now = FIXED_NOW
+        client.nowMs = { now }
+        try { client.search("first") } catch (e: ArcodRateLimitedException) { /* expected */ }
+
+        // A burst throttle must NOT cost the rest of the day.
+        now = FIXED_NOW + 61_000L
+        server.enqueue(MockResponse().setResponseCode(200).setBody(SEARCH_BODY))
+        assertTrue(client.search("after cooldown").isNotEmpty())
+        assertEquals(2, server.requestCount)
+    }
+
 }

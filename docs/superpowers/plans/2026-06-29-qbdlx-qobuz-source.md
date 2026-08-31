@@ -76,9 +76,9 @@ buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPool\"")
 - [ ] **Step 3:** Add to `local.properties` (the build input; the FR token is the one verified value, user appends the rest later):
 
 ```
-qbdlx.appId=798273057
-qbdlx.appSecret=abb21364945c0583309667d13ca3d93a
-qbdlx.tokenPool=jM-6F2QcDpfG7fj1RRPq7bAa7tBVCykt__5HD1K25v2yFq0c9_-SmXEhG-74moNpN5YQTmFFyyMq2F70h1G17A:FR
+qbdlx.appId=<qobuz-app-id>
+qbdlx.appSecret=<qobuz-app-secret>
+qbdlx.tokenPool=<user-auth-token>:FR
 ```
 
 - [ ] **Step 4:** Build the module to generate BuildConfig:

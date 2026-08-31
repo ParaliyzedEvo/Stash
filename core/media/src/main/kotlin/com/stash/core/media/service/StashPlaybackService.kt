@@ -97,9 +97,9 @@ class StashPlaybackService : MediaLibraryService() {
 
 
     /**
-     * Shared, interceptor-bearing OkHttp client (carries `AmzCaptchaInterceptor`).
-     * Used by [StashMediaSourceFactory] to stream amz-origin items through an
-     * authed [androidx.media3.datasource.okhttp.OkHttpDataSource].
+     * Shared OkHttp client. Used by [StashMediaSourceFactory] to stream
+     * JioSaavn-origin items through an
+     * [androidx.media3.datasource.okhttp.OkHttpDataSource].
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
 
@@ -396,14 +396,6 @@ class StashPlaybackService : MediaLibraryService() {
                     null
                 }
             },
-            // amz-origin http(s) items stream through an authed OkHttpDataSource
-            // (shared client carries AmzCaptchaInterceptor) so the x-captcha-token
-            // header rides every range request and is re-minted mid-stream.
-            isAmzOrigin = { item ->
-                val scheme = item.localConfiguration?.uri?.scheme?.lowercase()
-                val origin = item.mediaMetadata.extras?.getString(EXTRA_STREAM_ORIGIN)
-                (scheme == "http" || scheme == "https") && origin == "amz"
-            },
             // JioSaavn media is accepted only from its exact HTTPS CDN host.
             // Its playback client disables redirects so a later range request
             // cannot pivot from that validated host to another destination.
@@ -413,7 +405,7 @@ class StashPlaybackService : MediaLibraryService() {
                 (scheme == "http" || scheme == "https") &&
                     origin == com.stash.core.media.streaming.JioSaavnStreamResolver.ORIGIN
             },
-            amzHttpClient = okHttpClient,
+            httpClient = okHttpClient,
             // Full-timeline queue: stash-resolve:// placeholders resolve
             // just-in-time inside LazyResolvingDataSource at open().
             resolver = streamResolver,

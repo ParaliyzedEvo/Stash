@@ -37,16 +37,14 @@ class LosslessSourceRegistry @Inject constructor(
      * Path ii of the source-priority model).
      */
     suspend fun resolve(query: TrackQuery, bypassRateLimit: Boolean = false): SourceResult? {
-        // Test toggles (outage drills). ARCOD-only takes precedence over
-        // amz-only: filter the chain to a single source so a forced download
-        // exercises that source even when the Qobuz proxies are healthy. A
-        // miss falls through to a normal null return (no quota to protect).
+        // Test toggles (outage drills): filter the chain to a single source so a
+        // forced download exercises that source even when the Qobuz proxies are
+        // healthy. A miss falls through to a normal null return (no quota to
+        // protect).
         val ordered = if (streamingPreference.isForceQbdlxOnly()) {
             orderedSources().filter { it.id == "qbdlx_qobuz" }
         } else if (streamingPreference.isForceArcodOnly()) {
             orderedSources().filter { it.id == "arcod" }
-        } else if (streamingPreference.isForceAmzOnly()) {
-            orderedSources().filter { it.id == "amz" }
         } else {
             // Normal chain skips (a) parked (host-down) sources and (b) ARCOD
             // on a build without the private integration key — a keyless ARCOD
@@ -138,8 +136,9 @@ class LosslessSourceRegistry @Inject constructor(
         /**
          * Lossless sources parked out of the NORMAL resolve chain because their
          * upstreams are down for us (2026-07-01): qobuz.squid.wtf needs a
-         * captcha we can't solve headless, kennyy.com.br is health-down, and
-         * arcod.xyz returns Cloudflare 403. Their code + Hilt bindings stay
+         * captcha we can't solve headless, and kennyy.com.br is health-down.
+         * (arcod.xyz was parked here too for the same reason and is not any
+         * more — see the note below the set.) Their code + Hilt bindings stay
          * intact — re-enabling a source is just removing its id here (and
          * uncommenting the matching line in
          * [com.stash.core.media.streaming.StreamSourceRegistry] for streaming).
@@ -150,6 +149,11 @@ class LosslessSourceRegistry @Inject constructor(
         // (search 200 + stream returns audio/flac, fLaC-magic byte-checked). It
         // self-gates on the user having connected an account and on the build
         // carrying the key, so an unconfigured build still skips it.
+        // Re-probed 2026-08-31: POST https://arcod.xyz/api/v2/downloads answers
+        // 401 {"error":"Authentication required"} — a healthy authed API, not a
+        // dead host. (The legacy api.arcod.xyz host does return 403; it is not
+        // the base URL ArcodClient uses.) Still live; do not re-park on the
+        // strength of the older comment above.
         val PARKED_SOURCE_IDS = setOf("squid_qobuz", "kennyy_qobuz")
     }
 }

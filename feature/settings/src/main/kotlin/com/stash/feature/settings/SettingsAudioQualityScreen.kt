@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,11 +94,14 @@ fun SettingsAudioQualityScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
-    val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
-    val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
     val qobuzConnectedEmail by viewModel.qobuzConnectedEmail.collectAsStateWithLifecycle()
+    val qobuzHasLogin by viewModel.qobuzHasLogin.collectAsStateWithLifecycle()
+    val losslessRouting by viewModel.losslessRouting.collectAsStateWithLifecycle()
     val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
     val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
+    val customEndpoint by viewModel.customEndpoint.collectAsStateWithLifecycle()
+    val customEndpointError by viewModel.customEndpointError.collectAsStateWithLifecycle()
+    val customEndpointTest by viewModel.customEndpointTest.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -136,10 +140,17 @@ fun SettingsAudioQualityScreen(
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsToggleRow(
                     title = "Lossless downloads",
-                    subtitle = if (uiState.losslessEnabled) {
-                        "FLAC routing active. Files ~10× larger than MP3."
-                    } else {
-                        "Studio-quality FLAC via Qobuz. Files ~10× larger than MP3."
+                    // Three-way, because keying "FLAC routing active" on the toggle
+                    // alone asserted it for every user with nothing configured — the
+                    // day-one state — twenty lines above three "not connected" rows.
+                    // The middle branch spans ARCOD too (qbdlxExpired excludes it), so
+                    // it cannot fire while a row underneath says "ARCOD — connected".
+                    subtitle = when {
+                        !uiState.losslessEnabled ->
+                            "Studio-quality FLAC from your own Qobuz account. Files ~10× larger than MP3."
+                        qbdlxExpired && !uiState.arcodConnected ->
+                            "No lossless source configured — see below. Files ~10× larger than MP3."
+                        else -> "FLAC routing active. Files ~10× larger than MP3."
                     },
                     checked = uiState.losslessEnabled,
                     onCheckedChange = viewModel::onLosslessEnabledChanged,
@@ -153,20 +164,20 @@ fun SettingsAudioQualityScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // ROUTING block — Direct Qobuz (primary) + amz fallback.
-                        // kennyy/squid proxies are parked and no longer shown.
-                        LosslessRoutingStatus()
+                        // ROUTING block — one row per configured lossless path,
+                        // built in LosslessAvailability so this list and the
+                        // resolver read the same predicates.
+                        LosslessRoutingStatus(rows = losslessRouting)
 
                         // ARCOD — independent Qobuz lossless (a 2nd live source
                         // alongside qbdlx). Connect via Google login in an in-app
                         // WebView. Restored 2026-08-01 after the operator rotated
                         // the key + moved us to the /v2/stash routes (verified live).
                         SettingsNavRow(
-                            title = if (uiState.arcodConnected) {
-                                "ARCOD — connected"
-                            } else {
-                                "Connect ARCOD"
-                            },
+                            // No "— connected" suffix: the ROUTING row directly above
+                            // owns that fact, and stating it twice adjacently is how
+                            // the two claims drift apart.
+                            title = if (uiState.arcodConnected) "ARCOD" else "Connect ARCOD",
                             subtitle = "Independent Qobuz lossless (2nd source)",
                             onClick = onNavigateToArcodConnect,
                             leadingContent = {
@@ -196,16 +207,20 @@ fun SettingsAudioQualityScreen(
                         )
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
-                        // primary lossless source. The token field is the refresh
-                        // path when the bundled pool ages out; the badge shows when
-                        // no lossless path is configured (`LosslessAvailability
+                        // primary lossless source. The badge shows when no
+                        // lossless path is configured (`LosslessAvailability
                         // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
                         // no UI to flip it back would kill lossless silently.
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            if (qbdlxExpired) {
+                            // Same gate as the card subtitle: qbdlxExpired excludes ARCOD, so
+                            // without the second term an ARCOD-only user would be told nothing
+                            // is configured directly below their "ARCOD — connected" row. With
+                            // it, this fires only when there is genuinely no lossless source,
+                            // which is what makes the broader wording true.
+                            if (qbdlxExpired && !uiState.arcodConnected) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "No working token — connect your account below",
+                                    text = "No lossless source configured — connect your Qobuz account below",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -221,11 +236,15 @@ fun SettingsAudioQualityScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            val connectedEmail = qobuzConnectedEmail
-                            if (connectedEmail != null) {
+                            // Keyed on hasLogin, NOT on the email: a token migrated
+                            // from the old paste field has no email, and keying on
+                            // that showed its owner a sign-in form with no way to
+                            // remove the token when it went dead.
+                            if (qobuzHasLogin) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Connected as $connectedEmail",
+                                    text = qobuzConnectedEmail?.let { "Connected as $it" }
+                                        ?: "Connected (token)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -236,7 +255,7 @@ fun SettingsAudioQualityScreen(
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Sign in with your own Qobuz subscription for " +
-                                        "guaranteed lossless — your account, not the shared pool.",
+                                        "guaranteed lossless.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -286,83 +305,6 @@ fun SettingsAudioQualityScreen(
                                     }
                                 }
                             }
-
-                            if (qbdlxTokenChoices.size > 1) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Account",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Column(modifier = Modifier.selectableGroup()) {
-                                    SettingsPickerRow(
-                                        selected = qbdlxPinnedToken == null,
-                                        title = "Auto",
-                                        subtitle = "Recommended — uses a working account and fails over",
-                                        onClick = { viewModel.onQbdlxTokenPinned(null) },
-                                    )
-                                    qbdlxTokenChoices.forEach { choice ->
-                                        SettingsPickerRow(
-                                            selected = qbdlxPinnedToken == choice.token,
-                                            title = choice.label,
-                                            subtitle = choice.country +
-                                                if (choice.live) "" else " · offline",
-                                            onClick = { viewModel.onQbdlxTokenPinned(choice.token) },
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            // Commits on Done / focus loss — per-keystroke writes
-                            // would let a background resolve migrate a partial
-                            // token into the connected-account slot.
-                            //
-                            // The field owns its draft (only a disconnect resets it, above),
-                            // so `committed` is what tracks the last value handed to
-                            // the VM — without it, clearing the field back to blank
-                            // would never reach `setPastedToken(null)`.
-                            var qbdlxToken by remember { mutableStateOf("") }
-                            var committed by remember { mutableStateOf("") }
-                            // Disconnect clears the login slot; forget the
-                            // draft/committed pair too so the same token can be
-                            // re-pasted.
-                            LaunchedEffect(qobuzConnectedEmail) {
-                                if (qobuzConnectedEmail == null) {
-                                    qbdlxToken = ""
-                                    committed = ""
-                                }
-                            }
-                            var wasFocused by remember { mutableStateOf(false) }
-                            val focusManager = LocalFocusManager.current
-                            val commitToken = {
-                                val draft = qbdlxToken.trim()
-                                if (draft != committed) {
-                                    committed = draft
-                                    viewModel.onQbdlxTokenPaste(draft)
-                                }
-                            }
-                            OutlinedTextField(
-                                value = qbdlxToken,
-                                onValueChange = { qbdlxToken = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // `wasFocused` gates the initial unfocused
-                                    // callback, which would otherwise commit "".
-                                    .onFocusChanged { state ->
-                                        if (wasFocused && !state.isFocused) commitToken()
-                                        wasFocused = state.isFocused
-                                    },
-                                label = { Text("Paste token") },
-                                singleLine = true,
-                                placeholder = { Text("user_auth_token") },
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        commitToken()
-                                        focusManager.clearFocus()
-                                    },
-                                ),
-                            )
                         }
 
                         // -- Download quality picker --------------------------
@@ -586,9 +528,122 @@ fun SettingsAudioQualityScreen(
                             exit = shrinkVertically() + fadeOut(),
                         ) {
                             Column(modifier = Modifier.fillMaxWidth()) {
+                                // -- Custom lossless endpoint -----------------
+                                // Outranks every relay from runtime config in
+                                // QbdlxFileUrlRouter, so a typo here silently
+                                // costs the user their first lossless attempt —
+                                // hence Test, and hence commit-on-Done.
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Or paste the captcha_verified_at cookie value directly:",
+                                    text = "Point Stash at your own lossless relay. " +
+                                        "It takes priority over Stash's.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                // The VM's committed value is the seed AND the
+                                // comparison for commit(): re-keying on it means the
+                                // field snaps to what was actually stored WHEN THE
+                                // STORED VALUE CHANGES — a trailing slash normalises
+                                // to the same string, so that edit is swallowed by
+                                // distinctUntilChanged and the slash stays on screen.
+                                // Saveable, not remember: MainActivity declares no
+                                // configChanges, so a rotation mid-URL threw the
+                                // half-typed draft away. A relay base is not a secret.
+                                var endpointDraft by rememberSaveable(customEndpoint) {
+                                    mutableStateOf(customEndpoint.orEmpty())
+                                }
+                                // The error lives in the VM and outlives this subtree:
+                                // collapsing Advanced and reopening re-seeds the draft
+                                // from storage but left the rejection on screen — an
+                                // empty field painted red. Clear it on (re)entry.
+                                LaunchedEffect(Unit) { viewModel.onCustomEndpointEdited() }
+                                var endpointWasFocused by remember { mutableStateOf(false) }
+                                val focusManager = LocalFocusManager.current
+                                val commitEndpoint = {
+                                    val draft = endpointDraft.trim()
+                                    // Per keystroke this would persist `https://re` as a
+                                    // base and route every resolve at it. The guard skips
+                                    // the common no-op; it does NOT make this idempotent,
+                                    // since the Done path commits and then clears focus
+                                    // before `customEndpoint` has re-emitted. The repeat
+                                    // is an identical write, collapsed downstream.
+                                    if (draft != customEndpoint.orEmpty()) {
+                                        viewModel.onCustomEndpointCommitted(draft)
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = endpointDraft,
+                                    onValueChange = {
+                                        endpointDraft = it
+                                        // Otherwise the red "Must be an https:// URL"
+                                        // outlives the text it judged — including onto
+                                        // an empty field after a collapse/reopen.
+                                        viewModel.onCustomEndpointEdited()
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        // `endpointWasFocused` gates the initial unfocused
+                                        // callback, which would otherwise commit "".
+                                        .onFocusChanged { state ->
+                                            if (endpointWasFocused && !state.isFocused) commitEndpoint()
+                                            endpointWasFocused = state.isFocused
+                                        },
+                                    label = { Text("Custom lossless endpoint") },
+                                    singleLine = true,
+                                    isError = customEndpointError != null,
+                                    placeholder = { Text("https://…") },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Uri,
+                                        imeAction = ImeAction.Done,
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            commitEndpoint()
+                                            focusManager.clearFocus()
+                                        },
+                                    ),
+                                )
+                                customEndpointError?.let { err ->
+                                    Text(
+                                        text = err,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val testing =
+                                        customEndpointTest == SettingsViewModel.EndpointTestState.TESTING
+                                    TextButton(
+                                        onClick = viewModel::onTestCustomEndpoint,
+                                        enabled = customEndpoint != null && !testing,
+                                    ) {
+                                        Text("Test")
+                                    }
+                                    // Reachability, not health: any HTTP reply counts.
+                                    when (customEndpointTest) {
+                                        SettingsViewModel.EndpointTestState.TESTING -> Text(
+                                            text = "Testing…",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        SettingsViewModel.EndpointTestState.REACHABLE -> Text(
+                                            text = "Reachable",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = StashTheme.extendedColors.success,
+                                        )
+                                        SettingsViewModel.EndpointTestState.UNREACHABLE -> Text(
+                                            text = "Not reachable",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                        SettingsViewModel.EndpointTestState.IDLE -> Unit
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value directly.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

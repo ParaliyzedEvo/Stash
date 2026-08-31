@@ -4,18 +4,15 @@ import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.QobuzAlbumFetcher
 import com.stash.core.data.discovery.HomeDiscoveryRepository
 import com.stash.data.download.lossless.qbdlx.HomeDiscoveryRepositoryImpl
-import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSource
-import com.stash.data.download.lossless.qbdlx.HttpQbdlxRemotePool
-import com.stash.data.download.lossless.qbdlx.QbdlxPoolCipher
-import com.stash.data.download.lossless.qbdlx.QbdlxPoolProvider
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
-import com.stash.data.download.lossless.qbdlx.QbdlxRemotePool
 import com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource
 import com.stash.data.download.lossless.qbdlx.QbdlxSigner
 import com.stash.data.download.lossless.qbdlx.QbdlxSigningResolver
 import com.stash.data.download.lossless.qbdlx.QobuzAlbumFetcherImpl
 import com.stash.data.download.lossless.qbdlx.QobuzDiscographyProvider
+import com.stash.data.download.lossless.qbdlx.QobuzWebCredentials
+import com.stash.data.download.lossless.qbdlx.QobuzWebCredentialsClient
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -35,14 +32,15 @@ import javax.inject.Singleton
  * time whether there is a credential or relay behind it. Nothing here is gated
  * on a build flag.
  *
- * The ONLY thing this module @Provides is the [QbdlxSigner] (it needs the
- * bundled app secret). Deliberately NOT provided here:
- *  - a bare `String` appId — that would pollute the global Hilt `String`
- *    namespace; catalog calls run tokenless under the web player's own id
- *    ([com.stash.data.download.lossless.qbdlx.QbdlxApiClient.catalogAppId]) and
- *    [QbdlxCredentialStore] reads `BuildConfig.QBDLX_APP_ID` itself for signing.
- *  - `QbdlxApiClient` / `QbdlxCredentialStore` — both have `@Inject`
- *    constructors, so a second binding here = duplicate-binding error.
+ * This module @Provides exactly two things: the stateless [QbdlxSigner], and
+ * [QobuzWebCredentials] — the seam over the live Qobuz web-creds scrape, which
+ * needs a @Provides because [QobuzWebCredentialsClient] does not implement the
+ * interface. No app_id or app_secret is bundled or provided anywhere:
+ * catalog calls run tokenless under the web player's own id
+ * ([com.stash.data.download.lossless.qbdlx.QbdlxApiClient.catalogAppId]), and a
+ * connected account carries the pair it was minted under. Deliberately NOT
+ * provided here: `QbdlxApiClient` / [QbdlxCredentialStore] — both have
+ * `@Inject` constructors, so a second binding here = duplicate-binding error.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -63,46 +61,29 @@ abstract class QbdlxModule {
     abstract fun bindHomeDiscoveryRepository(impl: HomeDiscoveryRepositoryImpl): HomeDiscoveryRepository
 
     /**
-     * The runtime pool source. This is the "broker-ready" seam the original
-     * design left open: swapping in a Worker-backed broker later means changing
-     * this binding and nothing else.
-     */
-    @Binds
-    @Singleton
-    abstract fun bindQbdlxRemotePool(impl: HttpQbdlxRemotePool): QbdlxRemotePool
-
-    /**
-     * The credential store IS the signing authority — it knows each token's
-     * app_id (pool tag / connected account) and the matching secret.
+     * The credential store IS the signing authority — the connected account's
+     * app_id and matching secret are stored with its token.
      */
     @Binds
     @Singleton
     abstract fun bindQbdlxSigningResolver(impl: QbdlxCredentialStore): QbdlxSigningResolver
 
     companion object {
-        // Stateless now: the app_secret is chosen PER REQUEST by the resolver,
-        // because the pool spans multiple app_ids (each with its own secret) and a
-        // connected account carries its own — a single bundled secret would sign
-        // mismatched tokens wrong and silently serve previews.
+        // Stateless: the app_secret is chosen PER REQUEST by the resolver, because
+        // it belongs to the connected account, not to the app — a bundled secret
+        // would sign a mismatched token wrong and silently serve previews.
         @Provides
         @Singleton
         fun provideQbdlxSigner(): QbdlxSigner = QbdlxSigner()
 
+        /**
+         * The live Qobuz web-creds scrape, as the narrow seam
+         * [QbdlxCredentialStore] depends on. @Provides, not @Binds:
+         * [QobuzWebCredentialsClient] does not implement [QobuzWebCredentials].
+         */
         @Provides
         @Singleton
-        fun provideQbdlxPoolProvider(): QbdlxPoolProvider = QbdlxPoolProvider {
-            val pool = QbdlxPoolCipher.decrypt(BuildConfig.QBDLX_TOKEN_POOL)
-            val fp = BuildConfig.QBDLX_POOL_FP
-            if (fp.isNotBlank()) {
-                val actual = if (pool.isBlank()) "" else
-                    java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(pool.toByteArray())
-                        .joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(8)
-                if (actual != fp) {
-                    android.util.Log.w("QbdlxPool", "pool fp mismatch — embed/runtime crypto drift?")
-                }
-            }
-            pool
-        }
+        fun provideQobuzWebCredentials(c: QobuzWebCredentialsClient): QobuzWebCredentials =
+            QobuzWebCredentials(c::fetch)
     }
 }

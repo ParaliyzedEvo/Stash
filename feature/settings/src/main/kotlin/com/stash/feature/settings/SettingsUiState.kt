@@ -109,8 +109,10 @@ data class SettingsUiState(
     /**
      * Tri-state describing the squid.wtf captcha cookie's liveness,
      * derived from the cookie value plus `QobuzSource.lastKnownBadCookie`.
-     * Drives the routing-status row's label ("active" / "expired" /
-     * "optional") and whether the "solve captcha →" link is shown.
+     * Nothing renders this today: squid is parked and the routing rows
+     * come from `LosslessAvailability`. Kept for whenever squid is
+     * unparked, when it again decides the row's label ("active" /
+     * "expired" / "optional") and whether a solver link is offered.
      *
      * Why a tri-state instead of `cookie.isNotEmpty()`: the cookie has
      * a ~30-min sliding-window expiry server-side. Once expired,

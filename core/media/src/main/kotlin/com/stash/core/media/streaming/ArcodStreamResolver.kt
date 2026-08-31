@@ -19,8 +19,8 @@ import kotlinx.coroutines.CancellationException
  * the default media-source factory.
  *
  * The streaming quality tier comes from [StreamQualityPolicy] (per-network /
- * Save-Data), mirroring [AmzStreamResolver] — so ARCOD streaming respects the
- * user's cellular/Wi-Fi tier instead of always pulling max.
+ * Save-Data) — so ARCOD streaming respects the user's cellular/Wi-Fi tier
+ * instead of always pulling max.
  *
  * Sits LAST among the lossless streaming sources and foreground-only (gated in
  * [StreamSourceRegistry]); reached only when kennyy and squid both miss.

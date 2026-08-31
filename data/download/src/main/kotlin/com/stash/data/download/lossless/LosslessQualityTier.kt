@@ -16,13 +16,6 @@ package com.stash.data.download.lossless
 enum class LosslessQualityTier(
     /** Qobuz `format_id` code passed to `apiClient.getFileUrl(...)`. */
     val qobuzCode: Int,
-    /**
-     * amz.squid.wtf wire `tier` value (the Amazon Music proxy uses named tiers,
-     * not Qobuz codes). `ultrahd`/`hd` are lossless FLAC (24-/16-bit); `high` is
-     * 256 kbps AAC — the data-saver floor, used for CD-tier streaming where the
-     * lossy trade keeps metered data light.
-     */
-    val amzTier: String,
     /** Human-readable label for the Settings radio row. */
     val displayLabel: String,
     /** Approximate file size for a 4-minute track at this tier. */
@@ -33,10 +26,9 @@ enum class LosslessQualityTier(
      * on 2026-07-30: requesting 5 returns `format_id=5, mime=audio/mpeg`.
      *
      * This exists because "Save Data" previously mapped to [CD], which is still
-     * FLAC — about 28 MB for a four-minute track. On the amz path that resolved to
-     * 256 kbps AAC and genuinely saved data, but qbdlx is the only working lossless
-     * provider, so in practice the setting changed nothing on the one path that
-     * matters. A user on a metered plan turning it on saved essentially zero bytes.
+     * FLAC — about 28 MB for a four-minute track — so in practice the setting
+     * changed nothing that mattered. A user on a metered plan turning it on saved
+     * essentially zero bytes.
      *
      * Deliberately NOT offered in the Settings quality radios — those choose
      * between lossless tiers, and this is the automatic floor Save Data applies on
@@ -44,8 +36,8 @@ enum class LosslessQualityTier(
      * lossless tiers, which is a wart; the alternative was a parallel type threaded
      * through five resolvers for one extra case.
      */
-    DATA_SAVER(qobuzCode = 5, amzTier = "high", displayLabel = "Data Saver (MP3 320)", sizeHint = "~10 MB / 4 min"),
-    CD(qobuzCode = 6, amzTier = "high", displayLabel = "CD (16-bit/44.1 kHz)", sizeHint = "~28 MB / 4 min"),
-    HI_RES(qobuzCode = 7, amzTier = "hd", displayLabel = "Hi-Res (24-bit/96 kHz)", sizeHint = "~70 MB / 4 min"),
-    MAX(qobuzCode = 27, amzTier = "ultrahd", displayLabel = "Max (24-bit/192 kHz)", sizeHint = "~140 MB / 4 min");
+    DATA_SAVER(qobuzCode = 5, displayLabel = "Data Saver (MP3 320)", sizeHint = "~10 MB / 4 min"),
+    CD(qobuzCode = 6, displayLabel = "CD (16-bit/44.1 kHz)", sizeHint = "~28 MB / 4 min"),
+    HI_RES(qobuzCode = 7, displayLabel = "Hi-Res (24-bit/96 kHz)", sizeHint = "~70 MB / 4 min"),
+    MAX(qobuzCode = 27, displayLabel = "Max (24-bit/192 kHz)", sizeHint = "~140 MB / 4 min");
 }

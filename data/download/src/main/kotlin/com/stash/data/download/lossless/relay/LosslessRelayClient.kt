@@ -144,6 +144,29 @@ class LosslessRelayClient @Inject constructor(sharedClient: OkHttpClient) {
         }
     }
 
+    /**
+     * Is this base reachable at all? ANY HTTP reply counts — including 404 — because
+     * `/v1/status` is a relay endpoint that nothing serves until the relay ships, and
+     * what this button exists to catch is a typo'd host, not an unhealthy relay.
+     * Reports reachability, never health. Deliberately does NOT consult or set the
+     * cooldowns: a manual test must not cool a base, and a user testing a base that
+     * just cooled deserves a real answer.
+     */
+    suspend fun probe(base: String): Boolean = withContext(Dispatchers.IO) {
+        val url = "$base/v1/status".toHttpUrlOrNull() ?: return@withContext false
+        val req = Request.Builder().url(url)
+            .header("X-Stash-Version", PROTOCOL_VERSION)
+            .header("Accept", "application/json")
+            .get().build()
+        try {
+            // No body read: the status line alone answers the only question asked.
+            httpClient.newCall(req).execute().use { true }
+        } catch (e: IOException) {
+            Log.i(TAG, "probe of ${host(base)} failed (${e.javaClass.simpleName})")
+            false
+        }
+    }
+
     private fun cool(base: String, ms: Long) {
         cooledUntil[base] = clock() + ms
     }

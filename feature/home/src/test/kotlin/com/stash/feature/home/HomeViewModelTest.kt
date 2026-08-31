@@ -35,6 +35,7 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verifyBlocking
 
 /**
@@ -187,44 +188,93 @@ class HomeViewModelTest {
     }
 
     // ------------------------------------------------------------------
-    // ARCOD rescue banner
+    // Lossless-offline banner
     // ------------------------------------------------------------------
 
-    @Test
-    fun `arcod rescue shows when qbdlx looks dead, lossless on, no arcod`() = runTest {
-        val health = com.stash.core.media.streaming.LosslessSourceHealth().apply {
-            repeat(com.stash.core.media.streaming.LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) {
-                recordQbdlxMiss()
-            }
+    /** qbdlx has missed enough consecutive resolves to read as down. */
+    private fun downHealth() = com.stash.core.media.streaming.LosslessSourceHealth().apply {
+        repeat(com.stash.core.media.streaming.LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) {
+            recordQbdlxMiss()
         }
-        val vm = buildVm(losslessEnabled = true, losslessSourceHealth = health, arcodToken = null)
-
-        val state = vm.uiState.first { !it.isLoading }
-
-        assertThat(state.showArcodRescue).isTrue()
     }
 
     @Test
-    fun `arcod rescue hidden when arcod is already connected`() = runTest {
-        val health = com.stash.core.media.streaming.LosslessSourceHealth().apply {
-            repeat(com.stash.core.media.streaming.LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) {
-                recordQbdlxMiss()
-            }
-        }
-        val vm = buildVm(losslessEnabled = true, losslessSourceHealth = health, arcodToken = "tok")
+    fun `lossless offline shows when qbdlx looks dead and nothing is user-owned`() = runTest {
+        val vm = buildVm(
+            losslessEnabled = true,
+            losslessSourceHealth = downHealth(),
+            anyUserOwned = false,
+        )
 
         val state = vm.uiState.first { !it.isLoading }
 
-        assertThat(state.showArcodRescue).isFalse()
+        assertThat(state.showLosslessOffline).isTrue()
+    }
+
+    /**
+     * The regression this rewrite fixes: the old ARCOD-only check told a user
+     * with their own Qobuz account connected to go connect a lossless source
+     * they already have.
+     */
+    @Test
+    fun `lossless offline hidden for a user who owns a lossless source`() = runTest {
+        val vm = buildVm(
+            losslessEnabled = true,
+            losslessSourceHealth = downHealth(),
+            anyUserOwned = true,
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.showLosslessOffline).isFalse()
     }
 
     @Test
-    fun `arcod rescue hidden while qbdlx is healthy`() = runTest {
-        val vm = buildVm(losslessEnabled = true, arcodToken = null)
+    fun `lossless offline hidden while qbdlx is healthy`() = runTest {
+        val vm = buildVm(losslessEnabled = true, anyUserOwned = false)
 
         val state = vm.uiState.first { !it.isLoading }
 
-        assertThat(state.showArcodRescue).isFalse()
+        assertThat(state.showLosslessOffline).isFalse()
+    }
+
+    @Test
+    fun `lossless offline hidden while lossless is switched off`() = runTest {
+        val vm = buildVm(
+            losslessEnabled = false,
+            losslessSourceHealth = downHealth(),
+            anyUserOwned = false,
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.showLosslessOffline).isFalse()
+    }
+
+    @Test
+    fun `lossless offline hidden once dismissed`() = runTest {
+        val vm = buildVm(
+            losslessEnabled = true,
+            losslessSourceHealth = downHealth(),
+            anyUserOwned = false,
+            losslessOfflineDismissed = true,
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.showLosslessOffline).isFalse()
+    }
+
+    @Test
+    fun `dismissLosslessOffline writes its own key, not the old ARCOD one`() = runTest {
+        val prefs = losslessPrefsMock(losslessEnabled = true)
+        val vm = buildVm(losslessPrefs = prefs)
+
+        vm.dismissLosslessOffline()
+        runCurrent()
+
+        verifyBlocking(prefs) { setLosslessOfflineDismissed(true) }
+        verifyBlocking(prefs, never()) { setArcodRescueDismissed(any()) }
     }
 
     // ------------------------------------------------------------------
@@ -260,7 +310,9 @@ class HomeViewModelTest {
         losslessEnabled: Boolean = false,
         losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth =
             com.stash.core.media.streaming.LosslessSourceHealth(),
-        arcodToken: String? = null,
+        anyUserOwned: Boolean = false,
+        losslessOfflineDismissed: Boolean = false,
+        losslessPrefs: LosslessSourcePreferences? = null,
     ): HomeViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
@@ -282,14 +334,7 @@ class HomeViewModelTest {
             on { enabled } doReturn flowOf(streamingEnabled)
             onBlocking { current() } doReturn streamingEnabled
         }
-        val losslessPrefs = mock<LosslessSourcePreferences> {
-            on { enabled } doReturn flowOf(losslessEnabled)
-            on { bannerDismissed } doReturn flowOf(false)
-            // Feeds the arcodRescueFlow combine — an unstubbed Flow is null
-            // and the banners pair would never emit (same trap as the DAO
-            // flows below).
-            on { arcodRescueDismissed } doReturn flowOf(false)
-        }
+        val prefs = losslessPrefs ?: losslessPrefsMock(losslessEnabled, losslessOfflineDismissed)
         // init {} reads isStale() (suspend, primitive Boolean) — stub it so the
         // cold-start warm-up coroutine doesn't NPE on an unboxed null. `state`
         // feeds the uiState combine, so it must emit.
@@ -322,7 +367,7 @@ class HomeViewModelTest {
         return HomeViewModel(
             musicRepository = musicRepo,
             playerRepository = playerRepository,
-            losslessPrefs = losslessPrefs,
+            losslessPrefs = prefs,
             settingsDeepLinkController = mock(),
             libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
             tipJarRepository = tipJar,
@@ -344,14 +389,27 @@ class HomeViewModelTest {
                 // uiState pairing combine and every test hangs, not fails.
                 on { showLikedOnHome } doReturn flowOf(likedCardEnabled)
             },
-            // Defaults: fresh health (starts healthy) + no ARCOD token, so
-            // the rescue banner stays out of existing tests.
+            // Defaults: fresh health (starts healthy) + nothing user-owned, so
+            // the lossless-offline banner stays out of existing tests.
             losslessSourceHealth = losslessSourceHealth,
-            arcodCredentialStore = mock {
-                on { accessToken } doReturn flowOf(arcodToken)
+            losslessAvailability = mock {
+                on { this.anyUserOwned } doReturn flowOf(anyUserOwned)
             },
             context = mock(),
         )
+    }
+
+    /**
+     * Every lossless pref the ViewModel's combines read. An unstubbed Flow is
+     * null, which NPEs the combine and hangs the test instead of failing it.
+     */
+    private fun losslessPrefsMock(
+        losslessEnabled: Boolean = false,
+        losslessOfflineDismissed: Boolean = false,
+    ) = mock<LosslessSourcePreferences> {
+        on { enabled } doReturn flowOf(losslessEnabled)
+        on { bannerDismissed } doReturn flowOf(false)
+        on { this.losslessOfflineDismissed } doReturn flowOf(losslessOfflineDismissed)
     }
 
     // ------------------------------------------------------------------

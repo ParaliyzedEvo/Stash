@@ -10,6 +10,11 @@ import okhttp3.Request
 /** Qobuz web-player app credentials (the pair its own site signs requests with). */
 data class QobuzWebCreds(val appId: String, val appSecret: String)
 
+/** The live-scraped Qobuz web app_id/secret. A seam so the credential store is testable without OkHttp. */
+fun interface QobuzWebCredentials {
+    suspend fun fetch(): QobuzWebCreds?
+}
+
 /**
  * Scrapes the LIVE Qobuz web-player `app_id` + `app_secret` from its public
  * JS bundle — the same pair `open.qobuz.com` uses.
@@ -18,7 +23,7 @@ data class QobuzWebCreds(val appId: String, val appSecret: String)
  * with the app_id it was minted under. Minting it ourselves via THIS pair means
  * the signing pair always matches the token, so the account keeps returning FLAC
  * even if Qobuz rotates the web creds (we just re-scrape). It's the self-healing
- * half — a bundled pair would eventually rot the same way the token pool does.
+ * half — a bundled pair would eventually rot the same way the token pool did.
  *
  * Best-effort: any failure returns null and the caller surfaces "couldn't reach
  * Qobuz, try again". [extractCreds] is pure so the parse is tested without a network.

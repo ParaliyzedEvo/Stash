@@ -18,13 +18,11 @@ import org.robolectric.RobolectricTestRunner
  * [MediaSource.Factory] that fans items out to three sub-factories by predicate:
  *
  * 1. YouTube refresh chain ([streamingTrackId] returns an id),
- * 2. amz authed-HTTP OkHttpDataSource ([isAmzOrigin] true), and
+ * 2. JioSaavn authed-HTTP OkHttpDataSource ([isJioSaavnOrigin] true), and
  * 3. local/default (both false).
  *
  * The factory is a plain class (not Hilt), so routing is exercised directly via
- * fake predicate lambdas; the amz branch is checked behaviourally — the amz item
- * must NOT hit the streaming chain and must yield a progressive
- * (OkHttpDataSource-backed) source. Uses [RobolectricTestRunner] because
+ * fake predicate lambdas. Uses [RobolectricTestRunner] because
  * `DefaultMediaSourceFactory` / `OkHttpDataSource.Factory` construction touches
  * Android framework stubs (`android.net.Uri`) that throw on bare JVM.
  */
@@ -37,15 +35,13 @@ class StashMediaSourceFactoryTest {
 
     private fun newFactory(
         streamingTrackId: (MediaItem) -> Long?,
-        isAmzOrigin: (MediaItem) -> Boolean,
         isJioSaavnOrigin: (MediaItem) -> Boolean = { false },
     ): StashMediaSourceFactory = StashMediaSourceFactory(
         context = ApplicationProvider.getApplicationContext(),
         streamingFactory = streamingFactory,
         streamingTrackId = streamingTrackId,
-        isAmzOrigin = isAmzOrigin,
         isJioSaavnOrigin = isJioSaavnOrigin,
-        amzHttpClient = OkHttpClient(),
+        httpClient = OkHttpClient(),
         resolver = mockk(relaxed = true),
         urlCache = mockk(relaxed = true),
         trackDao = mockk(relaxed = true),
@@ -54,7 +50,7 @@ class StashMediaSourceFactoryTest {
     @Test
     fun placeholderItem_routesToLazyResolvingChain() {
         val lazy = item("stash-resolve://track/42")
-        val factory = newFactory(streamingTrackId = { null }, isAmzOrigin = { false })
+        val factory = newFactory(streamingTrackId = { null })
 
         val source: MediaSource = factory.createMediaSource(lazy)
 
@@ -65,28 +61,10 @@ class StashMediaSourceFactoryTest {
     }
 
     @Test
-    fun amzItem_routesToProgressiveOkHttpSource_notStreamingChain() {
-        val amz = item("https://amz.example/stream.flac")
-        val factory = newFactory(
-            streamingTrackId = { null },
-            isAmzOrigin = { it === amz },
-        )
-
-        val source: MediaSource = factory.createMediaSource(amz)
-
-        // Behavioural assert: amz must bypass the YouTube streaming chain entirely.
-        verify(exactly = 0) { streamingFactory.create(any()) }
-        // DefaultMediaSourceFactory yields a ProgressiveMediaSource for a plain
-        // progressive (FLAC) URI — backed here by the amz OkHttpDataSource.Factory.
-        assertThat(source).isInstanceOf(ProgressiveMediaSource::class.java)
-    }
-
-    @Test
     fun jioSaavnItem_routesToDedicatedProgressiveSource_notStreamingChain() {
         val jio = item("https://aac.saavncdn.com/song_320.mp4")
         val factory = newFactory(
             streamingTrackId = { null },
-            isAmzOrigin = { false },
             isJioSaavnOrigin = { it === jio },
         )
 
@@ -106,7 +84,6 @@ class StashMediaSourceFactoryTest {
 
         val factory = newFactory(
             streamingTrackId = { if (it === yt) 99L else null },
-            isAmzOrigin = { false },
         )
 
         factory.createMediaSource(yt)
@@ -116,30 +93,29 @@ class StashMediaSourceFactoryTest {
     }
 
     @Test
-    fun youtubeTrackIdTakesPrecedence_overAmz() {
-        // trackId branch is checked first; if it matches, amz must not be consulted.
+    fun youtubeTrackIdTakesPrecedence_overJioSaavn() {
+        // trackId branch is checked first; if it matches, JioSaavn must not be consulted.
         val both = item("https://example/x")
         val innerFactory: MediaSource.Factory = mockk(relaxed = true)
         every { streamingFactory.create(7L) } returns innerFactory
-        var amzConsulted = false
+        var jioConsulted = false
 
         val factory = newFactory(
             streamingTrackId = { 7L },
-            isAmzOrigin = { amzConsulted = true; true },
+            isJioSaavnOrigin = { jioConsulted = true; true },
         )
 
         factory.createMediaSource(both)
 
         verify(exactly = 1) { streamingFactory.create(7L) }
-        assertThat(amzConsulted).isFalse()
+        assertThat(jioConsulted).isFalse()
     }
 
     @Test
-    fun localItem_routesToNeitherStreamingNorAmz() {
+    fun localItem_routesToNeitherStreamingNorJioSaavn() {
         val local = item("file:///music/song.flac")
         val factory = newFactory(
             streamingTrackId = { null },
-            isAmzOrigin = { false },
         )
 
         val source: MediaSource = factory.createMediaSource(local)

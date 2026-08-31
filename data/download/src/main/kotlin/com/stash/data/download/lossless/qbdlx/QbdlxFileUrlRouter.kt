@@ -16,9 +16,11 @@ import kotlinx.coroutines.CancellationException
  * priority. Returns null when no path is available right now (the source then
  * falls to the next rung).
  *
- * BYO outcomes do not fall through on the resolve that discovers them: a dead
- * login is surfaced as [QbdlxResolveResult.TokenDead] and marked dead; for the
- * rest of its dead-cooldown the relays take over, then the login is re-probed.
+ * BYO outcomes do not fall through on the resolve that discovers them: a
+ * rejected login is surfaced as [QbdlxResolveResult.TokenDead] and handed to
+ * [QbdlxCredentialStore.rejectLogin] — a real account cools for its
+ * dead-cooldown (the relays take over, then it is re-probed), while a migrated
+ * pasted token, which cannot be re-minted, is disconnected outright.
  * A non-auth failure on the connected account (network, 5xx) is not a dead
  * login: that resolve falls through to the relays and the login is retried
  * next time.
@@ -51,8 +53,8 @@ class QbdlxFileUrlRouter @Inject constructor(
             }
             if (result != null) {
                 if (result is QbdlxResolveResult.TokenDead) {
-                    Log.w(TAG, "connected account rejected — marking dead")
-                    credentialStore.markDead(login.token)
+                    Log.w(TAG, "connected account rejected")
+                    credentialStore.rejectLogin(login.token)
                 } else {
                     credentialStore.recordAlive(login.token)
                 }

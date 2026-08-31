@@ -91,6 +91,9 @@ class TipJarRepository @Inject constructor(
      * return value and trusts the Flow to update).
      */
     suspend fun refresh(): Boolean = withContext(Dispatchers.IO) {
+        // No supporters host configured (BuildConfig missing) — nothing to fetch.
+        // OkHttp's .url("") throws IllegalArgumentException, so bail first.
+        if (supportersUrl.isBlank()) return@withContext false
         val req = Request.Builder()
             .url(supportersUrl)
             .header("Cache-Control", "no-cache")

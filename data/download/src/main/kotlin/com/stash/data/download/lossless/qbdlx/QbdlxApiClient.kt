@@ -169,9 +169,10 @@ class QbdlxApiClient @Inject constructor(
     /** Resolve a track id to a signed FLAC URL, classified. */
     suspend fun getFileUrl(trackId: Long, formatId: Int, token: String): QbdlxResolveResult =
         withContext(Dispatchers.IO) {
-            // Sign with THIS token's own (app_id, app_secret): the pool spans more
-            // than one app_id and a connected account carries its own pair. Sign
-            // with the wrong secret and Qobuz returns a 30-second preview, not FLAC.
+            // Sign with THIS token's own (app_id, app_secret) — the connected
+            // account's, stored with it at login. Sign with anything else and Qobuz
+            // returns a 30-second preview, not FLAC, so the resolver throws instead
+            // of guessing when the token isn't the connected account's.
             val signing = signingResolver.signingFor(token)
             // ts and sig MUST be one atomic read: take ts once, sign with it, send the same ts.
             val ts = signer.requestTs()

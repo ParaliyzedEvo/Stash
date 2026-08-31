@@ -1,6 +1,8 @@
 package com.stash.data.download.lossless.qbdlx
 
 import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
@@ -12,187 +14,160 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * DataStore-backed unit tests for [QbdlxCredentialStore].
+ * DataStore-backed unit tests for [QbdlxCredentialStore] — now a store for ONE
+ * credential: the user's own connected Qobuz account.
  *
  * Mirrors [com.stash.data.download.lossless.arcod.ArcodCredentialStoreTest]
  * (Robolectric + ApplicationProvider + a real temp DataStore). The
- * preferencesDataStore delegate is a single per-process instance, so the
- * persisted pasted/dead state leaks between tests unless wiped — clear it in
- * @Before so each test starts from a clean store. The pool is injected via the
- * [QbdlxCredentialStore.poolRaw] seam so the tests don't depend on BuildConfig.
+ * preferencesDataStore delegate is a single per-process instance, so persisted
+ * login/pasted state leaks between tests unless wiped — clear it in @Before so
+ * each test starts from a clean store. The live Qobuz web scrape is injected via
+ * the [QobuzWebCredentials] seam, so nothing here touches the network.
  */
 @RunWith(RobolectricTestRunner::class)
 class QbdlxCredentialStoreTest {
 
     private val ctx = ApplicationProvider.getApplicationContext<Context>()
-    // Remote pool returns null by default: these tests cover the LOCAL pool
-    // behaviour, and a null fetch is the "endpoint unreachable" path, which must
-    // leave the existing pool untouched. Refresh behaviour has its own test class.
-    private fun store(pool: String, remote: QbdlxRemotePool = QbdlxRemotePool { null }) =
-        QbdlxCredentialStore(ctx, { "" }, remote).also { it.poolRaw = pool }
+
+    private fun store(creds: QobuzWebCreds? = QobuzWebCreds("712109809", "web-secret")) =
+        QbdlxCredentialStore(ctx) { creds }
 
     @Before
     fun setUp() {
-        runBlocking { QbdlxCredentialStore(ctx, { "" }, QbdlxRemotePool { null }).clearPersistedForTest() }
-    }
-
-    @Test
-    fun `pasted token takes priority over pool`() = runTest {
-        val s = store("a:FR,b:GB"); s.setPastedToken("pasted")
-        assertThat(s.activeToken()).isEqualTo("pasted")
-    }
-
-    @Test
-    fun `markDead skips dead token within cooldown`() = runTest {
-        val s = store("a:FR,b:GB"); s.markDead("a")
-        repeat(4) { assertThat(s.activeToken()).isEqualTo("b") }
-    }
-
-    @Test
-    fun `activeToken is sticky - same token until it dies, then advances`() = runTest {
-        val s = store("a:FR,b:GB")
-        val first = s.activeToken()
-        assertThat(s.activeToken()).isEqualTo(first)   // sticky: no rotation
-        assertThat(s.activeToken()).isEqualTo(first)
-        s.markDead(first!!)
-        val second = s.activeToken()
-        assertThat(second).isNotEqualTo(first)          // advanced to the other live token
-        assertThat(s.activeToken()).isEqualTo(second)   // sticky on the new primary
-    }
-
-    @Test
-    fun `a token recovers as a candidate after its cooldown elapses`() = runTest {
-        var now = 1_000L
-        val s = store("a:FR,b:GB").also { it.clock = { now } }
-        val primary = s.activeToken()                   // canonical-first live token
-        s.markDead(primary!!)
-        val other = s.activeToken()
-        assertThat(other).isNotEqualTo(primary)         // advanced; primary in cooldown
-        now += QbdlxCredentialStore.DEAD_COOLDOWN_MS + 1
-        s.markDead(other!!)                            // now-primary dies; original cooldown elapsed
-        assertThat(s.activeToken()).isEqualTo(primary)  // original live again → reused
-    }
-
-    @Test
-    fun `pasting a token clears its dead flag (recovery path)`() = runTest {
-        val s = store("a:FR,b:GB")
-        s.markDead("a"); s.markDead("b")
-        assertThat(s.allDead()).isTrue()
-        // Pasting the SAME string that was marked dead must give it a clean chance.
-        s.setPastedToken("a")
-        assertThat(s.allDead()).isFalse()
-        assertThat(s.activeToken()).isEqualTo("a")
-    }
-
-    @Test
-    fun `tokensForRegion country-first and capped at 3`() = runTest {
-        val s = store("a:FR,b:GB,c:US,d:DE")
-        assertThat(s.tokensForRegion("GB").first()).isEqualTo("b")
-        assertThat(s.tokensForRegion("GB").size).isAtMost(3)
-    }
-
-    @Test
-    fun `allDead only when pasted and all pool dead`() = runTest {
-        val s = store("a:FR,b:GB")
-        s.markDead("a"); s.markDead("b"); assertThat(s.allDead()).isTrue()
-        s.setPastedToken("p"); assertThat(s.allDead()).isFalse()
-        s.markDead("p"); assertThat(s.allDead()).isTrue()
-    }
-
-    @Test
-    fun `recordAlive clears dead flag`() = runTest {
-        val s = store("a:FR,b:GB"); s.markDead("a"); s.recordAlive("a")
-        assertThat(s.allDead()).isFalse()
-    }
-
-    @Test
-    fun `empty pool with no paste is allDead so the tokenless state surfaces`() = runTest {
-        val s = store("")
-        assertThat(s.allDead()).isTrue() // no credentials → badge + source gated off
-        assertThat(s.activeToken()).isNull()
-        s.setPastedToken("p")
-        assertThat(s.allDead()).isFalse() // paste is the recovery path
-    }
-
-    @Test
-    fun `pasted beats pinned beats sticky-auto`() = runTest {
-        val s = store("a:FR,b:GB")
-        s.setPinnedToken("b")
-        assertThat(s.activeToken()).isEqualTo("b")      // pinned over auto
-        s.setPastedToken("p")
-        assertThat(s.activeToken()).isEqualTo("p")      // pasted over pinned
-    }
-
-    @Test
-    fun `dead pinned token advances to auto`() = runTest {
-        val s = store("a:FR,b:GB")
-        s.setPinnedToken("a"); s.markDead("a")
-        assertThat(s.activeToken()).isEqualTo("b")      // pinned dead → auto picks live
-    }
-
-    @Test
-    fun `pin to a token not in the pool is ignored`() = runTest {
-        val s = store("a:FR,b:GB")
-        s.setPinnedToken("ghost")
-        assertThat(s.activeToken()).isAnyOf("a", "b")   // stale pin ignored, auto used
-    }
-
-    @Test
-    fun `poolForPicker labels stable under input reordering, live reflects deadUntil`() = runTest {
-        val s1 = store("a:FR,b:GB")
-        val s2 = store("b:GB,a:FR")                     // reversed input
-        assertThat(s1.poolForPicker().map { it.label to it.token })
-            .isEqualTo(s2.poolForPicker().map { it.label to it.token })
-        s1.markDead("a")
-        assertThat(s1.poolForPicker().first { it.token == "a" }.live).isFalse()
-        assertThat(s1.poolForPicker().first { it.token == "b" }.live).isTrue()
-    }
-
-    @Test
-    fun `poolForPicker is empty for an empty pool`() = runTest {
-        assertThat(store("").poolForPicker()).isEmpty()
+        runBlocking { store().clearPersistedForTest() }
     }
 
     @Test
     fun `hasLogin reflects the connected account`() = runTest {
-        val s = store("")
+        val s = store()
         assertThat(s.hasLogin.first()).isFalse()
         s.setUserCredential("tok", "798273057", "sec", email = "me@x")
         assertThat(s.hasLogin.first()).isTrue()
         assertThat(s.loginLive()).isTrue()
+        assertThat(s.connectedEmail()).isEqualTo("me@x")
         s.markDead("tok")
         assertThat(s.loginLive()).isFalse()
         s.clearUserCredential()
         assertThat(s.hasLogin.first()).isFalse()
-    }
-
-    @Test
-    fun `a pasted token is migrated into the login slot with the primary signing pair`() = runTest {
-        val s0 = store("")
-        s0.setPastedToken("pasted-tok")
-        val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
-        val login = s.loginCredential()
-        assertThat(login).isEqualTo(QbdlxLoginCredential("pasted-tok", "798273057", "primary-secret"))
         assertThat(s.connectedEmail()).isNull()
-        assertThat(s.activeToken()).isEqualTo("pasted-tok")
-        s.clearUserCredential()
-        assertThat(s.activeToken()).isNull()   // pasted key gone: nothing left to serve (empty pool, login cleared)
     }
 
     @Test
     fun `hasLogin is true for a pasted token awaiting migration`() = runTest {
-        val s = store("")
+        val s = store()
         assertThat(s.hasLogin.first()).isFalse()
         s.setPastedToken("legacy")
         assertThat(s.hasLogin.first()).isTrue()
     }
 
     @Test
+    fun `recordAlive clears the dead flag`() = runTest {
+        val s = store()
+        s.setUserCredential("tok", "798273057", "sec", email = "me@x")
+        s.markDead("tok")
+        assertThat(s.loginLive()).isFalse()
+        s.recordAlive("tok")
+        assertThat(s.loginLive()).isTrue()
+    }
+
+    @Test
+    fun `a cooled login is retried once DEAD_COOLDOWN_MS has elapsed`() = runTest {
+        var now = 1_000L
+        val s = store().also { it.clock = { now } }
+        s.setUserCredential("tok", "798273057", "sec", email = "me@x")
+        s.markDead("tok")
+        assertThat(s.loginLive()).isFalse()
+        now += QbdlxCredentialStore.DEAD_COOLDOWN_MS + 1
+        assertThat(s.loginLive()).isTrue()   // transient 401 must not disconnect anyone
+    }
+
+    /**
+     * The whole point of [QbdlxCredentialStore.signingFor]: a Qobuz token only
+     * returns full FLAC when signed with the app_id/secret it was minted under,
+     * so the connected account's OWN stored pair is what signs its requests.
+     */
+    @Test
+    fun `a connected account signs with its own stored pair`() = runTest {
+        val s = store()
+        s.setUserCredential("myAccount", "712109809", "589be88e4538daea11f509d29e4a23b1", email = "me@x")
+        val signing = s.signingFor("myAccount")
+        assertThat(signing.appId).isEqualTo("712109809")
+        assertThat(signing.appSecret).isEqualTo("589be88e4538daea11f509d29e4a23b1")
+    }
+
+    /**
+     * Reachable when the account is disconnected or swapped mid-resolve: the router
+     * captured one token and the client re-reads another. Throwing beats returning an
+     * empty pair, which would spend a doomed round-trip and log a misleading auth 401.
+     */
+    @Test
+    fun `signing a token that is not the connected account throws instead of signing blank`() = runTest {
+        val s = store()
+        s.setUserCredential("myAccount", "712109809", "589be88e4538daea11f509d29e4a23b1", email = "me@x")
+        val thrown = runCatching { s.signingFor("some-other-token") }.exceptionOrNull()
+        assertThat(thrown).isInstanceOf(QbdlxAuthException::class.java)
+        assertThat((thrown as QbdlxAuthException).status).isEqualTo(401)
+    }
+
+    /**
+     * The shipped pool cached its raw `token:country,…` string — plaintext
+     * third-party Qobuz tokens — under `cached_pool`, and pinned one of them under
+     * `pinned_token`. Deleting the pool's CODE left both on every upgrading
+     * device, written by nothing, read by nothing and removed by nothing. The
+     * first load has to take them off the disk. Keys are spelled out literally
+     * here on purpose: this asserts against what is actually in the file.
+     */
+    @Test
+    fun `the removed pool's cached tokens are purged from disk on the first load`() = runTest {
+        val poolKey = stringPreferencesKey("cached_pool")
+        val pinnedKey = stringPreferencesKey("pinned_token")
+        val s = store()
+        s.dataStoreForTest.edit { it[poolKey] = "tok-a:FR,tok-b:US"; it[pinnedKey] = "tok-a" }
+
+        assertThat(s.loginCredential()).isNull()
+
+        val raw = s.dataStoreForTest.data.first()
+        assertThat(raw.contains(poolKey)).isFalse()
+        assertThat(raw.contains(pinnedKey)).isFalse()
+    }
+
+    @Test
+    fun `a pasted token is migrated using the scraped web pair`() = runTest {
+        store().setPastedToken("pasted-tok")
+        val s = store()
+        assertThat(s.loginCredential())
+            .isEqualTo(QbdlxLoginCredential("pasted-tok", "712109809", "web-secret"))
+        assertThat(s.connectedEmail()).isNull()
+        s.clearUserCredential()
+        assertThat(store().loginCredential()).isNull()   // the pasted key was consumed
+    }
+
+    @Test
+    fun `migration is skipped and the pasted token kept when the scrape fails`() = runTest {
+        store().setPastedToken("pasted-tok")
+        assertThat(store(creds = null).loginCredential()).isNull()
+        assertThat(store().hasLogin.first()).isTrue()    // key survives for the next attempt
+    }
+
+    @Test
     fun `a token pasted after the store has loaded is migrated on the next read`() = runTest {
-        val s = store("").also { it.primaryAppId = "798273057"; it.primaryAppSecret = "primary-secret" }
+        val s = store()
         assertThat(s.loginCredential()).isNull()          // loginLoaded = true, nothing to migrate
         s.setPastedToken("late-paste")
         assertThat(s.loginCredential()?.token).isEqualTo("late-paste")
         assertThat(s.loginLive()).isTrue()
+    }
+
+    @Test
+    fun `rejectLogin clears a migrated pasted token but only cools a real account`() = runTest {
+        val s = store()
+        s.setUserCredential("tok", "712109809", "web-secret", email = null)   // no email = migrated paste
+        s.rejectLogin("tok")
+        assertThat(s.hasLogin.first()).isFalse()                // terminal: nothing to re-mint from
+
+        s.setUserCredential("tok2", "712109809", "web-secret", email = "me@x")
+        s.rejectLogin("tok2")
+        assertThat(s.hasLogin.first()).isTrue()                 // still connected…
+        assertThat(s.loginLive()).isFalse()                     // …just cooling
     }
 }

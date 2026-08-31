@@ -2,7 +2,6 @@ package com.stash.feature.settings.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,32 +23,41 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.stash.data.download.lossless.RoutingRow
+import com.stash.data.download.lossless.RoutingState
 
 /**
  * ROUTING status block for the lossless source chain.
  *
- * Shows the live chain. As of 2026-07-31 that is Qobuz, full stop — amz and arcod
- * were parked, and kennyy/squid before them.
+ * Renders [rows] verbatim — they are built in
+ * [com.stash.data.download.lossless.LosslessAvailability] from the same predicates
+ * the source and downloads read, so this block cannot claim a path the resolver
+ * does not have. It used to hardcode a single "Qobuz — active" row, which was only
+ * ever true while a token pool shipped.
  *
  * Two rules this block has to follow, both learned the hard way:
- *  - **Say what is true right now.** It previously advertised "amz.squid.wtf fills
- *    in when a track isn't on Qobuz", which stayed on screen after amz was parked.
- *    A panel that explains where the user's audio comes from is worse than useless
- *    when it is wrong.
+ *  - **Say what is true right now.** It previously advertised a second source that
+ *    "fills in when a track isn't on Qobuz", and that line stayed on screen long
+ *    after the source was gone. A panel that explains where the user's audio comes
+ *    from is worse than useless when it is wrong. Hence: no hardcoded rows here, ever.
  *  - **Name what the user recognises, not our plumbing.** "Qobuz" is a service they
- *    can look up; `amz.squid.wtf` is a proxy hostname that means nothing to them and
- *    exposes our supply chain. When a source is parked, its row goes — do not leave
- *    it greyed out as decoration.
+ *    can look up; a proxy hostname means nothing to them and exposes our supply
+ *    chain. When a source is retired, its row goes — do not leave it greyed out as
+ *    decoration.
  *
  * Visual: mono caps header, indented `↳` rows, small status dots.
  *
- * Honesty caveat: no ping/health telemetry yet, so we never claim "live" — we
- * use "active" (= reachable in the resolver chain) and "fallback".
+ * Honesty caveat: rows describe CONFIGURATION, not liveness. There is still no
+ * health telemetry — that arrives with the relay's `/v1/status` in Plan B — and a
+ * connected account inside its dead-cooldown must not flicker to "offline", so a
+ * row never claims a path is reachable, only that it is set up.
  */
 @Composable
 internal fun LosslessRoutingStatus(
+    rows: List<RoutingRow>,
     modifier: Modifier = Modifier,
 ) {
+    if (rows.isEmpty()) return // pre-first-emission; the header alone would read as "no sources"
     val mono = FontFamily.Monospace
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -62,17 +70,21 @@ internal fun LosslessRoutingStatus(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        // Direct Qobuz is the primary lossless source; amz.squid.wtf (Amazon
-        // Music) is an independent fallback for tracks Qobuz doesn't carry.
-        RoutingRow(
-            host = "Qobuz",
-            configured = true,
-            statusLabel = "active",
-        )
+        rows.forEach { row ->
+            RoutingRowLine(
+                host = row.label,
+                configured = row.state != RoutingState.NOT_CONFIGURED,
+                statusLabel = row.detail,
+            )
+        }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Lossless comes from Qobuz. Misses try JioSaavn AAC 320 before falling " +
-                "back to YouTube, shown as \"via YT\" while it plays.",
+            // Never enumerate sources here: the rows above are the authority, and an
+            // ARCOD-only user read the old copy ("your connected account, or a relay
+            // you've configured") as crediting them with two paths they don't have —
+            // five lines under a row list that denied both.
+            text = "Lossless comes from the sources above. Misses try JioSaavn AAC 320 before " +
+                "falling back to YouTube, shown as \"via YT\" while it plays.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -81,16 +93,13 @@ internal fun LosslessRoutingStatus(
 
 /**
  * Single row inside [LosslessRoutingStatus]: indent arrow, host name,
- * status dot + label. Optional action link (e.g. "solve captcha →") on
- * the right when the source needs user setup.
+ * status dot + label.
  */
 @Composable
-internal fun RoutingRow(
+private fun RoutingRowLine(
     host: String,
     configured: Boolean,
     statusLabel: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
 ) {
     val mono = FontFamily.Monospace
     Row(
@@ -134,15 +143,5 @@ internal fun RoutingRow(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (actionLabel != null && onAction != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = actionLabel,
-                fontFamily = mono,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = onAction),
-            )
-        }
     }
 }

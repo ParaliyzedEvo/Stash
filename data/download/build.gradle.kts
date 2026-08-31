@@ -1,10 +1,4 @@
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
 import java.util.Properties
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 plugins {
     id("stash.android.library")
@@ -34,25 +28,16 @@ val arcodStreamBase: String =
 val arcodStashKey: String =
     arcodLocalProperties.getProperty("arcod.stashKey") ?: System.getenv("ARCOD_STASH_KEY").orEmpty()
 
-// ── qbdlx (direct-Qobuz) credentials + token pool ──────────────────────────
-// Bundled at build time from local.properties / env. APP_ID + APP_SECRET are
-// public (shown on qbdlx's login page). TOKEN_POOL is a comma-separated list of
-// "user_auth_token:ISO2COUNTRY" pairs. Empty is valid — an unconfigured build
-// simply has no bundled tokens and relies on a user-pasted token.
+// ── Build-time config reader ───────────────────────────────────────────────
+// Reads a value from local.properties (gitignored, local dev) falling back to an
+// env var (CI/release). Empty is always valid — every field below no-ops when
+// unset rather than failing the build.
 val qbdlxProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
 fun qbdlxProp(key: String, env: String) =
     qbdlxProps.getProperty(key) ?: System.getenv(env).orEmpty()
-val qbdlxAppId = qbdlxProp("qbdlx.appId", "QBDLX_APP_ID")
-val qbdlxAppSecret = qbdlxProp("qbdlx.appSecret", "QBDLX_APP_SECRET")
-val qbdlxTokenPool = qbdlxProp("qbdlx.tokenPool", "QBDLX_TOKEN_POOL")
-// EXTRA app_id:secret pairs beyond the primary (comma-separated), for pool tokens
-// minted under a different Qobuz app_id. The primary pair is seeded by the store
-// itself, so this holds only the additional pairs. Public creds (from Qobuz's own
-// web/app bundles), but kept out of the repo like the primary — build-injected.
-val qbdlxAppSecrets = qbdlxProp("qbdlx.appSecrets", "QBDLX_APP_SECRETS")
 
 // ── Stash Lossless Relay runtime config ────────────────────────────────────
 // URL of the ECDSA-signed lossless.json (the app fetches `<url>` and `<url>.sig`)
@@ -61,36 +46,6 @@ val qbdlxAppSecrets = qbdlxProp("qbdlx.appSecrets", "QBDLX_APP_SECRETS")
 // The APK never contains a relay hostname; the list lives behind this URL.
 val losslessConfigUrl = qbdlxProp("lossless.configUrl", "LOSSLESS_CONFIG_URL")
 val losslessConfigPubKey = qbdlxProp("lossless.configPubKey", "LOSSLESS_CONFIG_PUBKEY")
-
-// AES-256-GCM encrypt the pool at build time (mirrors the runtime
-// QbdlxPoolCipher — keep the two in sync). The fixture test guards the RUNTIME
-// decrypt only; nothing statically re-runs THIS encrypt, so a build-side-only
-// scheme change ships a blob the runtime can't decrypt → silent empty pool. The
-// catches for that are the runtime fp-mismatch Log.w (QbdlxModule) and the
-// MANDATORY on-device verify (empty pool shows as the Settings paste prompt).
-// Blank pool → emit "" so an unconfigured build still hits the paste path.
-fun encryptPool(plain: String): String {
-    if (plain.isBlank()) return ""
-    val pass = "stash" + "-qbdlx-" + "pool-" + "v1"
-    val digest = MessageDigest.getInstance("SHA-256").digest(pass.toByteArray())
-    val key = SecretKeySpec(digest, "AES")
-    val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
-    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
-    return Base64.getEncoder().encodeToString(iv + cipher.doFinal(plain.toByteArray()))
-}
-// sha256(plaintextPool)[:8], lowercase hex — matches `printf %s "$POOL" | sha256sum | head -c 8`
-// in release.yml. Non-secret; the CI verify step greps the dex for it to prove the
-// CURRENT, non-blank pool actually shipped (the v0.9.69 blank/stale failure class).
-// NOTE: `it.toInt() and 0xFF` is REQUIRED — a bare "%02x".format(byte) sign-extends
-// negative bytes to 8 hex chars, so the fp would never match sha256sum.
-fun poolFp(plain: String): String =
-    if (plain.isBlank()) "" else
-        MessageDigest.getInstance("SHA-256").digest(plain.toByteArray())
-            .joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(8)
-
-val qbdlxTokenPoolEnc = encryptPool(qbdlxTokenPool)
-val qbdlxPoolFp = poolFp(qbdlxTokenPool)
 
 // What makes an ARCOD build usable is the /v2/stash integration key — the old
 // private stream base is no longer the gate (those routes were retired when the
@@ -110,11 +65,6 @@ android {
         // Public host root for ARCOD's /v2/stash routes (Fufu published it openly;
         // only X-Stash-Key is private). Hardcoded, not injected.
         buildConfigField("String", "ARCOD_API_BASE", "\"https://api.arcod.xyz\"")
-        buildConfigField("String", "QBDLX_APP_ID", "\"$qbdlxAppId\"")
-        buildConfigField("String", "QBDLX_APP_SECRET", "\"$qbdlxAppSecret\"")
-        buildConfigField("String", "QBDLX_APP_SECRETS", "\"$qbdlxAppSecrets\"")
-        buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPoolEnc\"")
-        buildConfigField("String", "QBDLX_POOL_FP", "\"$qbdlxPoolFp\"")
         buildConfigField("String", "LOSSLESS_CONFIG_URL", "\"$losslessConfigUrl\"")
         buildConfigField("String", "LOSSLESS_CONFIG_PUBKEY", "\"$losslessConfigPubKey\"")
         buildConfigField("Boolean", "ARCOD_CONFIGURED", "$arcodConfigured")

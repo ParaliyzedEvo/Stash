@@ -228,17 +228,20 @@ class DownloadManager @Inject constructor(
             // tracks (forceLossless=true): the small curated rotating playlist
             // would silently empty if its tracks got stuck in deferral.
             if (!forceLossless && !losslessPrefs.youtubeFallbackEnabledNow()) {
-                // Debug/beta builds never bundle lossless credentials (QBDLX_CONFIGURED /
-                // ARCOD_CONFIGURED are false, amz needs none but is proxy-outage-prone) —
-                // respecting "fallback off" here would permanently strand every beta
-                // tester's tracks in WAITING_FOR_LOSSLESS regardless of their toggle.
-                // Force the lossy fallback chain on debug builds; release keeps
-                // real strict-FLAC. The chain is JioSaavn first, then YouTube.
+                // A BUILD gate, not a runtime one: forceYoutubeFallbackOnDebugBuilds
+                // is BuildConfig.DEBUG. Debug/beta builds force the lossy chain
+                // (JioSaavn first, then YouTube); release builds keep real
+                // strict-FLAC. Nothing here consults LosslessAvailability, so a beta
+                // tester who HAS connected their own Qobuz account still gets the
+                // lossy fallback the moment a track fails to resolve. That is wrong
+                // but deliberate for now — it is the only thing keeping a beta
+                // tester's whole queue out of WAITING_FOR_LOSSLESS.
+                // Making this respect a connected account is Plan A2's job.
                 if (forceYoutubeFallbackOnDebugBuilds) {
                     Log.i(
                         TAG,
-                        "debug build: forcing lossy fallback for '${track.artist} - ${track.title}' " +
-                            "despite fallback-off (no lossless tokens on beta builds)",
+                        "debug build: forcing lossy fallback despite fallback-off " +
+                            "for '${track.artist} - ${track.title}'",
                     )
                 } else {
                     Log.i(

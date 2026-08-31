@@ -55,6 +55,7 @@ class LosslessSourcePreferences @Inject constructor(
     private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
     private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
+    private val losslessOfflineDismissedKey = booleanPreferencesKey("lossless_offline_dismissed")
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
     private val youtubeFallbackKey = booleanPreferencesKey("youtube_fallback_enabled")
     // Retained only so [purgeAntraCredentials] can delete the harvested
@@ -79,10 +80,21 @@ class LosslessSourcePreferences @Inject constructor(
      * The toggle lives on this preferences class (rather than its own
      * DataStore) so all lossless-related settings stay in one place
      * and the schema can evolve together.
+     *
+     * Deduped, and caught so a read error cannot terminate the chain: this feeds
+     * two of Home's banner combines, and a DataStore IOException that killed the
+     * flow would leave Home stuck in `isLoading` forever.
+     *
+     * The catch fails OPEN — `emit(true)`, the same default the `map` documents
+     * above. Deliberate: failing to `false` would switch lossless off for a
+     * paying user on one transient IOException. (Contrast [customLosslessEndpoint]
+     * and the dismissal flags below, whose defaults happen to be the closed ones.)
+     * Note `catch {}` COMPLETES the flow: after an error these emit their fallback
+     * once and never re-emit for the process lifetime.
      */
     val enabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[enabledKey] ?: true
-    }
+    }.distinctUntilChanged().catch { emit(true) }
 
     suspend fun enabledNow(): Boolean = enabled.first()
 
@@ -210,22 +222,24 @@ class LosslessSourcePreferences @Inject constructor(
      * forever-dismissed semantics as `LastFmSessionPreference.bannerDismissed`.
      *
      * Defaults to false. Only read by [com.stash.feature.home.HomeViewModel];
-     * Settings has no UI for un-dismissing.
+     * Settings has no UI for un-dismissing. Deduped and fail-closed for the
+     * same reason as [enabled] — it feeds Home's banner combine.
      */
     val bannerDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[bannerDismissedKey] ?: false
-    }
+    }.distinctUntilChanged().catch { emit(false) }
 
     suspend fun setBannerDismissed(dismissed: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[bannerDismissedKey] = dismissed }
     }
 
     /**
-     * Whether the user has dismissed the "connect ARCOD" rescue banner that
-     * Home shows while qbdlx looks dead and no second lossless source is
-     * connected. Forever-dismissed, same semantics as [bannerDismissed] —
-     * the user has seen the offer and said no; the source-health signal
-     * re-detecting an outage must not resurrect it.
+     * Whether the user has dismissed the retired "connect ARCOD" rescue banner
+     * Home used to show while qbdlx looked dead and no second lossless source
+     * was connected. Nothing reads this any more — [losslessOfflineDismissed]
+     * succeeded it — but the key and its setter stay: deleting them would
+     * resurrect nothing, while REUSING them would mean anyone who dismissed the
+     * old banner never sees the new one.
      */
     val arcodRescueDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[arcodRescueDismissedKey] ?: false
@@ -233,6 +247,26 @@ class LosslessSourcePreferences @Inject constructor(
 
     suspend fun setArcodRescueDismissed(dismissed: Boolean) {
         context.losslessDataStore.edit { prefs -> prefs[arcodRescueDismissedKey] = dismissed }
+    }
+
+    /**
+     * Whether the user has dismissed the "No lossless right now" Home banner —
+     * the successor to [arcodRescueDismissed], which keyed on ARCOD alone.
+     * Forever-dismissed, same semantics.
+     *
+     * Its own key deliberately: the new banner says something different
+     * ("connect your own Qobuz account", not "connect ARCOD"), so someone who
+     * declined the old offer is still owed this one once. The old key stays
+     * readable so removing it can't resurrect the retired banner.
+     *
+     * Deduped and fail-closed for the same reason as [enabled].
+     */
+    val losslessOfflineDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
+        prefs[losslessOfflineDismissedKey] ?: false
+    }.distinctUntilChanged().catch { emit(false) }
+
+    suspend fun setLosslessOfflineDismissed(dismissed: Boolean) {
+        context.losslessDataStore.edit { prefs -> prefs[losslessOfflineDismissedKey] = dismissed }
     }
 
     /**
@@ -333,25 +367,31 @@ class LosslessSourcePreferences @Inject constructor(
          *
          * Order:
          * 1. qbdlx_qobuz — Qobuz Hi-Res FLAC via a direct www.qobuz.com call
-         *    (MD5 request signing + a rotating token pool). Ranked FIRST: it's
+         *    (MD5 request signing with the user's own credentials, or a relay).
+         *    Ranked FIRST: it's
          *    the fastest lossless path — plain Range-seekable FLAC, no proxy
-         *    operator and no client-side decryption (unlike amz).
+         *    operator and no client-side decryption.
          * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
          * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
          * 4. arcod — Qobuz Hi-Res FLAC via arcod.xyz (per-user Supabase session).
-         *    2–4 are currently PARKED (hosts down for us) — see
+         *    2–3 are currently PARKED (hosts down for us) — see
          *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
-         *    stay so re-enabling is a one-line change when they recover.
-         * 5. amz — Amazon Music FLAC via amz.squid.wtf. Ranked LAST: its stream
-         *    path decrypts the whole file client-side (tens of seconds), so it's
-         *    the slow, different-catalog fallback after every Qobuz source.
+         *    stay so re-enabling is a one-line change when they recover. 4 is
+         *    live, gated on the build carrying ARCOD's key and on the user
+         *    connecting an account.
+         *
+         * Every rung is user-owned OR build-carried: 1 self-gates off without a
+         * connected account, a custom endpoint or a relay from the signed config,
+         * 2 and 3 are parked, and 4 is build-gated. With nothing of the user's own
+         * connected, a build carrying a relay config still resolves through 1 with
+         * no user action (see [LosslessAvailability] and [com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter]); a
+         * build without one reaches NO lossless source at all and falls back to lossy.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",
             "squid_qobuz",
             "kennyy_qobuz",
             "arcod",
-            "amz",
         )
 
         /**

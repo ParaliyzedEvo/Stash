@@ -12,8 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Stash's sync fans out 8 downloads at once. On some networks the system
  * resolver returns `UnknownHostException("No address associated with hostname")`
  * for several of those *simultaneous* lookups even though the same host resolves
- * fine for a single request a moment later. Observed live for `amz.squid.wtf`
- * during sync (every amz call DNS-failed for the whole 8-way burst) while
+ * fine for a single request a moment later. Observed live for `qobuz.squid.wtf`
+ * during sync (every call DNS-failed for the whole 8-way burst) while
  * single-request streaming to that exact host worked — the reason downloads
  * "fell flat" while streaming was fine.
  *

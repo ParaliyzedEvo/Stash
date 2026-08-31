@@ -10,6 +10,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -18,7 +19,11 @@ class LosslessAvailabilityTest {
     private val configRelays = MutableStateFlow<List<RelayEntry>>(emptyList())
     private val custom = MutableStateFlow<String?>(null)
     private val arcod = MutableStateFlow<String?>(null)
-    private val store: QbdlxCredentialStore = mockk { every { hasLogin } returns login }
+    private val loginEmail = MutableStateFlow<String?>(null)
+    private val store: QbdlxCredentialStore = mockk {
+        every { hasLogin } returns login
+        every { connectedEmailFlow } returns loginEmail
+    }
     private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
     private val prefs: LosslessSourcePreferences = mockk { every { customLosslessEndpoint } returns custom }
     private val relayClient: LosslessRelayClient = mockk()
@@ -77,5 +82,51 @@ class LosslessAvailabilityTest {
         assertThat(a.qbdlxEnabledNow()).isFalse()
         assertThat(a.anyConfiguredNow()).isTrue()
         assertThat(a.anyUserOwnedNow()).isTrue()
+    }
+
+    // ── routingRows: what Settings › Audio renders ──────────────────────────
+
+    private suspend fun rows() = a.routingRows.first()
+
+    private suspend fun row(id: String) = rows().single { it.id == id }
+
+    @Test fun `nothing configured - qobuz and relay rows are not configured`() = runTest {
+        assertThat(row("qobuz").state).isEqualTo(RoutingState.NOT_CONFIGURED)
+        assertThat(row("qobuz").detail).isEqualTo("not connected")
+        assertThat(row("relay").state).isEqualTo(RoutingState.NOT_CONFIGURED)
+        assertThat(row("relay").detail).isEqualTo("not configured")
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "arcod").inOrder()
+    }
+
+    @Test fun `a connected account shows its email`() = runTest {
+        login.value = true; loginEmail.value = "me@example.com"
+        assertThat(row("qobuz").state).isEqualTo(RoutingState.CONNECTED)
+        assertThat(row("qobuz").detail).isEqualTo("me@example.com")
+    }
+
+    @Test fun `a migrated token has no email but is still connected`() = runTest {
+        login.value = true; loginEmail.value = null
+        assertThat(row("qobuz").state).isEqualTo(RoutingState.CONNECTED)
+        assertThat(row("qobuz").detail).isEqualTo("connected (token)")
+    }
+
+    @Test fun `a config relay makes the relay row configured`() = runTest {
+        configRelays.value = listOf(RelayEntry("https://r.example", 1))
+        assertThat(row("relay").state).isEqualTo(RoutingState.CONFIGURED)
+        assertThat(row("relay").detail).isEqualTo("configured")
+    }
+
+    @Test fun `a custom endpoint adds its own row - absent otherwise`() = runTest {
+        assertThat(rows().map { it.id }).doesNotContain("custom")
+        custom.value = "https://mine.example"
+        assertThat(row("custom").state).isEqualTo(RoutingState.CONFIGURED)
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "custom", "arcod").inOrder()
+    }
+
+    @Test fun `ARCOD connected shows as connected`() = runTest {
+        assertThat(row("arcod").state).isEqualTo(RoutingState.NOT_CONFIGURED)
+        arcod.value = "arcod-token"
+        assertThat(row("arcod").state).isEqualTo(RoutingState.CONNECTED)
+        assertThat(row("arcod").detail).isEqualTo("connected")
     }
 }

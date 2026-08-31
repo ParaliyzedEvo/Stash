@@ -71,19 +71,32 @@ class ArcodClient @Inject constructor(
      */
     internal var stashBaseUrl = BuildConfig.ARCOD_API_BASE.trimEnd('/') + "/v2/stash"
 
+    /**
+     * The operator's per-build integration key for the `/v2/stash` routes.
+     *
+     * Test seam like [baseUrl]/[stashBaseUrl]: CI builds this module with an
+     * EMPTY `BuildConfig.ARCOD_STASH_KEY` (tests.yml exports no arcod secret), so
+     * without a seam every `streamUrl` test returned null before touching the
+     * MockWebServer — two of them had been failing on master since at least
+     * 2026-08-24 for exactly that reason, and the header test silently asserted
+     * nothing. Tests set this; production leaves the BuildConfig default.
+     */
+    internal var stashKey: String = BuildConfig.ARCOD_STASH_KEY
+
     /** True when this build carries the operator's private integration key. */
-    val isConfigured: Boolean get() = BuildConfig.ARCOD_STASH_KEY.isNotBlank()
+    val isConfigured: Boolean get() = stashKey.isNotBlank()
 
     /**
      * Search the proxied Qobuz catalog. Non-2xx (other than 429) or a parse
      * failure yields an empty list so the caller cleanly fails over.
      */
     suspend fun search(query: String): List<ArcodTrackItem> = withContext(Dispatchers.IO) {
+        assertQuota()
         val encoded = URLEncoder.encode(query, "UTF-8")
         val request = arcodRequest("$stashBaseUrl/search?q=$encoded&limit=$SEARCH_LIMIT&offset=0").get().build()
         try {
             httpClient.newCall(request).execute().use { response ->
-                if (response.code == 429) throw ArcodRateLimitedException()
+                note429(response)
                 if (!response.isSuccessful) return@withContext emptyList()
                 val body = response.body?.string().orEmpty()
                 val parsed = ArcodJson.decodeFromString<ArcodSearchResponse>(body)
@@ -103,11 +116,12 @@ class ArcodClient @Inject constructor(
      * failure (non-2xx or parse error) returns null.
      */
     suspend fun createJob(request: ArcodJobRequest): ArcodJob? = withContext(Dispatchers.IO) {
+        assertQuota()
         val body = ArcodJson.encodeToString(request).toRequestBody(JSON_MEDIA_TYPE)
         val httpRequest = arcodRequest("$baseUrl/v2/downloads").post(body).build()
         try {
             httpClient.newCall(httpRequest).execute().use { response ->
-                if (response.code == 429) throw ArcodRateLimitedException()
+                note429(response)
                 if (!response.isSuccessful) return@withContext null
                 val responseBody = response.body?.string().orEmpty()
                 ArcodJson.decodeFromString<ArcodJob>(responseBody)
@@ -131,12 +145,13 @@ class ArcodClient @Inject constructor(
         timeoutMs: Long = 60_000L,
         intervalMs: Long = 1_500L,
     ): ArcodJob? = withContext(Dispatchers.IO) {
+        assertQuota()
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
             val request = arcodRequest("$baseUrl/v2/downloads/$jobId").get().build()
             val job = try {
                 httpClient.newCall(request).execute().use { response ->
-                    if (response.code == 429) throw ArcodRateLimitedException()
+                    note429(response)
                     if (!response.isSuccessful) {
                         Log.d(TAG, "poll $jobId http ${response.code} (not successful)")
                         return@use null
@@ -182,6 +197,7 @@ class ArcodClient @Inject constructor(
         withContext(Dispatchers.IO) {
             // Unconfigured build (no integration key injected) → skip cleanly so the
             // registry fails over instead of calling a route that can only 403.
+            assertQuota()
             if (!isConfigured) {
                 Log.d(TAG, "stash key not configured — skipping arcod stream")
                 return@withContext null
@@ -190,7 +206,7 @@ class ArcodClient @Inject constructor(
                 .get().build()
             try {
                 httpClient.newCall(request).execute().use { response ->
-                    if (response.code == 429) throw ArcodRateLimitedException()
+                    note429(response)
                     if (!response.isSuccessful) return@withContext null
                     val body = response.body?.string().orEmpty()
                     parseStreamResult(body) ?: run {
@@ -234,6 +250,58 @@ class ArcodClient @Inject constructor(
     }
 
     /**
+     * Server-side rate-limit gate, shared by every caller of this client.
+     *
+     * arcod answers a spent daily allowance with `429 {"error":"Daily quota
+     * reached","resetAt":"midnight UTC"}` against the build's integration KEY —
+     * not the user's account and not their IP (reproduced from a second IP with
+     * the same key, 2026-08-31). Without this gate every later call still fired a
+     * guaranteed-429 round trip: with the force-arcod toggle on, that was one
+     * wasted request on every single tap until midnight.
+     *
+     * The download path already had [com.stash.data.download.lossless.AggregatorRateLimiter]
+     * in front of it; the STREAMING path ([com.stash.core.media.streaming.ArcodStreamResolver])
+     * had nothing. The gate lives here, at the one place both paths route
+     * through, so neither can forget it.
+     *
+     * A quota 429 blocks until the next UTC midnight (what the server says);
+     * any other 429 is treated as a burst and gets [BURST_COOLDOWN_MS], because
+     * a short throttle must not cost us the rest of the day.
+     *
+     * Process-scoped (@Singleton): a restart re-probes and spends at most one
+     * request re-learning. Not worth persisting.
+     */
+    @Volatile
+    private var blockedUntilMs = 0L
+
+    /** Test seam: tests drive time instead of sleeping. */
+    internal var nowMs: () -> Long = System::currentTimeMillis
+
+    /** Throw without touching the network while the gate is closed. */
+    private fun assertQuota() {
+        if (nowMs() < blockedUntilMs) throw ArcodRateLimitedException()
+    }
+
+    /**
+     * Close the gate on a 429 and throw. Reads the (56-byte) body to tell a
+     * daily-quota exhaustion from an ordinary burst throttle.
+     */
+    private fun note429(response: okhttp3.Response) {
+        if (response.code != 429) return
+        val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+        val daily = body.contains("quota", ignoreCase = true)
+        // Epoch millis are already UTC, so the next day boundary is plain arithmetic
+        // — no java.time desugaring needed for one ceiling division.
+        blockedUntilMs = if (daily) {
+            (nowMs() / DAY_MS + 1) * DAY_MS
+        } else {
+            nowMs() + BURST_COOLDOWN_MS
+        }
+        Log.w(TAG, "arcod 429 (${if (daily) "daily quota" else "burst"}) — skipping arcod until $blockedUntilMs")
+        throw ArcodRateLimitedException()
+    }
+
+    /**
      * Browser-y headers the arcod web app sends; Bearer is added by the interceptor.
      *
      * `X-Stash-Key` is the operator's per-build integration key for the `/v2/stash`
@@ -248,7 +316,7 @@ class ArcodClient @Inject constructor(
             .header("Origin", "https://arcod.xyz")
             .header("Referer", "https://arcod.xyz/")
             .apply {
-                BuildConfig.ARCOD_STASH_KEY.takeIf { it.isNotBlank() }
+                stashKey.takeIf { it.isNotBlank() }
                     ?.let { header("X-Stash-Key", it) }
             }
 
@@ -256,6 +324,9 @@ class ArcodClient @Inject constructor(
         const val TAG = "ArcodClient"
         /** Catalog page size for search — enough candidates for the matcher to score. */
         const val SEARCH_LIMIT = 12
+        const val DAY_MS = 86_400_000L
+        /** Non-quota 429 = ordinary throttle; back off briefly, not all day. */
+        const val BURST_COOLDOWN_MS = 60_000L
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +

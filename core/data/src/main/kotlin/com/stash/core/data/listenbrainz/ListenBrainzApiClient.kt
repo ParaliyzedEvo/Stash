@@ -54,9 +54,9 @@ class ListenBrainzApiClient @Inject constructor(
     /**
      * Test seam: tests assign a MockWebServer URL before calling any endpoint.
      * Production paths leave this on the default. Kept off the constructor
-     * signature for the same reason as [com.stash.data.download.lossless.amz.AmzApiClient]
-     * — mixing `@Inject` with a default-valued parameter generates two JVM
-     * constructors and Hilt rejects the ambiguous injection site.
+     * signature because mixing `@Inject` with a default-valued parameter
+     * generates two JVM constructors and Hilt rejects the ambiguous injection
+     * site.
      */
     internal var baseUrl: String = DEFAULT_BASE_URL
 

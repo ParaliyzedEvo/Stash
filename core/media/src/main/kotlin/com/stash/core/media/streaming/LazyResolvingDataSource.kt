@@ -66,8 +66,8 @@ fun stashResolveUri(
  * playable stream at open time: [StreamUrlCache] first (the next-up
  * prefetch usually has it warm), then a full [StreamSourceRegistry.resolve]
  * under [resolveDeadlineMs]. The read is delegated by origin:
- * amz → [amzDelegate] (authed OkHttp; header auth, never URL-refresh, never
- * disk cache), everything else → [httpDelegate].
+ * JioSaavn → [jioSaavnDelegate] (authed OkHttp, no redirects), everything
+ * else → [httpDelegate].
  *
  * Failure = [IOException] from [open], which ExoPlayer surfaces as a source
  * error → `onPlayerError` → the cascade guard decides recover vs halt. The
@@ -84,7 +84,6 @@ class LazyResolvingDataSource(
     private val urlCache: StreamUrlCache,
     private val trackDao: TrackDao,
     private val httpDelegate: () -> DataSource,
-    private val amzDelegate: () -> DataSource,
     private val jioSaavnDelegate: () -> DataSource,
     private val resolveDeadlineMs: Long = RESOLVE_DEADLINE_MS,
 ) : DataSource {
@@ -113,7 +112,6 @@ class LazyResolvingDataSource(
 
         val realSpec = dataSpec.buildUpon().setUri(Uri.parse(fresh.url)).build()
         val delegate = when (fresh.origin) {
-            "amz" -> amzDelegate()
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             else -> httpDelegate()
         }

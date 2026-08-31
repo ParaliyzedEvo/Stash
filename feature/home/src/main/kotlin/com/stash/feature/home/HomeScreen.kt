@@ -157,7 +157,6 @@ private const val HOME_RAIL_LIMIT = 12
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToArcodConnect: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
@@ -327,17 +326,21 @@ fun HomeScreen(
             }
         }
 
-        // ── ARCOD rescue ─────────────────────────────────────────────
-        // Shown while the qbdlx pool looks dead, lossless is ON and no
-        // ARCOD account is connected — the one moment the second source
-        // is the difference between FLAC and a silent YouTube fallback.
-        // Tap goes STRAIGHT into the connect flow; X declines forever.
-        if (uiState.showArcodRescue) {
+        // ── Lossless offline ─────────────────────────────────────────
+        // Shown while lossless is ON, the shared path looks dead and
+        // the user owns no lossless source of their own — the one
+        // moment connecting an account is the difference between FLAC
+        // and a silent YouTube fallback. Tap opens Settings › Audio;
+        // X declines forever.
+        if (uiState.showLosslessOffline) {
             item {
                 Spacer(Modifier.height(6.dp))
-                ArcodRescueBanner(
-                    onConnect = onNavigateToArcodConnect,
-                    onDismiss = viewModel::dismissArcodRescue,
+                LosslessOfflineBanner(
+                    onConnect = {
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onDismiss = viewModel::dismissLosslessOffline,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -931,13 +934,29 @@ private fun LosslessConnectBanner(
 }
 
 /**
- * "Connect ARCOD" rescue banner. Same visual grammar as
+ * "No lossless right now" banner. Same visual grammar as
  * [LosslessConnectBanner] but on the error accent: this one isn't an
- * upsell, it's a repair — the user's chosen lossless experience is
- * currently degraded and one tap fixes it.
+ * upsell, it's a repair — the user asked for lossless and isn't getting
+ * it, and one tap starts fixing that.
+ *
+ * The copy deliberately does NOT say anything broke. The state that fires
+ * this banner is usually the day-one one — lossless on by default, nothing
+ * ever connected — which is the same state Settings › Audio reports as
+ * "No lossless source configured".
+ *
+ * The two surfaces agree on the states that matter, but they are NOT the same
+ * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
+ * (BYO login || custom endpoint || ARCOD) so a dead PUBLIC relay cannot hide
+ * the "connect your own account" offer — that outage is what the banner is
+ * for. Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
+ * endpoint || a config relay), which counts relays and excludes ARCOD, and its
+ * call sites re-add `&& !arcodConnected`. So they diverge on exactly one case:
+ * a user with nothing but a public config relay still gets this banner, and
+ * should — Home asks "is there anything of yours to connect?", Settings asks
+ * "is what you configured still a path?".
  */
 @Composable
-private fun ArcodRescueBanner(
+private fun LosslessOfflineBanner(
     onConnect: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -959,12 +978,13 @@ private fun ArcodRescueBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Lossless is struggling",
+                    text = "No lossless right now",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "The main FLAC source isn't responding. Connect ARCOD — a free second source — to keep hi-res going.",
+                    text = "Stash is falling back to lossy audio. " +
+                        "Connect your own Qobuz account for FLAC.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -983,7 +1003,7 @@ private fun ArcodRescueBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss ARCOD banner",
+                    contentDescription = "Dismiss lossless-offline banner",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )

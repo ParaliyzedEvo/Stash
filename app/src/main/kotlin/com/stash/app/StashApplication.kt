@@ -124,6 +124,14 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
 
+    /**
+     * Only so [maybePurgeRetiredSourceArtifacts] can delete the retired token
+     * pool's cached third-party credentials on upgrade — the lazy purge inside
+     * the store never fires for a user who keeps lossless off.
+     */
+    @Inject
+    lateinit var qbdlxCredentialStore: com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+
     @Inject
     lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
 
@@ -421,7 +429,7 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
-        applicationScope.launch { maybePurgeAntraArtifacts() }
+        applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
         // Seed Playback Mode from the legacy StreamingPreference value for
         // installs that predate the split. Internally idempotent — checks
         // key-presence itself, so no SharedPreferences version gate needed
@@ -483,18 +491,26 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * One-shot cleanup after the antra source was removed: deletes the
-     * harvested antra.hoshi.cfd session cookie / cf_clearance / username and
-     * the retired `force_antra_only` toggle from existing installs, so no
-     * stale third-party login session lingers on disk. Runs exactly once per
-     * install via a SharedPreferences version flag.
+     * One-shot cleanup after a source is removed: deletes credentials and
+     * toggles it left behind, so no stale third-party login state lingers on
+     * disk. Runs exactly once per install via a SharedPreferences version flag.
+     *
+     * v1 — antra: the harvested antra.hoshi.cfd session cookie / cf_clearance /
+     *      username, plus the retired `force_antra_only` toggle.
+     * v2 — the shipped qbdlx token pool: `cached_pool` held OTHER PEOPLE's
+     *      plaintext Qobuz tokens, and `force_amz_only` outlived the amz source.
+     *      The pool purge also runs lazily inside
+     *      [QbdlxCredentialStore.loginCredential], but that never fires for a
+     *      user who keeps lossless off — so it has to run here too, or their
+     *      copy of those tokens stays on disk indefinitely.
      */
-    private suspend fun maybePurgeAntraArtifacts() {
+    private suspend fun maybePurgeRetiredSourceArtifacts() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("antra_purge_version", 0)
         if (stored < ANTRA_PURGE_VERSION) {
             losslessSourcePreferences.purgeAntraCredentials()
             streamingPreference.purgeRetiredKeys()
+            qbdlxCredentialStore.purgeRetiredPoolKeys()
             prefs.edit().putInt("antra_purge_version", ANTRA_PURGE_VERSION).apply()
         }
     }
@@ -890,8 +906,12 @@ class StashApplication : Application(), Configuration.Provider {
          */
         private const val ARTIST_CACHE_VERSION = 1
 
-        /** Bump to re-run [maybePurgeAntraArtifacts] (one-shot antra cleanup). */
-        private const val ANTRA_PURGE_VERSION = 1
+        /**
+         * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
+         * credentials a removed source left on disk). v2 adds the qbdlx token
+         * pool's cached third-party tokens and the retired amz toggle.
+         */
+        private const val ANTRA_PURGE_VERSION = 2
 
         /**
          * Bump when [maybeHideEmptyYouTubePlaylists] needs to run again.

@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.relay
 
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -92,5 +93,49 @@ class LosslessRelayClientTest {
         val r = client.mint(base, 42, 27) as RelayMint.Ok
         assertThat(r.formatId).isEqualTo(27)
         assertThat(r.bitDepth).isEqualTo(0); assertThat(r.sampleRateHz).isEqualTo(0)
+    }
+
+    @Test fun `probe is true on 200 and never cools`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"status":"ok"}"""))
+        assertThat(client.probe(base)).isTrue()
+        // Bounded: an untimed takeRequest() on a probe that stopped issuing the
+        // request would hang to the CI job timeout instead of failing here.
+        assertThat(server.takeRequest(2, TimeUnit.SECONDS)?.path).isEqualTo("/v1/status")
+        assertThat(client.isCooled(base)).isFalse()
+    }
+
+    @Test fun `probe is true on 404 and on 400 — reachability, not health`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertThat(client.probe(base)).isTrue()
+        assertThat(client.isCooled(base)).isFalse()
+
+        server.enqueue(MockResponse().setResponseCode(400))
+        assertThat(client.probe(base)).isTrue()
+        assertThat(client.isCooled(base)).isFalse()
+    }
+
+    @Test fun `probe is false when the host is unreachable and still never cools`() = runTest {
+        server.shutdown()
+        assertThat(client.probe(base)).isFalse()
+        assertThat(client.isCooled(base)).isFalse()
+    }
+
+    @Test fun `probe ignores the cooldown so a manual test gets a real answer`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertThat(client.mint(base, 42, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(client.isCooled(base)).isTrue()
+
+        server.enqueue(MockResponse().setBody("""{"status":"ok"}"""))
+        assertThat(client.probe(base)).isTrue()
+        assertThat(server.requestCount).isEqualTo(2)
+        // The manual test neither consulted nor extended the cooldown.
+        assertThat(client.isCooled(base)).isTrue()
+    }
+
+    @Test fun `probe on a malformed or non-http base is false without a request`() = runTest {
+        assertThat(client.probe("https://bad host")).isFalse()
+        assertThat(client.probe("ftp://relay.example")).isFalse()
+        assertThat(client.probe("relay.example")).isFalse()
+        assertThat(server.requestCount).isEqualTo(0)
     }
 }

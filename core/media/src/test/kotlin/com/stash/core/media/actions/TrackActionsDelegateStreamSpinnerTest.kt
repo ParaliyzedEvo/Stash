@@ -24,7 +24,7 @@ import org.junit.Test
  * Bug: when Online/streaming mode is on (the common case), a tap on a Popular /
  * search row routed to full-track playback via `playFromStream` WITHOUT ever
  * setting `previewLoadingId`, so the row showed no spinner during the
- * multi-second resolve (worst for amz, which fetch+decrypts a whole FLAC) — it
+ * multi-second resolve (a cold yt-dlp extraction is the worst case) — it
  * looked broken / silent. The preview path already drove the spinner; the
  * streaming path must too.
  *

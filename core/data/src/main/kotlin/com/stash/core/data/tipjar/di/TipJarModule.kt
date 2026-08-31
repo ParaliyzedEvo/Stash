@@ -30,16 +30,14 @@ object TipJarModule {
     @Singleton
     @SupportersJsonUrl
     fun provideSupportersJsonUrl(): String {
-        // Reflective access keeps :core:data layering clean.
-        // Falls back to a hardcoded raw-GitHub URL if BuildConfig
-        // can't be loaded — the app should always have BuildConfig
-        // available in practice, this is defense in depth.
+        // Reflective access keeps :core:data layering clean. No hardcoded
+        // fallback URL: BuildConfig is always present in a real build, and the
+        // old fallback only published a stale repo name. Empty means "no
+        // supporters host" — TipJarRepository.refresh() no-ops on it and the
+        // pill keeps its bundled list.
         return runCatching {
             val cls = Class.forName("com.stash.app.BuildConfig")
             cls.getField("SUPPORTERS_JSON_URL").get(null) as String
-        }.getOrDefault(DEFAULT_URL)
+        }.getOrDefault("")
     }
-
-    private const val DEFAULT_URL =
-        "https://raw.githubusercontent.com/rawnaldclark/MP3APK/master/docs/supporters.json"
 }

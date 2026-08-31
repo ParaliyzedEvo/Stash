@@ -7,8 +7,8 @@ import com.stash.data.ytmusic.model.PlaylistSummary
 /**
  * Home discovery rows sourced from Qobuz featured endpoints.
  *
- * Impl lives in `data:download` (it needs the qbdlx client + token pool, which
- * `core:data` can't see) and is bound via Hilt — mirrors [QobuzAlbumFetcher].
+ * Impl lives in `data:download` (it needs the qbdlx client + its credential
+ * store, which `core:data` can't see) and is bound via Hilt — mirrors [QobuzAlbumFetcher].
  *
  * Fail-soft by contract: discovery is non-critical, so any failure (no live
  * token, network error, empty catalog) returns an empty list rather than
