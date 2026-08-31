@@ -41,6 +41,11 @@ class ArcodClientTest {
             streamBaseUrl = server.url("/strm").toString().trimEnd('/')
             // The /v2/stash routes issued to Stash: search + stream both live here.
             stashBaseUrl = server.url("/v2/stash").toString().trimEnd('/')
+            // CI builds this module with an EMPTY BuildConfig.ARCOD_STASH_KEY, which
+            // makes `isConfigured` false and every streamUrl call return null before
+            // it reaches the server. Set the seam so these tests exercise real code
+            // in CI instead of passing (or failing) vacuously.
+            stashKey = TEST_STASH_KEY
         }
     }
 
@@ -150,12 +155,9 @@ class ArcodClientTest {
     @Test fun `stash requests carry the X-Stash-Key header when configured`() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody(SEARCH_BODY))
         client.search("Ja Rule Murderers")
-        val sent = server.takeRequest().getHeader("X-Stash-Key")
-        if (com.stash.data.download.BuildConfig.ARCOD_STASH_KEY.isNotBlank()) {
-            assertEquals(com.stash.data.download.BuildConfig.ARCOD_STASH_KEY, sent)
-        } else {
-            assertNull(sent)
-        }
+        // Asserted unconditionally now that `stashKey` is a seam: the old
+        // BuildConfig branch made this test assert NOTHING in CI.
+        assertEquals(TEST_STASH_KEY, server.takeRequest().getHeader("X-Stash-Key"))
     }
 
     @Test fun `streamUrl parses flat json url`() = runTest {
@@ -215,6 +217,7 @@ class ArcodClientTest {
     }
 
     private companion object {
+        const val TEST_STASH_KEY = "test-stash-key"
         const val QUOTA_BODY = """{"error":"Daily quota reached","resetAt":"midnight UTC"}"""
         /** Arbitrary fixed instant, mid-UTC-day so the midnight boundary is unambiguous. */
         const val FIXED_NOW = 1_788_200_000_000L

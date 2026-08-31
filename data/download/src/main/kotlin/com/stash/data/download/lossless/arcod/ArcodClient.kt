@@ -71,8 +71,20 @@ class ArcodClient @Inject constructor(
      */
     internal var stashBaseUrl = BuildConfig.ARCOD_API_BASE.trimEnd('/') + "/v2/stash"
 
+    /**
+     * The operator's per-build integration key for the `/v2/stash` routes.
+     *
+     * Test seam like [baseUrl]/[stashBaseUrl]: CI builds this module with an
+     * EMPTY `BuildConfig.ARCOD_STASH_KEY` (tests.yml exports no arcod secret), so
+     * without a seam every `streamUrl` test returned null before touching the
+     * MockWebServer — two of them had been failing on master since at least
+     * 2026-08-24 for exactly that reason, and the header test silently asserted
+     * nothing. Tests set this; production leaves the BuildConfig default.
+     */
+    internal var stashKey: String = BuildConfig.ARCOD_STASH_KEY
+
     /** True when this build carries the operator's private integration key. */
-    val isConfigured: Boolean get() = BuildConfig.ARCOD_STASH_KEY.isNotBlank()
+    val isConfigured: Boolean get() = stashKey.isNotBlank()
 
     /**
      * Search the proxied Qobuz catalog. Non-2xx (other than 429) or a parse
@@ -304,7 +316,7 @@ class ArcodClient @Inject constructor(
             .header("Origin", "https://arcod.xyz")
             .header("Referer", "https://arcod.xyz/")
             .apply {
-                BuildConfig.ARCOD_STASH_KEY.takeIf { it.isNotBlank() }
+                stashKey.takeIf { it.isNotBlank() }
                     ?.let { header("X-Stash-Key", it) }
             }
 
