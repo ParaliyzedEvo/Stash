@@ -50,9 +50,12 @@ class StreamingPreference @Inject constructor(
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
     private val forceArcodOnlyKey = booleanPreferencesKey("force_arcod_only")
     private val forceQbdlxOnlyKey = booleanPreferencesKey("force_qbdlx_only")
-    // Retained only so [purgeRetiredKeys] can delete it from existing
-    // installs; the antra source was removed (see fix/remove-antra).
+    // Retained only so [purgeRetiredKeys] can delete them from existing
+    // installs; both sources were removed (antra: fix/remove-antra; amz:
+    // Plan C). The literal names must stay until upgrades from <= v0.9.100
+    // stop mattering — deleting a key requires naming it.
     private val forceAntraOnlyKey = booleanPreferencesKey("force_antra_only")
+    private val forceAmzOnlyKey = booleanPreferencesKey("force_amz_only")
 
     val enabled: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
         prefs[enabledKey] ?: false
@@ -172,11 +175,14 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
-     * One-shot cleanup for the removed antra source: deletes the retired
-     * `force_antra_only` toggle from existing installs. Called once at
-     * startup (see StashApplication). No-op when the key is already absent.
+     * One-shot cleanup for removed sources: deletes their retired force-only
+     * toggles from existing installs. Called once at startup (see
+     * StashApplication). No-op when the keys are already absent.
      */
     suspend fun purgeRetiredKeys() {
-        context.streamingDataStore.edit { it.remove(forceAntraOnlyKey) }
+        context.streamingDataStore.edit {
+            it.remove(forceAntraOnlyKey)
+            it.remove(forceAmzOnlyKey)
+        }
     }
 }

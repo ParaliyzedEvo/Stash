@@ -146,16 +146,7 @@ class QbdlxCredentialStore @Inject constructor(
             val p = runCatching { context.qbdlxCredentialsDataStore.data.first() }.getOrNull()
 
             // The pool left the app; its cached tokens must leave the device too.
-            // One-shot: these keys are never written again.
-            if (p?.contains(STALE_POOL_KEY) == true || p?.contains(STALE_PINNED_KEY) == true) {
-                runCatching {
-                    context.qbdlxCredentialsDataStore.edit { it.remove(STALE_POOL_KEY); it.remove(STALE_PINNED_KEY) }
-                }
-                    // Only claim the purge when it actually happened — logging success over a
-                    // failed edit would assert that plaintext tokens are gone while they remain.
-                    .onSuccess { Log.i(TAG, "purged cached pool credentials left over from the shipped token pool") }
-                    .onFailure { if (it is CancellationException) throw it }
-            }
+            purgeRetiredPoolKeys(p)
 
             val t = p?.get(loginTokenKey)
             val a = p?.get(loginAppIdKey)
@@ -176,6 +167,36 @@ class QbdlxCredentialStore @Inject constructor(
             }
         }
         return cachedLogin
+    }
+
+    /**
+     * Delete the removed pool's cached plaintext third-party tokens from disk.
+     *
+     * Called from two places, deliberately: [loginCredential] (so a resolve always
+     * lands on a purged store) and once per install at startup (StashApplication),
+     * because a user with lossless off never triggers a resolve and would otherwise
+     * keep the tokens forever. Idempotent and non-throwing — a failed edit just
+     * leaves the keys for the next call.
+     *
+     * The startup caller is in another Gradle module, so this entry point is public
+     * and takes no [Preferences] — datastore is an `implementation` dep here.
+     */
+    suspend fun purgeRetiredPoolKeys() = purgeRetiredPoolKeys(
+        runCatching { context.qbdlxCredentialsDataStore.data.first() }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull(),
+    )
+
+    /** [p] is the Preferences the caller already read, so the resolve path skips a second read. */
+    private suspend fun purgeRetiredPoolKeys(p: Preferences?) {
+        if (p?.contains(STALE_POOL_KEY) != true && p?.contains(STALE_PINNED_KEY) != true) return
+        runCatching {
+            context.qbdlxCredentialsDataStore.edit { it.remove(STALE_POOL_KEY); it.remove(STALE_PINNED_KEY) }
+        }
+            // Only claim the purge when it actually happened — logging success over a
+            // failed edit would assert that plaintext tokens are gone while they remain.
+            .onSuccess { Log.i(TAG, "purged cached pool credentials left over from the shipped token pool") }
+            .onFailure { if (it is CancellationException) throw it }
     }
 
     /**

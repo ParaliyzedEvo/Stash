@@ -380,10 +380,12 @@ class LosslessSourcePreferences @Inject constructor(
          *    live, gated on the build carrying ARCOD's key and on the user
          *    connecting an account.
          *
-         * Every rung is user-owned: 1 self-gates off without a connected account
-         * or relay, 2 and 3 are parked, and 4 is build-gated. A stock build with
-         * nothing connected therefore reaches NO lossless source at all and falls
-         * back to lossy — it never contacts a source of its own accord.
+         * Every rung is user-owned OR build-carried: 1 self-gates off without a
+         * connected account, a custom endpoint or a relay from the signed config,
+         * 2 and 3 are parked, and 4 is build-gated. With nothing of the user's own
+         * connected, a build carrying a relay config still resolves through 1 with
+         * no user action (see [LosslessAvailability] and [com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter]); a
+         * build without one reaches NO lossless source at all and falls back to lossy.
          */
         val DEFAULT_PRIORITY: List<String> = listOf(
             "qbdlx_qobuz",
