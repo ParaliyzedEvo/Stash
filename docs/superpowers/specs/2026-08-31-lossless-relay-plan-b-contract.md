@@ -1,6 +1,6 @@
 # Plan B — the lossless relay: server-side contract
 
-**Status:** contract fixed, implementation not started.
+**Status:** contract fixed (§1-4), design decisions settled 2026-09-01 (§5), implementation not started.
 **Derived from shipped client code, not proposed.** Every requirement below is
 already enforced by `LosslessRelayClient` / `LosslessConfigFetcher` on devices
 running Plan A1. A relay that violates one of these does not "degrade" — it gets
@@ -147,26 +147,101 @@ so the URL must be self-authenticating and short-lived.
 
 ---
 
-## 5. Open decisions — these need you, and none are answered here
+## 5. Decisions (settled 2026-09-01)
 
-The contract above is fixed. The design below is not, and I have deliberately
-not guessed:
+### 5.1 Catalog: **Qobuz only**
 
-1. **Which subscriptions back it** — Qobuz, Tidal, or both. The shipped client
-   route is `/v1/qobuz/file` and speaks Qobuz track ids; a Tidal-backed pool
-   needs either a translation layer or a second route and a client change.
-2. **Where it runs, and the budget** — Worker vs VPS, and what you're willing to
-   pay monthly. This changes the rotation and pacing design.
-3. **Account rotation policy.** Your stated requirement was "smart about
-   rotating the tokens we use, trying to minimize any one being favored." Needs
-   a concrete rule: round-robin, least-recently-used, per-account daily budget,
-   and separate roles for catalog vs playback.
-4. **Abuse gating.** Nothing stops a third party from pointing their own client
-   at the relay once its hostname is known. HMAC over the request, Turnstile, or
-   attestation — each has a different client-side cost, and the client currently
-   sends only `X-Stash-Version`.
-5. **What happens at quota exhaustion.** Today arcod answers a spent allowance
-   with a shared 429 (see the arcod quota gate). The relay needs its own answer,
-   and per the table above it should be **503**, not 404.
+The shipped client route `/v1/qobuz/file` speaks Qobuz track ids and stays as-is.
+No translation layer, no second route. Tidal is deliberately out of scope — the
+DRM-free DASH FLAC work on the parked branch stays parked.
 
-Item 4 is the one that decides whether this survives contact with the internet.
+### 5.2 Hosting: **Cloudflare Worker + D1**, not a VPS
+
+Budget direction was "as minimal as possible", and this is the minimal answer
+that is also the *reuse* answer: the Cloudflare account, the
+`rawnaldclark.workers.dev` subdomain, a KV namespace, and Worker deploy
+automation already exist in `infra/tipjar-worker/`. The relay is a second Worker
+beside it, not new infrastructure.
+
+Cost: **$0** on free tier (100k requests/day, D1 free tier). Workers Paid at
+$5/mo only if those limits are actually hit.
+
+The usual objection to Workers — no long-lived process — does not apply here.
+Qobuz minting is stateless HTTP plus MD5 request signing, and `getFileUrl`
+returns a CDN URL directly. Audio bytes never transit the relay (§4), so there
+is nothing to keep a socket open for. A VPS would buy a box to patch, a bill,
+and an attack surface, in exchange for capability this design does not use.
+
+State lives in **D1** (accounts, budgets, cooldowns) rather than KV: the
+rotation query in 5.3 wants ordering and an atomic update, which is SQL's job.
+
+### 5.3 Rotation: **least-recently-used with a per-account hourly cap**
+
+Requirement was "minimize any one being favored." One D1 statement satisfies it:
+select the live account with the oldest `last_used_at` whose usage this hour is
+under `budget_per_hour`, and stamp it in the same write. No counters to keep in
+sync, no coordination primitive, correct under concurrent Worker invocations.
+
+An account that errors goes `cooling` with a `cooling_until`; the next request
+simply doesn't select it. v1 draws catalog and playback from one pool — the
+`role` column stays in the schema so the split can happen later without a
+migration.
+
+### 5.4 Abuse gating: **HMAC over the request, with the key delivered in the signed config**
+
+The threat is real and specific: the relay's hostname reaches every device via a
+config any client can fetch, so without gating a third party can point their own
+client at it and spend the subscriptions.
+
+The decision that matters is **where the key lives**. Not baked into the APK —
+that is the same extractable-secret shape Plan C just spent 1,800 deleted lines
+removing, and a baked key cannot be changed without a release. Instead the key
+ships **inside the existing ECDSA-signed `lossless.json`**, which devices already
+fetch and verify on every cold start.
+
+That reuses a channel that is already built, already signed, and already
+tamper-proof, and it buys the property that actually matters: **rotation without
+a release.** If a key leaks, publish a new config; the old key is dead within one
+cold start, and the `{"relays": []}` kill switch is still there as the bigger
+hammer.
+
+Request shape: `X-Stash-Auth: <hex HMAC-SHA256(key, "<track_id>:<format_id>:<unix_ts>")>`
+plus `X-Stash-Ts`, with the relay rejecting a timestamp outside ±5 minutes so a
+captured header is not replayable forever. Per-IP and global daily request caps
+sit in front of everything.
+
+**This is a client change** — `LosslessRelayClient` sends only `X-Stash-Version`
+today. It must land in a shipped release *before* a live relay depends on it.
+
+Honest limit: a determined attacker can extract the key from a config fetch, the
+same as any client-side secret. This does not make abuse impossible, it makes it
+a treadmill that costs them re-extraction on every rotation and costs us one
+publish. Per-install registration (relay issues an id + secret on first contact,
+revocable individually) is the documented upgrade if that treadmill ever stops
+being enough — the wire format above accommodates it without another redesign.
+
+### 5.5 Quota exhaustion: **503, never 404**
+
+Per §1 this is the distinction that silently breaks playback, so it is stated
+flatly:
+
+- **A single account exhausted or erroring** → mark it `cooling`, select the next
+  account. The client never learns; this is internal.
+- **Every account exhausted, or the global daily cap hit** → **503** with
+  `Retry-After`. The client cools that base 60s and moves on, which is the
+  intended failover.
+- **404 is reserved strictly for a genuine catalog miss or region lock** — the
+  track does not exist for these accounts. Nothing about capacity, load, or
+  billing may ever answer 404, because 404 ends the router for that track
+  entirely rather than failing over.
+
+A global daily cap is what bounds cost. Pick the number when the Qobuz account
+count is known; enforce it in the same D1 write as 5.3.
+
+---
+
+## 6. What is still open
+
+- **The monthly budget number.** Deferred deliberately — the design above is
+  free-tier-shaped, so this only becomes a question if usage exceeds it.
+- **How many Qobuz accounts back the pool**, which sets the global daily cap.
