@@ -224,13 +224,34 @@ everything.
 (§6.5), the HMAC key is the ONLY access control, and every user's device holds
 it. So the Worker also caps **per install**: the client generates a random
 install id once, sends it as `X-Stash-Install`, and the Worker enforces
-`install_daily_cap = 100` mints/day in **D1** (not KV — see 5.2 on write limits). An extracted key then drains one
-install's allowance rather than the whole pool, and 100/day is far beyond normal
-listening so no legitimate user meets it. The id is random and carries no PII —
-it is a rate-limiting bucket, not identity.
+`install_daily_cap = 100` mints/day in **D1** (not KV — see 5.2 on write limits).
+100/day is far beyond normal listening, so no legitimate user meets it. The id is
+random and carries no PII — it is a rate-limiting bucket, not identity.
 
-**This is a client change** — `LosslessRelayClient` sends only `X-Stash-Version`
-today. It must land in a shipped release *before* a live relay depends on it.
+**Honest scope of this cap:** the id is *client-chosen*, so a deliberate attacker
+simply rotates it. What the cap actually bounds is naive misuse — a copied
+script, a fork that forgot to rate-limit itself, one runaway install. Against a
+determined party the real defenses remain the per-IP cap, the global daily cap,
+and key rotation. Do not describe this cap as containing a leaked key.
+
+**Client half BUILT (PR #465, `9e2f2e3f`, 2026-09-01).** `lossless.json` carries an
+optional `relay_key`; `LosslessRelayClient` signs only when one is present, and a
+config that omits the key disarms it. Exact wire format the relay must verify:
+
+```
+X-Stash-Install: <uuid>
+X-Stash-Ts:      <unix seconds>
+X-Stash-Auth:    hex( HMAC-SHA256( relay_key, "<install_id>:<track_id>:<format_id>:<unix_ts>" ) )
+```
+
+Reject with **401** when the MAC fails or `|now - ts| > 300s`. The client treats
+401 like any other non-2xx: the base cools 5 minutes. A device with a badly
+skewed clock therefore loses the relay 5 minutes at a time; if that shows up in
+the field, the fix is the relay echoing a `Date` header and the client correcting
+for skew — deferred until observed.
+
+It still has to **ship in a release** before a live relay requires signing; a
+relay published to devices that predate it would 401 every mint.
 
 Honest limit: a determined attacker can extract the key from a config fetch, the
 same as any client-side secret. This does not make abuse impossible, it makes it
@@ -367,7 +388,9 @@ Nothing blocking. Settled 2026-09-01:
 - **Account count:** 4 signed up, **3 live + 1 reserve** → `global_daily_cap = 600`
   mints/day. If only 3 are obtained: 2 live + 1 reserve → 400.
 
-Remaining is execution: **step zero, the cross-IP URL shareability check (§6.3)**,
-then the Worker itself, the `X-Stash-Auth` + `X-Stash-Install`
-client change (which must ship in a release BEFORE a live relay depends on it),
-and publishing the first signed `lossless.json`.
+Remaining is execution: **step zero, the cross-IP URL shareability check (§6.3)**
+(blocked on the Pixel being connected, on cellular, with "stream on cellular"
+enabled), then the Worker itself, the client change (BUILT — PR #465;
+still needs to ship in a release BEFORE a live relay requires it), publishing the
+first signed `lossless.json`, and — when a relay host goes live — adding it to
+the README's host disclosure, which Plan C made exhaustive.
