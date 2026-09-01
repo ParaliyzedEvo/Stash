@@ -240,8 +240,87 @@ count is known; enforce it in the same D1 write as 5.3.
 
 ---
 
-## 6. What is still open
+## 6. Capacity and budget (settled 2026-09-01)
 
-- **The monthly budget number.** Deferred deliberately — the design above is
-  free-tier-shaped, so this only becomes a question if usage exceeds it.
-- **How many Qobuz accounts back the pool**, which sets the global daily cap.
+### 6.1 Cloudflare is not the budget
+
+Workers free tier is 100k requests/day; D1 free tier is 100k row-writes/day. A
+mint is one select + one update, so both ceilings land in the same place:
+**~100,000 mints/day at $0.** This will not be the binding constraint.
+
+### 6.2 Qobuz is the budget, and the currency is requests-per-account
+
+Four accounts is roughly $50/mo (US Studio pricing — re-check before committing).
+The money is the easy part. The ceiling is **how many requests one account can
+make before it stops looking like a person.**
+
+The precedent is qbdlx: **19 tokens, all `USER_BLOCKED` within about six days**
+once a real user base pointed at them. Qobuz publishes no rate limit; it simply
+kills accounts that don't behave like listeners. So the cap is a judgement about
+plausibility, not a documented number.
+
+A heavy real subscriber plays 100-200 tracks/day. Budgets are set deliberately
+inside that envelope:
+
+```
+budget_per_hour   = 20     per account
+daily_cap         = 200    per account
+global_daily_cap  = 200 x live_accounts
+accounts_live     = 3, with 1 held in reserve
+```
+
+**4 accounts x 200 = 800 mints/day.** At ~40 mints per active user per day (the
+device's StreamUrlCache already absorbs repeats within the hour) that is
+**~20 daily active users.** Four accounts is PILOT capacity, not launch capacity.
+Sizing it as the main lossless path repeats qbdlx exactly.
+
+### 6.3 The mint cache is not optional
+
+Qobuz `getFileUrl` returns a **self-signed, Range-capable CDN URL with no auth
+header** — verified on-device with both arcod and qbdlx, where the URL played
+with no Bearer attached. The URLs live ~1h (`expiresInSec=3599` observed).
+
+Therefore a mint is **shareable across users**. Cache it in KV keyed
+`(track_id, format_id)` with `mint_cache_ttl = 3000s` (50 min, safely under the
+URL's life). A hundred users playing the same track then cost **one** mint, not
+a hundred.
+
+Listening is head-weighted (shared playlists, Daily Discovery, popular albums).
+At a 70% hit rate the same 800 mints/day serve ~2,600 plays — **~65 daily
+actives instead of ~20**, for no extra cost and roughly thirty lines of Worker.
+Long-tail listening erodes the rate, so treat it as a range. It is still the
+single biggest lever in this design.
+
+### 6.4 Operational rules
+
+- **Hold a reserve account.** Run 3 of 4 live so a `USER_BLOCKED` event is
+  headroom rather than an outage.
+- **Stagger the signups** over weeks. Four accounts created the same day for the
+  same purpose look like what they are.
+- **Don't churn trials.** A trial does carry lossless entitlement (device-verified,
+  FLAC 24/96), but it expires at 30 days, and repeatedly re-signing up across
+  accounts is itself the flagging pattern. Pay for at least two real subscriptions.
+
+### 6.5 The scaling answer is BYO, not more accounts
+
+A user who connects their own Qobuz account costs nothing and has no ceiling, and
+that path is already built and device-verified. The relay's honest job is to keep
+the app from being dead on first launch and to serve people who will never
+subscribe. Sized as a bridge it works; sized as the main path it dies the way
+qbdlx died.
+
+**Gating capacity behind the Ko-fi supporter tier** (fully implemented on
+`feat/kofi-supporter-tier`: Ed25519 offline entitlement, reuses the tipjar Worker
++ `STASH_KV`, undeployed) would bound usage and self-fund the subscriptions.
+Flagged rather than recommended: **charging for access materially changes the
+legal posture** — a free tool and a paid service fronting pooled subscriptions are
+different things under the project's own enforcement analysis. That is a product
+and risk decision, not a capacity knob.
+
+---
+
+## 7. What is still open
+
+- **Whether relay access is gated** (open to all / supporter-only / invite cohort)
+  — see 6.5, this is a product+risk call.
+- **The exact live account count** once signups happen; it sets `global_daily_cap`.
