@@ -320,7 +320,7 @@ Qobuz `getFileUrl` returns a **self-signed, Range-capable CDN URL with no auth
 header** — verified on-device with both arcod and qbdlx, where the URL played
 with no Bearer attached. The URLs live ~1h (`expiresInSec=3599` observed).
 
-Therefore a mint is very likely **shareable across users**. Cache it in **D1**
+Therefore a mint is **shareable across users** (verified below). Cache it in **D1**
 (not KV — write limits, see 5.2) keyed `(track_id, format_id)`. Serve from cache
 only while the URL's own `etsp` has **≥ 15 minutes** left; otherwise treat it as a
 miss and re-mint. Keying the serve rule to the URL's real remaining life is safer
@@ -329,14 +329,13 @@ than a fixed TTL, and it works because the client reads expiry from `etsp` too
 the device. A hundred users playing the same track then cost **one** mint, not a
 hundred.
 
-**⚠️ Verify before relying on it.** "Shareable" is inferred, not proven: every
-on-device proof so far minted and played on the *same* device and IP. The
-capacity multiplier in this section collapses if Qobuz binds file URLs to the
-requesting IP. Verification is one experiment, and it is **Plan B step zero**:
-put the Pixel on cellular (different public IP from the PC), play a fresh track
-via BYO, copy the `streaming-qobuz-*` URL from logcat, and `curl -r 0-1023` it
-from the PC. A `206` proves shareability; a `403` means the cache must be
-per-install and the ~65 figure below reverts to ~20.
+**✅ VERIFIED 2026-09-01 (step zero).** Minted on the Pixel 6 over 5G via the
+connected Qobuz account (`streaming-qobuz-std.akamaized.net/file?…&etsp=…&hmac=…`),
+then fetched from a PC on a different network (Comcast, IPv6) with curl's default
+user agent: **`HTTP 206`, 1,024 bytes, `audio/flac`, first bytes `66 4c 61 43` =
+`fLaC`.** A HEAD without a Range answered `200`, `Content-Length: 30346548`,
+`Accept-Ranges: bytes`. The URL is bound to neither IP, client, nor session, and
+is seekable. The shared mint cache is sound and the ~65 figure stands.
 
 Listening is head-weighted (shared playlists, Daily Discovery, popular albums).
 At a 70% hit rate the same 800 mints/day serve ~2,600 plays — **~65 daily
@@ -388,9 +387,8 @@ Nothing blocking. Settled 2026-09-01:
 - **Account count:** 4 signed up, **3 live + 1 reserve** → `global_daily_cap = 600`
   mints/day. If only 3 are obtained: 2 live + 1 reserve → 400.
 
-Remaining is execution: **step zero, the cross-IP URL shareability check (§6.3)**
-(blocked on the Pixel being connected, on cellular, with "stream on cellular"
-enabled), then the Worker itself, the client change (BUILT — PR #465;
+Remaining is execution: step zero (§6.3) is **done and passed**, so next is the
+Worker itself, the client change (BUILT — PR #465;
 still needs to ship in a release BEFORE a live relay requires it), publishing the
 first signed `lossless.json`, and — when a relay host goes live — adding it to
 the README's host disclosure, which Plan C made exhaustive.
