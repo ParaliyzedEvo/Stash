@@ -44,6 +44,7 @@ Hard requirements, each one enforced:
 | `sample_rate` | **Hz, not kHz** — you convert Qobuz's kHz, the client never multiplies | 96 instead of 96000 surfaces as a nonsense quality badge |
 | `format_id` | omit it and it decodes to `0`, which reads as **region-locked** downstream | client defensively echoes the requested id, but don't rely on that |
 | `bit_depth` | plain int | — |
+| `url` (again) | **must be the raw Qobuz CDN URL with its `etsp=<unix-seconds>` query parameter intact** | the streaming resolver derives expiry by parsing `[?&]etsp=(\d+)` out of the URL and **rejects any URL without it** (`QbdlxStreamResolver: no_etsp`). The download path does not parse it, so a relay that proxies, rewrites, or shortens URLs breaks **streaming silently while downloads keep working** — an asymmetric failure that is hard to spot. Never wrap the URL. |
 
 Unknown keys are ignored, so the response may carry extra fields safely.
 
@@ -172,8 +173,14 @@ returns a CDN URL directly. Audio bytes never transit the relay (§4), so there
 is nothing to keep a socket open for. A VPS would buy a box to patch, a bill,
 and an attack surface, in exchange for capability this design does not use.
 
-State lives in **D1** (accounts, budgets, cooldowns) rather than KV: the
-rotation query in 5.3 wants ordering and an atomic update, which is SQL's job.
+**All hot-path state lives in D1, not KV.** The rotation query in 5.3 wants
+ordering and an atomic update, which is SQL's job — but the decisive reason is
+the free-tier write limits: **KV allows ~1,000 writes/day on the free plan; D1
+allows ~100,000.** A per-mint counter or a mint cache in KV would exhaust the
+whole account's KV write budget by mid-morning at 600 mints/day (and the tipjar
+Worker shares that budget). KV stays reserved for what it is good at: rarely
+written, often read. Tier numbers are from training data — re-check Cloudflare's
+current pricing page before committing to them.
 
 ### 5.3 Rotation: **least-recently-used with a per-account hourly cap**
 
@@ -205,16 +212,19 @@ a release.** If a key leaks, publish a new config; the old key is dead within on
 cold start, and the `{"relays": []}` kill switch is still there as the bigger
 hammer.
 
-Request shape: `X-Stash-Auth: <hex HMAC-SHA256(key, "<track_id>:<format_id>:<unix_ts>")>`
-plus `X-Stash-Ts`, with the relay rejecting a timestamp outside ±5 minutes so a
-captured header is not replayable forever. Per-IP and global daily request caps
-sit in front of everything.
+Request shape:
+`X-Stash-Auth: <hex HMAC-SHA256(key, "<install_id>:<track_id>:<format_id>:<unix_ts>")>`
+plus `X-Stash-Ts` and `X-Stash-Install`, with the relay rejecting a timestamp
+outside ±5 minutes so a captured header is not replayable forever. The install id
+is inside the MAC so a captured header cannot be re-used under a different
+install's allowance. Per-IP and global daily request caps sit in front of
+everything.
 
 **Per-install daily cap (added 2026-09-01).** Because access is free and ungated
 (§6.5), the HMAC key is the ONLY access control, and every user's device holds
 it. So the Worker also caps **per install**: the client generates a random
 install id once, sends it as `X-Stash-Install`, and the Worker enforces
-`install_daily_cap = 100` mints/day in KV. An extracted key then drains one
+`install_daily_cap = 100` mints/day in **D1** (not KV — see 5.2 on write limits). An extracted key then drains one
 install's allowance rather than the whole pool, and 100/day is far beyond normal
 listening so no legitimate user meets it. The id is random and carries no PII —
 it is a rate-limiting bucket, not identity.
@@ -289,10 +299,23 @@ Qobuz `getFileUrl` returns a **self-signed, Range-capable CDN URL with no auth
 header** — verified on-device with both arcod and qbdlx, where the URL played
 with no Bearer attached. The URLs live ~1h (`expiresInSec=3599` observed).
 
-Therefore a mint is **shareable across users**. Cache it in KV keyed
-`(track_id, format_id)` with `mint_cache_ttl = 3000s` (50 min, safely under the
-URL's life). A hundred users playing the same track then cost **one** mint, not
-a hundred.
+Therefore a mint is very likely **shareable across users**. Cache it in **D1**
+(not KV — write limits, see 5.2) keyed `(track_id, format_id)`. Serve from cache
+only while the URL's own `etsp` has **≥ 15 minutes** left; otherwise treat it as a
+miss and re-mint. Keying the serve rule to the URL's real remaining life is safer
+than a fixed TTL, and it works because the client reads expiry from `etsp` too
+(§1), so a cached URL with 20 minutes left is correctly treated as 20 minutes on
+the device. A hundred users playing the same track then cost **one** mint, not a
+hundred.
+
+**⚠️ Verify before relying on it.** "Shareable" is inferred, not proven: every
+on-device proof so far minted and played on the *same* device and IP. The
+capacity multiplier in this section collapses if Qobuz binds file URLs to the
+requesting IP. Verification is one experiment, and it is **Plan B step zero**:
+put the Pixel on cellular (different public IP from the PC), play a fresh track
+via BYO, copy the `streaming-qobuz-*` URL from logcat, and `curl -r 0-1023` it
+from the PC. A `206` proves shareability; a `403` means the cache must be
+per-install and the ~65 figure below reverts to ~20.
 
 Listening is head-weighted (shared playlists, Daily Discovery, popular albums).
 At a 70% hit rate the same 800 mints/day serve ~2,600 plays — **~65 daily
@@ -344,6 +367,7 @@ Nothing blocking. Settled 2026-09-01:
 - **Account count:** 4 signed up, **3 live + 1 reserve** → `global_daily_cap = 600`
   mints/day. If only 3 are obtained: 2 live + 1 reserve → 400.
 
-Remaining is execution: the Worker itself, the `X-Stash-Auth` + `X-Stash-Install`
+Remaining is execution: **step zero, the cross-IP URL shareability check (§6.3)**,
+then the Worker itself, the `X-Stash-Auth` + `X-Stash-Install`
 client change (which must ship in a release BEFORE a live relay depends on it),
 and publishing the first signed `lossless.json`.
