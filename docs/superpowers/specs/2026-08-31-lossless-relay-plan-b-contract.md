@@ -210,6 +210,15 @@ plus `X-Stash-Ts`, with the relay rejecting a timestamp outside ±5 minutes so a
 captured header is not replayable forever. Per-IP and global daily request caps
 sit in front of everything.
 
+**Per-install daily cap (added 2026-09-01).** Because access is free and ungated
+(§6.5), the HMAC key is the ONLY access control, and every user's device holds
+it. So the Worker also caps **per install**: the client generates a random
+install id once, sends it as `X-Stash-Install`, and the Worker enforces
+`install_daily_cap = 100` mints/day in KV. An extracted key then drains one
+install's allowance rather than the whole pool, and 100/day is far beyond normal
+listening so no legitimate user meets it. The id is random and carries no PII —
+it is a rate-limiting bucket, not identity.
+
 **This is a client change** — `LosslessRelayClient` sends only `X-Stash-Version`
 today. It must land in a shipped release *before* a live relay depends on it.
 
@@ -309,18 +318,32 @@ the app from being dead on first launch and to serve people who will never
 subscribe. Sized as a bridge it works; sized as the main path it dies the way
 qbdlx died.
 
-**Gating capacity behind the Ko-fi supporter tier** (fully implemented on
-`feat/kofi-supporter-tier`: Ed25519 offline entitlement, reuses the tipjar Worker
-+ `STASH_KV`, undeployed) would bound usage and self-fund the subscriptions.
-Flagged rather than recommended: **charging for access materially changes the
-legal posture** — a free tool and a paid service fronting pooled subscriptions are
-different things under the project's own enforcement analysis. That is a product
-and risk decision, not a capacity knob.
+**DECIDED 2026-09-01: access is FREE and ungated.** Funding comes from a
+**donation goal tracker** (monochrome's pattern) rather than paid access. This
+keeps the free-tool posture intact — a goal tracker asks for support without
+selling access, which is a materially different position under the project's own
+enforcement analysis than gating a pooled-subscription service behind payment.
+
+The already-built Ko-fi supporter tier ([[project_kofi_supporter_tier]],
+`feat/kofi-supporter-tier`) is therefore NOT used as a relay gate. The tracker
+itself reuses deployed infrastructure: the tipjar Worker already serves
+supporters out of `STASH_KV`, so a goal tracker is an addition to it, not new
+infrastructure.
+
+Consequence for §5.4: with no entitlement gate, the HMAC key is the only access
+control, which is why the per-install daily cap is part of the design rather
+than an optimisation.
 
 ---
 
 ## 7. What is still open
 
-- **Whether relay access is gated** (open to all / supporter-only / invite cohort)
-  — see 6.5, this is a product+risk call.
-- **The exact live account count** once signups happen; it sets `global_daily_cap`.
+Nothing blocking. Settled 2026-09-01:
+
+- **Access model:** free and ungated, funded by a donation goal tracker (§6.5).
+- **Account count:** 4 signed up, **3 live + 1 reserve** → `global_daily_cap = 600`
+  mints/day. If only 3 are obtained: 2 live + 1 reserve → 400.
+
+Remaining is execution: the Worker itself, the `X-Stash-Auth` + `X-Stash-Install`
+client change (which must ship in a release BEFORE a live relay depends on it),
+and publishing the first signed `lossless.json`.
