@@ -309,7 +309,7 @@ Status the Worker emits, and what the client does with it:
 | Worker | Meaning | Client |
 |---|---|---|
 | 200 | mint (cache HIT or MISS) | streams it |
-| 404 | no URL / lossy format from Qobuz for these accounts; or a request for a non-lossless format (Data Saver's 5), answered without a Qobuz call | NoMatch — ends the router for the track; Save Data falls to JioSaavn AAC 320 |
+| 404 | Qobuz answered 404 for the track id, or returned no URL / a lossy format, for these accounts; or a request for a non-lossless format (Data Saver's 5), answered without a Qobuz call | NoMatch — ends the router for the track; Save Data falls to JioSaavn AAC 320 |
 | 503 + Retry-After | global cap hit, or every account dead/cooling/capped | cools the base 60 s |
 | 429 + Retry-After | per-install daily cap, or the per-IP limiter | cools the base 5 min |
 | 401 | signature missing/wrong, or \|skew\| > 300 s | cools the base 5 min |

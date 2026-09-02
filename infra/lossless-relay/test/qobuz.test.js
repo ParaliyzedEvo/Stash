@@ -31,6 +31,7 @@ test("classify: dead-account signals mirror QbdlxApiClient", () => {
 
 test("classify: a region lock is 'locked' (→ 404); everything else is transient", () => {
     assert.deepEqual(classify(200, JSON.stringify({ format_id: 7 })), { kind: "locked" });
+    assert.deepEqual(classify(404, '{"status":"error","code":404,"message":"No result found"}'), { kind: "locked" });
     assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 0 })), { kind: "locked" });
     assert.equal(classify(403, '{"message":"geo"}').kind, "transient");
     assert.equal(classify(400, '{"message":"Invalid Request Signature parameter"}').kind, "transient");

@@ -33,12 +33,14 @@ export function extractCreds(js) {
  * Classifies one getFileUrl reply the way QbdlxApiClient.get + classify do on the device:
  *   { kind: "ok", url, formatId, bitDepth, sampleRateHz, etsp }   stream it
  *   { kind: "dead", reason }      this account is finished (401, USER_BLOCKED, previews): stop using it
- *   { kind: "locked" }            no URL / lossy format: region lock or not streamable → 404 (spec §1)
+ *   { kind: "locked" }            Qobuz 404, no URL, or a lossy format: region lock / unknown track → 404 (spec §1)
  *   { kind: "transient", reason } anything else: cool the account briefly, try another
  */
 export function classify(status, body) {
     if (status === 401) return { kind: "dead", reason: "401" };
     if (status === 403 && /USER_BLOCKED/i.test(body)) return { kind: "dead", reason: "USER_BLOCKED" };
+    // Qobuz answers 404 for a track id it does not know: a catalog miss, not an account problem.
+    if (status === 404) return { kind: "locked" };
     if (status !== 200) return { kind: "transient", reason: `http_${status}` };
     let f;
     try { f = JSON.parse(body); } catch { return { kind: "transient", reason: "bad_json" }; }
