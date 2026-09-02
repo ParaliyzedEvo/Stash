@@ -28,6 +28,8 @@ const LOSSLESS_FORMATS = new Set([6, 7, 27]);
 const TRANSIENT_COOL_S = 300;
 /** Two 3 s upstream attempts plus the D1 round trips fit inside the client's 8 s budget (spec §1). */
 const MAX_ATTEMPTS = 2;
+/** The QOBUZ_ACCOUNTS value whose labels this isolate has already given D1 rows. */
+let ensuredFor = null;
 
 export default {
     fetch: (request, env) => handle(request, env, globalThis.fetch, Math.floor(Date.now() / 1000)),
@@ -84,12 +86,14 @@ async function mint(request, url, env, fetchImpl, nowSec) {
     }
 
     const accounts = parseAccounts(env);
+    // Every label needs a D1 row BEFORE selection, or the LRU never reaches an account added to the
+    // secret while the old ones are still under their caps. Once per isolate per secret value.
+    if (ensuredFor !== env.QOBUZ_ACCOUNTS) {
+        await ensureAccounts(env.DB, accounts.map((a) => a.label));
+        ensuredFor = env.QOBUZ_ACCOUNTS;
+    }
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        let label = await selectAccount(env.DB, nowSec, caps);
-        if (!label) { // first request ever, or a label added to the secret since: give it a row and look again
-            await ensureAccounts(env.DB, accounts.map((a) => a.label));
-            label = await selectAccount(env.DB, nowSec, caps);
-        }
+        const label = await selectAccount(env.DB, nowSec, caps);
         const account = accounts.find((a) => a.label === label);
         if (!account) break; // nothing live under its caps (or a D1 label with no secret entry) → 503 below
         const r = await mintFromQobuz(fetchImpl, account, trackId, formatId, nowSec);

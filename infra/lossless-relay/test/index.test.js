@@ -99,6 +99,13 @@ test("miss → 200 in the wire shape after one Qobuz call; the same track is the
     assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
 });
 
+test("every label in the secret joins the rotation at once: two misses use two accounts", async () => {
+    const e = env(); const q = qobuz([200, GOOD], [200, { ...GOOD, url: "https://cdn.example/g.flac?etsp=" + (NOW + 3599) }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
+    assert.equal((await handle(mintReq(43, 27), e, q, NOW + 1)).status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b"]);
+});
+
 test("a dead account is retired and the next one serves the same request", async () => {
     const e = env(); const q = qobuz([401, {}], [200, GOOD]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
