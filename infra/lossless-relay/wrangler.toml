@@ -15,7 +15,7 @@ ACCOUNT_DAILY_CAP = "200"
 [[d1_databases]]
 binding = "DB"
 database_name = "stash-relay"
-database_id = "REPLACE_WITH_D1_ID"   # printed by `npx wrangler d1 create stash-relay` (Task 9)
+database_id = "b223d4c7-ba0a-41fa-948d-2a41d29dfdbb"   # printed by `npx wrangler d1 create stash-relay` (Task 9)
 migrations_dir = "migrations"
 
 # Per-IP cap in front of everything (spec §5.4). Counts every /v1/qobuz/file request, hits included.
