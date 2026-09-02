@@ -6,6 +6,8 @@
  *           appends the new supporter to KV, returns 200.
  *   GET   → Serves the current supporter list as JSON to the Stash
  *           Android app. Cached for 60s at the edge.
+ *   GET /lossless.json and /lossless.json.sig → the signed lossless relay
+ *           config, byte-for-byte from KV (see infra/lossless-relay).
  *
  * Storage: Cloudflare KV. One key, `supporters`, holding the JSON the
  * app reads. Bounded to the most recent SUPPORTERS_LIMIT entries to
@@ -30,6 +32,10 @@ export default {
             return handleKofiWebhook(request, env);
         }
         if (request.method === "GET") {
+            const path = new URL(request.url).pathname;
+            if (path === "/lossless.json" || path === "/lossless.json.sig") {
+                return serveLosslessConfig(path, env);
+            }
             return serveSupporters(env);
         }
         return new Response("Method not allowed", { status: 405 });
@@ -106,6 +112,25 @@ async function serveSupporters(env) {
             "Content-Type": "application/json",
             "Cache-Control": "public, max-age=60",
             "Access-Control-Allow-Origin": "*",
+        },
+    });
+}
+
+/**
+ * The Stash lossless relay config (Plan B contract §3): the signed `lossless.json`
+ * and its base64 ECDSA signature, written to KV by
+ * infra/lossless-relay/scripts/publish-config.mjs. Served byte-for-byte — the device
+ * verifies the signature over the exact bytes, so nothing here may re-encode them.
+ * 404 until the first publish; a device then keeps whatever it has cached.
+ */
+async function serveLosslessConfig(path, env) {
+    const isJson = path === "/lossless.json";
+    const bytes = await env.STASH_KV.get(isJson ? "lossless_config" : "lossless_config_sig", "arrayBuffer");
+    if (!bytes) return new Response("Not found", { status: 404 });
+    return new Response(bytes, {
+        headers: {
+            "Content-Type": isJson ? "application/json" : "text/plain",
+            "Cache-Control": "public, max-age=300",
         },
     });
 }
