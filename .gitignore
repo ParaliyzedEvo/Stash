@@ -66,6 +66,11 @@ captures/
 # Log files
 *.log
 node_modules/
+
+# Cloudflare Workers local state and local secrets (infra/*)
+.wrangler/
+.dev.vars
+*.pem
 .worktrees/
 
 # Superpowers visual-companion server artifacts (per-session local state)

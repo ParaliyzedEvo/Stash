@@ -1,0 +1,16 @@
+{
+  "name": "stash-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that mints short-lived Qobuz FLAC URLs for the Stash app from a small pool of operator-owned accounts. Audio never transits it.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --no-warnings --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.120.0"
+  }
+}

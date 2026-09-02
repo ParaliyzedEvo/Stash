@@ -132,3 +132,11 @@ plugging in Ko-fi:
 npx wrangler kv:key put --binding=STASH_KV supporters '{"supporters":[{"name":"Cedric","amountUsd":10,"message":"Just downloaded..."}]}'
 ```
 Or use the Cloudflare dashboard's KV editor.
+
+## Lossless relay config
+
+The same Worker also serves `GET /lossless.json` and `GET /lossless.json.sig` —
+the signed relay list the Stash app fetches at every cold start. They come
+byte-for-byte from the KV keys `lossless_config` / `lossless_config_sig`, which
+only `infra/lossless-relay/scripts/publish-config.mjs` writes. 404 until the
+first publish. Nothing about supporters changes.

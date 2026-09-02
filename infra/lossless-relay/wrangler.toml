@@ -1,0 +1,34 @@
+name = "stash-relay"
+main = "src/index.js"
+# nodejs_compat is on by default from 2026-08-04; declared anyway so node:crypto is an explicit dependency.
+compatibility_date = "2026-08-04"
+compatibility_flags = ["nodejs_compat"]
+
+# Caps (spec §5.4, §6.2, §7). Strings: TOML vars reach the Worker as strings.
+[vars]
+GLOBAL_DAILY_CAP = "1200"      # 6 live accounts x 200
+INSTALL_DAILY_CAP = "100"
+ACCOUNT_HOURLY_CAP = "20"
+ACCOUNT_DAILY_CAP = "200"
+
+# Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
+[[d1_databases]]
+binding = "DB"
+database_name = "stash-relay"
+database_id = "b223d4c7-ba0a-41fa-948d-2a41d29dfdbb"   # printed by `npx wrangler d1 create stash-relay` (Task 9)
+migrations_dir = "migrations"
+
+# Per-IP cap in front of everything (spec §5.4). Counts every /v1/qobuz/file request, hits included.
+[[ratelimits]]
+name = "MINT_RL"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+# Hourly prune of expired mints and stale quota rows.
+[triggers]
+crons = ["17 * * * *"]
+
+# Secrets: `npx wrangler secret put <NAME>`, never committed.
+#   RELAY_KEY       hex HMAC key. The SAME value is published as `relay_key` in lossless.json.
+#   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
+#   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
