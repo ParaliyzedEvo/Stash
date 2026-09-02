@@ -1,6 +1,6 @@
 # Plan B — the lossless relay: server-side contract
 
-**Status:** contract fixed (§1-4), design decisions settled 2026-09-01 (§5), implementation not started.
+**Status:** contract fixed (§1-4), design decisions settled 2026-09-01 (§5), implementation plan written 2026-09-01 (`docs/superpowers/plans/2026-09-01-lossless-relay-plan-b-worker.md`).
 **Derived from shipped client code, not proposed.** Every requirement below is
 already enforced by `LosslessRelayClient` / `LosslessConfigFetcher` on devices
 running Plan A1. A relay that violates one of these does not "degrade" — it gets
@@ -84,7 +84,8 @@ X-Stash-Version: 1
 Used only by the Settings "Test" button. **Any HTTP reply counts as success —
 including 404.** It answers "did the user typo the host", not "is the relay
 healthy". The client reads no body and does not touch cooldowns. Serving
-something meaningful here is optional; being reachable is not.
+something meaningful here is optional; being reachable is not. The Worker answers
+`200 {"ok":true}`.
 
 ---
 
@@ -108,6 +109,13 @@ GET <LOSSLESS_CONFIG_URL>.sig      -> base64 ECDSA P-256 (SHA256withECDSA)
   "updated_at": 1788220800
 }
 ```
+
+The config host is the tipjar Worker: `LOSSLESS_CONFIG_URL =
+https://stash-tipjar.rawnaldclark.workers.dev/lossless.json`, the signature at
+`…/lossless.json.sig`, both served byte-for-byte from KV and written only by
+`infra/lossless-relay/scripts/publish-config.mjs`. Chosen over GitHub raw (the relay
+key would sit in public git history) and over the relay serving its own config (its
+hostname would then be in the APK).
 
 Relays are sorted by `priority` ascending and tried in that order. The device
 verifies the signature against `LOSSLESS_CONFIG_PUBKEY` (X.509, base64) baked in
@@ -232,7 +240,9 @@ random and carries no PII — it is a rate-limiting bucket, not identity.
 simply rotates it. What the cap actually bounds is naive misuse — a copied
 script, a fork that forgot to rate-limit itself, one runaway install. Against a
 determined party the real defenses remain the per-IP cap, the global daily cap,
-and key rotation. Do not describe this cap as containing a leaked key.
+and key rotation. Do not describe this cap as containing a leaked key. A cache hit is
+served before the per-install check and does not count against it — it spends no Qobuz
+request; the per-IP limiter is what bounds a client replaying popular tracks.
 
 **Client half BUILT (PR #465, `9e2f2e3f`, 2026-09-01).** `lossless.json` carries an
 optional `relay_key`; `LosslessRelayClient` signs only when one is present, and a
@@ -277,6 +287,34 @@ flatly:
 
 A global daily cap is what bounds cost. Pick the number when the Qobuz account
 count is known; enforce it in the same D1 write as 5.3.
+
+### 5.6 Implementation decisions (2026-09-01, from the Worker plan)
+
+Recorded here so the spec and the shipped Worker cannot drift apart. Plan:
+`docs/superpowers/plans/2026-09-01-lossless-relay-plan-b-worker.md`.
+
+| Decision | Choice | Why |
+|---|---|---|
+| Config host (§3) | The tipjar Worker serves `GET /lossless.json` and `/lossless.json.sig` from `STASH_KV` | Already deployed, hostname already disclosed in README, KV is "rarely written, often read", bytes served exactly as stored. GitHub raw would put the relay key in public git history; the relay serving its own config would put the relay hostname in the APK. |
+| Where account tokens live | Worker secret `QOBUZ_ACCOUNTS` (JSON array); D1 `accounts` holds rotation state only, keyed by `label` | Secrets are encrypted at rest and `d1 execute` can never print one; re-seeding a token is `wrangler secret put`, never SQL with a token on a command line. |
+| Per-install and per-IP cap status | **429** with `Retry-After` | The client cools a non-2xx/non-503 base for 5 min (spec §1), the right backoff for a runaway install; 503 would have it retry every 60 s. Global exhaustion stays **503** (§5.5). |
+| Caps | `[vars]` in `wrangler.toml`: global 600/day, install 100/day, per account 20/h and 200/day | Tunable by redeploy, not code. |
+| Attempts per request | 2 accounts max, 3 s upstream timeout each | Two attempts plus the D1 round trips fit inside the client's 8 s budget (§1). A Worker that overran it would turn the intended 503 (60 s cooldown) into a client-side timeout (5 min cooldown). |
+| Upstream classification | 401, 403 `USER_BLOCKED`, or a preview body → account **dead** (operator re-logs in); anything else, Qobuz 400 included → account cools 5 min | Mirrors `QbdlxApiClient` exactly. A 400 is more likely our bug than a dead account and must not kill the pool. |
+| `/v1/status` body | `{"ok":true}` | The client reads no body (§2). |
+| Non-lossless formats (Data Saver's `format_id=5`) | **404**, no Qobuz call; 400 only for malformed input | The relay is lossless-only and the client's router discards any relay format below 6; 404 carries no cooldown, so the phone falls to JioSaavn AAC 320 as Save Data intends. A 400 would cool the relay 5 min for every Save Data user. |
+
+Status the Worker emits, and what the client does with it:
+
+| Worker | Meaning | Client |
+|---|---|---|
+| 200 | mint (cache HIT or MISS) | streams it |
+| 404 | no URL / lossy format from Qobuz for these accounts; or a request for a non-lossless format (Data Saver's 5), answered without a Qobuz call | NoMatch — ends the router for the track; Save Data falls to JioSaavn AAC 320 |
+| 503 + Retry-After | global cap hit, or every account dead/cooling/capped | cools the base 60 s |
+| 429 + Retry-After | per-install daily cap, or the per-IP limiter | cools the base 5 min |
+| 401 | signature missing/wrong, or \|skew\| > 300 s | cools the base 5 min |
+| 400 | malformed input only: a non-numeric or absent track_id/format_id, or a wrong X-Stash-Version | cools the base 5 min |
+| 500 | RELAY_KEY not configured | cools the base 5 min |
 
 ---
 
@@ -387,8 +425,9 @@ Nothing blocking. Settled 2026-09-01:
 - **Account count:** 4 signed up, **3 live + 1 reserve** → `global_daily_cap = 600`
   mints/day. If only 3 are obtained: 2 live + 1 reserve → 400.
 
-Remaining is execution: step zero (§6.3) is **done and passed**, so next is the
-Worker itself, the client change (BUILT — PR #465;
-still needs to ship in a release BEFORE a live relay requires it), publishing the
-first signed `lossless.json`, and — when a relay host goes live — adding it to
-the README's host disclosure, which Plan C made exhaustive.
+Remaining is execution of the Worker plan:
+`docs/superpowers/plans/2026-09-01-lossless-relay-plan-b-worker.md` (Worker, publish
+tooling, first signed config, device proof, README disclosure). PR #465 must be merged
+before the release secrets `LOSSLESS_CONFIG_URL`/`LOSSLESS_CONFIG_PUBKEY` exist (plan
+Task 10 Step 2): until they do, no released device fetches a config at all, so there is
+no mixed-population window as long as that order holds.
