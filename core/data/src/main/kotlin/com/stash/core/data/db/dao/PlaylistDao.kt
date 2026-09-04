@@ -658,6 +658,20 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET is_active = 1 WHERE id = :playlistId AND is_active = 0")
     suspend fun reactivateById(playlistId: Long): Int
 
+    /**
+     * Re-file a playlist under the type today's snapshot reports.
+     *
+     * `type` used to be write-once — whichever fetch pass saw the `source_id`
+     * first owned it forever. A playlist the Spotify home-feed mix pass had
+     * filed as DAILY_MIX therefore never returned to the Library Playlists
+     * tab, no matter how many syncs saw it as the user's own (issue #437).
+     *
+     * [mixNumber] travels with the type: it only means anything for a mix, so
+     * a row leaving DAILY_MIX must not keep a stale ordinal.
+     */
+    @Query("UPDATE playlists SET type = :type, mix_number = :mixNumber WHERE id = :playlistId")
+    suspend fun updateType(playlistId: Long, type: PlaylistType, mixNumber: Int?)
+
     // ── Custom playlist management ──────────────────────────────────────
 
     /** Get the next available position for appending a track to a playlist. */
