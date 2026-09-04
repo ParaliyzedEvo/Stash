@@ -202,7 +202,7 @@ class YTMusicApiClient @Inject constructor(
         )
     }
 
-        /**
+    /**
      * Fetches the authenticated user's Library → Albums tab — every album
      * they saved. Each entry is a summary only (title/artist/cover); the
      * caller must follow up with [getAlbum] per album to get its tracklist,
@@ -220,20 +220,59 @@ class YTMusicApiClient @Inject constructor(
             if (isContinuation) parseSavedAlbumsContinuationPage(page) else parseSavedAlbums(page)
         }
 
+        // paginateBrowse's own partial/continuation detection is blind here:
+        // extractContinuationToken has no gridContinuation case, so it always
+        // reports "no more pages" for the Albums grid even when a second page
+        // exists. Detect that specific blind spot directly on the raw initial
+        // response rather than trusting paginated.partial, which would silently
+        // report SUCCESS on a truncated fetch. Only true when a real
+        // continuation was actually present and NOT followed — not a blanket
+        // assumption — so a single-page library (the common case) is reported
+        // complete, same as before this fetch existed.
+        val gridTruncated = gridHasUnhandledContinuation(response)
+        val partial = paginated.partial || gridTruncated
+        val partialReason = when {
+            paginated.partial -> paginated.partialReason
+            gridTruncated -> "saved-albums grid has a continuation token but grid pagination isn't implemented — fetched page 1 only"
+            else -> null
+        }
+
         if (paginated.items.isEmpty()) {
             return SyncResult.Empty("Library returned no albums")
         }
-        // Forced until parseSavedAlbumsContinuationPage / extractContinuationToken's
-        // gridContinuation handling is verified against a live paginated response
-        // (see the kdoc on parseSavedAlbumsContinuationPage). This keeps
-        // shouldDeactivateMissingPlaylists from ever firing on this data.
         return SyncResult.Success(
             PagedAlbums(
                 albums = paginated.items,
-                partial = true,
-                partialReason = "grid continuation pagination unverified",
+                partial = partial,
+                partialReason = partialReason,
             )
         )
+    }
+
+    /**
+     * Detects whether the saved-albums grid response carries a continuation
+     * token that [extractContinuationToken] doesn't know how to walk (no
+     * `gridContinuation` case exists yet). A false negative here just means
+     * an unverified-but-actually-single-page library reports complete, which
+     * is correct; a false positive costs one unnecessary "incomplete" flag
+     * for a run that was actually fine — the safer direction to be wrong in.
+     */
+    private fun gridHasUnhandledContinuation(response: JsonObject): Boolean {
+        val sections = response.navigatePath(
+            "contents", "singleColumnBrowseResultsRenderer", "tabs",
+        )?.firstArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?.asArray() ?: return false
+
+        for (section in sections) {
+            val grid = section.asObject()?.get("gridRenderer")?.asObject() ?: continue
+            val items = grid["items"]?.asArray()
+            val trailingContinuationItem = items?.lastOrNull()?.asObject()
+                ?.containsKey("continuationItemRenderer") == true
+            val shelfLevelContinuation = grid["continuations"]?.asArray()?.isNotEmpty() == true
+            if (trailingContinuationItem || shelfLevelContinuation) return true
+        }
+        return false
     }
 
     /**

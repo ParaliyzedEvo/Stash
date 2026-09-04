@@ -80,8 +80,6 @@ fun ManagePlaylistsScreen(
 
     val liked = rows.firstOrNull { it.type == PlaylistType.LIKED_SONGS }
     val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
-    val albums = rows.filter { it.type == PlaylistType.ALBUM }
-    val albumsEnabled = albums.count { it.syncEnabled }
     val customAll = rows.filter { it.type == PlaylistType.CUSTOM }
     val customEnabled = customAll.count { it.syncEnabled }
 
@@ -109,8 +107,6 @@ fun ManagePlaylistsScreen(
     fun matchesQuery(row: ManageRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
     val visibleLiked = liked?.takeIf { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
     val visibleMixes = if (showMixRows(segment)) mixes.filter { matchesQuery(it) } else emptyList()
-    val albumsBySegment = albums.filter { matchesSegment(segment, it.syncEnabled) }
-    val visibleAlbums = albumsBySegment.filter { matchesQuery(it) }
     val visibleCustom = bySegment.filter { matchesQuery(it) }
 
     Scaffold(
@@ -225,24 +221,6 @@ fun ManagePlaylistsScreen(
                             // Switch is inverted: ON = shown on Home → toggling
                             // OFF hides it (hidden = !shown).
                             onToggleShown = { shown -> viewModel.onToggleHideFromHome(mix.id, !shown) },
-                        )
-                    }
-                }
-
-                // -- Albums -------------------------------------------------
-                // Opt-in per-album sync, same as "Your playlists" — no
-                // discovery toggle since an album only appears here after
-                // the user explicitly saved it on the source service.
-                if (visibleAlbums.isNotEmpty()) {
-                    item(key = "albums-label") {
-                        ManageSectionLabel("Albums · $albumsEnabled/${albums.size}")
-                    }
-                    items(visibleAlbums, key = { "album-${it.id}" }) { alb ->
-                        SpotifySyncToggleRow(
-                            name = alb.name,
-                            trackCount = alb.trackCount,
-                            enabled = alb.syncEnabled,
-                            onToggle = { viewModel.onTogglePlaylistSync(alb.id, it) },
                         )
                     }
                 }

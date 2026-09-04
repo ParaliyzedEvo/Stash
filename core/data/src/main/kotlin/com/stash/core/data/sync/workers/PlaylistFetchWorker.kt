@@ -857,9 +857,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         markYoutubeIncomplete("getUserPlaylists: ${result.message}")
                     }
                 }
-            val albumsDeferred = async { sem.withPermit { fetchAndSnapshotSavedAlbums(syncId, diagnostics, sem) } }
+                val albumsDeferred = async { fetchAndSnapshotSavedAlbums(sem, syncId, diagnostics) }
 
-            if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
+                if (!likedDeferred.await()) markYoutubeIncomplete("getLikedSongs leg failed")
                 albumsDeferred.await()
             }
         } catch (e: Exception) {
@@ -1052,9 +1052,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * [sem] semaphore via the caller.
      */
     private suspend fun fetchAndSnapshotSavedAlbums(
+        sem: Semaphore,
         syncId: Long,
         diagnostics: MutableList<SyncStepResult>,
-        sem: Semaphore,
     ) {
         when (val result = ytMusicApiClient.getSavedAlbums()) {
             is SyncResult.Success -> {
@@ -1068,6 +1068,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         errorMessage = if (paged.partial) paged.partialReason else null,
                     )
                 )
+                // Only flip the shared completeness flag on a REAL detected
+                // truncation (see gridHasUnhandledContinuation) — the flag
+                // gates deactivateMissingForSource for every YouTube-source
+                // playlist this run, saved albums included now that they're
+                // typed CUSTOM (#343/#348). A common, non-paginated library
+                // must never suppress that cleanup; a genuinely truncated one
+                // correctly should, exactly like a truncated playlist fetch
+                // already does.
                 if (paged.partial) markYoutubeIncomplete("getSavedAlbums partial: ${paged.partialReason}")
                 Log.d(TAG, "fetchAndSnapshotSavedAlbums: found ${paged.albums.size} saved albums")
                 coroutineScope {
@@ -1120,6 +1128,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     source = MusicSource.YOUTUBE,
                     sourcePlaylistId = album.id,
                     playlistName = detail.title,
+                    // CUSTOM, not a dedicated ALBUM type — see PR discussion.
+                    // A saved album is diffed, toggled, and deactivated
+                    // through the exact same path as any synced playlist;
+                    // no code path needs to distinguish them yet, and adding
+                    // a type without a display/filter surface everywhere
+                    // PlaylistType is switched on is worse than not adding it.
                     playlistType = PlaylistType.CUSTOM,
                     trackCount = detail.tracks.size,
                     artUrl = coverUrl,
