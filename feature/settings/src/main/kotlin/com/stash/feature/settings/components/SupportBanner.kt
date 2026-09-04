@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,8 +37,6 @@ import com.stash.core.ui.theme.StashCyan
 import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashPurpleLight
 
-private const val STASH_PAYPAL_URL = "https://www.paypal.com/paypalme/Paraliyzedevo"
-
 /**
  * A premium gradient Support card for the Settings hub. Renders a one-line pitch
  * and two actions (Donate / Star). Pure presentation — the hub screen wires the
@@ -49,6 +45,7 @@ private const val STASH_PAYPAL_URL = "https://www.paypal.com/paypalme/Paraliyzed
 @Composable
 fun SupportBanner(
     onDonate: () -> Unit,
+    onDonateCoDev: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -86,7 +83,6 @@ fun SupportBanner(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             var showDonateMenu by remember { mutableStateOf(false) }
-            val uriHandler = LocalUriHandler.current
 
             Box(modifier = Modifier.weight(1f)) {
                 Button(
@@ -107,21 +103,12 @@ fun SupportBanner(
                 DropdownMenu(
                     expanded = showDonateMenu,
                     onDismissRequest = { showDonateMenu = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                 ) {
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(
-                                    text = "rawnaldclark (rawn)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = "Owner, main dev",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Text(text = "rawnaldclark (rawn)", style = MaterialTheme.typography.bodyMedium)
+                                Text(text = "Owner, main dev", style = MaterialTheme.typography.bodySmall)
                             }
                         },
                         onClick = {
@@ -132,21 +119,16 @@ fun SupportBanner(
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(
-                                    text = "Paraliyzed_evo",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
+                                Text(text = "Paraliyzed_evo", style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     text = "Co-dev — makes the beta builds",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         },
                         onClick = {
                             showDonateMenu = false
-                            uriHandler.openUri(STASH_PAYPAL_URL)
+                            onDonateCoDev()
                         },
                     )
                 }
