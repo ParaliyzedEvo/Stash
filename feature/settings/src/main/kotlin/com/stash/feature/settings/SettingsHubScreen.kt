@@ -158,7 +158,7 @@ fun SettingsHubScreen(
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        SupportBanner(onDonate = onDonate, onStar = onStar)
+        SupportBanner(onDonate = onDonate, onDonateCoDev = onDonateCoDev, onStar = onStar)
         SettingsSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
