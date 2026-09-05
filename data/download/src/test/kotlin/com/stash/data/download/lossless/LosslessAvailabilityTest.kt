@@ -52,6 +52,14 @@ class LosslessAvailabilityTest {
         assertThat(a.anyUserOwnedNow()).isFalse()
     }
 
+    @Test fun `ownAccountLiveNow is the live login and nothing else`() = runTest {
+        // A configured relay is a shared, capped budget — it must never count as "own".
+        configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow(loginLive = false)
+        assertThat(a.ownAccountLiveNow()).isFalse()
+        stubNow(loginLive = true)
+        assertThat(a.ownAccountLiveNow()).isTrue()
+    }
+
     @Test fun `a cooled relay is still configured but not available now`() = runTest {
         configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow(cooled = setOf("https://r.example"))
         assertThat(a.qbdlxEnabledNow()).isTrue()

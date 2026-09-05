@@ -2,6 +2,7 @@ package com.stash.core.media.preview
 
 import android.util.Log
 import com.stash.core.model.TrackItem
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
@@ -35,6 +36,7 @@ import javax.inject.Singleton
 @Singleton
 class LosslessUrlPrefetcher @Inject constructor(
     private val registry: LosslessSourceRegistry,
+    private val availability: LosslessAvailability,
 ) {
     // App-lifetime scope. The class is @Singleton so this scope lives
     // for the entire process; no leaks. (No Hilt-provided
@@ -62,6 +64,15 @@ class LosslessUrlPrefetcher @Inject constructor(
         cancelStale()
         cache[key] = CachedDeferred(
             deferred = scope.async {
+                // Speculative work may only spend the user's OWN account. Every other
+                // lossless path is a shared, capped budget — the relay's per-account
+                // caps, ARCOD's daily quota — and on launch day browsing alone drained
+                // both before anyone pressed play. The entry removes itself so a later
+                // tap does a real resolve instead of reading a cached "skipped" null.
+                if (!availability.ownAccountLiveNow()) {
+                    cache.remove(key)
+                    return@async null
+                }
                 concurrency.withPermit {
                     runCatching { registry.resolve(track.toQuery(), bypassRateLimit = false) }
                         .onFailure { e ->

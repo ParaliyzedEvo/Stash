@@ -43,6 +43,14 @@ class LosslessAvailability @Inject constructor(
 
     suspend fun qbdlxEnabledNow(): Boolean = qbdlxEnabled.first()
 
+    /**
+     * Point-in-time: is the user's OWN Qobuz login live? The only lossless path
+     * with no shared budget behind it — the relay has per-account caps and ARCOD
+     * a daily quota — so it is the only path speculative work (row prefetch) may
+     * spend. A configured relay deliberately does not count.
+     */
+    suspend fun ownAccountLiveNow(): Boolean = credentialStore.loginLive()
+
     /** Point-in-time: is there a file-URL path that is not cooled right now? */
     suspend fun fileUrlAvailableNow(): Boolean {
         if (credentialStore.loginLive()) return true
