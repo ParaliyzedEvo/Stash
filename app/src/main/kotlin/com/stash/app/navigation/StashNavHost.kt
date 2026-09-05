@@ -209,6 +209,7 @@ fun StashNavHost(
                 onOpenAppearance = { navController.navigate(SettingsAppearanceRoute) },
                 onOpenAbout = { navController.navigate(SettingsAboutRoute) },
                 onDonate = { runCatching { uriHandler.openUri("https://ko-fi.com/rawnald") } },
+                onDonateCoDev = { runCatching { uriHandler.openUri("https://www.paypal.com/paypalme/Paraliyzedevo") } },
                 onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }
