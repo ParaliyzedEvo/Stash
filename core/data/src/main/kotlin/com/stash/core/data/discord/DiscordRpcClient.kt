@@ -24,6 +24,7 @@ import okhttp3.Response
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Base64
+import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
@@ -127,7 +128,7 @@ class DiscordRpcClient(
         val tokenRes = http.newCall(tokenReq.build()).await()
         rateLimiter.observe(tokenRes)
         if (!tokenRes.isSuccessful) throw IllegalStateException("token exchange failed: ${tokenRes.code}")
-        val newAccess = Json.decodeFromString<JsonObject>(tokenRes.body.string())["access_token"]!!.jsonPrimitive.content
+        val newAccess = Json.decodeFromString<JsonObject>(tokenRes.body?.string() ?: throw IllegalStateException("Empty response body"))["access_token"]!!.jsonPrimitive.content
         accessToken = newAccess
         return newAccess
     }
