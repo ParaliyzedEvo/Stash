@@ -48,6 +48,44 @@ import androidx.compose.ui.viewinterop.AndroidView
 private const val TAG = "DiscordLogin"
 private const val LOGIN_URL = "https://discord.com/login"
 
+/**
+ * Reads the ACTIVE account's token straight out of Discord's own in-memory
+ * TokenManager module (via its webpack module graph), rather than
+ * `localStorage.getItem('token')`. That flat key is what echo-discord's
+ * original technique (and most old token-grabber scripts) relied on, but it
+ * stops reliably reflecting the signed-in session once Discord's account
+ * switcher is in play — multiple accounts can be logged into the same
+ * browser/WebView session, and the flat key isn't guaranteed to track
+ * whichever one is currently active. Walking the module graph for whatever
+ * exposes `getToken()` sidesteps that entirely: it asks the client the same
+ * question its own UI is asking. This is a private API surface (Discord's
+ * bundler internals), so it's still fragile to a future webpack/bundling
+ * change — just less fragile than the key it replaces.
+ */
+private const val TOKEN_EXTRACT_JS = """
+    (function() {
+        try {
+            var direct = window.localStorage.getItem('token');
+            if (direct && direct !== 'null') return direct;
+        } catch (e) {}
+        try {
+            var found = null;
+            window.webpackChunkdiscord_app.push([[Symbol()], {}, function(req) {
+                for (var id in req.c) {
+                    var m = req.c[id].exports;
+                    var candidate = m && m.default && typeof m.default.getToken === 'function'
+                        ? m.default
+                        : (m && typeof m.getToken === 'function' ? m : null);
+                    if (candidate) { found = candidate.getToken(); break; }
+                }
+            }]);
+            return found;
+        } catch (e) {
+            return null;
+        }
+    })();
+"""
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,14 +180,16 @@ fun DiscordLoginWebView(
                                 if (url != null && (url.startsWith("https://discord.com/app") ||
                                         url.startsWith("https://discord.com/channels"))
                                 ) {
-                                    view?.evaluateJavascript(
-                                        "window.localStorage.getItem('token')",
-                                    ) { result ->
+                                    view?.evaluateJavascript(TOKEN_EXTRACT_JS) { result ->
+                                        // evaluateJavascript wraps string results in quotes and
+                                        // "null" (as text) when the expression evaluates to null.
                                         val token = result?.trim('"').orEmpty()
                                         if (token.length > 40 && token != "null") {
                                             Log.i(TAG, "Discord token extracted (length=${token.length})")
                                             tokenFound = true
                                             onTokenExtracted(token)
+                                        } else {
+                                            Log.w(TAG, "Token extraction returned nothing usable on $url")
                                         }
                                     }
                                 }
