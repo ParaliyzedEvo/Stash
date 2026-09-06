@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -80,6 +81,26 @@ fun SettingsAccountsScreen(
             onConnect = viewModel::onConnectYouTubeWithCookie,
             onDismiss = viewModel::onDismissYouTubeCookieDialog,
         )
+    }
+
+    // Discord token paste dialog (manual fallback).
+    if (uiState.showDiscordTokenDialog) {
+        com.stash.feature.settings.components.DiscordTokenDialog(
+            isValidating = uiState.isDiscordTokenValidating,
+            errorMessage = uiState.discordTokenError,
+            onConnect = viewModel::onConnectDiscordWithToken,
+            onDismiss = viewModel::onDismissDiscordTokenDialog,
+        )
+    }
+
+    // Discord WebView login (full-screen overlay).
+    if (uiState.showDiscordWebLogin) {
+        com.stash.feature.settings.components.DiscordLoginWebView(
+            onTokenExtracted = viewModel::onDiscordWebLoginTokenExtracted,
+            onDismiss = viewModel::onDismissDiscordWebLogin,
+            onManualFallback = viewModel::onConnectDiscordManual,
+        )
+        return
     }
 
     // YouTube error dialog (missing credentials, network failure, etc.).
@@ -162,6 +183,15 @@ fun SettingsAccountsScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             },
+        )
+
+        AccountConnectionCard(
+            serviceName = "Discord",
+            icon = Icons.Rounded.Forum,
+            accentColor = androidx.compose.ui.graphics.Color(0xFF5865F2), // Discord blurple
+            authState = uiState.discordAuthState,
+            onConnect = viewModel::onConnectDiscord,
+            onDisconnect = viewModel::onDisconnectDiscord,
         )
 
         // Last.fm renders via its own composable (web-auth / cookie / OAuth UX
