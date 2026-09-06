@@ -1,5 +1,6 @@
 package com.stash.core.data.discord
 
+import android.util.Log
 import com.stash.core.auth.discord.DiscordHeaders
 import com.stash.core.auth.discord.DiscordRateLimiter
 import kotlinx.coroutines.CoroutineScope
@@ -86,7 +87,12 @@ class DiscordRpcClient(
     }
 
     private suspend fun sendNow(activity: DiscordActivity?) {
-        if (activity == null) deleteSession() else post(DiscordSession(listOf(activity), activityToken))
+        if (activity == null) {
+            deleteSession()
+        } else {
+            runCatching { post(DiscordSession(listOf(activity), activityToken)) }
+                .onFailure { Log.w("DiscordRpc", "sendNow failed", it) }
+        }
     }
 
     private suspend fun getAccessToken(): String {
@@ -142,9 +148,16 @@ class DiscordRpcClient(
         rateLimiter.awaitReady()
         val res = http.newCall(req.build()).await()
         rateLimiter.observe(res)
-        if (res.code == 401) { accessToken = null; onUnauthorized?.invoke(); return }
-        if (!res.isSuccessful) return // presence is best-effort — never crash playback over it
+        if (res.code == 401) {
+            Log.w("DiscordRpc", "headless-sessions POST got 401 — clearing auth")
+            accessToken = null; onUnauthorized?.invoke(); return
+        }
+        if (!res.isSuccessful) {
+            Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message}")
+            return // presence is best-effort — never crash playback over it
+        }
         activityToken = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["token"]!!.jsonPrimitive.content
+        Log.i("DiscordRpc", "Presence posted successfully")
     }
 
     private suspend fun deleteSession() {

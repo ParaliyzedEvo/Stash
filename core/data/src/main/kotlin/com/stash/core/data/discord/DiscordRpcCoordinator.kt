@@ -1,5 +1,6 @@
 package com.stash.core.data.discord
 
+import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
@@ -9,6 +10,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "DiscordRpc"
 
 /**
  * Owns the single [DiscordRpcClient] for the connected account. Mirrors
@@ -27,17 +30,27 @@ class DiscordRpcCoordinator @Inject constructor(
     fun start() {
         scope.launch {
             tokenManager.discordAuthState.collect { state ->
+                Log.d(TAG, "discordAuthState -> ${state::class.simpleName}")
                 when (state) {
                     is AuthState.Connected -> {
                         if (client == null) {
-                            val token = tokenManager.getDiscordUserToken() ?: return@collect
+                            val token = tokenManager.getDiscordUserToken()
+                            if (token == null) {
+                                Log.w(TAG, "discordAuthState is Connected but getDiscordUserToken() returned null — token store/authState mismatch")
+                                return@collect
+                            }
+                            Log.i(TAG, "Building DiscordRpcClient (token length=${token.length})")
                             client = DiscordRpcClient(
                                 userToken = token,
-                                onUnauthorized = { scope.launch { tokenManager.clearAuth(AuthService.DISCORD) } },
+                                onUnauthorized = {
+                                    Log.w(TAG, "Discord token rejected as unauthorized — clearing auth")
+                                    scope.launch { tokenManager.clearAuth(AuthService.DISCORD) }
+                                },
                             )
                         }
                     }
                     else -> {
+                        if (client != null) Log.i(TAG, "Discord disconnected — clearing presence")
                         client?.clearNow()
                         client = null
                     }
@@ -52,11 +65,17 @@ class DiscordRpcCoordinator @Inject constructor(
      * "Listening to X" while paused.
      */
     fun updateNowPlaying(title: String, artist: String, albumArtUrl: String?, isPlaying: Boolean) {
-        val active = client ?: return
+        val active = client
+        if (active == null) {
+            Log.d(TAG, "updateNowPlaying('$title') ignored — no active Discord client (not connected)")
+            return
+        }
         if (title.isBlank() || !isPlaying) {
+            Log.d(TAG, "Clearing presence (title blank or paused)")
             active.requestActivity(null)
             return
         }
+        Log.d(TAG, "Requesting activity: '$title' by '$artist'")
         active.requestActivity(
             DiscordActivity(
                 name = "Stash",
