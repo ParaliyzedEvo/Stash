@@ -223,7 +223,7 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectDiscordWithToken(token: String): Boolean {
         if (token.isBlank()) return false
         val profile = runCatching {
-            com.stash.core.data.discord.DiscordRpcClient.validateAndFetchProfile(token)
+            com.stash.core.auth.discord.DiscordProfileValidator.validateAndFetchProfile(token)
         }.getOrNull() ?: return false
 
         val username = (profile["username"] as? kotlinx.serialization.json.JsonPrimitive)

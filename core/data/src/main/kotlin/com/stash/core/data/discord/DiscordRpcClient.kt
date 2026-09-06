@@ -1,5 +1,7 @@
 package com.stash.core.data.discord
 
+import com.stash.core.auth.discord.DiscordHeaders
+import com.stash.core.auth.discord.DiscordRateLimiter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -170,17 +172,6 @@ class DiscordRpcClient(
         private fun codeChallenge(verifier: String): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray())
             return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
-        }
-
-        /** Validates a scraped token and returns the Discord profile JSON. Used by the connect flow. */
-        suspend fun validateAndFetchProfile(userToken: String): JsonObject {
-            val client = OkHttpClient()
-            val req = Request.Builder().url("https://discord.com/api/v9/oauth2/authorize?client_id=$CLIENT_ID")
-            DiscordHeaders.apply(req, token = userToken, bearer = false)
-            val res = client.newCall(req.build()).await()
-            if (!res.isSuccessful) throw IllegalStateException("Invalid Discord token")
-            val body = Json.decodeFromString<JsonObject>(res.body.string())
-            return body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
         }
 
         private suspend fun Call.await(): Response = suspendCoroutine { cont ->
