@@ -30,7 +30,8 @@ object DiscordProfileValidator {
         DiscordHeaders.apply(req, token = userToken, bearer = false)
         val res = client.newCall(req.build()).await()
         if (!res.isSuccessful) throw IllegalStateException("Invalid Discord token")
-        val body = Json.decodeFromString<JsonObject>(res.body.string())
+        val bodyString = res.body?.string() ?: throw IllegalStateException("Empty response body")
+        val body = Json.decodeFromString<JsonObject>(bodyString)
         return body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
     }
 

@@ -109,7 +109,7 @@ class DiscordRpcClient(
         rateLimiter.observe(res)
         if (res.code == 401) { onUnauthorized?.invoke(); throw IllegalStateException("Discord token revoked") }
         if (!res.isSuccessful) throw IllegalStateException("authorize failed: ${res.code}")
-        val location = Json.decodeFromString<JsonObject>(res.body.string())["location"]!!.jsonPrimitive.content
+        val location = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["location"]!!.jsonPrimitive.content
         val code = location.substringAfter("code=").substringBefore("&")
 
         val tokenReq = Request.Builder().url("https://discord.com/api/v9/oauth2/token")
@@ -143,7 +143,7 @@ class DiscordRpcClient(
         rateLimiter.observe(res)
         if (res.code == 401) { accessToken = null; onUnauthorized?.invoke(); return }
         if (!res.isSuccessful) return // presence is best-effort — never crash playback over it
-        activityToken = Json.decodeFromString<JsonObject>(res.body.string())["token"]!!.jsonPrimitive.content
+        activityToken = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["token"]!!.jsonPrimitive.content
     }
 
     private suspend fun deleteSession() {
