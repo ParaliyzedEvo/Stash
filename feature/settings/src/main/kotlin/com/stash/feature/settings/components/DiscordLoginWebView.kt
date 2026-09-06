@@ -69,17 +69,19 @@ private const val TOKEN_EXTRACT_JS = """
             if (direct && direct !== 'null') return direct;
         } catch (e) {}
         try {
-            var found = null;
-            window.webpackChunkdiscord_app.push([[Symbol()], {}, function(req) {
-                for (var id in req.c) {
-                    var m = req.c[id].exports;
-                    var candidate = m && m.default && typeof m.default.getToken === 'function'
-                        ? m.default
-                        : (m && typeof m.getToken === 'function' ? m : null);
-                    if (candidate) { found = candidate.getToken(); break; }
-                }
+            var found;
+            window.webpackChunkdiscord_app.push([[Symbol()], {}, function(o) {
+                try {
+                    Object.values(o.c).some(function(e) {
+                        if (e.exports && e.exports.setToken) {
+                            found = e.exports.getToken();
+                            return true;
+                        }
+                        return false;
+                    });
+                } catch (e) {}
             }]);
-            return found;
+            return found || null;
         } catch (e) {
             return null;
         }
