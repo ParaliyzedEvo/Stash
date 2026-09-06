@@ -1,4 +1,4 @@
-package com.stash.core.data.discord
+package com.stash.core.auth.discord
 
 import okhttp3.Request
 import java.util.Base64

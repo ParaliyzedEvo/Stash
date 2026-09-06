@@ -1,4 +1,4 @@
-package com.stash.core.data.discord
+package com.stash.core.auth.discord
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
