@@ -118,6 +118,7 @@ class DiscordRpcClient(
         if (res.code == 401) { onUnauthorized?.invoke(); throw IllegalStateException("Discord token revoked") }
         if (!res.isSuccessful) throw IllegalStateException("authorize failed: ${res.code}")
         val location = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["location"]!!.jsonPrimitive.content
+        Log.d("DiscordRpc", "authorize location: $location")
         val code = location.substringAfter("code=").substringBefore("&")
 
         val tokenReq = Request.Builder().url("https://discord.com/api/v9/oauth2/token")
