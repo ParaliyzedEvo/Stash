@@ -78,6 +78,7 @@ class DiscordRpcCoordinator @Inject constructor(
         Log.d(TAG, "Requesting activity: '$title' by '$artist'")
         active.requestActivity(
             DiscordActivity(
+                applicationId = APPLICATION_ID,
                 name = "Stash",
                 type = DiscordActivityType.Listening.value,
                 details = title,
@@ -91,8 +92,9 @@ class DiscordRpcCoordinator @Inject constructor(
     }
 
     companion object {
-        // TODO: confirm the actual repo path/branch — placeholder for now.
+        private const val APPLICATION_ID = "934292861724270632"
+
         private const val FALLBACK_ICON_URL =
-            "https://raw.githubusercontent.com/rawnaldclark/Stash/refs/heads/master/app/src/main/res/drawable/ic_launcher_foreground.png"
+            "https://raw.githubusercontent.com/<your-org>/Stash/main/app/src/main/res/drawable/ic_launcher_foreground.png"
     }
 }
