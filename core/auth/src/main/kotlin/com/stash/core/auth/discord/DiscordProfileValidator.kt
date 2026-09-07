@@ -22,7 +22,7 @@ import kotlin.coroutines.resumeWithException
  * avoid pulling this whole file across the module boundary for one constant.
  */
 object DiscordProfileValidator {
-    private const val CLIENT_ID = "503557087041683458"
+    private const val CLIENT_ID = "934292861724270632"
 
     suspend fun validateAndFetchProfile(userToken: String): JsonObject {
         val client = OkHttpClient()

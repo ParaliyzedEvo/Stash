@@ -177,8 +177,8 @@ class DiscordRpcClient(
     }
 
     companion object {
-        private const val CLIENT_ID = "503557087041683458"
-        private const val REDIRECT_URI = "https://login.premid.app"
+        private const val CLIENT_ID = "934292861724270632"
+        private const val REDIRECT_URI = "https://paraliyzed.net/blank.html"
         private const val SCOPES = "identify activities.write"
         private const val DEBOUNCE_MS = 1200L
         private const val CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
