@@ -80,6 +80,7 @@ class DiscordRpcCoordinator @Inject constructor(
             DiscordActivity(
                 applicationId = APPLICATION_ID,
                 name = "Stash",
+                platform = "android",
                 type = DiscordActivityType.Listening.value,
                 details = title,
                 state = artist,
