@@ -236,10 +236,10 @@ Stash is GPL-3.0. You can use, copy, modify, and redistribute it freely. If you 
 
 Stash is free, open source, and has no ads or telemetry. If it replaced a subscription for you and you want to throw a few bucks at the project:
 
-**rawnaldclark (rawn)** — Owner, main dev
+**rawnaldclark (rawn)** — Owner, main dev<br>
 <a href="https://ko-fi.com/rawnald"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" height="36"></a>
 
-**Paraliyzed_evo** — Co-dev, makes the beta builds
+**Paraliyzed_evo** — Co-dev, makes the beta builds<br>
 <a href="https://www.paypal.com/paypalme/Paraliyzedevo"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal&logoColor=white" alt="Support on PayPal" height="36"></a>
 
 You can also [sponsor on GitHub](https://github.com/sponsors/rawnaldclark) for recurring support.

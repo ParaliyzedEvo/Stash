@@ -279,7 +279,7 @@ fun HomeScreen(
                     ) {
                         androidx.compose.material3.Icon(
                             imageVector = Icons.Filled.Build,
-                            contentDescription = "Get involved with Stash",
+                            contentDescription = "Report an issue or help translate",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp),
                         )
@@ -287,7 +287,6 @@ fun HomeScreen(
                     DropdownMenu(
                         expanded = showHelpMenu,
                         onDismissRequest = { showHelpMenu = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                     ) {
                         DropdownMenuItem(
                             text = {
@@ -313,7 +312,7 @@ fun HomeScreen(
                             },
                             onClick = {
                                 showHelpMenu = false
-                                socialUriHandler.openUri(STASH_ISSUE_URL)
+                                runCatching { socialUriHandler.openUri(STASH_ISSUE_URL) }
                             },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -339,30 +338,29 @@ fun HomeScreen(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             },
-                            trailingIcon = {
-                                // Secondary tap target: opens the access-request form directly,
-                                // separate from the row's main click (Crowdin project page).
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            showHelpMenu = false
-                                            socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL)
-                                        },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.OpenInNew,
-                                        contentDescription = "Request translator access",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Request translator access",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.OpenInNew,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             },
                             onClick = {
                                 showHelpMenu = false
-                                socialUriHandler.openUri(STASH_CROWDIN_URL)
+                                runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
                             },
                         )
                     }
@@ -1119,9 +1117,12 @@ private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issue
 // browser. Edit when the invite rotates.
 private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
 
+// Translation project on Crowdin. Tap → Crowdin project page.
 private const val STASH_CROWDIN_URL = "https://crowdin.com/project/stash-music-player"
+
+// Form to request translator access on Crowdin.
 private const val STASH_TRANSLATE_ACCESS_FORM_URL =
-    "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform?usp=sharing&ouid=101376898883134592146"
+    "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform"
 
 private val LEGACY_SUPPORTERS = listOf(
     Supporter(
