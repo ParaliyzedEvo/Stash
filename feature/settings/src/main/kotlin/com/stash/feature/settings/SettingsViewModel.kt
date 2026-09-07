@@ -1276,7 +1276,7 @@ class SettingsViewModel @Inject constructor(
 
     fun onDisconnectDiscord() {
         viewModelScope.launch {
-            discordRpcCoordinator.updateNowPlaying("", "", null, isPlaying = false)
+            discordRpcCoordinator.updateNowPlaying("", "", "", null, 0L, 0L, isPlaying = false)
             tokenManager.clearAuth(AuthService.DISCORD)
         }
     }
