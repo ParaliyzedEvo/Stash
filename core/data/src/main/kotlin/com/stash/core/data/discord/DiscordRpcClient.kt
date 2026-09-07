@@ -153,7 +153,8 @@ class DiscordRpcClient(
             accessToken = null; onUnauthorized?.invoke(); return
         }
         if (!res.isSuccessful) {
-            Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message}")
+            val body = runCatching { res.body?.string() }.getOrNull()
+            Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message} — body: $body")
             return // presence is best-effort — never crash playback over it
         }
         activityToken = Json.decodeFromString<JsonObject>(res.body?.string() ?: throw IllegalStateException("Empty response body"))["token"]!!.jsonPrimitive.content

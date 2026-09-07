@@ -95,6 +95,6 @@ class DiscordRpcCoordinator @Inject constructor(
         private const val APPLICATION_ID = "934292861724270632"
 
         private const val FALLBACK_ICON_URL =
-            "https://raw.githubusercontent.com/<your-org>/Stash/main/app/src/main/res/drawable/ic_launcher_foreground.png"
+            "https://raw.githubusercontent.com/rawnaldclark/Stash/refs/heads/master/app/src/main/res/drawable/ic_launcher_foreground.png"
     }
 }
