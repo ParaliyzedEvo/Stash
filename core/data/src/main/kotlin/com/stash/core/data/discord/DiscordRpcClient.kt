@@ -183,9 +183,9 @@ class DiscordRpcClient(
     }
 
     companion object {
-        private const val CLIENT_ID = DiscordRpcConfig.CLIENT_ID
-        private const val REDIRECT_URI = DiscordRpcConfig.REDIRECT_URI
-        private const val SCOPES = DiscordRpcConfig.SCOPES
+        private val CLIENT_ID = DiscordRpcConfig.CLIENT_ID
+        private val REDIRECT_URI = DiscordRpcConfig.REDIRECT_URI
+        private val SCOPES = DiscordRpcConfig.SCOPES
         private const val DEBOUNCE_MS = 1200L
         private const val CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
