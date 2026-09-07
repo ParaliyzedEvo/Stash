@@ -348,6 +348,17 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadePreparedId = null
         }
 
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                val master = crossfadeEngine?.masterPlayer
+                updateDiscordPresence(master?.currentMediaItem, master?.isPlaying == true)
+            }
+        }
+
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
             val master = crossfadeEngine?.masterPlayer ?: return
             when (resumePlayGate.onTimelineChanged(
@@ -878,14 +889,18 @@ class StashPlaybackService : MediaLibraryService() {
         val metadata = mediaItem?.mediaMetadata
         val title = metadata?.title?.toString().orEmpty()
         if (title.isBlank()) {
-            discordRpcCoordinator.updateNowPlaying("", "", null, isPlaying = false)
+            discordRpcCoordinator.updateNowPlaying("", "", "", null, 0L, 0L, isPlaying = false)
             return
         }
         val artist = metadata?.artist?.toString().orEmpty()
+        val album = metadata?.albumTitle?.toString().orEmpty()
         val artScheme = metadata?.artworkUri?.scheme?.lowercase()
         val artUrl = metadata?.artworkUri?.toString()
             ?.takeIf { artScheme == "http" || artScheme == "https" }
-        discordRpcCoordinator.updateNowPlaying(title, artist, artUrl, isPlaying)
+        val master = crossfadeEngine?.masterPlayer
+        val positionMs = master?.currentPosition ?: 0L
+        val durationMs = master?.duration?.takeIf { it > 0 } ?: 0L
+        discordRpcCoordinator.updateNowPlaying(title, artist, album, artUrl, positionMs, durationMs, isPlaying)
     }
 
     /**

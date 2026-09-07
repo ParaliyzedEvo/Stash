@@ -87,6 +87,15 @@ class DiscordRpcClient(
         scope.launch { runCatching { sendNow(null) } }
     }
 
+    /**
+    * Warms up the OAuth connection immediately after the user links their
+    * Discord account, so the one-time consent prompt (and Rich Presence itself)
+    * doesn't wait for the first track change to trigger it.
+    */
+    fun connect() {
+        scope.launch { runCatching { getAccessToken() } }
+    }
+
     private suspend fun sendNow(activity: DiscordActivity?) {
         if (activity == null) {
             deleteSession()

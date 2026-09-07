@@ -74,11 +74,26 @@ class DiscordRpcCoordinator @Inject constructor(
     }
 
     /**
-     * Called on every track transition / play-pause. No-op if not connected.
-     * [isPlaying] false clears presence rather than showing a stale
-     * "Listening to X" while paused.
-     */
-    fun updateNowPlaying(title: String, artist: String, albumArtUrl: String?, isPlaying: Boolean) {
+    * Called on every track transition / play-pause / seek. No-op if not
+    * connected. [isPlaying] false clears presence rather than showing a stale
+    * "Listening to X" while paused.
+    *
+    * [album] may be blank (not every source populates it) — falls back to
+    * omitting the third line rather than showing an empty one. [durationMs]
+    * may be 0/unset right at a track transition before the player has fully
+    * prepared the item — timestamps (and therefore the seekbar) are skipped
+    * entirely in that case rather than showing a bogus/zero-length bar; the
+    * very next update once duration resolves will add them.
+    */
+    fun updateNowPlaying(
+        title: String,
+        artist: String,
+        album: String,
+        albumArtUrl: String?,
+        positionMs: Long,
+        durationMs: Long,
+        isPlaying: Boolean,
+    ) {
         val active = client
         if (active == null) {
             Log.d(TAG, "updateNowPlaying('$title') ignored — no active Discord client (not connected)")
@@ -100,8 +115,17 @@ class DiscordRpcCoordinator @Inject constructor(
                 state = artist,
                 assets = DiscordActivity.Assets(
                     largeImage = albumArtUrl ?: FALLBACK_ICON_URL,
-                    largeText = artist,
+                    largeText = album.takeIf { it.isNotBlank() },
                 ),
+                timestamps = if (durationMs > 0) {
+                    val now = System.currentTimeMillis()
+                    DiscordActivity.Timestamps(
+                        start = now - positionMs,
+                        end = now + (durationMs - positionMs),
+                    )
+                } else {
+                    null
+                },
             ),
         )
     }
