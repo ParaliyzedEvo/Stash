@@ -133,7 +133,10 @@ class DiscordRpcClient(
         rateLimiter.awaitReady()
         val tokenRes = http.newCall(tokenReq.build()).await()
         rateLimiter.observe(tokenRes)
-        if (!tokenRes.isSuccessful) throw IllegalStateException("token exchange failed: ${tokenRes.code}")
+        if (!tokenRes.isSuccessful) {
+            val body = runCatching { tokenRes.body?.string() }.getOrNull()
+            throw IllegalStateException("token exchange failed: ${tokenRes.code} — body: $body")
+        }
         val newAccess = Json.decodeFromString<JsonObject>(tokenRes.body?.string() ?: throw IllegalStateException("Empty response body"))["access_token"]!!.jsonPrimitive.content
         accessToken = newAccess
         return newAccess
