@@ -51,6 +51,7 @@ import kotlin.coroutines.suspendCoroutine
 class DiscordRpcClient(
     private val userToken: String,
     private val onUnauthorized: (() -> Unit)? = null,
+    private val onNeedsConsent: (() -> Unit)? = null,
 ) {
     private val http = OkHttpClient()
     private val rateLimiter = DiscordRateLimiter()
@@ -135,6 +136,7 @@ class DiscordRpcClient(
         rateLimiter.observe(tokenRes)
         if (!tokenRes.isSuccessful) {
             val body = runCatching { tokenRes.body?.string() }.getOrNull()
+            if (body?.contains("invalid_grant") == true) onNeedsConsent?.invoke()
             throw IllegalStateException("token exchange failed: ${tokenRes.code} — body: $body")
         }
         val newAccess = Json.decodeFromString<JsonObject>(tokenRes.body?.string() ?: throw IllegalStateException("Empty response body"))["access_token"]!!.jsonPrimitive.content
@@ -180,9 +182,9 @@ class DiscordRpcClient(
     }
 
     companion object {
-        private const val CLIENT_ID = "934292861724270632"
-        private const val REDIRECT_URI = "https://paraliyzed.net/blank.html"
-        private const val SCOPES = "identify activities.write"
+        private const val CLIENT_ID = DiscordRpcConfig.CLIENT_ID
+        private const val REDIRECT_URI = DiscordRpcConfig.REDIRECT_URI
+        private const val SCOPES = DiscordRpcConfig.SCOPES
         private const val DEBOUNCE_MS = 1200L
         private const val CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 

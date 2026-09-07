@@ -1281,6 +1281,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    val discordNeedsPresenceConsent: StateFlow<Boolean> = discordRpcCoordinator.needsPresenceConsent
+
+    fun onDiscordFinishConnecting(openUrl: (String) -> Unit) {
+        openUrl(com.stash.core.data.discord.DiscordRpcConfig.consentUrl())
+        discordRpcCoordinator.consentHandled()
+    }
+
     // -- Quality --------------------------------------------------------------
 
     /**

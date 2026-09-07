@@ -185,6 +185,9 @@ fun SettingsAccountsScreen(
             },
         )
 
+        val discordUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        val discordNeedsConsent by viewModel.discordNeedsPresenceConsent.collectAsStateWithLifecycle()
+
         AccountConnectionCard(
             serviceName = "Discord",
             icon = Icons.Rounded.Forum,
@@ -192,6 +195,13 @@ fun SettingsAccountsScreen(
             authState = uiState.discordAuthState,
             onConnect = viewModel::onConnectDiscord,
             onDisconnect = viewModel::onDisconnectDiscord,
+            needsAction = discordNeedsConsent,
+            needsActionLabel = "Finish connecting",
+            onNeedsAction = {
+                viewModel.onDiscordFinishConnecting { url ->
+                    runCatching { discordUriHandler.openUri(url) }
+                }
+            },
         )
 
         // Last.fm renders via its own composable (web-auth / cookie / OAuth UX

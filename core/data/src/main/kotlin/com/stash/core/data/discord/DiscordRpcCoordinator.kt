@@ -7,6 +7,9 @@ import com.stash.core.auth.model.AuthState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +30,13 @@ class DiscordRpcCoordinator @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var client: DiscordRpcClient? = null
 
+    private val _needsPresenceConsent = MutableStateFlow(false)
+    val needsPresenceConsent: StateFlow<Boolean> = _needsPresenceConsent.asStateFlow()
+
+    fun consentHandled() {
+        _needsPresenceConsent.value = false
+    }
+
     fun start() {
         scope.launch {
             tokenManager.discordAuthState.collect { state ->
@@ -45,6 +55,10 @@ class DiscordRpcCoordinator @Inject constructor(
                                 onUnauthorized = {
                                     Log.w(TAG, "Discord token rejected as unauthorized — clearing auth")
                                     scope.launch { tokenManager.clearAuth(AuthService.DISCORD) }
+                                },
+                                onNeedsConsent = {
+                                    Log.w(TAG, "Presence needs one-time browser consent")
+                                    _needsPresenceConsent.value = true
                                 },
                             )
                         }
