@@ -3,7 +3,7 @@ package com.stash.core.data.discord
 object DiscordRpcConfig {
     const val CLIENT_ID = "934292861724270632"
     const val REDIRECT_URI = "https://paraliyzed.net/blank.html"
-    const val SCOPES = "identify rpc.activities.write"
+    const val SCOPES = "rpc.activities.write"
 
     fun consentUrl(): String =
         "https://discord.com/oauth2/authorize?client_id=$CLIENT_ID&response_type=code" +
