@@ -156,6 +156,25 @@ fun DiscordLoginWebView(
                             cacheMode = WebSettings.LOAD_NO_CACHE
                         }
 
+                        fun tryExtractToken(view: WebView?, url: String?, source: String) {
+                            if (url == null || !(url.startsWith("https://discord.com/app") ||
+                                    url.startsWith("https://discord.com/channels"))
+                            ) return
+                            view?.evaluateJavascript(TOKEN_EXTRACT_JS) { result ->
+                                if (tokenFound) return@evaluateJavascript // already handled by the other callback
+                                // evaluateJavascript wraps string results in quotes and
+                                // "null" (as text) when the expression evaluates to null.
+                                val token = result?.trim('"').orEmpty()
+                                if (token.length > 40 && token != "null") {
+                                    Log.i(TAG, "Discord token extracted via $source (length=${token.length})")
+                                    tokenFound = true
+                                    onTokenExtracted(token)
+                                } else {
+                                    Log.w(TAG, "Token extraction via $source returned nothing usable on $url")
+                                }
+                            }
+                        }
+
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 isLoading = true
@@ -179,22 +198,17 @@ fun DiscordLoginWebView(
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 isLoading = false
-                                if (url != null && (url.startsWith("https://discord.com/app") ||
-                                        url.startsWith("https://discord.com/channels"))
-                                ) {
-                                    view?.evaluateJavascript(TOKEN_EXTRACT_JS) { result ->
-                                        // evaluateJavascript wraps string results in quotes and
-                                        // "null" (as text) when the expression evaluates to null.
-                                        val token = result?.trim('"').orEmpty()
-                                        if (token.length > 40 && token != "null") {
-                                            Log.i(TAG, "Discord token extracted (length=${token.length})")
-                                            tokenFound = true
-                                            onTokenExtracted(token)
-                                        } else {
-                                            Log.w(TAG, "Token extraction returned nothing usable on $url")
-                                        }
-                                    }
-                                }
+                                tryExtractToken(view, url, "onPageFinished")
+                            }
+
+                            // Discord's web client is a React SPA: post-login it moves from
+                            // /login to /channels/@me via history.pushState(), NOT a real
+                            // navigation — onPageFinished never fires again for that, which is
+                            // why extraction was silently never running. doUpdateVisitedHistory
+                            // DOES fire for pushState-driven route changes, so this is the actual
+                            // signal for "the SPA just routed somewhere new."
+                            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                                tryExtractToken(view, url, "doUpdateVisitedHistory")
                             }
 
                             override fun shouldOverrideUrlLoading(
