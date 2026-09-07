@@ -5,6 +5,7 @@ import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.core.data.discord.DiscordRpcCoordinator
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -91,6 +92,7 @@ class SettingsViewModelTest {
         listenSinkCoordinator = mockk(relaxed = true),
         listenSubmissionDao = mockk(relaxed = true),
         relayClient = relayClient,
+        discordRpcCoordinator = mockk(relaxed = true),
         lastFmRecommendationSource = mockk(relaxed = true),
     )
 
