@@ -64,9 +64,21 @@ private const val LOGIN_URL = "https://discord.com/login"
  */
 private const val TOKEN_EXTRACT_JS = """
     (function() {
+        // localStorage's 'token' entry is stored as a JSON-stringified string
+        // (i.e. the stored value itself already has literal quote characters
+        // baked in, e.g. `"abc.def"`), and evaluateJavascript wraps whatever we
+        // return in ANOTHER layer of encoding for the trip back to Kotlin.
+        // Strip the inner JSON-string quoting here, in JS, before that second
+        // layer is applied — otherwise the Kotlin side only strips the outer
+        // layer and the token comes back corrupted with literal backslash-quote
+        // characters still attached.
+        function unwrap(v) {
+            if (typeof v !== 'string') return v;
+            try { return JSON.parse(v); } catch (e) { return v; }
+        }
         try {
             var direct = window.localStorage.getItem('token');
-            if (direct && direct !== 'null') return direct;
+            if (direct && direct !== 'null') return unwrap(direct);
         } catch (e) {}
         try {
             var found;
@@ -81,7 +93,7 @@ private const val TOKEN_EXTRACT_JS = """
                     });
                 } catch (e) {}
             }]);
-            return found || null;
+            return found ? unwrap(found) : null;
         } catch (e) {
             return null;
         }
