@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -505,25 +506,25 @@ fun NowPlayingScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // A long title scrolls instead of ending in "…": every
+                        // character is worth more than an ellipsis here, and the
+                        // width the format badge used to take beside it now
+                        // belongs to the title — QualityLine below already says
+                        // FLAC and the bit depth, so the badge said it twice.
                         Text(
                             text = track?.title ?: "Not Playing",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = npInk(),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false,
+                            overflow = TextOverflow.Clip,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f, fill = false),
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee(iterations = Int.MAX_VALUE),
                         )
                         if (track != null) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            com.stash.core.ui.components.FlacBadge(
-                                fileFormat = track.fileFormat,
-                                bitsPerSample = track.bitsPerSample,
-                                sampleRateHz = track.sampleRateHz,
-                                size = 18.dp,
-                                tint = npInk(),
-                            )
                             Spacer(modifier = Modifier.width(6.dp))
                             if (resolvingArtist) {
                                 CircularProgressIndicator(
