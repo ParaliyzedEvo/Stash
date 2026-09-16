@@ -390,14 +390,18 @@ class MusicRepositoryImpl @Inject constructor(
 
     // ── Playlist queries ────────────────────────────────────────────────
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getAllPlaylists(): Flow<List<Playlist>> =
-        // Uses the sync-enabled-gated query so toggled-off external
-        // playlists vanish from Home + Library in step with their
-        // Sync Preferences state. See PlaylistDao.getAllVisible for
-        // the source=BOTH exemption that keeps local CUSTOM + STASH_MIX
-        // visible while still gating imported YouTube CUSTOM playlists.
-        playlistDao.getAllVisible(includeStreamable = false)
-            .map { entities -> entities.map { it.toDomain() } }
+        // The one accessor behind Home and Library. Visibility is gated by
+        // PlaylistDao.getAllVisible: sync-enabled, pinned, or holding something
+        // playable — and "playable" follows the mode. Offline, that is a
+        // downloaded track. Online, a streamable one too: this used to be
+        // hard-coded false (since v0.9.30), so once #368 stopped auto-enabling
+        // discovered mixes a fresh Online install had no arm left and Home
+        // rendered empty over a full library (#477, #478).
+        streamingPreference.enabled.flatMapLatest { online ->
+            playlistDao.getAllVisible(includeStreamable = online)
+        }.map { entities -> entities.map { it.toDomain() } }
 
     override fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>> =
         playlistDao.getByType(type).map { entities -> entities.map { it.toDomain() } }

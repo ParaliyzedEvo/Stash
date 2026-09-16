@@ -313,6 +313,14 @@ interface PlaylistDao {
      * every track in it. The `sync_enabled = 1` arm and the unconditional
      * `is_active = 1` arm are unchanged. Callers MUST pass the flag
      * explicitly — see TrackDao.getByPlaylist for rationale.
+     *
+     * A never-checked track counts as streamable here. Nothing in the app
+     * writes `is_streamable` (TrackDao.setStreamable has no caller), so every
+     * synced track sits at `is_streamable = 0` with a NULL
+     * `is_streamable_checked_at` forever; on the bare flag this arm admitted
+     * nothing, and a fresh Online install showed an empty Home over a full
+     * library (#477, #478). Only a CONFIRMED check is a negative signal — the
+     * same reading AutoBrowse and next-track prefetch already use.
      */
     @Query("""
         SELECT p.* FROM playlists p
@@ -329,7 +337,10 @@ interface PlaylistDao {
                   JOIN tracks t ON pt.track_id = t.id
                   WHERE pt.playlist_id = p.id
                     AND pt.removed_at IS NULL
-                    AND (t.is_downloaded = 1 OR (:includeStreamable AND t.is_streamable = 1))
+                    AND (
+                        t.is_downloaded = 1
+                        OR (:includeStreamable AND (t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL))
+                    )
               )
           )
         ORDER BY p.name ASC

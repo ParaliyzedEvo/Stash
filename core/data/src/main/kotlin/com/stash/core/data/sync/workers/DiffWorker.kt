@@ -491,15 +491,14 @@ class DiffWorker @AssistedInject constructor(
             mixNumber = snapshot.mixNumber,
             artUrl = snapshot.artUrl,
             trackCount = snapshot.trackCount,
-            // Opt-in by default — EXCEPT algorithmic mixes in Online mode.
-            // A DAILY_MIX discovered while streaming auto-enables so it
-            // surfaces immediately with no download (Online skips the
-            // download_queue enqueue anyway). Every other type, and every
-            // playlist in Offline mode, stays opt-in: the first Sync Now is
-            // a discovery pass that populates playlist rows but queues
-            // nothing until the user picks what they want in the Sync
-            // Preferences card. Fixes issue #10 (unchecked playlists
-            // downloading anyway) and keeps YouTube in line with Spotify.
+            // Opt-in by default, every type, both modes (#368 — a discovered
+            // mix used to auto-enable in Online mode, and each rotation then
+            // pulled a batch of downloads nobody asked for). The first Sync Now
+            // is a discovery pass: it creates the playlist rows and, in Online
+            // mode, links their tracks, but queues nothing until the user picks
+            // what they want in the Sync Preferences card (#10). What reaches
+            // Home is decided by PlaylistDao.getAllVisible, not by this flag:
+            // Online, a playlist holding streamable tracks shows regardless.
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
         )
         val id = playlistDao.insert(newPlaylist)
