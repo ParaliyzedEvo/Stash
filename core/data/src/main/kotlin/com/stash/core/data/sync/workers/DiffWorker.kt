@@ -69,7 +69,7 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = 
  * on, the home feed claims the id and snapshots it DAILY_MIX; with it off, the
  * library walk claims it and snapshots it CUSTOM. A saved library playlist
  * wins, so the row settles — and with it the row's download eligibility
- * ([shouldEnqueueForDownload] excludes DAILY_MIX) and its Home-vs-Library
+ * (a mix downloads only once its switch is on) and its Home-vs-Library
  * placement, which would otherwise change under the user run to run.
  *
  * Every other pair is left alone. Local-only types (STASH_MIX, STASH_LIKED,
@@ -125,16 +125,16 @@ internal fun reconciledPlaylistType(
 /**
  * Whether a playlist's tracks should be enqueued for download during this sync.
  * Online/streaming mode never downloads (tracks stream on tap). In Offline mode
- * everything downloads EXCEPT algorithmic mixes (DAILY_MIX) — those are
- * surface-only (stream-on-tap), so an auto-enabled mix never pulls bytes even
- * after the user switches to Offline and re-syncs.
+ * the playlist's own switch decides — mixes included. Until 2026-09-16 this
+ * also refused every DAILY_MIX by type (#368: auto-enabled mixes pulled
+ * thousands of tracks nobody asked for); the protection is now that discovered
+ * mixes start switched off ([defaultSyncEnabled]), so an un-switched mix links
+ * for Home and pulls no bytes, and a switched-on one downloads like anything
+ * else. Stash Mixes never reach this gate (a locally generated mix is not a
+ * remote snapshot); the DownloadQueueDao predicates keep them ineligible.
  */
-// STASH_MIX is deliberately absent from this exclusion: a locally-generated mix
-// never arrives as a remote playlist snapshot, so it cannot reach this guard, and
-// ShouldEnqueueForDownloadTest pins that on purpose. Stash mixes are kept
-// download-ineligible where they ARE reachable — the DownloadQueueDao predicates.
-internal fun shouldEnqueueForDownload(type: PlaylistType, streamingMode: Boolean): Boolean =
-    !streamingMode && type != PlaylistType.DAILY_MIX
+internal fun shouldEnqueueForDownload(streamingMode: Boolean, syncEnabled: Boolean): Boolean =
+    !streamingMode && syncEnabled
 
 /**
  * Second worker in the sync chain. Compares remote playlist/track snapshots
@@ -259,28 +259,20 @@ class DiffWorker @AssistedInject constructor(
                 // and needs its id to drive the block below).
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
 
-                // Skip playlists the user has disabled in Sync Preferences —
-                // EXCEPT algorithmic mixes, and EXCEPT anything at all in Online
-                // mode.
+                // Skip playlists the user has switched off — EXCEPT algorithmic
+                // mixes, and EXCEPT anything at all in Online mode.
                 //
-                // A mix can never enqueue a download regardless of this flag
-                // (shouldEnqueueForDownload excludes DAILY_MIX outright), and the
-                // fetch worker has ALREADY pulled its tracks over the network this
-                // run. Skipping therefore bought nothing and threw that work away,
-                // leaving the mix on screen with zero tracks — the "I have 130
-                // mixes but Home shows nothing" report. Linking them is pure
-                // local bookkeeping: no extra request, no unasked downloads, and
-                // Online mode can stream them on tap.
-                //
-                // That argument was never mix-specific. In Online mode
-                // shouldEnqueueForDownload already returns false for EVERY type, so
-                // linking an un-opted playlist queues nothing there either. Without
-                // this, a fresh install (defaultSyncEnabled opts nothing in but
-                // DAILY_MIX) left every user playlist and Liked Songs holding
-                // Spotify's trackCount with zero tracks inside — "it says it
-                // synced, the playlist is empty" (#477, #478), with the fetched
-                // tracklists discarded. Offline mode keeps the opt-in skip, where
-                // the flag still decides what gets downloaded.
+                // Linking is separate from downloading: shouldEnqueueForDownload
+                // reads the switch, so linking a switched-off row never queues a
+                // byte. And the fetch worker has ALREADY pulled the tracks over
+                // the network this run, so skipping the link buys nothing and
+                // throws that work away — the "I have 130 mixes but Home shows
+                // nothing" report for mixes, and "it says it synced, the playlist
+                // is empty" (#477, #478) for everything else on a fresh install,
+                // where nothing is switched on yet (defaultSyncEnabled). So mixes
+                // always link (Home shows them, Online streams them on tap), and
+                // in Online mode everything links. Offline mode keeps the skip for
+                // switched-off playlists.
                 if (!localPlaylist.syncEnabled &&
                     localPlaylist.type != PlaylistType.DAILY_MIX &&
                     !streamingMode
@@ -755,13 +747,13 @@ class DiffWorker @AssistedInject constructor(
             addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
         }
 
-        // Mixes are surface-only: they stream on tap and must never pull bytes.
-        // shouldEnqueueForDownload has encoded that since it was written, and was
-        // unit-tested — but this site tested raw `!streamingMode`, so the guard
-        // was never consulted and every track of every rotating mix was queued in
-        // Offline mode (#368: "it downloads 6000+ from users playlists and
-        // Spotify mixes that I don't need").
-        if (shouldEnqueueForDownload(localPlaylist.type, streamingMode)) {
+        // Downloads follow the playlist's own switch, mixes included: in Download
+        // mode a switched-on row pulls bytes, a switched-off one only links so
+        // Home can show it. This site once tested raw `!streamingMode`, and every
+        // track of every rotating mix was queued (#368: "it downloads 6000+ from
+        // users playlists and Spotify mixes that I don't need"). The protection
+        // is now the switch — discovered mixes start off — not the type.
+        if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
             for (batchTrack in newTracks) {
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(

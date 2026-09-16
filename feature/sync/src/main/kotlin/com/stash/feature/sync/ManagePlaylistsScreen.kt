@@ -116,7 +116,7 @@ fun ManagePlaylistsScreen(
     val q = query.trim()
     fun matchesQuery(row: ManageRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
     val visibleLiked = liked?.takeIf { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
-    val visibleMixes = if (showMixRows(segment)) mixes.filter { matchesQuery(it) } else emptyList()
+    val visibleMixes = mixes.filter { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
     val visibleCustom = bySegment.filter { matchesQuery(it) }
 
     Scaffold(
@@ -230,21 +230,22 @@ fun ManagePlaylistsScreen(
                 if (visibleMixes.isNotEmpty()) {
                     item(key = "mixes-summary") {
                         Text(
-                            text = "${pluralize(visibleMixes.size, "mix", "mixes")} · surfaced on Home",
+                            text = "${mixes.count { it.syncEnabled }}/${mixes.size} switched on · a switched-on mix downloads in Download mode",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
                     items(visibleMixes, key = { "mix-${it.id}" }) { mix ->
-                        MixHideRow(
+                        // One switch, meaning the same thing as every other row:
+                        // sync this. In Download mode that downloads it; switching
+                        // on also pins it to Home. Hiding a mix from Home lives on
+                        // Home itself (long-press → Hide).
+                        SpotifySyncToggleRow(
                             name = mix.name,
-                            hideFromHome = mix.hideFromHome,
-                            pinned = mix.pinnedToHomeAt != null,
-                            // Switch is inverted: ON = shown on Home → toggling
-                            // OFF hides it (hidden = !shown). Switching ON pins
-                            // the mix, so it leads its rail (SyncViewModel).
-                            onToggleShown = { shown -> viewModel.onToggleHideFromHome(mix.id, !shown) },
+                            trackCount = mix.trackCount,
+                            enabled = mix.syncEnabled,
+                            onToggle = { viewModel.onTogglePlaylistSync(mix.id, it) },
                         )
                     }
                 }
@@ -325,20 +326,6 @@ internal fun matchesSegment(segment: ManageSegment, syncEnabled: Boolean): Boole
         ManageSegment.OFF -> !syncEnabled
     }
 
-/**
- * Whether mix ROWS belong under [segment].
- *
- * A mix row's switch is `hideFromHome` ("shown on Home"), not sync state, so a
- * sync-state chip has nothing honest to say about it — filtering mixes by
- * `syncEnabled` would land every one of them under "Off" still wearing an
- * ON-looking switch, which is the same confusion #373 reported. They show
- * under "All" only.
- *
- * The section's HEADER and discovery switch are deliberately NOT gated on this
- * — see the mixes-label item for why they must stay reachable (#335/#344).
- */
-internal fun showMixRows(segment: ManageSegment): Boolean = segment == ManageSegment.ALL
-
 @Composable
 private fun ManageSectionLabel(text: String) {
     Text(
@@ -390,47 +377,6 @@ private fun DiscoverMixesRow(
         com.stash.core.ui.components.StashSwitch(
             checked = enabled,
             onCheckedChange = onChange,
-        )
-    }
-}
-
-/**
- * Hide-from-Home toggle for an auto mix. The switch reads inverted:
- * checked = shown on Home, so switching OFF hides the mix. No sync toggle —
- * mixes auto-sync.
- */
-@Composable
-private fun MixHideRow(
-    name: String,
-    hideFromHome: Boolean,
-    pinned: Boolean,
-    onToggleShown: (Boolean) -> Unit,
-) {
-    val shown = !hideFromHome
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggleShown(!shown) }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = homeVisibilityLabel(hidden = hideFromHome, pinned = pinned),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        com.stash.core.ui.components.StashSwitch(
-            checked = shown,
-            onCheckedChange = onToggleShown,
         )
     }
 }

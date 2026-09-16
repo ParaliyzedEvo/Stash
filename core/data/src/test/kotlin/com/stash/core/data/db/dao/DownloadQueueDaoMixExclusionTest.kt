@@ -22,18 +22,21 @@ import org.robolectric.annotation.Config
 import java.time.Instant
 
 /**
- * #368: mix membership must never make a track download-eligible, and must never
- * spare its queue row from a sweep.
+ * A mix makes a track download-eligible — and spares its queue row from a sweep
+ * — exactly when the mix's switch is on. Same as any playlist.
  *
- * Three predicates enforce "download-eligible" and they disagreed:
- * [DownloadQueueDao.getUnqueuedTrackIds] and
- * [DownloadQueueDao.deleteOrphanedQueueEntries] excluded only STASH_MIX, and
- * [DownloadQueueDao.cancelDownloadsWithNoEnabledPlaylist] excluded no types at
- * all. So an auto-enabled DAILY_MIX kept its tracks download-eligible, and the
- * v0.9.85 sweep spared them because they sat in a sync_enabled playlist.
+ * History: #368 banned mixes by TYPE at three predicates
+ * ([DownloadQueueDao.getUnqueuedTrackIds],
+ * [DownloadQueueDao.deleteOrphanedQueueEntries],
+ * [DownloadQueueDao.cancelDownloadsWithNoEnabledPlaylist]) because auto-enabled
+ * mixes kept their tracks eligible and the v0.9.85 sweep spared them. The
+ * owner's rule (2026-09-16) — in Download mode a switched-on row downloads —
+ * moves the protection to the switch: discovered mixes start OFF, and an OFF
+ * mix is still ineligible and still swept. Stash Mixes are local recipes with
+ * no switch and never count.
  *
  * One rule, applied at all three sites: a track is download-eligible only via a
- * membership in an active, sync-enabled, NON-mix playlist.
+ * membership in an active, sync-enabled playlist that is not a Stash Mix.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -50,6 +53,8 @@ class DownloadQueueDaoMixExclusionTest {
     private var dailyMixUnqueued = 0L
     private var customUnqueued = 0L
     private var dailyMixManual = 0L
+    private var dailyMixOffQueued = 0L
+    private var dailyMixOffUnqueued = 0L
 
     @Before fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(
@@ -62,8 +67,8 @@ class DownloadQueueDaoMixExclusionTest {
         trackDao = db.trackDao()
         playlistDao = db.playlistDao()
 
-        // All three parents are sync_enabled + active. The mixes mimic the state
-        // the old auto-enable produced and that existing installs still carry.
+        // The daily mix and the custom playlist are switched ON; the Stash mix is
+        // created sync_enabled but has no switch and is never download-eligible.
         val dailyMix = newPlaylist("Daily Mix 1", "spotify:playlist:dm", PlaylistType.DAILY_MIX)
         val stashMix = newPlaylist("Deep Cuts", "stash_mix_1", PlaylistType.STASH_MIX)
         val custom = newPlaylist("My Playlist", "spotify:playlist:mine", PlaylistType.CUSTOM)
@@ -79,30 +84,37 @@ class DownloadQueueDaoMixExclusionTest {
         // A user's explicit Download tap on a mix-only track: manual partition
         // (sync_id NULL), no eligible parent playlist.
         dailyMixManual = newTrack("F", dailyMix, queued = true, syncId = null)
+        // A mix nobody switched on — the #368 case, now expressed by the switch.
+        val dailyMixOff = newPlaylist("Daily Mix 2", "spotify:playlist:dm-off", PlaylistType.DAILY_MIX, syncEnabled = false)
+        dailyMixOffQueued = newTrack("G", dailyMixOff, queued = true, syncId = 5L)
+        dailyMixOffUnqueued = newTrack("H", dailyMixOff, queued = false)
     }
 
     @After fun tearDown() { db.close() }
 
-    @Test fun `daily-mix-only track is not requeue-eligible`() = runTest {
+    @Test fun `a switched-on mix makes its track requeue-eligible, a switched-off one does not`() = runTest {
         val eligible = dao.getUnqueuedTrackIds(listOf(MusicSource.SPOTIFY.name))
-        assertThat(eligible).doesNotContain(dailyMixUnqueued)
+        assertThat(eligible).contains(dailyMixUnqueued)
         assertThat(eligible).contains(customUnqueued)
+        assertThat(eligible).doesNotContain(dailyMixOffUnqueued)
     }
 
-    @Test fun `orphan sweep evicts mix-only queue rows`() = runTest {
+    @Test fun `orphan sweep spares a switched-on mix and evicts a switched-off or stash mix`() = runTest {
         dao.deleteOrphanedQueueEntries()
 
-        assertThat(dao.getByTrackId(dailyMixQueued)).isNull()
-        assertThat(dao.getByTrackId(stashMixQueued)).isNull()
+        assertThat(dao.getByTrackId(dailyMixQueued)).isNotNull()
         assertThat(dao.getByTrackId(customQueued)).isNotNull()
+        assertThat(dao.getByTrackId(dailyMixOffQueued)).isNull()
+        assertThat(dao.getByTrackId(stashMixQueued)).isNull()
     }
 
-    @Test fun `enabled-playlist sweep evicts mix-only queue rows`() = runTest {
+    @Test fun `enabled-playlist sweep spares a switched-on mix and evicts a switched-off or stash mix`() = runTest {
         dao.cancelDownloadsWithNoEnabledPlaylist()
 
-        assertThat(dao.getByTrackId(dailyMixQueued)).isNull()
-        assertThat(dao.getByTrackId(stashMixQueued)).isNull()
+        assertThat(dao.getByTrackId(dailyMixQueued)).isNotNull()
         assertThat(dao.getByTrackId(customQueued)).isNotNull()
+        assertThat(dao.getByTrackId(dailyMixOffQueued)).isNull()
+        assertThat(dao.getByTrackId(stashMixQueued)).isNull()
     }
 
     /**
@@ -122,14 +134,19 @@ class DownloadQueueDaoMixExclusionTest {
         assertThat(dao.getByTrackId(dailyMixManual)).isNotNull()
     }
 
-    private suspend fun newPlaylist(name: String, sourceId: String, type: PlaylistType): Long =
+    private suspend fun newPlaylist(
+        name: String,
+        sourceId: String,
+        type: PlaylistType,
+        syncEnabled: Boolean = true,
+    ): Long =
         playlistDao.insert(
             PlaylistEntity(
                 name = name,
                 source = MusicSource.SPOTIFY,
                 sourceId = sourceId,
                 type = type,
-                syncEnabled = true,
+                syncEnabled = syncEnabled,
                 isActive = true,
             )
         )
