@@ -90,6 +90,19 @@ data class HomeUiState(
 ) {
     /** True before the Discover hero has materialized — drives the cold-start placeholder. */
     val isColdStart: Boolean get() = hero == null
+
+    /**
+     * The "Personalize your Home" card belongs to a Home with nothing on it — a
+     * brand-new or thin-library user. It used to key off the hero alone, so a
+     * user whose Daily Discover had not built yet (it seeds from listening) saw
+     * "Connect a service and run a sync" sitting above forty synced mixes and
+     * their own playlists. If any rail has content, the rails lead and the
+     * empty hero slot simply collapses.
+     */
+    val showColdStartCard: Boolean
+        get() = hero == null && yourMixes.isEmpty() && madeForYou.isEmpty() &&
+            radios.isEmpty() && moodDecades.isEmpty() && yourPlaylists.isEmpty() &&
+            likedCard == null
 }
 
 /** A mix as a Home rail card. buildState only meaningful for STASH_MIX. */

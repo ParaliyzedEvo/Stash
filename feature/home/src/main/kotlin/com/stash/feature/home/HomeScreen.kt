@@ -474,7 +474,7 @@ fun HomeScreen(
                     loading = true,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                uiState.hero == null && mixPages.isEmpty() -> PersonalizeCard(
+                uiState.showColdStartCard -> PersonalizeCard(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
