@@ -260,7 +260,8 @@ class DiffWorker @AssistedInject constructor(
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
 
                 // Skip playlists the user has disabled in Sync Preferences —
-                // EXCEPT algorithmic mixes, which are surface-only.
+                // EXCEPT algorithmic mixes, and EXCEPT anything at all in Online
+                // mode.
                 //
                 // A mix can never enqueue a download regardless of this flag
                 // (shouldEnqueueForDownload excludes DAILY_MIX outright), and the
@@ -270,7 +271,20 @@ class DiffWorker @AssistedInject constructor(
                 // mixes but Home shows nothing" report. Linking them is pure
                 // local bookkeeping: no extra request, no unasked downloads, and
                 // Online mode can stream them on tap.
-                if (!localPlaylist.syncEnabled && localPlaylist.type != PlaylistType.DAILY_MIX) {
+                //
+                // That argument was never mix-specific. In Online mode
+                // shouldEnqueueForDownload already returns false for EVERY type, so
+                // linking an un-opted playlist queues nothing there either. Without
+                // this, a fresh install (defaultSyncEnabled opts nothing in but
+                // DAILY_MIX) left every user playlist and Liked Songs holding
+                // Spotify's trackCount with zero tracks inside — "it says it
+                // synced, the playlist is empty" (#477, #478), with the fetched
+                // tracklists discarded. Offline mode keeps the opt-in skip, where
+                // the flag still decides what gets downloaded.
+                if (!localPlaylist.syncEnabled &&
+                    localPlaylist.type != PlaylistType.DAILY_MIX &&
+                    !streamingMode
+                ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     continue
                 }
