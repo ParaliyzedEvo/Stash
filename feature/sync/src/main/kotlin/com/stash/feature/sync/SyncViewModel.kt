@@ -206,14 +206,6 @@ class SyncViewModel @Inject constructor(
      */
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     /**
-    * Playback-vs-download mode split: this governs whether Now Playing can
-    * stream non-downloaded tracks, independently of [streamingPreference]
-    * which governs whether sync writes real files. See
-    * [com.stash.core.data.prefs.PlaybackModePreference] KDoc for the four
-    * combinations this unlocks.
-    */
-    private val playbackModePreference: com.stash.core.data.prefs.PlaybackModePreference,
-    /**
      * Last.fm-as-a-source manager (issue #255). Owns the "Recommended by
      * Last.fm" mix recipe lifecycle; the Sync tab only renders its state
      * and forwards the user's toggle.
@@ -368,26 +360,6 @@ class SyncViewModel @Inject constructor(
     fun onLastFmRecommendationsToggled(enabled: Boolean) {
         viewModelScope.launch {
             lastFmRecommendationSource.setRecommendationsEnabled(enabled)
-        }
-    }
-
-    /**
-    * Reactive playback-mode flag — separate from [streamingEnabled], which is
-    * Download Mode. True = Online playback (streams anything not yet
-    * downloaded); false = Offline playback (only plays files already on disk).
-    */
-    val playbackOnline: StateFlow<Boolean> =
-        playbackModePreference.enabled
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = false,
-            )
-
-    /** Persist the user's Playback Mode choice from the Sync-tab toggle. */
-    fun setPlaybackOnline(online: Boolean) {
-        viewModelScope.launch {
-            playbackModePreference.setEnabled(online)
         }
     }
 
