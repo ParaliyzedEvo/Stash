@@ -350,9 +350,9 @@ class StashApplication : Application(), Configuration.Provider {
             // Skipping it in offline mode does not slow downloads down where
             // anyone can feel it: the download path calls ensureFreshened()
             // itself, inside a worker, where the one-off cost is invisible.
-            // The latency this prewarm exists to hide is the first PREVIEW,
-            // and previews only happen with streaming on.
-            if (connectivityMonitor.isConnected() && streamingPreference.current()) {
+            // The latency this prewarm exists to hide is the first stream
+            // resolve; streaming is always allowed, so gate on network only.
+            if (connectivityMonitor.isConnected()) {
                 ytDlpManager.ensureFreshened()
             }
         }

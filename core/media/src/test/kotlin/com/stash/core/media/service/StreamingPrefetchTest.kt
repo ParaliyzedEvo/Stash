@@ -58,7 +58,6 @@ class StreamingPrefetchTest {
         // code (none today) wouldn't deadlock the test.
         Dispatchers.setMain(dispatcher)
         orchestrator = PrefetchOrchestrator(
-            streamingPreference = streamingPreference,
             streamResolver = streamResolver,
             streamUrlCache = streamUrlCache,
             trackDao = trackDao,
@@ -181,23 +180,6 @@ class StreamingPrefetchTest {
         testScope.advanceUntilIdle()
 
         coVerify(exactly = 0) { streamResolver.resolve(any()) }
-    }
-
-    @Test
-    fun progress_above60Percent_butStreamingOff_doesNotResolve() = runTest {
-        coEvery { streamingPreference.current() } returns false
-
-        orchestrator.onPlaybackProgress(
-            scope = testScope,
-            nextTrackId = 99L,
-            positionMs = 80_000L,
-            durationMs = 100_000L,
-        )
-        testScope.advanceUntilIdle()
-
-        coVerify(exactly = 0) { trackDao.getById(any()) }
-        coVerify(exactly = 0) { streamResolver.resolve(any()) }
-        verify(exactly = 0) { streamUrlCache.put(any(), any()) }
     }
 
     @Test

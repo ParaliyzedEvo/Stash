@@ -27,18 +27,20 @@ private val Context.streamingDataStore: DataStore<Preferences> by preferencesDat
 enum class StreamQualityTier { LOSSLESS, HIGH_QUALITY_LOSSY }
 
 /**
- * User-facing preferences for the online-streaming engine:
+ * User-facing streaming preferences:
  *
- *  - [enabled] — master toggle. When `false`, the app stays in pure
- *    download-and-play mode (current behavior). When `true`, the
- *    streaming source factory is wired into the player.
+ *  - [enabled] — the app's ONE mode switch, shown to the user inverted as
+ *    "Download". `false` = Download mode: sync writes switched-on playlists
+ *    and mixes to disk. `true` = sync only keeps the streamable index. Since
+ *    2026-09-17 this no longer gates playback: streaming is always allowed,
+ *    refused only by connectivity or [streamOnCellular]. (Before that — and
+ *    still in this property's name — it was the Online/Offline switch.)
  *  - [streamOnCellular] — whether streaming is allowed on a metered
  *    network. Default `false` so users don't burn data unintentionally.
  *  - [streamQuality] — preferred lossless vs high-quality-lossy tier
  *    used when resolving stream URLs.
  *
- * Default is `enabled = false` — preserves current download-only behavior
- * for the existing install base. The user opts in to streaming.
+ * Default is `enabled = false` — Download mode for the existing install base.
  */
 @Singleton
 class StreamingPreference @Inject constructor(

@@ -589,7 +589,6 @@ class PlayerRepositoryImpl @Inject constructor(
         val controller = ensureController() ?: return
         if (tracks.isEmpty()) return
 
-        val streamingOn = streamingPreference.current()
         val safeStart = startIndex.coerceIn(0, tracks.size - 1)
 
         // Full timeline: EVERY playable track becomes a MediaItem now.
@@ -604,17 +603,14 @@ class PlayerRepositoryImpl @Inject constructor(
         val builtItems = withContext(Dispatchers.IO) {
             tracks.mapIndexedNotNull { index, track ->
                 track.toInitialQueueMediaItem(
-                    streamingEnabled = streamingOn,
                     validateLocalFile = index == safeStart,
                 )?.let { track to it }
             }
         }
-        val streamingAtMutation = streamingPreference.current()
-        val acceptedItems = if (streamingAtMutation) {
-            builtItems
-        } else {
-            builtItems.filter { (_, item) -> item.isUsableOfflineQueueItem() }
-        }
+        // Every built item is accepted: streaming is always allowed, so a
+        // stash-resolve:// placeholder is as legitimate a queue entry as a
+        // file:// one. (Until 2026-09-17 Offline mode dropped the placeholders.)
+        val acceptedItems = builtItems
         val playable = acceptedItems.map { it.first }
         val items = acceptedItems.map { it.second }
         if (items.isEmpty()) {
@@ -714,7 +710,6 @@ class PlayerRepositoryImpl @Inject constructor(
      *  - The next track has a usable downloaded file (no resolve needed).
      *  - The cache already has a fresh entry (expires in >60s).
      *  - The next track isn't streamable.
-     *  - Streaming pref is off.
      *
      * Failures are logged and swallowed — the original (possibly stale)
      * MediaItem stays in place and [RefreshingDataSourceFactory] handles
@@ -746,7 +741,6 @@ class PlayerRepositoryImpl @Inject constructor(
         // isStreamableCheckedAt=null) — the bare-flag gate silently killed
         // next-track prefetch for every synced track.
         if (next.isUnavailableForDisplay) return
-        if (!streamingPreference.current()) return
 
         // Fresh-cache check — avoid redundant resolve work when the URL is
         // good. Still upgrade the timeline slot before returning: the URL may
@@ -910,15 +904,9 @@ class PlayerRepositoryImpl @Inject constructor(
         seed: com.stash.core.data.radio.RadioSeed,
         keepCurrent: Boolean,
     ): RadioStartResult {
-        if (!streamingPreference.current()) return RadioStartResult.StreamingOff
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         val (session, firstBatch) = radioGenerator.start(seed)
         if (firstBatch.isEmpty()) return RadioStartResult.NoStation
-        // Re-check streaming AFTER generation (#353): radioGenerator.start() can
-        // take seconds over the network, and the user may toggle Offline in that
-        // window. Arming a streaming-only station while offline would just fail
-        // to play, so bail — consistent with the queue's Online/Offline contract.
-        if (!streamingPreference.current()) return RadioStartResult.StreamingOff
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
@@ -996,15 +984,11 @@ class PlayerRepositoryImpl @Inject constructor(
     internal suspend fun growRadio() {
         radioGrowMutex.withLock {
             if (!radioActive) return
-            if (!streamingPreference.current()) {
-                stopRadio()
-                return
-            }
             val controller = controllerDeferred ?: return
             val session = radioSession ?: return
             val batch = radioGenerator.nextBatch(session)
             if (batch.isEmpty()) return
-            if (!radioActive || !streamingPreference.current()) {
+            if (!radioActive) {
                 stopRadio()
                 return
             }
@@ -1061,37 +1045,25 @@ class PlayerRepositoryImpl @Inject constructor(
         if (id != 0L) this else copy(id = musicRepository.ensureTrackPersisted(this))
 
     /**
-     * Applies the queue's Online/Offline contract at the repository boundary.
-     * Offline entries must have a real, usable local file; a stale Room path
-     * must not fall through to a stash-resolve placeholder and hit the network.
+     * A track may join the queue unless it is confirmed unavailable. Streaming
+     * is always allowed — only connectivity and the cellular setting can refuse
+     * it, and they do so at resolve time — so a not-yet-downloaded track enters
+     * as a stash-resolve:// placeholder and resolves when it is reached. Until
+     * 2026-09-17 Offline mode also demanded a usable local file here.
      */
-    private fun Track.isPlayableForQueueAppend(streamingEnabled: Boolean): Boolean {
-        val localPath = filePath
-        return if (streamingEnabled) {
-            !isUnavailableForDisplay
-        } else {
-            isDownloaded &&
-                !localPath.isNullOrBlank() &&
-                filePathExistsOnDisk(localPath)
-        }
-    }
-
-    private fun MediaItem.isUsableOfflineQueueItem(): Boolean {
-        val scheme = localConfiguration?.uri?.scheme
-        return scheme == "file" || scheme == "content"
-    }
+    private fun Track.isPlayableForQueueAppend(): Boolean = !isUnavailableForDisplay
 
     override suspend fun addNext(track: Track): Boolean {
         val controller = ensureController() ?: return false
         val playable = track.takeIf {
-            it.isPlayableForQueueAppend(streamingPreference.current())
+            it.isPlayableForQueueAppend()
         }
         if (playable == null) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
         val queueTrack = playable.withQueueIdentity()
-        if (!queueTrack.isPlayableForQueueAppend(streamingPreference.current())) {
+        if (!queueTrack.isPlayableForQueueAppend()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
@@ -1126,14 +1098,14 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun addToQueue(track: Track): Boolean {
         val controller = ensureController() ?: return false
         val playable = track.takeIf {
-            it.isPlayableForQueueAppend(streamingPreference.current())
+            it.isPlayableForQueueAppend()
         }
         if (playable == null) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
         val queueTrack = playable.withQueueIdentity()
-        if (!queueTrack.isPlayableForQueueAppend(streamingPreference.current())) {
+        if (!queueTrack.isPlayableForQueueAppend()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
@@ -1150,8 +1122,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun addToQueue(tracks: List<Track>): Boolean {
         if (tracks.isEmpty()) return false
         val controller = ensureController() ?: return false
-        val streamingEnabled = streamingPreference.current()
-        val playable = tracks.filter { it.isPlayableForQueueAppend(streamingEnabled) }
+        val playable = tracks.filter { it.isPlayableForQueueAppend() }
         if (playable.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
@@ -1160,12 +1131,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val builtItems = withContext(Dispatchers.IO) {
             persistedTracks.map { it to it.toQueueMediaItem() }
         }
-        val streamingAtMutation = streamingPreference.current()
-        val acceptedItems = if (streamingAtMutation) {
-            builtItems
-        } else {
-            builtItems.filter { (_, item) -> item.isUsableOfflineQueueItem() }
-        }
+        val acceptedItems = builtItems
         if (acceptedItems.isEmpty()) {
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
@@ -1228,8 +1194,10 @@ class PlayerRepositoryImpl @Inject constructor(
      * Validate one explicitly requested timeline target (Next, Previous, or a
      * queue-sheet jump). Tail downloads are intentionally not checked while a
      * large queue is constructed; this is their just-in-time guard. A stale
-     * local item becomes a lazy stream placeholder online and is rejected
-     * offline, without scanning or rebuilding the rest of the queue.
+     * local item becomes a lazy stream placeholder when there is a connection
+     * and is rejected without one (a placeholder that cannot resolve would
+     * only bounce error recovery), without scanning or rebuilding the rest of
+     * the queue. The Download switch plays no part.
      */
     private suspend fun prepareExplicitTimelineTarget(
         controller: MediaController,
@@ -1248,7 +1216,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (hasUsableLocal) return true
 
-        if (!streamingPreference.current() || target.isUnavailableForDisplay) {
+        if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
                 _userMessages.tryEmit("That song isn't available offline right now.")
             }
@@ -1537,15 +1505,15 @@ class PlayerRepositoryImpl @Inject constructor(
      * 1. Local file present + actually on disk → play it. Cheap, no
      *    network, works in airplane mode. Always preferred even when
      *    streaming is enabled — caching what you already have is free.
-     * 2. Streaming pref off → [StreamRoutingResult.OfflineMode]. The
-     *    track is theoretically streamable but the user has opted out.
-     * 3. No validated internet → [StreamRoutingResult.NoConnectivity].
+     * 2. No validated internet → [StreamRoutingResult.NoConnectivity].
      *    Includes airplane mode, captive-portal-not-yet-accepted, and
-     *    any other "associated but no real internet" state.
-     * 4. Cellular + cellular pref off → [StreamRoutingResult.CellularRefused].
+     *    any other "associated but no real internet" state. (There is no
+     *    "streaming off" step: streaming is always allowed; the Download
+     *    switch only decides what sync writes to disk.)
+     * 3. Cellular + cellular pref off → [StreamRoutingResult.CellularRefused].
      *    The user has a data plan they want to protect.
-     * 5. URL cache hit → use the cached signed URL.
-     * 6. Cache miss → resolve via Kennyy and cache the result. Resolver
+     * 4. URL cache hit → use the cached signed URL.
+     * 5. Cache miss → resolve via Kennyy and cache the result. Resolver
      *    null = no match in the proxy's catalog → [NotAvailable].
      *
      * Note: the `is_streamable` column is no longer consulted here.
@@ -1585,7 +1553,6 @@ class PlayerRepositoryImpl @Inject constructor(
                     .build()
             )
         }
-        if (!streamingPreference.current()) return StreamRoutingResult.OfflineMode
         if (!connectivity.isConnected()) return StreamRoutingResult.NoConnectivity
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) {
             return StreamRoutingResult.CellularRefused
@@ -2029,7 +1996,7 @@ class PlayerRepositoryImpl @Inject constructor(
         failedItem: MediaItem,
         failedIndex: Int,
     ): Boolean {
-        if (!connectivity.isConnected() || !streamingPreference.current()) return false
+        if (!connectivity.isConnected()) return false
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return false
         val failedId = failedItem.mediaMetadata.extras
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
@@ -2521,7 +2488,6 @@ class PlayerRepositoryImpl @Inject constructor(
      * stale entry without crashing or draining a streaming backend.
      */
     private fun Track.toInitialQueueMediaItem(
-        streamingEnabled: Boolean,
         validateLocalFile: Boolean,
     ): MediaItem? {
         val localPath = filePath
@@ -2530,9 +2496,11 @@ class PlayerRepositoryImpl @Inject constructor(
         val hasUsableLocal = hasRecordedDownload && !knownTooSmall &&
             (!validateLocalFile || filePathExistsOnDisk(localPath))
 
+        // Streaming is always allowed: a track without a usable file becomes a
+        // stash-resolve:// placeholder unless it is confirmed unavailable.
         return when {
             hasUsableLocal -> toMediaItem()
-            !streamingEnabled || isUnavailableForDisplay -> null
+            isUnavailableForDisplay -> null
             else -> toStreamPlaceholderMediaItem()
         }
     }

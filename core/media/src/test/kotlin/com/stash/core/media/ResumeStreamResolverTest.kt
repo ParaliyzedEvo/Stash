@@ -47,9 +47,15 @@ class ResumeStreamResolverTest {
     }
 
     @Test
-    fun streamingOff_returnsNull() = runTest {
+    fun downloadMode_stillResolves() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays: a Bluetooth/Auto resume of a streamed track works in either mode.
         coEvery { streamingPreference.current() } returns false
-        assertThat(resolver.resolveStreamUrl(streamable(2L))).isNull()
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(2L) } returns StreamUrl("https://cdn/cached", 999L)
+
+        assertThat(resolver.resolveStreamUrl(streamable(2L))).isEqualTo("https://cdn/cached")
     }
 
     @Test

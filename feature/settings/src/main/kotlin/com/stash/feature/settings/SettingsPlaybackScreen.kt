@@ -64,7 +64,7 @@ fun SettingsPlaybackScreen(
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
             SettingsSectionLabel("Mode")
             SettingsSegmented(
-                options = listOf("Online", "Offline"),
+                options = listOf("Stream only", "Download"),
                 selectedIndex = if (streamingEnabled) 0 else 1,
                 onSelect = { viewModel.onStreamingToggle(it == 0) },
             )
@@ -127,13 +127,13 @@ fun SettingsPlaybackScreen(
             )
         }
 
-        // Autoplay: the queue's end seeds a song radio (streams, so it needs Online).
+        // Autoplay: the queue's end seeds a song radio (streams, so it needs a connection).
         SettingsSectionLabel("Autoplay")
         SettingsGroupCard(
             rows = listOf {
                 SettingsToggleRow(
                     title = "Autoplay radio",
-                    subtitle = "When the last song in the queue starts, keep the music going with a radio seeded from it. Needs Online mode.",
+                    subtitle = "When the last song in the queue starts, keep the music going with a radio seeded from it. Needs a connection.",
                     checked = autoplayRadioEnabled,
                     onCheckedChange = viewModel::onAutoplayRadioToggle,
                 )

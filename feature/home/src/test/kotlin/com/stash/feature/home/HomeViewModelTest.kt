@@ -148,7 +148,9 @@ class HomeViewModelTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `playHero offline enqueues only downloaded`() = runTest {
+    fun `playHero in Download mode enqueues downloaded and stream-only alike`() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays: a stream-only hero track is queued whichever way it is set.
         val playerRepo = mock<PlayerRepository>()
         val vm = buildVm(
             playlists = listOf(dailyDiscover(id = 7L, trackCount = 2)),
@@ -164,7 +166,7 @@ class HomeViewModelTest {
 
         val queueCaptor = argumentCaptor<List<Track>>()
         verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
-        assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L)
+        assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L, 42L)
     }
 
     @Test

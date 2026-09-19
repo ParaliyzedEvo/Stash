@@ -258,7 +258,7 @@ class ArtistProfileViewModel @Inject constructor(
             val started = playerRepository.startRadio(
                 com.stash.core.data.radio.RadioSeed.Artist(name, ytBrowseId = artistId),
             ) is RadioStartResult.Started
-            if (!started) _userMessages.emit("Radio needs Online mode — turn on streaming.")
+            if (!started) _userMessages.emit("Couldn't start a radio from this artist — try again in a moment.")
         }
     }
 

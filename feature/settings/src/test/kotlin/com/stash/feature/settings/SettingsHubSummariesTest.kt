@@ -20,24 +20,24 @@ class SettingsHubSummariesTest {
 
     // --- playback ---------------------------------------------------------
 
-    @Test fun `playback online + cellular off`() {
+    @Test fun `playback stream-only + cellular off`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Online · Cellular off", s.playback)
+        assertEquals("Stream only · Cellular off", s.playback)
     }
 
-    @Test fun `playback offline + cellular on`() {
+    @Test fun `playback download + cellular on`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = false,
             streamOnCellular = true,
         )
-        assertEquals("Offline · Cellular on", s.playback)
+        assertEquals("Download · Cellular on", s.playback)
     }
 
     // --- audioQuality -----------------------------------------------------

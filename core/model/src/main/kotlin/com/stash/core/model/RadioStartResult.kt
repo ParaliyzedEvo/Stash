@@ -2,15 +2,13 @@ package com.stash.core.model
 
 /**
  * Outcome of [com.stash.core.media.PlayerRepository.startRadio]. Replaces a
- * Boolean that collapsed three distinct failures into one misleading
- * "needs Online mode" toast (issue: silent radio button).
+ * Boolean that collapsed distinct failures into one misleading toast (issue:
+ * silent radio button). There is no "streaming off" outcome: the Download
+ * switch decides what sync writes to disk, never whether a radio may play.
  */
 sealed interface RadioStartResult {
     /** Station built and spliced/queued; the seed label is live. */
     data object Started : RadioStartResult
-
-    /** Streaming (Online mode) is off — radio can't stream tracks. */
-    data object StreamingOff : RadioStartResult
 
     /** MediaController unavailable (player still starting / connection lost). */
     data object PlayerNotReady : RadioStartResult

@@ -620,12 +620,6 @@ class NowPlayingViewModelRadioTest {
 
             vm.userMessages.test {
                 coEvery { playerRepository.startRadio(any(), any()) } returns
-                    RadioStartResult.StreamingOff
-                vm.startRadioFromCurrent()
-                advanceUntilIdle()
-                assertEquals("Radio needs Online mode — turn on streaming.", awaitItem())
-
-                coEvery { playerRepository.startRadio(any(), any()) } returns
                     RadioStartResult.PlayerNotReady
                 vm.startRadioFromCurrent()
                 advanceUntilIdle()

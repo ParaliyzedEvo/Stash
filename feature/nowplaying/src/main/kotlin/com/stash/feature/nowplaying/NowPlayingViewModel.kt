@@ -299,7 +299,6 @@ class NowPlayingViewModel @Inject constructor(
     /** User-facing hint for a non-Started radio result; null for Started. */
     private fun radioFailureMessage(result: RadioStartResult): String? = when (result) {
         RadioStartResult.Started -> null
-        RadioStartResult.StreamingOff -> "Radio needs Online mode — turn on streaming."
         RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
         RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
     }

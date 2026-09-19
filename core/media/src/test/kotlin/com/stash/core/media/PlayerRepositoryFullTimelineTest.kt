@@ -377,9 +377,12 @@ class PlayerRepositoryFullTimelineTest {
             )
             .build()
         every { connectivity.isConnected() } returns true
-        coEvery { streamingPreference.current() } coAnswers {
+        every { connectivity.isCellular() } returns true
+        // The cellular-preference read is the suspension point that outlived
+        // the Download switch's removal from playback; navigate away inside it.
+        every { streamingPreference.streamOnCellular } returns kotlinx.coroutines.flow.flow {
             activeIndex = 0
-            true
+            emit(true)
         }
         every { controller.currentMediaItemIndex } answers { activeIndex }
         every { controller.currentMediaItem } answers {
@@ -520,6 +523,7 @@ class PlayerRepositoryFullTimelineTest {
     @Test
     fun `direct queue jump replaces a stale downloaded target with a stream placeholder`() = runTest {
         coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
         repo.filePathExistsOnDisk = { false }
         val current = Track(id = 10L, title = "Current", artist = "Artist")
         val staleTarget = Track(
@@ -566,9 +570,12 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
-    fun `offline addToQueue rejects consecutive stream-only tracks without starting playback`() = runTest {
+    fun `addToQueue in Download mode appends stream-only tracks as placeholders`() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays (until 2026-09-17 Offline mode rejected both without touching
+        // the player).
         coEvery { streamingPreference.current() } returns false
-        every { controller.mediaItemCount } returns 0
+        every { controller.mediaItemCount } returns 1
         val first = Track(
             id = 101L,
             title = "First",
@@ -581,19 +588,22 @@ class PlayerRepositoryFullTimelineTest {
             title = "Second",
             youtubeId = "second-video",
         )
+        val items = mutableListOf<MediaItem>()
+        every { controller.addMediaItem(capture(items)) } returns Unit
 
         repo.addToQueue(first)
         repo.addToQueue(second)
 
-        verify(exactly = 0) { controller.addMediaItem(any()) }
-        verify(exactly = 0) { controller.prepare() }
-        verify(exactly = 0) { controller.play() }
+        assertThat(items.map { it.mediaId }).containsExactly("101", "202").inOrder()
+        assertThat(items.map { it.localConfiguration?.uri?.scheme })
+            .containsExactly("stash-resolve", "stash-resolve")
     }
 
     @Test
-    fun `offline addToQueue rejects a downloaded row whose local file is unusable`() = runTest {
+    fun `addToQueue turns a downloaded row whose local file is unusable into a stream placeholder`() = runTest {
         coEvery { streamingPreference.current() } returns false
         repo.filePathExistsOnDisk = { false }
+        every { controller.mediaItemCount } returns 1
         val staleDownload = Track(
             id = 303L,
             title = "Missing",
@@ -602,31 +612,20 @@ class PlayerRepositoryFullTimelineTest {
             isDownloaded = true,
             isStreamable = true,
         )
+        val item = slot<MediaItem>()
+        every { controller.addMediaItem(capture(item)) } returns Unit
 
-        repo.addToQueue(staleDownload)
+        val added = repo.addToQueue(staleDownload)
 
-        verify(exactly = 0) { controller.addMediaItem(any()) }
+        assertThat(added).isTrue()
+        assertThat(item.captured.mediaId).isEqualTo("303")
+        assertThat(item.captured.localConfiguration?.uri?.scheme).isEqualTo("stash-resolve")
     }
 
     @Test
-    fun `addToQueue rejects a stream when Online mode turns off during persistence`() = runTest {
-        coEvery { streamingPreference.current() } returnsMany listOf(true, false)
-        coEvery { musicRepository.ensureTrackPersisted(any()) } returns 404L
-        val transientStream = Track(
-            id = 0L,
-            title = "Transient",
-            artist = "Artist",
-            isStreamable = true,
-        )
-
-        val added = repo.addToQueue(transientStream)
-
-        assertThat(added).isFalse()
-        verify(exactly = 0) { controller.addMediaItem(any()) }
-    }
-
-    @Test
-    fun `offline setQueue rejects a downloaded row whose local file is unusable`() = runTest {
+    fun `setQueue turns a start item whose local file is unusable into a stream placeholder`() = runTest {
+        // Only the selected item is validated on disk (the rest lazily, at
+        // open time); a stale one streams instead of refusing the whole queue.
         coEvery { streamingPreference.current() } returns false
         val checkedPaths = mutableListOf<String>()
         repo.filePathExistsOnDisk = { path ->
@@ -656,78 +655,22 @@ class PlayerRepositoryFullTimelineTest {
             filePath = "/storage/music/after.flac",
         )
 
-        repo.setQueue(listOf(localBefore, staleDownload, localAfter), startIndex = 1)
-
-        assertThat(checkedPaths).containsExactly("/storage/music/missing.flac")
-        verify(exactly = 0) {
-            controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>())
-        }
-        verify(exactly = 0) { controller.prepare() }
-        verify(exactly = 0) { controller.play() }
-    }
-
-    @Test
-    fun `setQueue drops streams when Online mode turns off while items are built`() = runTest {
-        var online = true
-        coEvery { streamingPreference.current() } answers { online }
-        repo.filePathExistsOnDisk = {
-            online = false
-            true
-        }
-        val local = Track(
-            id = 606L,
-            title = "Local",
-            artist = "Artist",
-            filePath = "/storage/music/local.flac",
-            isDownloaded = true,
-        )
-        val remote = Track(
-            id = 707L,
-            title = "Remote",
-            artist = "Artist",
-            isStreamable = true,
-        )
         val items = slot<List<MediaItem>>()
         every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
 
-        repo.setQueue(listOf(local, remote))
+        repo.setQueue(listOf(localBefore, staleDownload, localAfter), startIndex = 1)
 
-        assertThat(items.captured.map { it.mediaId }).containsExactly("606")
+        assertThat(checkedPaths).containsExactly("/storage/music/missing.flac")
+        assertThat(items.captured.map { it.mediaId }).containsExactly("504", "505", "506").inOrder()
+        assertThat(items.captured.map { it.localConfiguration?.uri?.scheme })
+            .containsExactly("file", "stash-resolve", "file")
+            .inOrder()
+        verify { controller.setMediaItems(any<List<MediaItem>>(), 1, any<Long>()) }
+        verify { controller.play() }
     }
 
     @Test
-    fun `batch addToQueue drops streams when Online mode turns off while items are built`() = runTest {
-        var online = true
-        coEvery { streamingPreference.current() } answers { online }
-        repo.filePathExistsOnDisk = {
-            online = false
-            true
-        }
-        every { controller.mediaItemCount } returns 1
-        val local = Track(
-            id = 808L,
-            title = "Local",
-            artist = "Artist",
-            filePath = "/storage/music/local.flac",
-            isDownloaded = true,
-        )
-        val remote = Track(
-            id = 909L,
-            title = "Remote",
-            artist = "Artist",
-            isStreamable = true,
-        )
-        val items = slot<List<MediaItem>>()
-        every { controller.addMediaItems(capture(items)) } returns Unit
-
-        val added = repo.addToQueue(listOf(local, remote))
-
-        assertThat(added).isTrue()
-        assertThat(items.captured.map { it.mediaId }).containsExactly("808")
-    }
-
-    @Test
-    fun `offline batch addToQueue accepts a usable SAF content download`() = runTest {
+    fun `batch addToQueue accepts a usable SAF content download`() = runTest {
         coEvery { streamingPreference.current() } returns false
         repo.filePathExistsOnDisk = { true }
         every { controller.mediaItemCount } returns 1
@@ -783,6 +726,7 @@ class PlayerRepositoryFullTimelineTest {
     @Test
     fun `skipNext replaces a stale downloaded target online before native seek`() = runTest {
         coEvery { streamingPreference.current() } returns true
+        every { connectivity.isConnected() } returns true
         repo.filePathExistsOnDisk = { false }
         val current = Track(id = 901L, title = "Current", artist = "Artist")
         val staleNext = Track(

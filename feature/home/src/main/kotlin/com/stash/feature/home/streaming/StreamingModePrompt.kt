@@ -8,13 +8,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * v0.9.30 Path A privacy disclosure shown the first time the user enables
- * streaming. Single button, informational only — the toggle has already
- * flipped by the time this renders.
- *
- * Library remains downloaded-only regardless of the streaming pref; this
- * dialog clarifies that streaming = search-tap playback via the community
- * Qobuz proxy.
+ * Shown once, the first time the user switches to "Stream only" (added in
+ * v0.9.30 as a streaming disclosure; reworded 2026-09-17 when streaming
+ * became unconditional). Single button, informational only — the switch has
+ * already flipped by the time this renders. It explains what the switch
+ * now decides: whether Sync writes files, never whether music plays.
  */
 @Composable
 fun StreamingDisclosureDialog(
@@ -22,12 +20,13 @@ fun StreamingDisclosureDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Online streaming") },
+        title = { Text("Stream only") },
         text = {
             Text(
-                "Stash streams via a community Qobuz proxy. Quality is FLAC " +
-                    "where available, and tracks not in the catalog can't be " +
-                    "streamed.",
+                "Sync will keep your playlists up to date without saving " +
+                    "music to this phone. Everything still plays — it streams " +
+                    "instead. Switch back to Download any time to save your " +
+                    "switched-on playlists and mixes again.",
             )
         },
         confirmButton = {

@@ -174,11 +174,11 @@ class MixOfflineTapGuardTest {
     }
 
     @Test
-    fun `playTrack Offline-mode + stream-only mix track is not enqueued and prompts to switch online`() = runTest {
-        // The player's offline master-gate silently skips stream-only tracks,
-        // so Offline mode must NOT enqueue them. Instead the VM prompts the
-        // user to switch to Online mode. (Connection state is irrelevant — the
-        // Online/Offline toggle decides, not connectivity.)
+    fun `playTrack in Download mode + stream-only mix track is enqueued`() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays: with a connection, a stream-only track is queued whichever
+        // way it is set. (Until 2026-09-17 Offline mode refused it with a
+        // "Switch to Online mode" prompt.)
         val downloaded = Track(
             id = 1L, title = "Local", artist = "A",
             isStreamable = true, isDownloaded = true,
@@ -211,16 +211,18 @@ class MixOfflineTapGuardTest {
         vm.playTrack(trackId = 42L)
         runCurrent()
 
-        verifyBlocking(playerRepo, never()) { setQueue(any(), any(), any()) }
-        assertThat(messages).contains("Switch to Online mode to play this track")
+        val queueCaptor = argumentCaptor<List<Track>>()
+        verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
+        assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L, 42L)
+        assertThat(messages).isEmpty()
 
         msgJob.cancel()
         uiJob.cancel()
     }
 
     @Test
-    fun `playAll Offline-mode + mix enqueues only downloaded tracks`() = runTest {
-        // Offline mode: the queue is downloaded-only regardless of connection.
+    fun `playAll in Download mode enqueues downloaded and stream-only alike`() = runTest {
+        // The queue is the whole playlist in either mode.
         val downloaded = Track(
             id = 1L, title = "Local", artist = "A",
             isStreamable = true, isDownloaded = true,
@@ -253,7 +255,7 @@ class MixOfflineTapGuardTest {
 
         val queueCaptor = argumentCaptor<List<Track>>()
         verifyBlocking(playerRepo) { setQueue(queueCaptor.capture(), any(), any()) }
-        assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L)
+        assertThat(queueCaptor.firstValue.map { it.id }).containsExactly(1L, 42L)
 
         uiJob.cancel()
     }

@@ -403,7 +403,7 @@ class LibraryViewModel @Inject constructor(
     fun playLiked(track: Track) {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
+            val playable = all
             if (playable.isEmpty()) return@launch
             val index = playable.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
             playerRepository.setQueue(
@@ -426,7 +426,7 @@ class LibraryViewModel @Inject constructor(
     fun shuffleLiked() {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = if (streamingPreference.current()) all else all.filter { it.filePath != null }
+            val playable = all
             if (playable.isEmpty()) return@launch
             playerRepository.setQueue(
                 playable.shuffled(),
@@ -482,14 +482,9 @@ class LibraryViewModel @Inject constructor(
      */
     fun playTrack(track: Track, allTracks: List<Track>) {
         viewModelScope.launch {
-            // Offline-aware, matching playLiked. The old version returned early
-            // for any track without a filePath — correct back when every surface
-            // feeding it was downloads-only, but silently dead once "Recently
-            // added" started showing streamable tracks: they appeared, and tapping
-            // them did nothing at all.
-            val online = streamingPreference.current()
-            if (!online && track.filePath == null) return@launch
-            val playable = if (online) allTracks else allTracks.filter { it.filePath != null }
+            // Streaming is always allowed: every track is playable, and a
+            // not-downloaded one streams when it is reached.
+            val playable = allTracks
             val index = playable.indexOfFirst { it.id == track.id }
             if (index >= 0) {
                 playerRepository.setQueue(playable, index, source = com.stash.core.model.PlaybackSource.Library)

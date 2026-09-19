@@ -109,14 +109,9 @@ class LikedSongsDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _tappedTrackId.value = trackId
             try {
-                // Streaming mode: keep streamable tracks in the queue (resolved
-                // via Kennyy inside setQueue). Offline mode: filter to disk-only.
-                val streamingOn = streamingPreference.current()
-                val playable = if (streamingOn) {
-                    uiState.value.tracks
-                } else {
-                    uiState.value.tracks.filter { it.filePath != null }
-                }
+                // Streaming is always allowed: the whole list is playable, and
+                // streamable tracks resolve inside setQueue when reached.
+                val playable = uiState.value.tracks
                 if (playable.isEmpty()) return@launch
                 val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
                 playerRepository.setQueue(playable, index)
@@ -128,12 +123,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun shuffleAll() {
         viewModelScope.launch {
-            val streamingOn = streamingPreference.current()
-            val playable = if (streamingOn) {
-                uiState.value.tracks
-            } else {
-                uiState.value.tracks.filter { it.filePath != null }
-            }
+            val playable = uiState.value.tracks
             if (playable.isEmpty()) return@launch
             val shuffled = playable.shuffled()
             _tappedTrackId.value = shuffled[0].id
@@ -149,12 +139,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun playAll() {
         viewModelScope.launch {
-            val streamingOn = streamingPreference.current()
-            val playable = if (streamingOn) {
-                uiState.value.tracks
-            } else {
-                uiState.value.tracks.filter { it.filePath != null }
-            }
+            val playable = uiState.value.tracks
             if (playable.isEmpty()) return@launch
             _tappedTrackId.value = playable[0].id
             _bulkPlayInFlight.value = BulkPlayAction.PLAY_ALL

@@ -2,7 +2,6 @@ package com.stash.core.media.streaming
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.prefs.StreamingPreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.Collections
@@ -24,15 +23,15 @@ import javax.inject.Singleton
  * Trigger conditions (all must hold):
  *  1. `positionMs / durationMs > 0.60` — the user is past 60 % and an
  *     auto-advance is imminent.
- *  2. [StreamingPreference.current] is true — no point pre-fetching when
- *     the user has opted out of streaming entirely.
- *  3. A next track exists in the queue.
- *  4. The next track is **streamable** and **not already downloaded** —
+ *  2. A next track exists in the queue.
+ *  3. The next track is **streamable** and **not already downloaded** —
  *     local files have nothing to resolve; non-streamable rows will fail
- *     the resolve and waste a Kennyy roundtrip.
- *  5. The next track's URL is not already in [StreamUrlCache] within
+ *     the resolve and waste a Kennyy roundtrip. (Streaming is always
+ *     allowed; the Download switch only decides what sync writes to disk,
+ *     so it is not consulted here.)
+ *  4. The next track's URL is not already in [StreamUrlCache] within
  *     TTL — duplicate resolves are wasteful.
- *  6. We have not already attempted a prefetch for this `nextTrackId` in
+ *  5. We have not already attempted a prefetch for this `nextTrackId` in
  *     the current play session — idempotency guard so a failing resolve
  *     doesn't spam Kennyy as the position-poll keeps firing.
  *
@@ -48,7 +47,6 @@ import javax.inject.Singleton
  */
 @Singleton
 class PrefetchOrchestrator @Inject constructor(
-    private val streamingPreference: StreamingPreference,
     private val streamResolver: StreamSourceRegistry,
     private val streamUrlCache: StreamUrlCache,
     private val trackDao: TrackDao,
@@ -90,7 +88,6 @@ class PrefetchOrchestrator @Inject constructor(
 
         scope.launch {
             try {
-                if (!streamingPreference.current()) return@launch
                 if (streamUrlCache.get(nextTrackId) != null) return@launch
 
                 val track = trackDao.getById(nextTrackId) ?: return@launch

@@ -30,7 +30,7 @@ fun settingsHubSummaries(
     streamingEnabled: Boolean,
     streamOnCellular: Boolean,
 ): HubSummaries {
-    val mode = if (streamingEnabled) "Online" else "Offline"
+    val mode = if (streamingEnabled) "Stream only" else "Download"
     val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
     val playback = "$mode · $cellular"
 

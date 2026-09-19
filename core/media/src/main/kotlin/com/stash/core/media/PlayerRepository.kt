@@ -30,12 +30,6 @@ sealed class StreamRoutingResult {
     data object NotAvailable : StreamRoutingResult()
 
     /**
-     * Streaming is disabled in preferences and the track has no local
-     * file. Caller surfaces "Turn on Online mode to stream this track".
-     */
-    data object OfflineMode : StreamRoutingResult()
-
-    /**
      * Streaming is enabled but the device is on cellular and the user
      * has not opted-in to streaming on metered networks. Caller surfaces
      * "Streaming on cellular is off in Settings".

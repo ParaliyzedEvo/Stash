@@ -38,8 +38,9 @@ import org.mockito.kotlin.verifyBlocking
  * Issue #402: the Library header's shuffle icon shuffled the whole library
  * even while the Liked tab was open. [LibraryViewModel.shuffleLiked] is the
  * Liked-scoped variant the header routes to on that tab — it must queue the
- * current liked list (shuffled, from the top), honoring the same
- * offline-playability narrowing as [LibraryViewModel.playLiked].
+ * current liked list (shuffled, from the top). Like [LibraryViewModel.playLiked]
+ * it is never narrowed by the Download switch — that switch decides what sync
+ * writes to disk, not what plays.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelShuffleLikedTest {
@@ -79,7 +80,9 @@ class LibraryViewModelShuffleLikedTest {
         assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 2L, 3L)
     }
 
-    @Test fun shuffle_liked_offline_filters_out_undownloaded_tracks() = runTest {
+    @Test fun shuffle_liked_in_download_mode_keeps_undownloaded_tracks() = runTest {
+        // The harness runs with the Download switch on (streaming pref off);
+        // a liked song that is not on disk still shuffles in and streams.
         val playerRepository = playerRepoMock()
         val liked = listOf(track(1), track(2, downloaded = false), track(3))
         val vm = buildVm(playerRepository, liked)
@@ -92,14 +95,13 @@ class LibraryViewModelShuffleLikedTest {
         verifyBlocking(playerRepository) {
             setQueue(tracksCaptor.capture(), eq(0), eq(PlaybackSource.Liked("ALL")))
         }
-        assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 3L)
+        assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 2L, 3L)
     }
 
-    @Test fun shuffle_liked_with_nothing_playable_leaves_the_queue_alone() = runTest {
+    @Test fun shuffle_liked_with_an_empty_list_leaves_the_queue_alone() = runTest {
         val playerRepository = playerRepoMock()
-        val liked = listOf(track(1, downloaded = false))
-        val vm = buildVm(playerRepository, liked)
-        assertThat(vm.likedTracks.first { it.isNotEmpty() }).hasSize(1)
+        val vm = buildVm(playerRepository, liked = emptyList())
+        advanceUntilIdle()
 
         vm.shuffleLiked()
         advanceUntilIdle()

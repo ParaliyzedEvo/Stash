@@ -547,9 +547,7 @@ class HomeViewModel @Inject constructor(
     /** Play any mix playlist from the hero pager (same gate as [playHero]). */
     fun playMix(playlistId: Long) {
         viewModelScope.launch {
-            val streamingOn = streamingPreference.current()
             val tracks = musicRepository.getTracksByPlaylist(playlistId).first()
-                .let { if (streamingOn) it else it.filter { t -> t.filePath != null } }
             if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, startIndex = 0)
         }
     }

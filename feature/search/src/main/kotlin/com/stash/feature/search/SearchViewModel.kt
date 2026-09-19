@@ -311,22 +311,18 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _tappedTrackId.value = item.syntheticId()
             try {
-                if (streamingPreference.current()) {
-                    val result = playerRepository.playFromStream(item)
-                    when (result) {
-                        is StreamRoutingResult.Item -> Unit // playback started by the repo
-                        StreamRoutingResult.Deduped -> Unit // earlier tap is handling it
-                        StreamRoutingResult.NotAvailable ->
-                            _userMessages.emit("Couldn't find this track.")
-                        StreamRoutingResult.OfflineMode ->
-                            _userMessages.emit("Turn on Online mode to stream this track.")
-                        StreamRoutingResult.CellularRefused ->
-                            _userMessages.emit("Streaming on cellular is off in Settings.")
-                        StreamRoutingResult.NoConnectivity ->
-                            _userMessages.emit("You're offline — can't stream this track.")
-                    }
-                } else {
-                    delegate.previewTrack(item)
+                // Streaming is always allowed: a tap plays the full track.
+                // (Until 2026-09-17, Offline mode routed this to a 30 s preview.)
+                val result = playerRepository.playFromStream(item)
+                when (result) {
+                    is StreamRoutingResult.Item -> Unit // playback started by the repo
+                    StreamRoutingResult.Deduped -> Unit // earlier tap is handling it
+                    StreamRoutingResult.NotAvailable ->
+                        _userMessages.emit("Couldn't find this track.")
+                    StreamRoutingResult.CellularRefused ->
+                        _userMessages.emit("Streaming on cellular is off in Settings.")
+                    StreamRoutingResult.NoConnectivity ->
+                        _userMessages.emit("You're offline — can't stream this track.")
                 }
             } finally {
                 _tappedTrackId.value = null

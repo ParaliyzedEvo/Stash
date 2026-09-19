@@ -31,7 +31,6 @@ class PrefetchOrchestratorTest {
     private val trackDao: TrackDao = mockk()
 
     private fun orchestrator() = PrefetchOrchestrator(
-        streamingPreference = streamingPreference,
         streamResolver = streamResolver,
         streamUrlCache = streamUrlCache,
         trackDao = trackDao,

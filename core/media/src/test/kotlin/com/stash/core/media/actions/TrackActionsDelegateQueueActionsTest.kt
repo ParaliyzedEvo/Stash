@@ -82,8 +82,11 @@ class TrackActionsDelegateQueueActionsTest {
     }
 
     @Test
-    fun `offline addToQueue refuses stream track with an Online mode hint`() = runTest {
+    fun `addToQueue in Download mode goes through to the player`() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays (until 2026-09-17 this refused with "Turn on Online mode").
         val d = delegate(online = false).apply { bindToScope(backgroundScope) }
+        coEvery { playerRepository.addToQueue(any<Track>()) } returns true
         val messages = mutableListOf<String>()
         backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
         runCurrent()
@@ -91,8 +94,8 @@ class TrackActionsDelegateQueueActionsTest {
         d.addToQueue(item)
         runCurrent()
 
-        assertThat(messages).containsExactly("Turn on Online mode to queue this track.")
-        coVerify(exactly = 0) { playerRepository.addToQueue(any<Track>()) }
+        assertThat(messages).containsExactly("Added to queue")
+        coVerify(exactly = 1) { playerRepository.addToQueue(any<Track>()) }
     }
 
     @Test
@@ -157,7 +160,7 @@ class TrackActionsDelegateQueueActionsTest {
     }
 
     @Test
-    fun `startRadio hints when streaming is off (non-Started result)`() = runTest {
+    fun `startRadio reports a non-Started result`() = runTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
         coEvery { playerRepository.startRadio(any()) } returns
             com.stash.core.model.RadioStartResult.NoStation
@@ -168,6 +171,7 @@ class TrackActionsDelegateQueueActionsTest {
         d.startRadio(item)
         runCurrent()
 
-        assertThat(messages.any { it.contains("Online mode") }).isTrue()
+        assertThat(messages)
+            .containsExactly("Couldn't start a radio from this — try again in a moment.")
     }
 }

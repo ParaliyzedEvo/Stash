@@ -181,9 +181,13 @@ class TrackActionsDelegate @Inject constructor(
             // delegate.previewTrack (SearchScreen, ArtistProfileScreen,
             // AlbumDiscoveryScreen, etc.) behaves identically when streaming
             // is enabled instead of falling back to the 30s preview clip.
-            val streamingEnabled = streamingPreference.current()
             if (!isActivePreviewRequest(generation, videoId)) return@launch
-            if (streamingEnabled) {
+            // Streaming is always allowed, so a tap plays the full track and
+            // returns here. The 30-second preview path below is now unreachable.
+            // ponytail: delete the preview fallback (previewPlayer, PreviewState,
+            // searchPreviewMediaSource) once this has shipped and the row
+            // spinner is proven on device.
+            run {
                 // Drive the row-level spinner while the stream resolves. The
                 // resolve can take seconds (a cold yt-dlp extraction is the
                 // worst case), so without this the row sits silent and looks
@@ -200,8 +204,6 @@ class TrackActionsDelegate @Inject constructor(
                         com.stash.core.media.StreamRoutingResult.Deduped -> Unit
                         com.stash.core.media.StreamRoutingResult.NotAvailable ->
                             _userMessages.emit("Couldn't find this track.")
-                        com.stash.core.media.StreamRoutingResult.OfflineMode ->
-                            _userMessages.emit("Turn on Online mode to stream this track.")
                         com.stash.core.media.StreamRoutingResult.CellularRefused ->
                             _userMessages.emit("Streaming on cellular is off in Settings.")
                         com.stash.core.media.StreamRoutingResult.NoConnectivity ->
@@ -513,10 +515,6 @@ class TrackActionsDelegate @Inject constructor(
     fun playNext(item: TrackItem) {
         scope().launch {
             try {
-                if (!streamingPreference.current()) {
-                    _userMessages.tryEmit("Turn on Online mode to queue this track.")
-                    return@launch
-                }
                 val added = playerRepository.addNext(item.toDomainTrack())
                 _userMessages.tryEmit(if (added) "Playing next" else "Couldn't add to queue")
             } catch (e: CancellationException) {
@@ -537,7 +535,7 @@ class TrackActionsDelegate @Inject constructor(
                     title = item.title, artist = item.artist, ytVideoId = item.videoId,
                 ),
             ) is RadioStartResult.Started
-            if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
+            if (!started) _userMessages.tryEmit("Couldn't start a radio from this — try again in a moment.")
         }
     }
 
@@ -545,10 +543,6 @@ class TrackActionsDelegate @Inject constructor(
     fun addToQueue(item: TrackItem) {
         scope().launch {
             try {
-                if (!streamingPreference.current()) {
-                    _userMessages.tryEmit("Turn on Online mode to queue this track.")
-                    return@launch
-                }
                 val added = playerRepository.addToQueue(item.toDomainTrack())
                 _userMessages.tryEmit(if (added) "Added to queue" else "Couldn't add to queue")
             } catch (e: CancellationException) {

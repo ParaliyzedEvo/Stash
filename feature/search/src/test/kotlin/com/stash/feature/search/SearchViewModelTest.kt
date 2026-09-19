@@ -142,9 +142,16 @@ class SearchViewModelTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `onResultTap streaming off calls preview not playFromStream`() = runTest {
+    fun `onResultTap in Download mode still plays the full stream, never the preview`() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays. (Until 2026-09-17 a tap with streaming off played a 30 s
+        // preview instead.)
         val delegate = stubDelegate()
-        val playerRepository = mock<PlayerRepository>()
+        val playerRepository = mock<PlayerRepository> {
+            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
+                androidx.media3.common.MediaItem.fromUri("https://example/song"),
+            )
+        }
         val streamingPreference = mock<StreamingPreference> {
             onBlocking { current() } doReturn false
         }
@@ -157,8 +164,8 @@ class SearchViewModelTest {
         vm.onResultTap(sampleTrack())
         advanceUntilIdle()
 
-        verify(delegate).previewTrack(any())
-        verifyBlocking(playerRepository, never()) { playFromStream(any()) }
+        verifyBlocking(playerRepository) { playFromStream(any()) }
+        verify(delegate, never()).previewTrack(any())
     }
 
     @Test
@@ -289,7 +296,13 @@ class SearchViewModelTest {
         api: YTMusicApiClient = mock(),
         prefetcher: PreviewPrefetcher = mock(),
         delegate: TrackActionsDelegate = stubDelegate(),
-        playerRepository: PlayerRepository = mock(),
+        // Every tap streams now, so the default player must answer
+        // playFromStream — a bare mock returns null and the tap coroutine dies.
+        playerRepository: PlayerRepository = mock {
+            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
+                androidx.media3.common.MediaItem.fromUri("https://example/song"),
+            )
+        },
         streamingPreference: StreamingPreference = mock {
             onBlocking { current() } doReturn false
         },

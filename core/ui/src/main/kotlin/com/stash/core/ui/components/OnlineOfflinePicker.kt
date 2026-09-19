@@ -29,16 +29,18 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * Two-tile mode picker for streaming Online vs Offline. Selected tile is
+ * Two-tile picker for the one mode switch: "Stream only" vs "Download".
+ * It decides what Sync writes to disk, never what plays. Selected tile is
  * filled with primary-tinted glass; the other is muted. Tapping either
- * fires [onSelect] with the chosen mode (`true` = streaming, `false` =
- * offline). Re-tapping the already-selected tile is a no-op via the
+ * fires [onSelect] with the chosen mode (`true` = stream only, `false` =
+ * download). Re-tapping the already-selected tile is a no-op via the
  * caller's responsibility (we still emit, which the caller can dedupe).
  *
- * Used in two places:
- *  - The "Playback" section of [SettingsScreen] as the canonical home.
- *  - The bottom sheet that opens from the [StreamingModeChip] on Home,
- *    so quick flips and Settings show the same control surface.
+ * Used in the bottom sheet that opens from the [StreamingModeChip] on
+ * Home and on the artist/album heroes; the Sync tab's switch and the
+ * Settings › Playback segmented control write the same preference. The
+ * owner keeps all of them on purpose (2026-09-19): a flip should never
+ * need a trip back to one page.
  *
  * Stays presentation-only: no state, no DI, no preference reading.
  * Callers hand in the current value and a callback.
@@ -55,14 +57,14 @@ fun OnlineOfflinePicker(
     ) {
         ModeTile(
             icon = Icons.Default.CloudQueue,
-            label = "Online",
+            label = "Stream only",
             selected = streamingEnabled,
             onClick = { onSelect(true) },
             modifier = Modifier.weight(1f),
         )
         ModeTile(
             icon = Icons.Default.OfflinePin,
-            label = "Offline",
+            label = "Download",
             selected = !streamingEnabled,
             onClick = { onSelect(false) },
             modifier = Modifier.weight(1f),

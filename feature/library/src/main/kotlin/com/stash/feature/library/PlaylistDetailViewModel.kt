@@ -12,7 +12,6 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
-import com.stash.core.media.streaming.queuePlayableTracks
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
@@ -164,33 +163,20 @@ class PlaylistDetailViewModel @Inject constructor(
     // ── Playback actions ────────────────────────────────────────────────
 
     /**
-     * Sets the playback queue to all downloaded tracks in this playlist
-     * and begins playback from the track matching [trackId].
-     *
-     * Uses the track ID rather than a positional index because the UI
-     * shows all tracks (including non-downloaded ones) but the queue
-     * only contains downloaded tracks. A positional index from the UI
-     * would point to the wrong track after non-downloaded entries are
-     * filtered out.
+     * Sets the playback queue to this playlist and begins playback from the
+     * track matching [trackId]. Keyed by id rather than position so the
+     * caller never depends on the queue and the list being the same shape.
      */
     fun playTrack(trackId: Long) {
         // ── Stream-only tap guard ──
-        // Stream-only tracks (isStreamable + !isDownloaded) have no local audio
-        // and require both Online mode AND a live connection. The player's
-        // offline master-gate silently skips them in Offline mode, so bail out
-        // early with a Snackbar so the user knows *why* nothing happened.
-        // Downloaded tracks always play (local file works offline). Stream-only
-        // tracks online (streaming on + connected) go through normal play.
+        // A track with no local audio needs a live connection; without one the
+        // player would fail it silently, so bail out early with a Snackbar so
+        // the user knows *why* nothing happened. Downloaded tracks always play.
+        // (The Download switch is not consulted: it decides what sync writes
+        // to disk, never what plays.)
         viewModelScope.launch {
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
-                if (!streamingPreference.current()) {
-                    // Offline mode: the player's offline master-gate would
-                    // silently skip a stream-only track. Tell the user how to
-                    // play it instead of enqueuing something that can't play.
-                    _userMessages.tryEmit("Switch to Online mode to play this track")
-                    return@launch
-                }
                 if (!connectivityMonitor.isConnected()) {
                     _userMessages.tryEmit("Online only — connect to play this track")
                     return@launch
@@ -210,27 +196,14 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
-     * The subset of [uiState] tracks that can actually be enqueued right now.
-     *
-     * - **Streaming mode on:** every track. Stream-only tracks resolve via
-     *   Kennyy inside [PlayerRepository.setQueue].
-     * - **Offline mode (streaming off):** downloaded-only, so we never enqueue
-     *   items the player's offline master-gate would silently skip.
-     *
-     * A Stash Mix still renders its full track list offline (TrackDao's
-     * STASH_MIX visibility exemption), but tapping a stream-only mix track in
-     * Offline mode is handled by the per-tap guard in [playTrack], which
-     * surfaces "Switch to Online mode to play this track" rather than enqueuing
-     * something the player can't play.
+     * The tracks to enqueue: the whole list. Streaming is always allowed, so a
+     * track that is not downloaded resolves when it is reached (a
+     * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
+     * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
      */
-    private suspend fun playableTracks(): List<Track> =
-        queuePlayableTracks(uiState.value.tracks, streamingPreference.current())
+    private suspend fun playableTracks(): List<Track> = uiState.value.tracks
 
-    /**
-     * Shuffles the playlist and begins playback. Streaming mode shuffles all
-     * tracks (downloaded + synced-streamable); offline mode only shuffles
-     * tracks present on disk.
-     */
+    /** Shuffles the whole playlist and begins playback. */
     fun shuffleAll() {
         viewModelScope.launch {
             val playable = playableTracks()

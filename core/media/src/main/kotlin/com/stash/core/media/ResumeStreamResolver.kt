@@ -23,8 +23,9 @@ import javax.inject.Singleton
  * would play nothing.
  *
  * The gating here intentionally mirrors the streaming arm of
- * [PlayerRepositoryImpl.buildMediaItemForTrack] (streaming-pref / connectivity
- * / cellular) and reuses the same [StreamSourceRegistry] + [StreamUrlCache]
+ * [PlayerRepositoryImpl.buildMediaItemForTrack] (connectivity / cellular —
+ * streaming is always allowed, the Download switch only decides what sync
+ * writes to disk) and reuses the same [StreamSourceRegistry] + [StreamUrlCache]
  * primitives. It returns only the URL (no Media3 `MediaItem`), so the decision
  * is unit-testable on the JVM and the service owns item construction. A future
  * refactor could unify this with `buildMediaItemForTrack`.
@@ -39,13 +40,12 @@ class ResumeStreamResolver @Inject constructor(
     /**
      * @return an `http(s)` stream URL to play [track] from, or null when the
      *   caller should use the local file (downloaded track) or when the track
-     *   can't be streamed right now (streaming off / offline / cellular
-     *   refused / no stream available).
+     *   can't be streamed right now (offline / cellular refused / no stream
+     *   available).
      */
     suspend fun resolveStreamUrl(track: TrackEntity): String? {
         // Downloaded tracks play from disk — caller uses the local file path.
         if (track.isDownloaded && !track.filePath.isNullOrBlank()) return null
-        if (!streamingPreference.current()) return null
         if (!connectivity.isConnected()) return null
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return null
 

@@ -142,23 +142,28 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun buildMediaItem_downloadedTrackButFileMissing_withStreamingOff_returnsOfflineMode() = runTest {
-        // Row says downloaded=true but the file is gone, isStreamable=false,
-        // streaming-pref off. The post-Stash-v0.9.30 routing exits at the
-        // streaming-pref check (PlayerRepositoryImpl.kt:725) before reaching
-        // the isStreamable fall-through, so the result is OfflineMode.
-        //
-        // Coverage gap (TODO): a separate test with streamingPreference=true
-        // is needed to actually exercise the file-missing → stream-resolution
-        // path. This test only covers the streaming-off short-circuit.
-        coEvery { streamingPreference.current() } returns false
+    fun buildMediaItem_downloadedTrackButFileMissing_fallsThroughToStreaming() = runTest {
+        // Row says downloaded=true but the file is gone: routing skips the
+        // local-file branch and streams it like any other track. The Download
+        // switch is never consulted (until 2026-09-17 it short-circuited here
+        // to OfflineMode and this path had no coverage).
         repo.filePathExistsOnDisk = { false }
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(1L) } returns StreamUrl(
+            url = "https://cdn.example/missing-on-disk?etsp=1",
+            expiresAtMs = 999_999L,
+        )
         val track = downloaded(id = 1L, path = "/storage/music/missing.flac")
             .copy(isStreamable = false)
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isEqualTo(StreamRoutingResult.OfflineMode)
+        assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
+        val item = (result as StreamRoutingResult.Item).mediaItem
+        assertThat(item.localConfiguration?.uri?.toString())
+            .isEqualTo("https://cdn.example/missing-on-disk?etsp=1")
     }
 
     @Test
@@ -356,12 +361,15 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun buildMediaItem_unavailableTrack_returnsOfflineMode() = runTest {
-        // Not downloaded AND not streamable, with streaming off — routing
-        // exits early on the streaming-pref check before any isStreamable
-        // logic. AvailabilityCheckWorker that drove isStreamable was
-        // removed in Stash v0.9.30; Kennyy is now the sole source of truth.
+    fun buildMediaItem_unresolvableTrack_returnsNotAvailable() = runTest {
+        // Not downloaded and the resolvers have nothing: the stale
+        // isStreamable flag is never consulted (AvailabilityCheckWorker that
+        // drove it was removed in v0.9.30), and neither is the Download switch.
         coEvery { streamingPreference.current() } returns false
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(4L) } returns null
         val track = TrackEntity(
             id = 4L,
             title = "x",
@@ -369,20 +377,32 @@ class PlayerRepositoryStreamingTest {
             isDownloaded = false,
             isStreamable = false,
         )
+        coEvery { streamResolver.resolve(track) } returns null
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isEqualTo(StreamRoutingResult.OfflineMode)
+        assertThat(result).isEqualTo(StreamRoutingResult.NotAvailable)
     }
 
     @Test
-    fun buildMediaItem_streamableTrackWithStreamingOff_returnsOfflineMode() = runTest {
+    fun buildMediaItem_streamableTrackInDownloadMode_stillStreams() = runTest {
+        // The Download switch decides what sync writes to disk, never what
+        // plays: streaming pref off changes nothing here.
         val track = streamable(id = 5L)
         coEvery { streamingPreference.current() } returns false
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        every { streamUrlCache.get(5L) } returns StreamUrl(
+            url = "https://cdn.example/five",
+            expiresAtMs = 999_999L,
+        )
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isEqualTo(StreamRoutingResult.OfflineMode)
+        assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
+        val item = (result as StreamRoutingResult.Item).mediaItem
+        assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("https://cdn.example/five")
     }
 
     @Test

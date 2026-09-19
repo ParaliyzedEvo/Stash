@@ -272,20 +272,15 @@ class MusicRepositoryImpl @Inject constructor(
     // historic failed downloads. The Spotify/Apple Music mental model:
     // Library is YOUR saved music; search/streaming is a separate surface.
     //
-    // EXCEPTION: getTracksByPlaylist. The playlist-detail screen is the
-    // single place where streaming mode IS meaningful for a Library-ish
-    // surface — a synced playlist in streaming mode should show all of
-    // its tracks (streamable + downloaded), and tapping a streamable
-    // track streams via Kennyy. In offline mode it stays downloaded-only —
-    // EXCEPT Stash Mixes, which are an inherently online discovery surface
-    // and stay fully visible offline (the DAO's STASH_MIX exemption in
-    // TrackDao.getByPlaylist). Tap-time playability is governed by live
-    // connectivity in PlaylistDetailViewModel, not this preference.
+    // EXCEPTION: getTracksByPlaylist. A playlist shows ALL of its tracks,
+    // streamable and downloaded, in every mode — streaming is always allowed,
+    // and tapping a streamable track streams it. (Until 2026-09-17 this
+    // followed the Online/Offline switch and hid streamable rows offline.)
+    // Tap-time playability is governed by live connectivity, not a preference.
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
-        streamingPreference.enabled.flatMapLatest { enabled ->
-            trackDao.getByPlaylist(playlistId, includeStreamable = enabled)
-        }.map { entities -> entities.map { it.toDomain() } }
+        trackDao.getByPlaylist(playlistId, includeStreamable = true)
+            .map { entities -> entities.map { it.toDomain() } }
 
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
         trackDao.getAllArtists(includeStreamable = false)
@@ -394,14 +389,13 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getAllPlaylists(): Flow<List<Playlist>> =
         // The one accessor behind Home and Library. Visibility is gated by
         // PlaylistDao.getAllVisible: sync-enabled, pinned, or holding something
-        // playable — and "playable" follows the mode. Offline, that is a
-        // downloaded track. Online, a streamable one too: this used to be
-        // hard-coded false (since v0.9.30), so once #368 stopped auto-enabling
-        // discovered mixes a fresh Online install had no arm left and Home
-        // rendered empty over a full library (#477, #478).
-        streamingPreference.enabled.flatMapLatest { online ->
-            playlistDao.getAllVisible(includeStreamable = online)
-        }.map { entities -> entities.map { it.toDomain() } }
+        // playable — and since streaming is always allowed, a streamable track
+        // counts in every mode. (This was hard-coded false from v0.9.30, so once
+        // #368 stopped auto-enabling discovered mixes a fresh Online install had
+        // no arm left and Home rendered empty over a full library — #477, #478;
+        // then it followed the mode; now it is simply true.)
+        playlistDao.getAllVisible(includeStreamable = true)
+            .map { entities -> entities.map { it.toDomain() } }
 
     override fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>> =
         playlistDao.getByType(type).map { entities -> entities.map { it.toDomain() } }

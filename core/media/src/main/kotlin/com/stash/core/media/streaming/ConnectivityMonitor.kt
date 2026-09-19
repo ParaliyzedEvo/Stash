@@ -11,7 +11,7 @@ import javax.inject.Singleton
  * Thin wrapper around [ConnectivityManager] for the streaming engine's
  * routing decisions in [com.stash.core.media.PlayerRepositoryImpl].
  *
- * Two questions the routing layer asks at every track tap in Online mode:
+ * Two questions the routing layer asks at every track tap that has to stream:
  *
  *  - **[isConnected]** — is there any network that actually reaches the
  *    public internet? Distinguishes "Wi-Fi captive-portal landing page"

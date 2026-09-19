@@ -39,17 +39,19 @@ import com.stash.core.ui.theme.StashTheme
 /**
  * Gradient-tinted hero card carrying last-sync metadata + the Sync Now button.
  *
- * One mode control: [downloadOnline] governs whether Sync Now writes real
- * files to disk or only refreshes which tracks are stream-eligible — and,
- * today, whether playback may stream (the player reads the same
- * [StreamingPreference]). The second "Playback" control that #413 added here
- * wrote a preference the player never read; removed 2026-09-17.
+ * One mode control: the Download switch. [downloadOnline] governs whether
+ * Sync Now writes real files to disk or only refreshes which tracks are
+ * stream-eligible; playback streams either way (since 2026-09-17 the player
+ * no longer reads [StreamingPreference]). The second "Playback" control that
+ * #413 added here wrote a preference the player never read; removed the
+ * same day.
  *
  * @param downloadOnline         Current Download Mode (was `streamingMode`).
  *                                True = sync only refreshes the streamable
- *                                index; false = sync writes real files.
- * @param onDownloadModeChange   Invoked with true for Online, false for
- *                                Offline when the user taps the Downloads toggle.
+ *                                index (switch OFF); false = sync writes real
+ *                                files (switch ON).
+ * @param onDownloadModeChange   Invoked with `!checked` when the user taps
+ *                                the switch: true = stream only, false = download.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,43 +122,34 @@ fun SyncHeroCard(
             }
             Spacer(Modifier.height(14.dp))
 
-            // Download mode: does Sync Now write real files, or just refresh
-            // the streamable index?
-            Text(
-                text = "DOWNLOADS",
-                style = MaterialTheme.typography.labelSmall,
-                color = StashTheme.extendedColors.purpleLight,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(4.dp))
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = downloadOnline,
-                    onClick = { if (!downloadOnline) onDownloadModeChange(true) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            // The app's one mode switch. ON = Download mode: Sync Now writes
+            // switched-on playlists and mixes to this phone. OFF = sync only
+            // keeps the streamable index. Playback streams either way.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "DOWNLOAD",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StashTheme.extendedColors.purpleLight,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (downloadOnline) {
+                            "Off — switched-on playlists stream instead"
+                        } else {
+                            "On — switched-on playlists and mixes save to this phone"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                com.stash.core.ui.components.StashSwitch(
+                    checked = !downloadOnline,
+                    onCheckedChange = { on -> onDownloadModeChange(!on) },
                     enabled = !isSyncing,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.CloudQueue,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    },
-                    label = { Text("Online") },
-                )
-                SegmentedButton(
-                    selected = !downloadOnline,
-                    onClick = { if (downloadOnline) onDownloadModeChange(false) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    enabled = !isSyncing,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.OfflinePin,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    },
-                    label = { Text("Offline") },
                 )
             }
 
