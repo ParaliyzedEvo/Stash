@@ -97,7 +97,10 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         const account = accounts.find((a) => a.label === label);
         if (!account) break; // nothing live under its caps (or a D1 label with no secret entry) → 503 below
         const r = await mintFromQobuz(fetchImpl, account, trackId, formatId, nowSec);
-        console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
+        // Country/colo: the Worker runs — and calls Qobuz from — the colo nearest the phone, so
+        // if Qobuz applies rights by calling IP, refusals will follow the colo, not the account.
+        const cf = request.cf || {};
+        console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} cc=${cf.country || "?"} colo=${cf.colo || "?"} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
         if (r.kind === "ok" || r.kind === "locked") {
             const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install)];
             if (r.kind === "ok" && r.etsp) writes.push(putCachedStmt(env.DB, trackId, formatId, r)); // no etsp → serve once, never cache

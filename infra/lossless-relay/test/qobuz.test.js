@@ -32,14 +32,20 @@ test("classify: a preview reply is about the TRACK, not the account — 404, nev
     // 'preview' while every one of them still minted full FLAC when asked directly.
     // A 30 s sample / MP3 reply for a lossless request means this track is not
     // streamable in full for this account (region, licensing); the account is fine.
-    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 5, sample: false })), { kind: "locked" });
-    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, sample: true })), { kind: "locked" });
+    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 5, sample: false })), { kind: "locked", reason: "fmt_5" });
+    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, sample: true })), { kind: "locked", reason: "sample" });
+    // Qobuz names the rights refusal in `restrictions`; the reason carries it so a tail can
+    // tell "not licensed for this account" from "not licensed where the request came from".
+    assert.deepEqual(
+        classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 7, sample: true, restrictions: [{ code: "TrackRestrictedByRightHolders" }] })),
+        { kind: "locked", reason: "sample TrackRestrictedByRightHolders" },
+    );
 });
 
 test("classify: a region lock is 'locked' (→ 404); everything else is transient", () => {
-    assert.deepEqual(classify(200, JSON.stringify({ format_id: 7 })), { kind: "locked" });
-    assert.deepEqual(classify(404, '{"status":"error","code":404,"message":"No result found"}'), { kind: "locked" });
-    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 0 })), { kind: "locked" });
+    assert.deepEqual(classify(200, JSON.stringify({ format_id: 7 })), { kind: "locked", reason: "no_url" });
+    assert.deepEqual(classify(404, '{"status":"error","code":404,"message":"No result found"}'), { kind: "locked", reason: "404" });
+    assert.deepEqual(classify(200, JSON.stringify({ url: "https://cdn/x", format_id: 0 })), { kind: "locked", reason: "fmt_0" });
     assert.equal(classify(403, '{"message":"geo"}').kind, "transient");
     assert.equal(classify(400, '{"message":"Invalid Request Signature parameter"}').kind, "transient");
     assert.equal(classify(500, "").kind, "transient");

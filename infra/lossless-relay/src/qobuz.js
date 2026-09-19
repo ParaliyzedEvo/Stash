@@ -33,23 +33,29 @@ export function extractCreds(js) {
  * Classifies one getFileUrl reply the way QbdlxApiClient.get + classify do on the device:
  *   { kind: "ok", url, formatId, bitDepth, sampleRateHz, etsp }   stream it
  *   { kind: "dead", reason }      this account is finished (401, USER_BLOCKED, UserUnauthenticated): stop using it
- *   { kind: "locked" }            Qobuz 404, no URL, or a lossy format: region lock / unknown track → 404 (spec §1)
+ *   { kind: "locked", reason }    Qobuz 404, no URL, or a lossy format: region lock / unknown track → 404 (spec §1).
+ *                                 The reason (sample / no_url / fmt_N / 404, plus any Qobuz restriction
+ *                                 codes) is for the log line only, so a tail can tell a catalogue miss
+ *                                 from a rights refusal — and whether the refusal follows the colo.
  *   { kind: "transient", reason } anything else: cool the account briefly, try another
  */
 export function classify(status, body) {
     if (status === 401) return { kind: "dead", reason: "401" };
     if (status === 403 && /USER_BLOCKED/i.test(body)) return { kind: "dead", reason: "USER_BLOCKED" };
     // Qobuz answers 404 for a track id it does not know: a catalog miss, not an account problem.
-    if (status === 404) return { kind: "locked" };
+    if (status === 404) return { kind: "locked", reason: "404" };
     if (status !== 200) return { kind: "transient", reason: `http_${status}` };
     let f;
     try { f = JSON.parse(body); } catch { return { kind: "transient", reason: "bad_json" }; }
-    const unauth = (f.restrictions || []).some((r) => /^UserUnauthenticated$/i.test(r?.code || ""));
-    if (unauth) return { kind: "dead", reason: "UserUnauthenticated" };
+    const codes = (f.restrictions || []).map((r) => r?.code).filter(Boolean);
+    if (codes.some((c) => /^UserUnauthenticated$/i.test(c))) return { kind: "dead", reason: "UserUnauthenticated" };
     // A 30 s sample or an MP3 (format 5) for a lossless request is about the TRACK — not
     // streamable in full for this account's region/licence — never about the account.
     // 2026-09-05: treating it as "dead" retired five healthy accounts overnight.
-    if (f.sample === true || !f.url || !(f.format_id >= 6)) return { kind: "locked" };
+    if (f.sample === true || !f.url || !(f.format_id >= 6)) {
+        const why = f.sample === true ? "sample" : !f.url ? "no_url" : `fmt_${f.format_id}`;
+        return { kind: "locked", reason: codes.length ? `${why} ${codes.join(",")}` : why };
+    }
     if (!f.url.startsWith("https://")) return { kind: "transient", reason: "plaintext_url" };
     return {
         kind: "ok",
