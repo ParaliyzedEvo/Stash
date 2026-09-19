@@ -180,20 +180,32 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
     }
 
     internal fun decrypt320Url(encryptedMediaUrl: String): String? = runCatching {
-        val trimmed = encryptedMediaUrl.trim()
-        if (trimmed.isBlank()) return null
-        val decoded = runCatching { Base64.getDecoder().decode(trimmed) }.getOrNull() ?: return null
-        // NOTE: JioSaavn encryptedMediaUrl currently uses legacy DES/ECB format.
-        // This is retained strictly for protocol compatibility with upstream payloads.
-        @Suppress("DEPRECATION")
-        val cipher = Cipher.getInstance("DES/ECB/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(DES_KEY.toByteArray(Charsets.UTF_8), "DES"))
-        val template = String(
-            cipher.doFinal(decoded),
-            Charsets.UTF_8,
-        )
+        if (encryptedMediaUrl.isBlank()) return null
+        val payload = Base64.getDecoder().decode(encryptedMediaUrl)
+
+        val aesKey = DES_KEY.toByteArray(Charsets.UTF_8).copyOf(16)
+        val template = decryptTemplate(payload, aesKey, "AES", "AES/ECB/PKCS5Padding")
+            ?: decryptTemplate(
+                payload,
+                DES_KEY.toByteArray(Charsets.UTF_8),
+                "DES",
+                "DES/ECB/PKCS5Padding",
+            )
+            ?: return null
+
         if (!template.contains("_96")) return null
         template.replace("_96", "_320")
+    }.getOrNull()
+
+    private fun decryptTemplate(
+        payload: ByteArray,
+        key: ByteArray,
+        algorithm: String,
+        transformation: String,
+    ): String? = runCatching {
+        val cipher = Cipher.getInstance(transformation)
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, algorithm))
+        String(cipher.doFinal(payload), Charsets.UTF_8)
     }.getOrNull()
 
     private fun normalize(raw: NativeSong): JioSaavnSong? {
