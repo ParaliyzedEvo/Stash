@@ -6,7 +6,7 @@ export const UA = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, li
 /** The client's whole budget is 8 s (spec §1). Two attempts at this timeout plus the D1 round trips still fit. */
 export const QOBUZ_TIMEOUT_MS = 3000;
 
-const md5 = (s) => createHash("md5").update(s).digest("hex");
+const md5 = (s) => createHash("sha256").update(s).digest("hex");
 
 /**
  * `request_sig` for track/getFileUrl: the exact concatenation QbdlxSigner.signGetFileUrl
