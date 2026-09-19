@@ -184,13 +184,7 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         val payload = Base64.getDecoder().decode(encryptedMediaUrl)
 
         val aesKey = DES_KEY.toByteArray(Charsets.UTF_8).copyOf(16)
-        val template = decryptTemplate(payload, aesKey, "AES", "AES/ECB/PKCS5Padding")
-            ?: decryptTemplate(
-                payload,
-                DES_KEY.toByteArray(Charsets.UTF_8),
-                "DES",
-                "DES/ECB/PKCS5Padding",
-            )
+        val template = decryptTemplate(payload, aesKey, "AES", "AES/GCM/NoPadding")
             ?: return null
 
         if (!template.contains("_96")) return null
@@ -203,6 +197,7 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         algorithm: String,
         transformation: String,
     ): String? = runCatching {
+        if (transformation != "AES/GCM/NoPadding") return null
         val cipher = Cipher.getInstance(transformation)
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, algorithm))
         String(cipher.doFinal(payload), Charsets.UTF_8)
