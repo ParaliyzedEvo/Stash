@@ -185,12 +185,6 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
 
         val aesKey = DES_KEY.toByteArray(Charsets.UTF_8).copyOf(16)
         val template = decryptTemplate(payload, aesKey, "AES", "AES/ECB/PKCS5Padding")
-            ?: decryptTemplate(
-                payload,
-                DES_KEY.toByteArray(Charsets.UTF_8),
-                "DES",
-                "DES/ECB/PKCS5Padding",
-            )
             ?: return null
 
         if (!template.contains("_96")) return null
