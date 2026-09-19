@@ -180,11 +180,16 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
     }
 
     internal fun decrypt320Url(encryptedMediaUrl: String): String? = runCatching {
-        if (encryptedMediaUrl.isBlank()) return null
+        val trimmed = encryptedMediaUrl.trim()
+        if (trimmed.isBlank()) return null
+        val decoded = runCatching { Base64.getDecoder().decode(trimmed) }.getOrNull() ?: return null
+        // NOTE: JioSaavn encryptedMediaUrl currently uses legacy DES/ECB format.
+        // This is retained strictly for protocol compatibility with upstream payloads.
+        @Suppress("DEPRECATION")
         val cipher = Cipher.getInstance("DES/ECB/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(DES_KEY.toByteArray(), "DES"))
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(DES_KEY.toByteArray(Charsets.UTF_8), "DES"))
         val template = String(
-            cipher.doFinal(Base64.getDecoder().decode(encryptedMediaUrl)),
+            cipher.doFinal(decoded),
             Charsets.UTF_8,
         )
         if (!template.contains("_96")) return null
