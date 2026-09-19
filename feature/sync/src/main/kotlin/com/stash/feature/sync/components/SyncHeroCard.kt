@@ -39,12 +39,18 @@ import com.stash.core.ui.theme.StashTheme
 /**
  * Gradient-tinted hero card carrying last-sync metadata + the Sync Now button.
  *
- * One mode control: [downloadOnline] governs whether Sync Now writes real
- * files to disk or only refreshes which tracks are stream-eligible — and,
- * today, whether playback may stream (the player reads the same
- * [StreamingPreference]). The second "Playback" control that #413 added here
- * wrote a preference the player never read; removed 2026-09-17.
+ * Two independent mode toggles: [playbackOnline] governs whether Now Playing
+ * can stream tracks that aren't downloaded yet; [downloadOnline] governs
+ * whether Sync Now writes real files to disk or only refreshes which tracks
+ * are stream-eligible. They're orthogonal — see [PlaybackModePreference] /
+ * [StreamingPreference] KDocs — so e.g. a user can keep playing a mixed
+ * playlist (Playback = Online) uninterrupted while a sync runs with
+ * Download = Offline in the background.
  *
+ * @param playbackOnline         Current Playback Mode. True = streams
+ *                                non-downloaded tracks on tap.
+ * @param onPlaybackModeChange   Invoked with true for Online, false for
+ *                                Offline when the user taps the Playback toggle.
  * @param downloadOnline         Current Download Mode (was `streamingMode`).
  *                                True = sync only refreshes the streamable
  *                                index; false = sync writes real files.
@@ -59,6 +65,8 @@ fun SyncHeroCard(
     healthLabel: String,
     healthColor: Color,
     isSyncing: Boolean,
+    playbackOnline: Boolean,
+    onPlaybackModeChange: (Boolean) -> Unit,
     downloadOnline: Boolean,
     onDownloadModeChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
@@ -119,6 +127,47 @@ fun SyncHeroCard(
                 }
             }
             Spacer(Modifier.height(14.dp))
+
+            // Playback mode: can Now Playing stream a non-downloaded track?
+            Text(
+                text = "PLAYBACK",
+                style = MaterialTheme.typography.labelSmall,
+                color = StashTheme.extendedColors.purpleLight,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = playbackOnline,
+                    onClick = { if (!playbackOnline) onPlaybackModeChange(true) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    enabled = !isSyncing,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.CloudQueue,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    label = { Text("Online") },
+                )
+                SegmentedButton(
+                    selected = !playbackOnline,
+                    onClick = { if (playbackOnline) onPlaybackModeChange(false) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    enabled = !isSyncing,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.OfflinePin,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    label = { Text("Offline") },
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
 
             // Download mode: does Sync Now write real files, or just refresh
             // the streamable index?

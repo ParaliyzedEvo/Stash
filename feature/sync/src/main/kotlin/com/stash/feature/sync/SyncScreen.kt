@@ -94,6 +94,7 @@ fun SyncScreen(
     var confirmUndo by remember { mutableStateOf(false) }
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
+    val playbackOnline by viewModel.playbackOnline.collectAsStateWithLifecycle()
     // Last.fm source card state (issue #255) — collected with the rest of
     // the screen's state because LazyListScope isn't a composable context.
     val lastFmState by viewModel.lastFmState.collectAsStateWithLifecycle()
@@ -149,6 +150,8 @@ fun SyncScreen(
                 healthLabel = uiState.lastSyncHealthLabel,
                 healthColor = uiState.lastSyncHealthColor,
                 isSyncing = uiState.isSyncing,
+                playbackOnline = playbackOnline,
+                onPlaybackModeChange = viewModel::setPlaybackOnline,
                 downloadOnline = streamingMode,
                 onDownloadModeChange = viewModel::setStreamingEnabled,
                 onSyncNow = viewModel::onSyncNow,
