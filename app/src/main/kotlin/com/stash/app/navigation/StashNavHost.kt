@@ -110,6 +110,8 @@ fun StashNavHost(
                 onSeeAllMixes = { rail ->
                     navController.navigate(MixBrowseRoute(rail.name))
                 },
+                // Report an issue = diagnostics preview first, GitHub from there.
+                onReportIssue = { navController.navigate(DiagnosticsPreviewRoute) },
             )
         }
         composable<PlaylistBrowseRoute> {

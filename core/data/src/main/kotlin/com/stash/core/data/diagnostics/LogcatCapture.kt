@@ -103,6 +103,9 @@ open class LogcatCapture @Inject constructor(
         return BufferedWriter(FileWriter(active, /* append = */ true))
     }
 
+    /** The capture files that exist right now, oldest first — the bundle zips them whole. */
+    fun logFiles(): List<File> = listOf(rotated, active).filter { it.exists() }
+
     /** Return the last [maxLines] lines across the rotated + active files. */
     fun recentLogs(maxLines: Int = 1500): String = runCatching {
         val all = buildList {

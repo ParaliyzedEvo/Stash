@@ -168,6 +168,7 @@ fun HomeScreen(
     onNavigateToMixBuilder: (Long?) -> Unit = {},
     // Task 7 wires the actual mix-browse destination; today a no-op from the host.
     onSeeAllMixes: (MixRail) -> Unit = {},
+    onReportIssue: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
@@ -297,7 +298,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Open a bug or feature request on GitHub",
+                                        text = "Grab diagnostics, then open GitHub",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -312,7 +313,10 @@ fun HomeScreen(
                             },
                             onClick = {
                                 showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_ISSUE_URL) }
+                                // The diagnostics preview first (Share / Copy), with
+                                // the GitHub link at its foot — a bug filed with the
+                                // report attached is one nobody has to ask about.
+                                onReportIssue()
                             },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1110,7 +1114,6 @@ private data class Supporter(
 // v0.9.13: report-an-issue link shown as a wrench icon next to the
 // wordmark on Home. Tap → GitHub new-issue form so users can file
 // bugs without leaving the project. Edit when the repo URL changes.
-private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issues/new"
 
 // v0.9.38+: Discord invite shown as a chat-bubble icon (blurple-tinted)
 // to the left of the wrench. Tap → opens the invite in the default

@@ -272,7 +272,7 @@ class ArcodClient @Inject constructor(
      * request re-learning. Not worth persisting.
      */
     @Volatile
-    private var blockedUntilMs = 0L
+    internal var blockedUntilMs = 0L // read by LosslessDiagnosticsContributor
 
     /** Test seam: tests drive time instead of sleeping. */
     internal var nowMs: () -> Long = System::currentTimeMillis
