@@ -282,6 +282,15 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .map { entities -> entities.map { it.toDomain() } }
 
+    /**
+     * Artists for the Library Artists tab: downloaded tracks only, like the
+     * Songs and Albums tabs (Liked and playlist detail show everything). Not
+     * tied to the Download switch — since v0.9.107 that switch decides what
+     * Sync writes to disk, never what a screen shows. If the Library is ever
+     * widened to stream-only content, widen this AND
+     * `ArtistImageDao.distinctArtistNames` together, so photos are resolved
+     * for exactly the artists the tab lists.
+     */
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
         trackDao.getAllArtists(includeStreamable = false)
 
