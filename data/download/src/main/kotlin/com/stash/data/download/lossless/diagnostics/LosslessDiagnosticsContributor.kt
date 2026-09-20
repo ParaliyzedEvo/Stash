@@ -158,7 +158,12 @@ class LosslessDiagnosticsContributor @Inject constructor(
             results.joinToString("\n") { (label, line) -> "  $label: $line" }
     }
 
-    /** One HEAD request on a short-timeout client; the status line alone answers "can this phone reach it". */
+    /**
+     * One GET on a short-timeout client; the status line alone answers "can this
+     * phone reach it" and the body is never read. GET rather than HEAD because
+     * the Workers answer HEAD with 405 — still "reachable", but a 405 reads like
+     * a failure to whoever is triaging the report.
+     */
     private suspend fun probeUrl(url: String): String = withContext(Dispatchers.IO) {
         val parsed = url.toHttpUrlOrNull() ?: return@withContext "invalid url"
         val client = relayClient.httpClient.newBuilder()
@@ -168,7 +173,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
             .build()
         val started = nowMs()
         try {
-            client.newCall(Request.Builder().url(parsed).head().build()).execute().use { r ->
+            client.newCall(Request.Builder().url(parsed).get().build()).execute().use { r ->
                 "HTTP ${r.code} in ${nowMs() - started} ms"
             }
         } catch (e: IOException) {
