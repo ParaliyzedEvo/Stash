@@ -66,6 +66,16 @@ class ReorganizeLibraryCoordinatorTest {
         } as ReorganizeLibraryState.Done
 
     /**
+     * `Done` is published from inside the pass; the gate is handed back in the
+     * launch's `finally` a moment later. Wait for the hand-back instead of
+     * racing it — the assertion used to slip between the two on a loaded CI
+     * runner.
+     */
+    private suspend fun awaitGateReleased() = withTimeout(5_000) {
+        while (gate.heldBy != null) delay(10)
+    }
+
+    /**
      * Two rows, one target name — SINGLE_FOLDER drops the album segment, so
      * a studio and a live cut of the same song collide. The mover overwrites
      * whatever occupies the target, so without a plan-level guard the second
@@ -229,6 +239,7 @@ class ReorganizeLibraryCoordinatorTest {
 
         coordinator.start()
         awaitDone()
+        awaitGateReleased()
 
         assertThat(gate.heldBy).isNull()
     }
@@ -252,6 +263,7 @@ class ReorganizeLibraryCoordinatorTest {
         release.countDown()
         delay(500)
 
+        awaitGateReleased()
         assertThat(gate.heldBy).isNull()
     }
 }
