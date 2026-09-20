@@ -288,17 +288,16 @@ class MusicRepositoryImpl @Inject constructor(
         }.map { entities -> entities.map { it.toDomain() } }
 
     /**
-     * Artists for the Library Artists tab. Mirrors the other library-wide
-     * surfaces (`getTracksByPlaylist`, `getAllAlbums`): Offline mode lists
-     * downloaded tracks only, Online/streaming mode also surfaces stream-only
-     * rows so a mostly-streamed library still gets real artist cards — and,
-     * by extension, photos ([ArtistImageBackfillWorker] keys on this same set).
+     * Artists for the Library Artists tab: downloaded tracks only, like the
+     * Songs and Albums tabs (Liked and playlist detail show everything). Not
+     * tied to the Download switch — since v0.9.107 that switch decides what
+     * Sync writes to disk, never what a screen shows. If the Library is ever
+     * widened to stream-only content, widen this AND
+     * `ArtistImageDao.distinctArtistNames` together, so photos are resolved
+     * for exactly the artists the tab lists.
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
-        streamingPreference.enabled.flatMapLatest { enabled ->
-            trackDao.getAllArtists(includeStreamable = enabled)
-        }
+        trackDao.getAllArtists(includeStreamable = false)
 
     override fun getAllAlbums(): Flow<List<AlbumSummary>> =
         trackDao.getAllAlbums(includeStreamable = false)

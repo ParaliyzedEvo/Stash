@@ -23,16 +23,10 @@ import org.robolectric.annotation.Config
 /**
  * Verifies `ArtistImageDao.distinctArtistNames()` — the candidate set the
  * [com.stash.core.data.sync.workers.ArtistImageBackfillWorker] walks. It must
- * mirror what the Library Artists tab can list:
- *  - downloaded tracks (every mode);
- *  - streamable-only tracks (`is_streamable = 1`);
- *  - still-unchecked stubs (`is_streamable_checked_at IS NULL`) that belong to
- *    a live playlist — membership is the source of truth for Online-mode
- *    playlists, so their artists get photos before the availability worker
- *    has probed them;
- *  - and it must exclude checked-but-unavailable rows and stubs with no live
- *    playlist membership, so nobody pays an InnerTube search for artists the
- *    tab never shows.
+ * equal what the Library Artists tab lists (`getAllArtists(includeStreamable =
+ * false)`): downloaded tracks only. Every name costs an InnerTube search, so
+ * stream-only rows and not-downloaded playlist members — which the tab does
+ * not show — must stay out until the tab itself is widened.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -63,18 +57,20 @@ class ArtistImageDaoTest {
         assertEquals(listOf("Drake"), artistImageDao.distinctArtistNames())
     }
 
-    @Test fun `includes streamable-only artists`() = runTest {
+    @Test fun `excludes stream-only artists the tab does not list`() = runTest {
         insertStreamableOnly(id = 1L, artist = "Future")
 
-        assertEquals(listOf("Future"), artistImageDao.distinctArtistNames())
+        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
     }
 
-    @Test fun `includes unchecked stubs that belong to a live playlist`() = runTest {
+    @Test fun `excludes not-downloaded members of a live playlist`() = runTest {
+        // Liked songs and synced playlists list these rows; the Artists tab
+        // does not, so a search for them would buy a photo nobody sees.
         val unchecked = insertUnchecked(id = 1L, artist = "Aarne")
         val playlistId = playlistDao.insert(activePlaylist())
         playlistDao.insertCrossRef(crossRef(playlistId, unchecked, position = 0))
 
-        assertEquals(listOf("Aarne"), artistImageDao.distinctArtistNames())
+        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
     }
 
     @Test fun `excludes unavailable artists`() = runTest {
@@ -83,31 +79,9 @@ class ArtistImageDaoTest {
         assertTrue(artistImageDao.distinctArtistNames().isEmpty())
     }
 
-    @Test fun `excludes unchecked stubs with no live playlist membership`() = runTest {
-        insertUnchecked(id = 1L, artist = "Mystery Band")
-
-        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
-    }
-
-    @Test fun `excludes membership in an inactive playlist`() = runTest {
-        val unchecked = insertUnchecked(id = 1L, artist = "Aarne")
-        val playlistId = playlistDao.insert(activePlaylist(isActive = false))
-        playlistDao.insertCrossRef(crossRef(playlistId, unchecked, position = 0))
-
-        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
-    }
-
-    @Test fun `excludes soft-removed membership`() = runTest {
-        val unchecked = insertUnchecked(id = 1L, artist = "Aarne")
-        val playlistId = playlistDao.insert(activePlaylist())
-        playlistDao.insertCrossRef(crossRef(playlistId, unchecked, position = 0, removed = true))
-
-        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
-    }
-
     @Test fun `dedupes repeated credits`() = runTest {
         insertDownloaded(id = 1L, artist = "Drake")
-        insertStreamableOnly(id = 2L, artist = "Drake")
+        insertDownloaded(id = 2L, artist = "Drake")
 
         assertEquals(listOf("Drake"), artistImageDao.distinctArtistNames())
     }
