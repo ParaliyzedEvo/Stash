@@ -512,7 +512,8 @@ private fun LyricsFetchSection(
                             "Queued, waiting for a suitable connection. Tap to start now on any network."
                         } else {
                             "Look up lyrics for downloaded tracks that are missing them. " +
-                                "Runs in the background."
+                                "Keeps running in the background, so you can leave the app. " +
+                                "A notification shows progress."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

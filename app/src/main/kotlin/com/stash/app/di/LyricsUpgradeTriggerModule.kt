@@ -5,6 +5,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -53,6 +54,7 @@ class WorkManagerLyricsUpgradeTrigger @Inject constructor(
         runCatching {
             val request = OneTimeWorkRequestBuilder<LyricsTtmlUpgradeWorker>()
                 .setInputData(workDataOf(LyricsTtmlUpgradeWorker.KEY_MANUAL to true))
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(
                     // The user asked for it: any connection will do.
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
