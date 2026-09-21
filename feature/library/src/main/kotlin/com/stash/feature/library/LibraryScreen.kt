@@ -178,7 +178,6 @@ fun LibraryScreen(
     var showBatchSave by remember { mutableStateOf(false) }
     var showBatchDelete by remember { mutableStateOf(false) }
     var showFlacConfirm by remember { mutableStateOf(false) }
-    var trackToSave by remember { mutableStateOf<Track?>(null) }
 
     // Snackbar for the batch roll-up summaries.
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -1522,6 +1521,22 @@ private fun TracksTab(
             // Bottom padding for gesture navigation inset
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // ── Save to Playlist sheet (single-track) ───────────────────────────
+    trackToSave?.let { track ->
+        com.stash.core.ui.components.SaveToPlaylistSheet(
+            playlists = userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                onSaveToPlaylist(track.id, playlistId)
+                trackToSave = null
+            },
+            onCreatePlaylist = { name ->
+                onCreatePlaylistWithTrack(name, track.id)
+                trackToSave = null
+            },
+            onDismiss = { trackToSave = null },
+        )
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────
