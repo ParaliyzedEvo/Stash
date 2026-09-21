@@ -221,59 +221,28 @@ class YTMusicApiClient @Inject constructor(
             if (isContinuation) parseSavedAlbumsContinuationPage(page) else parseSavedAlbums(page)
         }
 
-        // paginateBrowse's own partial/continuation detection is blind here:
-        // extractContinuationToken has no gridContinuation case, so it always
-        // reports "no more pages" for the Albums grid even when a second page
-        // exists. Detect that specific blind spot directly on the raw initial
-        // response rather than trusting paginated.partial, which would silently
-        // report SUCCESS on a truncated fetch. Only true when a real
-        // continuation was actually present and NOT followed — not a blanket
-        // assumption — so a single-page library (the common case) is reported
-        // complete, same as before this fetch existed.
-        val gridTruncated = gridHasUnhandledContinuation(response)
-        val partial = paginated.partial || gridTruncated
-        val partialReason = when {
-            paginated.partial -> paginated.partialReason
-            gridTruncated -> "saved-albums grid has a continuation token but grid pagination isn't implemented — fetched page 1 only"
-            else -> null
-        }
+            // Grid pagination is now walked by extractContinuationToken (shape 5),
+        // so paginated.partial is the honest signal — same as every other fetch
+        // path. The old gridHasUnhandledContinuation probe MUST NOT come back:
+        // page 1 of a multi-page grid always carries a trailing
+        // continuationItemRenderer, so it would now report partial forever, and
+        // a permanently-partial snapshot makes DiffWorker.snapshotUnreliable()
+        // skip the snapshot_id/trackCount stamp on every run.
+        //
+        // distinctBy: YT grids repeat items across continuation boundaries, and
+        // parseSavedAlbums only dedupes within a single page.
+        val albums = paginated.items.distinctBy { it.id }
 
-        if (paginated.items.isEmpty()) {
+        if (albums.isEmpty()) {
             return SyncResult.Empty("Library returned no albums")
         }
         return SyncResult.Success(
             PagedAlbums(
-                albums = paginated.items,
-                partial = partial,
-                partialReason = partialReason,
+                albums = albums,
+                partial = paginated.partial,
+                partialReason = paginated.partialReason,
             )
         )
-    }
-
-    /**
-     * Detects whether the saved-albums grid response carries a continuation
-     * token that [extractContinuationToken] doesn't know how to walk (no
-     * `gridContinuation` case exists yet). A false negative here just means
-     * an unverified-but-actually-single-page library reports complete, which
-     * is correct; a false positive costs one unnecessary "incomplete" flag
-     * for a run that was actually fine — the safer direction to be wrong in.
-     */
-    private fun gridHasUnhandledContinuation(response: JsonObject): Boolean {
-        val sections = response.navigatePath(
-            "contents", "singleColumnBrowseResultsRenderer", "tabs",
-        )?.firstArray()?.firstOrNull()?.asObject()
-            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
-            ?.asArray() ?: return false
-
-        for (section in sections) {
-            val grid = section.asObject()?.get("gridRenderer")?.asObject() ?: continue
-            val items = grid["items"]?.asArray()
-            val trailingContinuationItem = items?.lastOrNull()?.asObject()
-                ?.containsKey("continuationItemRenderer") == true
-            val shelfLevelContinuation = grid["continuations"]?.asArray()?.isNotEmpty() == true
-            if (trailingContinuationItem || shelfLevelContinuation) return true
-        }
-        return false
     }
 
     /**
@@ -337,13 +306,31 @@ class YTMusicApiClient @Inject constructor(
      * `gridContinuation` case added alongside its existing shapes.
      */
     private fun parseSavedAlbumsContinuationPage(response: JsonObject): List<AlbumSummary> {
-        val items = response.navigatePath(
-            "continuationContents", "gridContinuation", "items",
-        )?.asArray() ?: return emptyList()
         val out = mutableListOf<AlbumSummary>()
-        for (item in items) {
-            val renderer = item.asObject()?.get("musicTwoRowItemRenderer")?.asObject() ?: continue
-            parseSingleAlbumFromTwoRowRenderer(renderer)?.let { out.add(it) }
+
+        fun collect(items: JsonArray?) {
+            for (item in items ?: return) {
+                val renderer = item.asObject()
+                    ?.get("musicTwoRowItemRenderer")?.asObject()
+                    ?: continue  // skips the trailing continuationItemRenderer
+                parseSingleAlbumFromTwoRowRenderer(renderer)?.let { out.add(it) }
+            }
+        }
+
+        // Legacy envelope.
+        collect(
+            response.navigatePath("continuationContents", "gridContinuation", "items")?.asArray()
+        )
+        // Current envelope — grid continuations now arrive as append actions,
+        // the same shape the twoColumn playlist path already handles. Without
+        // this branch the page parses to zero albums and pagination looks like
+        // it succeeded while dropping everything past page 1.
+        response["onResponseReceivedActions"]?.asArray()?.forEach { action ->
+            collect(
+                action.asObject()
+                    ?.navigatePath("appendContinuationItemsAction", "continuationItems")
+                    ?.asArray()
+            )
         }
         return out
     }
@@ -1426,6 +1413,50 @@ class YTMusicApiClient @Inject constructor(
                     ?.firstOrNull()?.asObject()
                     ?.navigatePath("nextContinuationData", "continuation")?.asString()
                 if (shelfContToken != null) return shelfContToken
+            }
+        }
+
+        // Shape 5a: continuationContents.gridContinuation (Library Albums /
+        // Playlists page 2+). Grid continuations carry the token either at
+        // shelf level or as a trailing synthetic item, same as the shelf shapes.
+        continuationContents?.get("gridContinuation")?.asObject()?.let { grid ->
+            grid["continuations"]?.asArray()
+                ?.firstOrNull()?.asObject()
+                ?.navigatePath("nextContinuationData", "continuation")?.asString()
+                ?.let { return it }
+            grid["items"]?.asArray()
+                ?.lastOrNull()?.asObject()
+                ?.navigatePath(
+                    "continuationItemRenderer", "continuationEndpoint",
+                    "continuationCommand", "token",
+                )?.asString()
+                ?.let { return it }
+        }
+
+        // Shape 5b: initial singleColumn browse whose section is a gridRenderer
+        // (FEmusic_liked_albums, and FEmusic_liked_playlists on the web client).
+        // Both wrappings parseSavedAlbums already walks are handled: a bare
+        // gridRenderer and one nested inside itemSectionRenderer.contents[0].
+        if (singleColumnSections != null) {
+            for (section in singleColumnSections) {
+                val sectionObj = section.asObject() ?: continue
+                val grid = sectionObj["gridRenderer"]?.asObject()
+                    ?: sectionObj["itemSectionRenderer"]?.asObject()
+                        ?.get("contents")?.asArray()
+                        ?.firstOrNull()?.asObject()
+                        ?.get("gridRenderer")?.asObject()
+                    ?: continue
+                grid["items"]?.asArray()
+                    ?.lastOrNull()?.asObject()
+                    ?.navigatePath(
+                        "continuationItemRenderer", "continuationEndpoint",
+                        "continuationCommand", "token",
+                    )?.asString()
+                    ?.let { return it }
+                grid["continuations"]?.asArray()
+                    ?.firstOrNull()?.asObject()
+                    ?.navigatePath("nextContinuationData", "continuation")?.asString()
+                    ?.let { return it }
             }
         }
 
