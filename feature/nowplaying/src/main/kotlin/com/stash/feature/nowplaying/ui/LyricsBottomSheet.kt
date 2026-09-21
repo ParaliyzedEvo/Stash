@@ -59,6 +59,8 @@ fun LyricsBottomSheet(
     canSaveToFile: Boolean = false,
     savingToFile: Boolean = false,
     onSaveToFile: () -> Unit = {},
+    // Drives the word-synced clock: false = hold at the last position (paused/buffering).
+    isPlaying: Boolean = true,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -108,6 +110,8 @@ fun LyricsBottomSheet(
                         lines = state.lines,
                         currentPositionMs = currentPositionMs,
                         onLineTap = onSeek,
+                        syllables = state.syllables,
+                        isPlaying = isPlaying,
                     )
                     is LyricsViewState.Plain -> LyricsPlainRenderer(state.text)
                     LyricsViewState.Instrumental -> CenteredPlacard("\u266A Instrumental")

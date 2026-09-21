@@ -4,6 +4,8 @@ import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.model.Track
 import com.stash.data.lyrics.parser.LrcLine
 import com.stash.data.lyrics.parser.LrcParser
+import com.stash.data.lyrics.parser.TtmlLyrics
+import com.stash.data.lyrics.parser.TtmlParser
 import com.stash.data.lyrics.source.LyricsResult
 
 /**
@@ -36,7 +38,12 @@ import com.stash.data.lyrics.source.LyricsResult
  */
 sealed interface LyricsViewState {
     object Loading : LyricsViewState
-    data class Synced(val lines: List<LrcLine>, val plainFallback: String) : LyricsViewState
+    data class Synced(
+        val lines: List<LrcLine>,
+        val plainFallback: String,
+        /** Non-null when word-synced TTML is available; the syllable renderer keys off this. */
+        val syllables: TtmlLyrics? = null,
+    ) : LyricsViewState
     data class Plain(val text: String) : LyricsViewState
     object Instrumental : LyricsViewState
     object None : LyricsViewState
@@ -61,7 +68,7 @@ internal fun lyricsViewStateFor(track: Track, row: LyricsEntity?): LyricsViewSta
         val lines = LrcParser.parse(synced)
         val plain = row.plainText
         when {
-            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty())
+            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), row.ttml?.let(TtmlParser::parse))
             !plain.isNullOrBlank() -> LyricsViewState.Plain(plain)
             else -> LyricsViewState.None
         }
@@ -87,7 +94,7 @@ internal fun lyricsViewStateForResult(result: LyricsResult?): LyricsViewState = 
         val lines = LrcParser.parse(synced)
         val plain = result.plainText
         when {
-            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty())
+            lines.isNotEmpty() -> LyricsViewState.Synced(lines, plain.orEmpty(), result.ttml?.let(TtmlParser::parse))
             !plain.isNullOrBlank() -> LyricsViewState.Plain(plain)
             else -> LyricsViewState.None
         }
