@@ -185,30 +185,17 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
         if (encryptedMediaUrl.isBlank()) return null
         val payload = Base64.getDecoder().decode(encryptedMediaUrl)
 
-        val aesKey = DES_KEY.toByteArray(Charsets.UTF_8).copyOf(16)
-        val template = decryptTemplate(payload, aesKey)
+        val template = decryptTemplate(payload, DES_KEY.toByteArray(Charsets.UTF_8))
             ?: return null
 
         if (!template.contains("_96")) return null
         template.replace("_96", "_320")
     }.getOrNull()
 
-    private fun decryptTemplate(
-        payload: ByteArray,
-        key: ByteArray,
-    ): String? = runCatching {
-        val ivSize = 12
-        if (payload.size <= ivSize) return null
-        val iv = payload.copyOfRange(0, ivSize)
-        val encrypted = payload.copyOfRange(ivSize, payload.size)
-
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(
-            Cipher.DECRYPT_MODE,
-            SecretKeySpec(key, "AES"),
-            GCMParameterSpec(128, iv),
-        )
-        String(cipher.doFinal(encrypted), Charsets.UTF_8)
+    private fun decryptTemplate(payload: ByteArray, key: ByteArray): String? = runCatching {
+        val cipher = Cipher.getInstance("DES/ECB/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "DES"))
+        String(cipher.doFinal(payload), Charsets.UTF_8)
     }.getOrNull()
 
     private fun normalize(raw: NativeSong): JioSaavnSong? {
