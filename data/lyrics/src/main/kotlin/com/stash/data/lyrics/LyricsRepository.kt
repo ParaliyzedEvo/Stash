@@ -43,6 +43,9 @@ import javax.inject.Singleton
 /** Outcome of [LyricsRepository.upgradeToTtml]. Only UPGRADED changes stored lyrics. */
 enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, SKIPPED }
 
+/** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
+enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
+
 @Singleton
 class LyricsRepository @Inject constructor(
     private val sources: List<@JvmSuppressWildcards LyricsSource>,
@@ -132,10 +135,39 @@ class LyricsRepository @Inject constructor(
      * observer flips to Loading immediately — the visible feedback that
      * was missing when Retry left the 0L sentinel in place.
      */
-        suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
+    suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
     /** Track ids the TTML upgrade backfill still has to try. */
     suspend fun trackIdsPendingTtml(): List<Long> = lyricsDao.trackIdsPendingTtml()
+
+    /** Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss). */
+    suspend fun trackIdsMissingLyrics(): List<Long> = lyricsDao.trackIdsMissingLyrics()
+
+    /**
+     * Manual-run path: walks the full source chain for one track and stores the hit. Failures are
+     * swallowed into [ManualFetchResult.FAILED] (state untouched, so it stays retryable); a definitive
+     * miss re-stamps 0L exactly as [resolveAndStore] always does.
+     */
+    suspend fun fetchLyricsNow(trackId: Long): ManualFetchResult {
+        val track = trackDao.getById(trackId) ?: return ManualFetchResult.SKIPPED
+        val query = LyricsQuery(
+            trackId = track.id,
+            title = track.title,
+            artist = track.artist,
+            album = track.album.ifBlank { null },
+            albumArtist = track.albumArtist.ifBlank { null },
+            durationMs = track.durationMs.takeIf { it > 0 },
+            youtubeVideoId = track.youtubeId,
+        )
+        return try {
+            if (resolveAndStore(query) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Manual lyrics fetch failed for trackId=$trackId", e)
+            ManualFetchResult.FAILED
+        }
+    }
 
     /**
      * Backfill path: asks ONLY the Apple TTML source (never the whole chain, so a good LRC can't be

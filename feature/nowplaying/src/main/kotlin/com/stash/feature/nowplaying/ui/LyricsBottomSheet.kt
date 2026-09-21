@@ -108,6 +108,7 @@ fun LyricsBottomSheet(
                         lines = state.lines,
                         currentPositionMs = currentPositionMs,
                         onLineTap = onSeek,
+                        syllables = state.syllables,
                     )
                     is LyricsViewState.Plain -> LyricsPlainRenderer(state.text)
                     LyricsViewState.Instrumental -> CenteredPlacard("\u266A Instrumental")
