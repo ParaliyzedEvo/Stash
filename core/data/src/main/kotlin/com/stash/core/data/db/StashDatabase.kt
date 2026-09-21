@@ -95,7 +95,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoMembershipEntity::class,
         ArtistImageEntity::class,
     ],
-    version = 47,
+    version = 48,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
