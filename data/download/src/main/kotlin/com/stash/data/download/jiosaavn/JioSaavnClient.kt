@@ -5,7 +5,6 @@ import java.io.IOException
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,7 +18,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.math.max
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -183,32 +181,14 @@ class JioSaavnClient @Inject constructor(sharedClient: OkHttpClient) {
 
     internal fun decrypt320Url(encryptedMediaUrl: String): String? = runCatching {
         if (encryptedMediaUrl.isBlank()) return null
-        val payload = Base64.getDecoder().decode(encryptedMediaUrl)
-
-        val aesKey = DES_KEY.toByteArray(Charsets.UTF_8).copyOf(16)
-        val template = decryptTemplate(payload, aesKey)
-            ?: return null
-
+        val cipher = Cipher.getInstance("DES/ECB/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(DES_KEY.toByteArray(), "DES"))
+        val template = String(
+            cipher.doFinal(Base64.getDecoder().decode(encryptedMediaUrl)),
+            Charsets.UTF_8,
+        )
         if (!template.contains("_96")) return null
         template.replace("_96", "_320")
-    }.getOrNull()
-
-    private fun decryptTemplate(
-        payload: ByteArray,
-        key: ByteArray,
-    ): String? = runCatching {
-        val ivSize = 12
-        if (payload.size <= ivSize) return null
-        val iv = payload.copyOfRange(0, ivSize)
-        val encrypted = payload.copyOfRange(ivSize, payload.size)
-
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(
-            Cipher.DECRYPT_MODE,
-            SecretKeySpec(key, "AES"),
-            GCMParameterSpec(128, iv),
-        )
-        String(cipher.doFinal(encrypted), Charsets.UTF_8)
     }.getOrNull()
 
     private fun normalize(raw: NativeSong): JioSaavnSong? {
