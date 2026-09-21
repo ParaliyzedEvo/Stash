@@ -273,7 +273,6 @@ fun NowPlayingScreen(
             currentPositionMs = lyricsPositionMs,
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
-            isPlaying = uiState.isPlaying && !uiState.isBuffering,
             onSeek = viewModel::onLyricsLineSeek,
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
@@ -663,7 +662,6 @@ fun NowPlayingScreen(
                 accentColor = npAccent(uiState.vibrantColor),
                 liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
-                isPlaying = uiState.isPlaying && !uiState.isBuffering,
             )
         }
     }

@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.stash.data.lyrics.parser.LrcLine
-import com.stash.data.lyrics.parser.TtmlLyrics
 import kotlin.math.abs
 
 /**
@@ -60,24 +59,6 @@ import kotlin.math.abs
  */
 @Composable
 fun LyricsSyncedRenderer(
-    lines: List<LrcLine>,
-    currentPositionMs: Long,
-    onLineTap: (Long) -> Unit,
-    modifier: Modifier = Modifier,
-    /** Non-null when word-synced TTML is available: renders per-syllable instead of per-line. */
-    syllables: TtmlLyrics? = null,
-    /** Playback state, so the word-synced clock stops extrapolating while paused/buffering. */
-    isPlaying: Boolean = true,
-) {
-    if (syllables != null) {
-        LyricsSyllableRenderer(syllables, currentPositionMs, onLineTap, modifier, isPlaying)
-    } else {
-        LyricsLineRenderer(lines, currentPositionMs, onLineTap, modifier)
-    }
-}
-
-@Composable
-private fun LyricsLineRenderer(
     lines: List<LrcLine>,
     currentPositionMs: Long,
     onLineTap: (Long) -> Unit,

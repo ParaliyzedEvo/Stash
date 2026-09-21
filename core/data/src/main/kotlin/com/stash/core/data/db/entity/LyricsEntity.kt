@@ -41,6 +41,4 @@ data class LyricsEntity(
     @ColumnInfo("source")                      val source: String,
     @ColumnInfo("source_lyrics_id")            val sourceLyricsId: String?,
     @ColumnInfo("fetched_at")                  val fetchedAt: Long,
-    @ColumnInfo("ttml")                        val ttml: String? = null,
-    @ColumnInfo("ttml_checked_at")             val ttmlCheckedAt: Long? = null,
 )

@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.stash.data.lyrics.parser.LrcLine
-import com.stash.data.lyrics.parser.TtmlLyrics
 
 /**
  * What the live-lyrics bar renders for a given [LyricsViewState]:
@@ -45,7 +44,7 @@ import com.stash.data.lyrics.parser.TtmlLyrics
  *             lands with lyrics.
  */
 internal sealed interface LiveBarMode {
-    data class Live(val lines: List<LrcLine>, val syllables: TtmlLyrics? = null) : LiveBarMode
+    data class Live(val lines: List<LrcLine>) : LiveBarMode
     data object Static : LiveBarMode
     data object Hidden : LiveBarMode
 }
@@ -55,7 +54,7 @@ internal fun liveBarModeFor(state: LyricsViewState, liveEnabled: Boolean): LiveB
     // same quiet "View lyrics ♪" bar as plain ones — lyrics stay one tap away
     // without the ticking line pulling focus from the music.
     is LyricsViewState.Synced ->
-        if (liveEnabled) LiveBarMode.Live(state.lines, state.syllables) else LiveBarMode.Static
+        if (liveEnabled) LiveBarMode.Live(state.lines) else LiveBarMode.Static
     is LyricsViewState.Plain -> LiveBarMode.Static
     else -> LiveBarMode.Hidden
 }
@@ -90,7 +89,6 @@ fun LiveLyricsBar(
     liveEnabled: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
-    isPlaying: Boolean = true,
 ) {
     // remember(state, liveEnabled): the 250ms position ticks recompose this
     // composable every tick; without the cache each tick would re-allocate
@@ -127,14 +125,7 @@ fun LiveLyricsBar(
             contentAlignment = Alignment.Center,
         ) {
             when (mode) {
-                is LiveBarMode.Live -> if (mode.syllables != null) {
-                    WordSyncedBarLine(
-                        lyrics = mode.syllables,
-                        currentPositionMs = currentPositionMs,
-                        isPlaying = isPlaying,
-                        accent = animAccent,
-                    )
-                } else {
+                is LiveBarMode.Live -> {
                     val index = remember(mode.lines, currentPositionMs) {
                         currentLineIndex(mode.lines, currentPositionMs)
                     }

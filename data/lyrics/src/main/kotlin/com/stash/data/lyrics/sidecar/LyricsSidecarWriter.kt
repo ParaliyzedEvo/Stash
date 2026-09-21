@@ -83,29 +83,25 @@ class LyricsSidecarWriter @Inject constructor(
         if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) fail("No lyrics body for track $trackId")
         val track = trackDao.getById(trackId) ?: fail("Track $trackId no longer exists")
         val path = track.filePath ?: fail("Track $trackId has no downloaded file")
-        writeSidecarFile(track, path, buildLrcBody(track, lyrics), "lrc", LRC_MIME)
-        lyrics.ttml?.takeUnless(String::isBlank)?.let { ttml ->
-            runCatching { writeSidecarFile(track, path, ttml, "ttml", TTML_MIME) }
-                .onFailure { Log.w(TAG, "TTML sidecar write failed for track ${track.id}", it) }
+        val body = buildLrcBody(track, lyrics)
+        if (path.startsWith("content://")) {
+            writeSafSidecar(track, body)
+        } else {
+            writeFilesystemSidecar(path, body)
         }
     }
 
-    private suspend fun writeSidecarFile(track: TrackEntity, path: String, body: String, ext: String, mime: String) {
-        if (path.startsWith("content://")) writeSafSidecar(track, body, ext, mime)
-        else writeFilesystemSidecar(path, body, ext)
-    }
-
-    private fun writeFilesystemSidecar(audioPath: String, body: String, ext: String) {
+    private fun writeFilesystemSidecar(audioPath: String, body: String) {
         val audio = File(audioPath)
         val parent = audio.parentFile ?: run {
             Log.w(TAG, "Cannot resolve parent directory for $audioPath; sidecar skipped")
             throw IOException("Cannot resolve parent directory for $audioPath")
         }
-        val sidecar = File(parent, "${audio.nameWithoutExtension}.$ext")
+        val sidecar = File(parent, "${audio.nameWithoutExtension}.lrc")
         sidecar.writeText(body, Charsets.UTF_8)
     }
 
-    private suspend fun writeSafSidecar(track: TrackEntity, body: String, ext: String, mime: String) {
+    private suspend fun writeSafSidecar(track: TrackEntity, body: String) {
         // IMPORTANT: DocumentFile.fromTreeUri expects the STORAGE TREE
         // ROOT URI, not the audio file's content URI. Reading the
         // child's URI would yield "permission denied" or worse. The
@@ -161,9 +157,9 @@ class LyricsSidecarWriter @Inject constructor(
         for (segment in segments) {
             cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
         }
-        val filename = "$baseName.$ext"
+        val filename = "$baseName.lrc"
         val existing = cursor.findFile(filename)
-        val target = existing ?: cursor.createFile(mime, filename) ?: run {
+        val target = existing ?: cursor.createFile(LRC_MIME, filename) ?: run {
             Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
             throw IOException("Could not create SAF sidecar $filename")
         }
@@ -232,6 +228,5 @@ class LyricsSidecarWriter @Inject constructor(
         // the document is allowed to coerce this to text/plain if it
         // doesn't recognise the value — the sidecar still functions.
         private const val LRC_MIME = "application/x-lrc"
-        private const val TTML_MIME = "application/x-ttml"   // unknown to MimeTypeMap, so providers won't append ".xml"
     }
 }

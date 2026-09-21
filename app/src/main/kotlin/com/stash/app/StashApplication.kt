@@ -25,9 +25,7 @@ import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.media.listening.ListeningRecorder
 import com.stash.core.data.repository.MusicRepositoryImpl
 import com.stash.core.data.sync.SyncNotificationManager
-import com.stash.data.download.backfill.BackfillVersionTracker
 import com.stash.data.download.backfill.MetadataBackfillScheduler
-import com.stash.data.download.lyrics.LyricsUpgradeTrigger
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.core.data.sync.workers.ArtBackfillWorker
 import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
@@ -221,13 +219,6 @@ class StashApplication : Application(), Configuration.Provider {
      */
     @Inject
     lateinit var metadataBackfillScheduler: MetadataBackfillScheduler
-
-    /** Once-per-version gate + trigger for the word-synced (TTML) lyrics upgrade, see [maybeEnqueueLyricsTtmlUpgrade]. */
-    @Inject
-    lateinit var backfillVersionTracker: BackfillVersionTracker
-
-    @Inject
-    lateinit var lyricsUpgradeTrigger: LyricsUpgradeTrigger
 
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -492,8 +483,6 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             metadataBackfillScheduler.scheduleIfNeeded()
         }
-        // Upgrade already-stored lyrics to word-synced TTML (unmetered + battery-not-low, paced).
-        applicationScope.launch { maybeEnqueueLyricsTtmlUpgrade() }
 
         // v0.9.30 Path A: AvailabilityCheckWorker + AvailabilityRecheckWorker
         // were removed when Library reverted to downloaded-only. They populated
@@ -955,23 +944,6 @@ class StashApplication : Application(), Configuration.Provider {
         Log.i("StashMigration", "maybeEnqueueBlocklistIntegrity: enqueued v0.9.15 cleanup sweep")
     }
 
-    /**
-     * Word-synced (TTML) lyrics upgrade for lyrics already stored on this device. Once per
-     * versionCode via [BackfillVersionTracker] (disjoint key from the metadata backfill), so each
-     * release re-offers it. The worker only touches rows still pending (no TTML, never definitively
-     * missed), so a re-run after a clean finish is an instant no-op. The manual retag path needs
-     * nothing here: MetadataBackfillWorker chains into the same trigger when it finishes.
-     */
-    private suspend fun maybeEnqueueLyricsTtmlUpgrade() {
-        runCatching {
-            if (backfillVersionTracker.shouldRunForCurrentVersion(LYRICS_TTML_UPGRADE_KEY)) {
-                lyricsUpgradeTrigger.enqueueTtmlUpgrade()
-                backfillVersionTracker.markEnqueuedForCurrentVersion(LYRICS_TTML_UPGRADE_KEY)
-                Log.i("StashMigration", "maybeEnqueueLyricsTtmlUpgrade: enqueued TTML lyrics upgrade")
-            }
-        }.onFailure { Log.w("StashMigration", "TTML lyrics upgrade enqueue failed", it) }
-    }
-
     companion object {
         /**
          * Never-again gate for the one-shot lyrics miss-stamp repair. NOT
@@ -980,13 +952,6 @@ class StashApplication : Application(), Configuration.Provider {
          * tracks forever.
          */
         private const val LYRICS_MISS_RESET_KEY = "lyrics_miss_reset_done"
-
-        /**
-         * [BackfillVersionTracker] key for the TTML lyrics upgrade. Keep stable across releases
-         * (changing it re-fires the backfill on every install) and distinct from any key the
-         * existing lyrics backfill already uses.
-         */
-        private const val LYRICS_TTML_UPGRADE_KEY = "lyrics_ttml_upgrade_enqueued_for_version"
 
         /**
          * Bump whenever a parser change makes existing cached rows produce

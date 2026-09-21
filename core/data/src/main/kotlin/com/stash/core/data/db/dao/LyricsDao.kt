@@ -34,15 +34,4 @@ interface LyricsDao {
 
     @Query("DELETE FROM lyrics WHERE track_id = :trackId")
     suspend fun delete(trackId: Long)
-
-    /** Rows the TTML upgrade backfill still has to try: real lyrics, no TTML, never definitively missed. */
-    @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NULL")
-    suspend fun trackIdsPendingTtml(): List<Long>
-
-    @Query("UPDATE lyrics SET ttml_checked_at = :at WHERE track_id = :trackId")
-    suspend fun markTtmlChecked(trackId: Long, at: Long)
-
-    /** Downloaded tracks with no lyrics: never tried (NULL) or previously a miss (0L). */
-    @Query("SELECT id FROM tracks WHERE is_downloaded = 1 AND (lyrics_fetched_at IS NULL OR lyrics_fetched_at = 0)")
-    suspend fun trackIdsMissingLyrics(): List<Long>
 }

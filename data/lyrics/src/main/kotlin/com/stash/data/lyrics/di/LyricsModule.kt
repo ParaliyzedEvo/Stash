@@ -2,7 +2,6 @@ package com.stash.data.lyrics.di
 
 import com.stash.core.common.Clock
 import com.stash.core.common.SystemClock
-import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
 import com.stash.data.lyrics.source.InnerTubeLyricsGatewayImpl
 import com.stash.data.lyrics.source.KugouLyricsSource
@@ -69,17 +68,10 @@ abstract class LyricsModule {
         @Provides
         @Singleton
         fun provideLyricsSources(
-            appleTtml: AppleTtmlLyricsSource,
             lrclib: LrclibLyricsSource,
             kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
-        ): List<@JvmSuppressWildcards LyricsSource> = listOf(appleTtml, lrclib, kugou, ytmusic)
-
-        /** Word-synced Apple Music TTML via lyrics.paxsenix.org; first so it wins when it has syllable timing. */
-        @Provides
-        @Singleton
-        fun provideAppleTtmlLyricsSource(okHttpClient: OkHttpClient): AppleTtmlLyricsSource =
-            AppleTtmlLyricsSource(okHttpClient)
+        ): List<@JvmSuppressWildcards LyricsSource> = listOf(lrclib, kugou, ytmusic)
 
         /** KuGou: synced LRC for most of what LRCLIB misses; between LRCLIB and the plain-text fallback. */
         @Provides
