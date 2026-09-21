@@ -21,6 +21,7 @@ import kotlin.math.abs
  */
 class AppleTtmlLyricsSource(
     client: OkHttpClient,
+    private val appVersion: String,
     private val lyricsBaseUrl: String = DEFAULT_LYRICS_BASE_URL,
     private val searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
 ) : LyricsSource {
@@ -84,7 +85,10 @@ class AppleTtmlLyricsSource(
 
     /** Body on 2xx, null on 404, throws on anything else. */
     private fun get(url: HttpUrl): String? {
-        val request = Request.Builder().url(url).header("User-Agent", "Stash (Android)").build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Stash/$appVersion (Android)")
+            .build()
         http.newCall(request).execute().use { response ->
             if (response.code == 404) return null
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
