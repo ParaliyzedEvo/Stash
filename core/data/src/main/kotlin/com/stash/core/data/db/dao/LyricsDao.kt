@@ -34,4 +34,11 @@ interface LyricsDao {
 
     @Query("DELETE FROM lyrics WHERE track_id = :trackId")
     suspend fun delete(trackId: Long)
+
+    /** Rows the TTML upgrade backfill still has to try: real lyrics, no TTML, never definitively missed. */
+    @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NULL")
+    suspend fun trackIdsPendingTtml(): List<Long>
+
+    @Query("UPDATE lyrics SET ttml_checked_at = :at WHERE track_id = :trackId")
+    suspend fun markTtmlChecked(trackId: Long, at: Long)
 }
