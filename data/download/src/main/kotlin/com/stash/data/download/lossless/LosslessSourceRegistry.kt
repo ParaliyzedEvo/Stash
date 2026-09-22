@@ -60,6 +60,9 @@ class LosslessSourceRegistry @Inject constructor(
             if (!source.isEnabled()) continue
             val result = runCatching { source.resolve(query, bypassRateLimit) }
                 .onFailure { e ->
+                    // A cancelled caller is not a failing source: rethrow, or the
+                    // chain carries on (and the download falls to lossy) after a stop.
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     // resolve() should never throw — it should catch and
                     // return null. Defensive log so an unexpected throw
                     // from one source doesn't break the chain for others.

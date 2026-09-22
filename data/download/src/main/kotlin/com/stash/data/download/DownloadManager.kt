@@ -537,6 +537,9 @@ class DownloadManager @Inject constructor(
         repeat(MAX_LOSSLESS_FAILOVER_ATTEMPTS) {
         val match: SourceResult = runCatching { losslessRegistry.resolve(query) }
             .onFailure { e ->
+                // A stop lands here more than anywhere (the resolve is the long network
+                // wait). Swallowing it ran the lossy fallbacks for a cancelled download.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "lossless registry threw for '${track.artist} - ${track.title}'", e)
             }
             .getOrNull() ?: return null
