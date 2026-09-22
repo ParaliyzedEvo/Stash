@@ -32,9 +32,22 @@ class AppleTtmlLyricsSource(
     private val http = client.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
 
     override suspend fun resolve(query: LyricsQuery): LyricsResult? = withContext(Dispatchers.IO) {
-        val songId = findSongId(query) ?: return@withContext null
-        val ttml = fetchTtml(songId) ?: return@withContext null
-        val parsed = TtmlParser.parse(ttml)?.takeIf { it.lines.isNotEmpty() } ?: return@withContext null
+        val songId = findSongId(query)
+        if (songId == null) {
+            Log.d(TAG, "no Apple match for \"${query.title}\" - ${query.artist}")
+            return@withContext null
+        }
+        val ttml = fetchTtml(songId)
+        if (ttml == null) {
+            Log.d(TAG, "apple id $songId (\"${query.title}\") has no TTML")
+            return@withContext null
+        }
+        val parsed = TtmlParser.parse(ttml)?.takeIf { it.lines.isNotEmpty() }
+        if (parsed == null) {
+            Log.w(TAG, "apple id $songId (\"${query.title}\") returned TTML but it didn't parse")
+            return@withContext null
+        }
+        Log.d(TAG, "apple id $songId (\"${query.title}\") -> ${parsed.lines.size} lines")
         LyricsResult(
             sourceId = id,
             plainText = parsed.toPlainText(),
@@ -66,6 +79,12 @@ class AppleTtmlLyricsSource(
                 durationMs = o.optLong("trackTimeMillis", 0L),
             )
         }
+        Log.d(
+            TAG,
+            "iTunes search \"${query.title}\" - ${query.artist}: " +
+                candidates.joinToString { "${it.id}:${it.title}/${it.artist}(${it.durationMs}ms)" }
+                    .ifEmpty { "0 results" },
+        )
         return pickBest(query, candidates)?.id
     }
 
