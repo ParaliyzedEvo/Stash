@@ -125,37 +125,64 @@ object TtmlParser {
                 var lead = buildSyllables(kids, stripParens = false)
                 val pStart = parseTimeMs(p.getAttribute("begin"))
                 val pEnd = parseTimeMs(p.getAttribute("end"))
+                var parenBackground: List<TtmlGroup> = emptyList()
 
                 // Line-timed <p> with no per-word spans: split on whitespace into separate
-                // "words" sharing the line's whole window, rather than one giant un-splittable
-                // syllable. A single opaque run can't be wrapped by the FlowRow layout and runs
-                // off the edge of the screen on longer lines; separate words can.
+                // "words" sharing proportional slices of the line's window, rather than one
+                // giant un-splittable syllable. A single opaque run can't be wrapped by the
+                // FlowRow layout and runs off the edge of the screen on longer lines.
                 if (lead.isEmpty() && pStart != null && pEnd != null) {
                     val t = kids.filter { it.nodeType == Node.TEXT_NODE || it.isVocalSpan() }
                         .joinToString("") { it.textContent }.trim()
                     if (renderable(t)) {
-                        val words = t.split(Regex("\\s+")).filter { it.isNotBlank() }
-                        val totalChars = words.sumOf { it.length }.coerceAtLeast(1)
-                        val lineStart: Long = pStart          // <- non-null locals, not captured `var`s of a nullable type
+                        val lineStart: Long = pStart
                         val lineEnd: Long = pEnd
                         val totalMs = (lineEnd - lineStart).coerceAtLeast(0L)
-                        var cursor = lineStart
-                        lead = words.mapIndexed { i, w ->
-                            val start = cursor
-                            val end = if (i == words.lastIndex) {
-                                lineEnd
-                            } else {
-                                (cursor + ((w.length.toDouble() / totalChars) * totalMs).roundToLong())
-                                    .coerceAtMost(lineEnd)
+                        val totalChars = t.length.coerceAtLeast(1)
+
+                        fun msAt(charIndex: Int): Long =
+                            (lineStart + (charIndex.toDouble() / totalChars * totalMs).roundToLong())
+                                .coerceIn(lineStart, lineEnd)
+
+                        fun wordsToSyllables(text: String, from: Long, to: Long): List<TtmlSyllable> {
+                            val words = text.split(Regex("\\s+")).filter { it.isNotBlank() }
+                            if (words.isEmpty()) return emptyList()
+                            val chars = words.sumOf { it.length }.coerceAtLeast(1)
+                            val span = (to - from).coerceAtLeast(0L)
+                            var cursor = from
+                            return words.mapIndexed { i, w ->
+                                val start = cursor
+                                val end = if (i == words.lastIndex) to
+                                    else (cursor + (w.length.toDouble() / chars * span).roundToLong()).coerceAtMost(to)
+                                cursor = end
+                                TtmlSyllable(w, partOfWord = false, startMs = start, endMs = end)
                             }
-                            cursor = end
-                            TtmlSyllable(w, partOfWord = false, startMs = start, endMs = end)
+                        }
+
+                        // Apple often embeds an ad-lib/echo inline in parens — e.g. "We will
+                        // still be (We will still) Friends forever" — instead of tagging it
+                        // ttm:role="x-bg". Pull it into its own smaller background row rather
+                        // than rendering it inline with the lead.
+                        val parenRanges = Regex("""\(([^)]+)\)""").findAll(t).toList()
+                        if (parenRanges.isNotEmpty()) {
+                            val leadText = t.replace(Regex("""\s*\([^)]+\)\s*"""), " ").trim()
+                            lead = wordsToSyllables(leadText, lineStart, lineEnd)
+                            parenBackground = parenRanges.mapNotNull { m ->
+                                val inner = m.groupValues[1].trim()
+                                if (inner.isEmpty()) return@mapNotNull null
+                                val start = msAt(m.range.first)
+                                val end = msAt(m.range.last + 1)
+                                val syls = wordsToSyllables(inner, start, end)
+                                if (syls.isEmpty()) null else TtmlGroup(syls, start, end)
+                            }
+                        } else {
+                            lead = wordsToSyllables(t, lineStart, lineEnd)
                         }
                     }
                 }
                 lead = lead.filter { renderable(it.text) }
 
-                // Adlibs: <span ttm:role="x-bg">
+                // Adlibs: <span ttm:role="x-bg">, plus anything pulled out of inline parens above.
                 val bg = kids.filter { it.role() == "x-bg" }.mapNotNull { n ->
                     val el = n as Element
                     val syls = buildSyllables(el.kids(), stripParens = true).filter { renderable(it.text) }
@@ -165,7 +192,7 @@ object TtmlParser {
                         parseTimeMs(el.getAttribute("begin")) ?: syls.first().startMs,
                         parseTimeMs(el.getAttribute("end")) ?: syls.last().endMs,
                     )
-                }
+                } + parenBackground
                 if (lead.isEmpty() && bg.isEmpty()) continue
 
                 // Lead window has to cover its adlibs or they get clipped.
