@@ -136,15 +136,17 @@ object TtmlParser {
                     if (renderable(t)) {
                         val words = t.split(Regex("\\s+")).filter { it.isNotBlank() }
                         val totalChars = words.sumOf { it.length }.coerceAtLeast(1)
-                        val totalMs = (pEnd - pStart).coerceAtLeast(0L)
-                        var cursor = pStart
+                        val lineStart: Long = pStart          // <- non-null locals, not captured `var`s of a nullable type
+                        val lineEnd: Long = pEnd
+                        val totalMs = (lineEnd - lineStart).coerceAtLeast(0L)
+                        var cursor = lineStart
                         lead = words.mapIndexed { i, w ->
                             val start = cursor
                             val end = if (i == words.lastIndex) {
-                                pEnd
+                                lineEnd
                             } else {
                                 (cursor + ((w.length.toDouble() / totalChars) * totalMs).roundToLong())
-                                    .coerceAtMost(pEnd)
+                                    .coerceAtMost(lineEnd)
                             }
                             cursor = end
                             TtmlSyllable(w, partOfWord = false, startMs = start, endMs = end)
