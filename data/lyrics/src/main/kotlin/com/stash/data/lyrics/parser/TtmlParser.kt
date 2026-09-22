@@ -134,9 +134,21 @@ object TtmlParser {
                     val t = kids.filter { it.nodeType == Node.TEXT_NODE || it.isVocalSpan() }
                         .joinToString("") { it.textContent }.trim()
                     if (renderable(t)) {
-                        lead = t.split(Regex("\\s+"))
-                            .filter { it.isNotBlank() }
-                            .map { TtmlSyllable(it, partOfWord = false, startMs = pStart, endMs = pEnd) }
+                        val words = t.split(Regex("\\s+")).filter { it.isNotBlank() }
+                        val totalChars = words.sumOf { it.length }.coerceAtLeast(1)
+                        val totalMs = (pEnd - pStart).coerceAtLeast(0L)
+                        var cursor = pStart
+                        lead = words.mapIndexed { i, w ->
+                            val start = cursor
+                            val end = if (i == words.lastIndex) {
+                                pEnd
+                            } else {
+                                (cursor + ((w.length.toDouble() / totalChars) * totalMs).roundToLong())
+                                    .coerceAtMost(pEnd)
+                            }
+                            cursor = end
+                            TtmlSyllable(w, partOfWord = false, startMs = start, endMs = end)
+                        }
                     }
                 }
                 lead = lead.filter { renderable(it.text) }
