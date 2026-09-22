@@ -126,11 +126,18 @@ object TtmlParser {
                 val pStart = parseTimeMs(p.getAttribute("begin"))
                 val pEnd = parseTimeMs(p.getAttribute("end"))
 
-                // Line-timed <p> with no timed spans: keep it as one big syllable.
+                // Line-timed <p> with no per-word spans: split on whitespace into separate
+                // "words" sharing the line's whole window, rather than one giant un-splittable
+                // syllable. A single opaque run can't be wrapped by the FlowRow layout and runs
+                // off the edge of the screen on longer lines; separate words can.
                 if (lead.isEmpty() && pStart != null && pEnd != null) {
                     val t = kids.filter { it.nodeType == Node.TEXT_NODE || it.isVocalSpan() }
                         .joinToString("") { it.textContent }.trim()
-                    if (renderable(t)) lead = listOf(TtmlSyllable(t, false, pStart, pEnd))
+                    if (renderable(t)) {
+                        lead = t.split(Regex("\\s+"))
+                            .filter { it.isNotBlank() }
+                            .map { TtmlSyllable(it, partOfWord = false, startMs = pStart, endMs = pEnd) }
+                    }
                 }
                 lead = lead.filter { renderable(it.text) }
 

@@ -251,8 +251,11 @@ private fun LineItem(
     )
     val blurTarget by remember(item, index) {
         derivedStateOf {
-            if (state == PHASE_ACTIVE) 0f
-            else min(BLUR_PER_LINE * abs(index - activeIndex.value), BLUR_MAX)
+            val distance = abs(index - activeIndex.value)
+            // The line right next to the active one stays crisp (just dimmer via alpha);
+            // blur only kicks in from two lines away, and ramps up more gently than before.
+            if (state == PHASE_ACTIVE || distance <= 1) 0f
+            else min(BLUR_PER_LINE * (distance - 1), BLUR_MAX)
         }
     }
     val blur by animateFloatAsState(blurTarget, tween(300), label = "line-blur")
@@ -265,7 +268,7 @@ private fun LineItem(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { alpha = alphaAnim.value }
-            .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+            .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
             .padding(horizontal = 24.dp, vertical = 10.dp)
             .clearAndSetSemantics { contentDescription = description },
@@ -602,7 +605,7 @@ private suspend fun frameLoop(tick: (Float) -> Boolean) {
     }
 }
 
-private const val BLUR_PER_LINE = 1.25f            // Spicy: BlurMultiplier * distance
-private const val BLUR_MAX = 6.83f                 // Spicy: BlurMultiplier * 5.465
+private const val BLUR_PER_LINE = 0.6f
+private const val BLUR_MAX = 3.0f   
 private const val SCROLL_GRACE_MS = 5_000L
 private const val SCROLL_OFFSET_PX = -200
