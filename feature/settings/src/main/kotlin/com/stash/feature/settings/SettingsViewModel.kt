@@ -44,7 +44,6 @@ import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
-import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
 import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
@@ -113,7 +112,6 @@ class SettingsViewModel @Inject constructor(
     private val streamingQualityPrefs: StreamingQualityPreferences,
     private val losslessRateLimiter: AggregatorRateLimiter,
     private val qobuzSource: QobuzSource,
-    private val arcodCredentialStore: ArcodCredentialStore,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
     private val losslessAvailability: LosslessAvailability,
     private val qobuzAccountConnector: QobuzAccountConnector,
@@ -346,14 +344,6 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.setForceYouTubeFallback(v)
     }
 
-    /** Test toggle: route streaming + downloads through ARCOD only. */
-    val forceArcodOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
-        streamingPreference.forceArcodOnly.stateIn(
-            scope = viewModelScope,
-            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
-        )
-
     val forceQbdlxOnly: kotlinx.coroutines.flow.StateFlow<Boolean> =
         streamingPreference.forceQbdlxOnly.stateIn(
             scope = viewModelScope,
@@ -364,11 +354,6 @@ class SettingsViewModel @Inject constructor(
     /** Persist the force-qbdlx-only test toggle flip. */
     fun setForceQbdlxOnly(v: Boolean) = viewModelScope.launch {
         streamingPreference.setForceQbdlxOnly(v)
-    }
-
-    /** Persist the force-arcod-only test toggle flip. */
-    fun setForceArcodOnly(v: Boolean) = viewModelScope.launch {
-        streamingPreference.setForceArcodOnly(v)
     }
 
     /** Crossfade on/off — drives the Playback section toggle. Off by default. */
@@ -608,7 +593,6 @@ class SettingsViewModel @Inject constructor(
         stashMixPreference.enabled,
         likePreferences.mirrorLikesSpotify,
         likePreferences.mirrorLikesYtMusic,
-        arcodCredentialStore.accessToken,
         streamingQualityPrefs.wifiTier,
         streamingQualityPrefs.cellularTier,
         streamingQualityPrefs.saveData,
@@ -656,7 +640,6 @@ class SettingsViewModel @Inject constructor(
         val stashMixesEnabled = v.next<Boolean>()
         val mirrorLikesSpotify = v.next<Boolean>()
         val mirrorLikesYtMusic = v.next<Boolean>()
-        val arcodConnected = !(v.next<String?>()).isNullOrBlank()
         val streamingWifiTier = v.next<LosslessQualityTier>()
         val streamingCellularTier = v.next<LosslessQualityTier>()
         val streamingSaveData = v.next<Boolean>()
@@ -736,7 +719,6 @@ class SettingsViewModel @Inject constructor(
             autoSavedCountLast7Days = autoSavedCount7d,
             mirrorLikesSpotify = mirrorLikesSpotify,
             mirrorLikesYtMusic = mirrorLikesYtMusic,
-            arcodConnected = arcodConnected,
             pendingMirrorWarning = local.pendingMirrorWarning,
             youtubeFallbackEnabled = youtubeFallbackEnabled,
             hasCrashReport = local.hasCrashReport,
@@ -1560,35 +1542,6 @@ class SettingsViewModel @Inject constructor(
     fun onYoutubeFallbackChanged(value: Boolean) {
         viewModelScope.launch {
             losslessPrefs.setYoutubeFallbackEnabled(value)
-        }
-    }
-
-    // -- ARCOD connect -------------------------------------------------------
-
-    /**
-     * Live "is ARCOD connected" flag, derived from the presence of a
-     * non-blank access token in [ArcodCredentialStore]. Drives the
-     * "Connect ARCOD" / "ARCOD — connected" row label. Also surfaced into
-     * [SettingsUiState.arcodConnected] via the main `combine`; exposed
-     * standalone for callers that only need this one bit.
-     */
-    val arcodConnected: StateFlow<Boolean> =
-        arcodCredentialStore.accessToken
-            .map { !it.isNullOrBlank() }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = false,
-            )
-
-    /**
-     * Persists the Supabase session harvested from the ARCOD connect
-     * WebView's localStorage. The ARCOD source/interceptor read it back
-     * from [ArcodCredentialStore] reactively, so no further wiring is needed.
-     */
-    fun onArcodConnected(accessToken: String, refreshToken: String, expiresAtMs: Long) {
-        viewModelScope.launch {
-            arcodCredentialStore.save(accessToken, refreshToken, expiresAtMs)
         }
     }
 

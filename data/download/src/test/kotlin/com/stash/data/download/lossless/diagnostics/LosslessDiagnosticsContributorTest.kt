@@ -9,7 +9,7 @@ import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.RoutingState
-import com.stash.data.download.lossless.arcod.ArcodClient
+
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.lossless.relay.RelayEntry
@@ -31,7 +31,6 @@ class LosslessDiagnosticsContributorTest {
     private val rows = listOf(
         RoutingRow("qobuz", "Your Qobuz account", "alice@example.com", RoutingState.CONNECTED),
         RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
-        RoutingRow("arcod", "ARCOD", "not connected", RoutingState.NOT_CONFIGURED),
     )
     private val availability: LosslessAvailability = mockk { every { routingRows } returns flowOf(rows) }
     private val config: LosslessConfigFetcher = mockk {
@@ -53,14 +52,13 @@ class LosslessDiagnosticsContributorTest {
         coEvery { current() } returns false // Download mode
         every { streamOnCellular } returns flowOf(true)
     }
-    private val arcodClient: ArcodClient = mockk { every { blockedUntilMs } returns 0L }
     private val connectivity: ConnectivityManager = mockk { every { activeNetwork } returns null } // offline
     private val context: Context = mockk {
         every { getSystemService(ConnectivityManager::class.java) } returns connectivity
     }
 
     private fun contributor() = LosslessDiagnosticsContributor(
-        context, availability, config, relayClient, losslessPrefs, streamingQuality, streamingPreference, arcodClient,
+        context, availability, config, relayClient, losslessPrefs, streamingQuality, streamingPreference,
     ).also { it.nowMs = { 1_758_000_000_000L } }
 
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
@@ -76,14 +74,6 @@ class LosslessDiagnosticsContributorTest {
         assertThat(s).contains("Your Qobuz account: connected")
         assertThat(s).doesNotContain("alice@example.com")
         assertThat(s).contains("Stash lossless: configured")
-        assertThat(s).contains("ARCOD: not connected")
-        assertThat(s).contains("ARCOD quota: open")
-    }
-
-    @Test fun `a closed ARCOD quota gate names its deadline`() = runTest {
-        every { arcodClient.blockedUntilMs } returns 1_758_000_000_000L + 3_600_000L
-        // 1_758_000_000 s = 2025-09-16T05:20:00Z; plus one hour.
-        assertThat(contributor().section()).contains("ARCOD quota: blocked until 2025-09-16T06:20:00Z")
     }
 
     @Test fun `relays are listed by host with their cooldown and the config timestamp`() = runTest {

@@ -9,23 +9,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * ⚠️ Same build-config trap as `StreamSourceRegistryTest` in :core:media —
- * [LosslessSourceRegistry.resolve] drops `arcod` unless
- * `BuildConfig.ARCOD_CONFIGURED`, fed from local.properties. A maintainer box
- * has the key; CI does not. So any assertion that arcod IS used passes locally
- * and fails in CI; guard it with the flag.
- *
- * qbdlx is no longer build-gated; it self-gates on LosslessAvailability, so the
- * qbdlx expectations below are unconditional.
- *
- * Assertions that a source is NOT used are safe unguarded — an unconfigured
- * build filters it out, which satisfies them for a different reason. Force-X
- * toggles deliberately bypass the filter (see the registry), so those tests are
- * safe too.
- *
- * Tests that need a source guaranteed to be consulted (neither parked nor
- * build-gated) use a synthetic id (`"lucida"`) — the registry only special-cases
- * the known parked/gated ids, so an unrecognised id always survives the filter.
+ * Tests that need a source guaranteed to be consulted (not parked) use a
+ * synthetic id (`"lucida"`) — the registry only special-cases the known parked
+ * ids, so an unrecognised id always survives the filter.
  */
 class LosslessSourceRegistryTest {
 
@@ -35,7 +21,6 @@ class LosslessSourceRegistryTest {
         mockk {
             // Normal use: all force-only toggles off so the full chain is consulted.
             coEvery { isForceQbdlxOnly() } returns false
-            coEvery { isForceArcodOnly() } returns false
         }
 
     private val query = TrackQuery(artist = "A", title = "B")
@@ -94,16 +79,16 @@ class LosslessSourceRegistryTest {
 
         val qbdlxResult = flacResult("qbdlx_qobuz")
         // Both would match; qbdlx must win because it's ranked first (fast,
-        // no proxy) — arcod (ranked last) is never consulted.
+        // no proxy) — the unranked source (appended last) is never consulted.
         val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
-        val arcod = fakeSource("arcod", flacResult("arcod"))
+        val lucida = fakeSource("lucida", flacResult("lucida"))
 
-        val registry = registry(linkedSetOf(arcod, qbdlx)) // scrambled on purpose
+        val registry = registry(linkedSetOf(lucida, qbdlx)) // scrambled on purpose
         val result = registry.resolve(query)
 
         assertThat(result).isEqualTo(qbdlxResult)
         coVerify(exactly = 1) { qbdlx.resolve(any()) }
-        coVerify(exactly = 0) { arcod.resolve(any()) }
+        coVerify(exactly = 0) { lucida.resolve(any()) }
     }
 
     @Test
@@ -144,43 +129,17 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `arcod is ordered last after the qobuz proxies under default priority`() = runTest {
+    fun `the priority list, not registration order, drives ranking`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
 
-        // Register sources out of order to prove the priority list (not the
-        // Set's iteration order) drives ranking.
-        val arcod = fakeSource("arcod", flacResult("arcod"))
+        // Register sources out of order; an id missing from the list goes last.
+        val lucida = fakeSource("lucida", flacResult("lucida"))
         val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
         val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
 
-        val registry = registry(linkedSetOf(arcod, kennyy, squid))
+        val registry = registry(linkedSetOf(lucida, kennyy, squid))
 
-        val orderedIds = registry.orderedSources().map { it.id }
-        assertThat(orderedIds)
-            .containsExactly("squid_qobuz", "kennyy_qobuz", "arcod").inOrder()
-        // arcod is the final lossless source the chain tries before YouTube.
-        assertThat(orderedIds.last()).isEqualTo("arcod")
-    }
-
-    @Test
-    fun `force-arcod-only resolves via arcod and never consults the qobuz proxies`() = runTest {
-        coEvery { streamingPreference.isForceArcodOnly() } returns true
-        coEvery { prefs.priorityOrderNow() } returns
-            LosslessSourcePreferences.DEFAULT_PRIORITY
-        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
-        coEvery { healthGate.isDegraded(any()) } returns false
-
-        val arcodResult = flacResult("arcod")
-        val squid = fakeSource("squid_qobuz", flacResult("squid_qobuz"))
-        val kennyy = fakeSource("kennyy_qobuz", flacResult("kennyy_qobuz"))
-        val arcod = fakeSource("arcod", arcodResult)
-
-        val registry = registry(linkedSetOf(squid, kennyy, arcod))
-        val result = registry.resolve(query)
-
-        assertThat(result).isEqualTo(arcodResult)
-        coVerify(exactly = 1) { arcod.resolve(any()) }
-        coVerify(exactly = 0) { squid.resolve(any()) }
-        coVerify(exactly = 0) { kennyy.resolve(any()) }
+        assertThat(registry.orderedSources().map { it.id })
+            .containsExactly("squid_qobuz", "kennyy_qobuz", "lucida").inOrder()
     }
 }

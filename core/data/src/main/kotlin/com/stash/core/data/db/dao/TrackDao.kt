@@ -287,7 +287,7 @@ interface TrackDao {
     * sweep, which runs every sync regardless of REFRESH/ACCUMULATE — the mode
     * governs library membership, not audio quality. Only 'flac' is checked
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
-    * because Stash's lossless sources (Qobuz, Arcod) only ever deliver FLAC;
+    * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
     */
     @Query(

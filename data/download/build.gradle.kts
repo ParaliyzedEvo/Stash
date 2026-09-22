@@ -7,27 +7,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// ── ARCOD private stream endpoint ────────────────────────────────────────────
-// The arcod operator shared a private streaming endpoint on the condition it not
-// be exposed in the public repo. Its base URL (host + path) is therefore injected
-// at build time from `local.properties` (gitignored) or an env var (CI/release),
-// never committed to source. Set it in local.properties as:
-//   arcod.streamBase=<base url including path>
-// Empty is valid — an unconfigured build simply skips ARCOD streaming and fails
-// over to the next source, exactly like a missing Last.fm key no-ops scrobbling.
-val arcodLocalProperties = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
-val arcodStreamBase: String =
-    arcodLocalProperties.getProperty("arcod.streamBase") ?: System.getenv("ARCOD_STREAM_BASE").orEmpty()
-// Private integration key for ARCOD's /v2/stash routes (per build, sent as the
-// X-Stash-Key header). Rotated by the operator (Fufu) — keep it out of source,
-// inject from local.properties / the ARCOD_STASH_KEY CI secret. Empty = ARCOD
-// /v2/stash calls 403 and the source fails over.
-val arcodStashKey: String =
-    arcodLocalProperties.getProperty("arcod.stashKey") ?: System.getenv("ARCOD_STASH_KEY").orEmpty()
-
 // ── Build-time config reader ───────────────────────────────────────────────
 // Reads a value from local.properties (gitignored, local dev) falling back to an
 // env var (CI/release). Empty is always valid — every field below no-ops when
@@ -47,27 +26,12 @@ fun qbdlxProp(key: String, env: String) =
 val losslessConfigUrl = qbdlxProp("lossless.configUrl", "LOSSLESS_CONFIG_URL")
 val losslessConfigPubKey = qbdlxProp("lossless.configPubKey", "LOSSLESS_CONFIG_PUBKEY")
 
-// What makes an ARCOD build usable is the /v2/stash integration key — the old
-// private stream base is no longer the gate (those routes were retired when the
-// operator moved Stash to /v2/stash). Keyless build → arcod can only 403, so the
-// registries skip it entirely.
-val arcodConfigured = arcodStashKey.isNotBlank()
-
 android {
     namespace = "com.stash.data.download"
 
     defaultConfig {
-        // Private ARCOD stream base (host+path), injected from local.properties /
-        // env at build time so it never lives in the public repo. Empty when
-        // unconfigured — ARCOD streaming then no-ops and the registry fails over.
-        buildConfigField("String", "ARCOD_STREAM_BASE", "\"$arcodStreamBase\"")
-        buildConfigField("String", "ARCOD_STASH_KEY", "\"$arcodStashKey\"")
-        // Public host root for ARCOD's /v2/stash routes (Fufu published it openly;
-        // only X-Stash-Key is private). Hardcoded, not injected.
-        buildConfigField("String", "ARCOD_API_BASE", "\"https://api.arcod.xyz\"")
         buildConfigField("String", "LOSSLESS_CONFIG_URL", "\"$losslessConfigUrl\"")
         buildConfigField("String", "LOSSLESS_CONFIG_PUBKEY", "\"$losslessConfigPubKey\"")
-        buildConfigField("Boolean", "ARCOD_CONFIGURED", "$arcodConfigured")
     }
 
     buildFeatures {

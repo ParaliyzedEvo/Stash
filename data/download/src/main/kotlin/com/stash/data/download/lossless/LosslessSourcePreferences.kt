@@ -54,16 +54,15 @@ class LosslessSourcePreferences @Inject constructor(
     private val captchaCookieKey = stringPreferencesKey("squid_wtf_captcha_verified_at")
     private val captchaCookieSetAtKey = longPreferencesKey("squid_wtf_captcha_set_at_ms")
     private val bannerDismissedKey = booleanPreferencesKey("home_banner_dismissed")
-    private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
     private val losslessOfflineDismissedKey = booleanPreferencesKey("lossless_offline_dismissed")
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
     private val youtubeFallbackKey = booleanPreferencesKey("youtube_fallback_enabled")
-    // Retained only so [purgeAntraCredentials] can delete the harvested
-    // antra.hoshi.cfd session from existing installs; the antra source was
-    // removed (see fix/remove-antra).
+    // Retained only so [purgeRetiredSourceKeys] can delete them from existing
+    // installs; the antra and arcod sources were removed.
     private val antraSessionKey = stringPreferencesKey("antra_session_cookie")
     private val antraCfClearanceKey = stringPreferencesKey("antra_cf_clearance_cookie")
     private val antraUsernameKey = stringPreferencesKey("antra_username")
+    private val arcodRescueDismissedKey = booleanPreferencesKey("arcod_rescue_dismissed")
 
     /**
      * Master switch for the lossless-source pipeline. When false, the
@@ -203,16 +202,17 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * One-shot cleanup for the removed antra source: deletes the harvested
-     * antra.hoshi.cfd session cookie, cf_clearance cookie, and username from
-     * existing installs so no stale login session lingers on disk. Called
-     * once at startup (see StashApplication). No-op when the keys are absent.
+     * One-shot cleanup for removed sources: deletes the harvested antra.hoshi.cfd
+     * session cookie, cf_clearance cookie and username, and arcod's retired banner
+     * flag, so no stale login state lingers on disk. Called once at startup (see
+     * StashApplication). No-op when the keys are absent.
      */
-    suspend fun purgeAntraCredentials() {
+    suspend fun purgeRetiredSourceKeys() {
         context.losslessDataStore.edit { prefs ->
             prefs.remove(antraSessionKey)
             prefs.remove(antraCfClearanceKey)
             prefs.remove(antraUsernameKey)
+            prefs.remove(arcodRescueDismissedKey)
         }
     }
 
@@ -234,32 +234,8 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     /**
-     * Whether the user has dismissed the retired "connect ARCOD" rescue banner
-     * Home used to show while qbdlx looked dead and no second lossless source
-     * was connected. Nothing reads this any more — [losslessOfflineDismissed]
-     * succeeded it — but the key and its setter stay: deleting them would
-     * resurrect nothing, while REUSING them would mean anyone who dismissed the
-     * old banner never sees the new one.
-     */
-    val arcodRescueDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
-        prefs[arcodRescueDismissedKey] ?: false
-    }
-
-    suspend fun setArcodRescueDismissed(dismissed: Boolean) {
-        context.losslessDataStore.edit { prefs -> prefs[arcodRescueDismissedKey] = dismissed }
-    }
-
-    /**
-     * Whether the user has dismissed the "No lossless right now" Home banner —
-     * the successor to [arcodRescueDismissed], which keyed on ARCOD alone.
-     * Forever-dismissed, same semantics.
-     *
-     * Its own key deliberately: the new banner says something different
-     * ("connect your own Qobuz account", not "connect ARCOD"), so someone who
-     * declined the old offer is still owed this one once. The old key stays
-     * readable so removing it can't resurrect the retired banner.
-     *
-     * Deduped and fail-closed for the same reason as [enabled].
+     * Whether the user has dismissed the "No lossless right now" Home banner.
+     * Forever-dismissed. Deduped and fail-closed for the same reason as [enabled].
      */
     val losslessOfflineDismissed: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
         prefs[losslessOfflineDismissedKey] ?: false
@@ -373,16 +349,13 @@ class LosslessSourcePreferences @Inject constructor(
          *    operator and no client-side decryption.
          * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
          * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
-         * 4. arcod — Qobuz Hi-Res FLAC via arcod.xyz (per-user Supabase session).
          *    2–3 are currently PARKED (hosts down for us) — see
          *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
-         *    stay so re-enabling is a one-line change when they recover. 4 is
-         *    live, gated on the build carrying ARCOD's key and on the user
-         *    connecting an account.
+         *    stay so re-enabling is a one-line change when they recover.
          *
          * Every rung is user-owned OR build-carried: 1 self-gates off without a
          * connected account, a custom endpoint or a relay from the signed config,
-         * 2 and 3 are parked, and 4 is build-gated. With nothing of the user's own
+         * and 2 and 3 are parked. With nothing of the user's own
          * connected, a build carrying a relay config still resolves through 1 with
          * no user action (see [LosslessAvailability] and [com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter]); a
          * build without one reaches NO lossless source at all and falls back to lossy.
@@ -391,7 +364,6 @@ class LosslessSourcePreferences @Inject constructor(
             "qbdlx_qobuz",
             "squid_qobuz",
             "kennyy_qobuz",
-            "arcod",
         )
 
         /**

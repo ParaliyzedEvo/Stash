@@ -3,7 +3,6 @@ package com.stash.core.media.streaming
 import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
-import com.stash.data.download.BuildConfig
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -30,16 +29,10 @@ import javax.inject.Singleton
  *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
  *      operator and no client-side decrypt, so it's the fastest path.
  *      Foreground-only (allowYtDlp) since it spends that account's quota.
- *   2. [ArcodStreamResolver]   — ARCOD, an authenticated per-user-account
- *      lossless fallback. NOT parked, but conditional: [resolve] only adds it
- *      when the build bundles the private stream base
- *      (`BuildConfig.ARCOD_CONFIGURED`), so an unconfigured build skips it
- *      entirely. Foreground/next-up only. Its participation is therefore
- *      build-dependent — tests must not assert it unconditionally.
  *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
  *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
  *   [QobuzStreamResolver] (`qobuz.squid.wtf`).
- *   3. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
+ *   2. [YouTubeStreamResolver] — yt-dlp / InnerTube extraction. Last
  *      resort, reached only when the track genuinely isn't in the Qobuz
  *      catalog (Bandcamp re-uploads, region-exclusive, underground
  *      releases). Lossy quality (AAC/Opus ~128-160 kbps), surfaced as a
@@ -56,10 +49,6 @@ import javax.inject.Singleton
  * registry entirely until the URL's `etsp` expires.
  *
  * Test toggles (off for normal use):
- *  - [StreamingPreference.isForceArcodOnly]: [resolve] routes through arcod
- *    ONLY — kennyy/squid/youtube removed from play so a track either streams
- *    via arcod or fails visibly. Takes precedence over force-YouTube. Used to
- *    exercise the arcod source on demand.
  *  - [StreamingPreference.isForceYouTubeFallback]: [resolve] skips Kennyy
  *    and Squid entirely and routes every track through the YouTube resolver
  *    only — reproduces the lossless-down fallback path on demand.
@@ -68,7 +57,6 @@ import javax.inject.Singleton
 class StreamSourceRegistry internal constructor(
     private val kennyy: KennyyStreamResolver,
     private val qobuz: QobuzStreamResolver,
-    private val arcod: ArcodStreamResolver,
     private val qbdlx: QbdlxStreamResolver,
     private val jiosaavn: JioSaavnStreamResolver,
     private val youtube: YouTubeStreamResolver,
@@ -82,7 +70,6 @@ class StreamSourceRegistry internal constructor(
     constructor(
         kennyy: KennyyStreamResolver,
         qobuz: QobuzStreamResolver,
-        arcod: ArcodStreamResolver,
         qbdlx: QbdlxStreamResolver,
         jiosaavn: JioSaavnStreamResolver,
         youtube: YouTubeStreamResolver,
@@ -90,7 +77,7 @@ class StreamSourceRegistry internal constructor(
         losslessSourceHealth: LosslessSourceHealth,
         losslessPrefs: LosslessSourcePreferences,
     ) : this(
-        kennyy, qobuz, arcod, qbdlx, jiosaavn, youtube, streamingPreference,
+        kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO,
     )
     /**
@@ -195,47 +182,18 @@ class StreamSourceRegistry internal constructor(
                 // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
                 // so qbdlx can be exercised even when the proxies are healthy.
                 // Takes precedence over the other force toggles. Gated by
-                // allowYtDlp like arcod so speculative background fill spends
-                // none of that account's quota (only foreground/next-up resolves
-                // hit it).
+                // allowYtDlp so speculative background fill spends none of that
+                // account's quota (only foreground/next-up resolves hit it).
                 if (allowYtDlp && lossless) add("qbdlx" to qbdlx::resolve)
-                // Same guarantee as the force-arcod branch below: a force toggle
-                // is a TEST instrument, but the pref outlives the build — and
-                // qbdlx can die under it (it did; #429's reporter had this
-                // toggle on and got an infinite spinner on every track). Keep the
-                // lossy safety net so no stale preference means silence.
+                // A force toggle is a TEST instrument, but the pref outlives the
+                // build — and qbdlx can die under it (it did; #429's reporter had
+                // this toggle on and got an infinite spinner on every track). Keep
+                // the lossy safety net so no stale preference means silence.
+                // Retiring a source has to mean retiring its force branch in the
+                // same change, or a stale pref with no UI left to clear it routes
+                // every track through a dead source.
                 if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-            } else if (streamingPreference.isForceArcodOnly()) {
-                // Test toggle: ARCOD ONLY — skip kennyy/squid/YouTube so the
-                // ARCOD path can be exercised even when the Qobuz proxies are
-                // healthy. Takes precedence over forceYouTubeFallback.
-                // Still gated by allowYtDlp so the
-                // speculative background fill resolves NOTHING (matching
-                // forceYt) — without this, flipping the toggle and tapping a
-                // playlist would spend a search call + the user's arcod account
-                // on every queue track speculatively, not just the ones played.
-                if (allowYtDlp && lossless) add("arcod" to arcod::resolve)
-                // ...and YouTube stays available behind it. A force toggle is a
-                // TEST instrument, but the pref outlives the build that showed it.
-                // While arcod was parked, a stale `force_arcod_only = true` meant
-                // every track resolved through a dead source with no fallback and
-                // no UI left to switch it off — silence, permanently. arcod is
-                // live again now, but the guarantee has to survive the NEXT time a
-                // source is parked.
-                //
-                // Keeping the fallback costs the toggle a little of its "fails
-                // visibly" sharpness and buys back the guarantee that no
-                // preference, however stale, can leave a user unable to play music.
-                // That trade is not close.
-                if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
-                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-                // NOTE: retiring a source has to mean retiring its force branch in
-                // the same change, or a user who set that toggle keeps a stale pref
-                // in DataStore with no UI left to clear it — routing every track
-                // through a dead source, silence permanently. This is the exact
-                // failure shape that took a full debugging session when
-                // force-YouTube was left enabled in a release install.
             } else if (streamingPreference.isForceYouTubeFallback()) {
                 // Test toggle: skip the lossless sources, forcing the
                 // YouTube fallback path. Still gated by allowYouTube so the
@@ -258,20 +216,6 @@ class StreamSourceRegistry internal constructor(
                 if (allowYtDlp && lossless) {
                     add("qbdlx" to qbdlx::resolve)
                 }
-                // arcod UNPARKED 2026-08-01: the operator rotated the integration
-                // key and moved us to /v2/stash — verified live (stream returns
-                // audio/flac, fLaC-magic byte-checked). Sits AFTER qbdlx (qbdlx is
-                // plain Range-seekable FLAC with no per-user login) and before the
-                // lossy YouTube fallback, so a track qbdlx misses can still play
-                // lossless for anyone who connected an ARCOD account.
-                //
-                // Foreground/next-up only (allowYtDlp), like qbdlx: it spends the
-                // user's own arcod quota, so the speculative background fill must
-                // not touch it. Also build-gated — an APK without the private key
-                // can only 403, so skipping it avoids a guaranteed-wasted round trip.
-                if (allowYtDlp && lossless && BuildConfig.ARCOD_CONFIGURED) {
-                    add("arcod" to arcod::resolve)
-                }
                 // Fixed-quality AAC 320 fallback. Foreground/next-up only: a
                 // speculative full-queue fill must not turn into one metadata
                 // search + media probe per track. Any miss/outage continues to
@@ -288,13 +232,12 @@ class StreamSourceRegistry internal constructor(
         // appeared in the logs at all and there was no way to tell whether it had
         // been tried and failed, or silently excluded before it ever ran. The two
         // gates that can drop a source here are invisible from the outside:
-        // `allowYtDlp` (false for speculative background fill) and the
-        // compile-time ARCOD_CONFIGURED flag. Info level so a release build says so.
+        // `allowYtDlp` (false for speculative background fill) and the Lossless
+        // switch. Info level so a release build says so.
         Log.i(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
-                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless " +
-                "arcodConfigured=${BuildConfig.ARCOD_CONFIGURED}",
+                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless",
         )
 
         // P3 (2026-09-06): the YouTube fast lane (one InnerTube round trip and a

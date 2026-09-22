@@ -396,9 +396,6 @@ fun HomeScreen(
             )
         }
 
-        // ── Powered-by-ARCOD strip: removed 2026-07-01 while ARCOD is parked
-        // (host down for us). PartnerStrip + ArcodPartner kept for re-enabling.
-
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
         // dismissed. Tap routes to Settings; X dismisses forever.
@@ -1037,11 +1034,10 @@ private fun LosslessConnectBanner(
  *
  * The two surfaces agree on the states that matter, but they are NOT the same
  * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
- * (BYO login || custom endpoint || ARCOD) so a dead PUBLIC relay cannot hide
- * the "connect your own account" offer — that outage is what the banner is
- * for. Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
- * endpoint || a config relay), which counts relays and excludes ARCOD, and its
- * call sites re-add `&& !arcodConnected`. So they diverge on exactly one case:
+ * (BYO login || custom endpoint) so a dead PUBLIC relay cannot hide the
+ * "connect your own account" offer — that outage is what the banner is for.
+ * Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
+ * endpoint || a config relay), which counts relays. So they diverge on exactly one case:
  * a user with nothing but a public config relay still gets this banner, and
  * should — Home asks "is there anything of yours to connect?", Settings asks
  * "is what you configured still a path?".

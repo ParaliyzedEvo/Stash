@@ -22,7 +22,7 @@ import org.junit.Test
  *
  * warmUp is speculative: a row the user may never tap. It runs only when the
  * user's OWN Qobuz account is live, because every other lossless path is a
- * shared, capped budget (the relay's per-account caps, ARCOD's daily quota)
+ * shared, capped budget (the relay's per-account caps)
  * that browsing must not spend. A tap still resolves either way.
  */
 class LosslessUrlPrefetcherTest {

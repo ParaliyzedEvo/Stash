@@ -71,7 +71,6 @@ class SettingsViewModelTest {
         streamingQualityPrefs = mockk(relaxed = true),
         losslessRateLimiter = mockk(relaxed = true),
         qobuzSource = mockk(relaxed = true),
-        arcodCredentialStore = mockk(relaxed = true),
         qbdlxCredentialStore = qbdlxStore,
         losslessAvailability = mockk<LosslessAvailability> {
             every { qbdlxEnabled } returns flowOf(losslessConfigured)

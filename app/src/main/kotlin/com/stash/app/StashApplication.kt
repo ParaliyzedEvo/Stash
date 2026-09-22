@@ -539,14 +539,19 @@ class StashApplication : Application(), Configuration.Provider {
      *      [QbdlxCredentialStore.loginCredential], but that never fires for a
      *      user who keeps lossless off — so it has to run here too, or their
      *      copy of those tokens stays on disk indefinitely.
+     * v3 — arcod: the `arcod_credentials` DataStore (the user's arcod.xyz
+     *      Supabase access + refresh tokens), `force_arcod_only`, and the retired
+     *      rescue-banner flag. Nothing opens that DataStore any more, so the file
+     *      is deleted outright.
      */
     private suspend fun maybePurgeRetiredSourceArtifacts() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("antra_purge_version", 0)
         if (stored < ANTRA_PURGE_VERSION) {
-            losslessSourcePreferences.purgeAntraCredentials()
+            losslessSourcePreferences.purgeRetiredSourceKeys()
             streamingPreference.purgeRetiredKeys()
             qbdlxCredentialStore.purgeRetiredPoolKeys()
+            java.io.File(filesDir, "datastore/arcod_credentials.preferences_pb").delete()
             prefs.edit().putInt("antra_purge_version", ANTRA_PURGE_VERSION).apply()
         }
     }
@@ -963,9 +968,10 @@ class StashApplication : Application(), Configuration.Provider {
         /**
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
          * credentials a removed source left on disk). v2 adds the qbdlx token
-         * pool's cached third-party tokens and the retired amz toggle.
+         * pool's cached third-party tokens and the retired amz toggle; v3 the
+         * arcod session and toggles.
          */
-        private const val ANTRA_PURGE_VERSION = 2
+        private const val ANTRA_PURGE_VERSION = 3
 
         /** v0.9.104: pin every already-synced playlist to Home, once. */
         private const val SYNCED_PLAYLISTS_PIN_VERSION = 1

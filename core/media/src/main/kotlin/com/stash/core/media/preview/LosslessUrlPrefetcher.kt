@@ -83,8 +83,8 @@ class LosslessUrlPrefetcher internal constructor(
             deferred = scope.async(start = CoroutineStart.LAZY) {
                 // Speculative work may only spend the user's OWN account. Every other
                 // lossless path is a shared, capped budget — the relay's per-account
-                // caps, ARCOD's daily quota — and on launch day browsing alone drained
-                // both before anyone pressed play. The entry removes itself so a later
+                // caps — and on launch day browsing alone drained it before anyone
+                // pressed play. The entry removes itself so a later
                 // tap does a real resolve instead of reading a cached "skipped" null.
                 // The Lossless switch is off → the preview is YouTube, never FLAC (it governs
                 // streaming and downloads alike; this is the one lossless entry that does not

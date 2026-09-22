@@ -1,7 +1,6 @@
 package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
-import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
@@ -18,7 +17,6 @@ class LosslessAvailabilityTest {
     private val login = MutableStateFlow(false)
     private val configRelays = MutableStateFlow<List<RelayEntry>>(emptyList())
     private val custom = MutableStateFlow<String?>(null)
-    private val arcod = MutableStateFlow<String?>(null)
     private val loginEmail = MutableStateFlow<String?>(null)
     private val store: QbdlxCredentialStore = mockk {
         every { hasLogin } returns login
@@ -27,8 +25,7 @@ class LosslessAvailabilityTest {
     private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
     private val prefs: LosslessSourcePreferences = mockk { every { customLosslessEndpoint } returns custom }
     private val relayClient: LosslessRelayClient = mockk()
-    private val arcodStore: ArcodCredentialStore = mockk { every { accessToken } returns arcod }
-    private val a = LosslessAvailability(store, config, prefs, relayClient, arcodStore)
+    private val a = LosslessAvailability(store, config, prefs, relayClient)
 
     private fun stubNow(loginLive: Boolean = false, customNow: String? = null, cooled: Set<String> = emptySet()) {
         coEvery { store.loginLive() } returns loginLive
@@ -40,15 +37,13 @@ class LosslessAvailabilityTest {
         stubNow()
         assertThat(a.qbdlxEnabledNow()).isFalse()
         assertThat(a.fileUrlAvailableNow()).isFalse()
-        assertThat(a.anyConfiguredNow()).isFalse()
         assertThat(a.anyUserOwnedNow()).isFalse()
     }
 
-    @Test fun `relay configured - enabled and configured, but not user-owned`() = runTest {
+    @Test fun `relay configured - enabled, but not user-owned`() = runTest {
         configRelays.value = listOf(RelayEntry("https://r.example", 1)); stubNow()
         assertThat(a.qbdlxEnabledNow()).isTrue()
         assertThat(a.fileUrlAvailableNow()).isTrue()
-        assertThat(a.anyConfiguredNow()).isTrue()
         assertThat(a.anyUserOwnedNow()).isFalse()
     }
 
@@ -85,13 +80,6 @@ class LosslessAvailabilityTest {
         assertThat(a.fileUrlAvailableNow()).isFalse()
     }
 
-    @Test fun `ARCOD alone counts as configured and user-owned but not qbdlx`() = runTest {
-        arcod.value = "arcod-token"; stubNow()
-        assertThat(a.qbdlxEnabledNow()).isFalse()
-        assertThat(a.anyConfiguredNow()).isTrue()
-        assertThat(a.anyUserOwnedNow()).isTrue()
-    }
-
     // ── routingRows: what Settings › Audio renders ──────────────────────────
 
     private suspend fun rows() = a.routingRows.first()
@@ -103,7 +91,7 @@ class LosslessAvailabilityTest {
         assertThat(row("qobuz").detail).isEqualTo("not connected")
         assertThat(row("relay").state).isEqualTo(RoutingState.NOT_CONFIGURED)
         assertThat(row("relay").detail).isEqualTo("not configured")
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "arcod").inOrder()
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay").inOrder()
     }
 
     @Test fun `a connected account shows its email`() = runTest {
@@ -128,13 +116,6 @@ class LosslessAvailabilityTest {
         assertThat(rows().map { it.id }).doesNotContain("custom")
         custom.value = "https://mine.example"
         assertThat(row("custom").state).isEqualTo(RoutingState.CONFIGURED)
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "custom", "arcod").inOrder()
-    }
-
-    @Test fun `ARCOD connected shows as connected`() = runTest {
-        assertThat(row("arcod").state).isEqualTo(RoutingState.NOT_CONFIGURED)
-        arcod.value = "arcod-token"
-        assertThat(row("arcod").state).isEqualTo(RoutingState.CONNECTED)
-        assertThat(row("arcod").detail).isEqualTo("connected")
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "custom").inOrder()
     }
 }

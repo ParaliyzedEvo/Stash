@@ -103,16 +103,6 @@ jobs:
           LASTFM_PROXY_URL: ${{ secrets.LASTFM_PROXY_URL }}
           # Optional comma-separated extra read-key pool (raises the ceiling).
           LASTFM_EXTRA_API_KEYS: ${{ secrets.LASTFM_EXTRA_API_KEYS }}
-          # ARCOD private stream endpoint (host + path). Injected from a repo
-          # secret so it never lives in source; consumed by
-          # data/download BuildConfig.ARCOD_STREAM_BASE. If unset, ARCOD
-          # streaming simply no-ops and the registry fails over — so this MUST
-          # be set for shipped APKs to stream via ARCOD.
-          ARCOD_STREAM_BASE: ${{ secrets.ARCOD_STREAM_BASE }}
-          # Private integration key for ARCOD's /v2/stash routes. This is now what
-          # ARCOD_CONFIGURED keys off: without it the shipped APK can only 403 and
-          # both registries skip arcod entirely.
-          ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
           # Runtime lossless config (Plan A1). Both are optional: unset secrets
           # yield empty BuildConfig strings and LosslessConfigFetcher stays
           # disabled, so a build without them is valid — it just ships no relays.
@@ -131,28 +121,6 @@ jobs:
           echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename $APK)" >> "$GITHUB_OUTPUT"
           echo "Built: $APK ($(du -h $APK | cut -f1))"
-
-      - name: Verify bundled credentials embedded in APK
-        env:
-          ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
-        run: |
-          DEX_DIR="$RUNNER_TEMP/dexcheck"
-          mkdir -p "$DEX_DIR"
-          unzip -o -q "${{ steps.find_apk.outputs.apk_path }}" 'classes*.dex' -d "$DEX_DIR"
-
-          # 1. ARCOD: an unset secret yields a blank BuildConfig, so
-          # ARCOD_CONFIGURED goes false and both registries silently skip arcod
-          # — the APK quietly loses a lossless source instead of failing the
-          # build.
-          if [ -z "$ARCOD_STASH_KEY" ]; then
-            echo "::error::ARCOD_STASH_KEY not available — arcod would ship disabled"
-            exit 1
-          fi
-          if ! grep -a -q -F -- "$ARCOD_STASH_KEY" "$DEX_DIR"/classes*.dex; then
-            echo "::error::arcod stash key missing from APK dex — blank BuildConfig?"
-            exit 1
-          fi
-          echo "arcod verified: stash key embedded"
 
       - name: Rename APK for release
         id: rename_apk

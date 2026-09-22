@@ -7,9 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,8 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -42,12 +37,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -88,7 +80,6 @@ fun SettingsAudioQualityScreen(
     onBack: () -> Unit,
     onNavigateToEqualizer: () -> Unit,
     onNavigateToSquidWtfCaptcha: () -> Unit,
-    onNavigateToArcodConnect: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -155,12 +146,10 @@ fun SettingsAudioQualityScreen(
                     // Three-way, because keying "FLAC routing active" on the toggle
                     // alone asserted it for every user with nothing configured — the
                     // day-one state — twenty lines above three "not connected" rows.
-                    // The middle branch spans ARCOD too (qbdlxExpired excludes it), so
-                    // it cannot fire while a row underneath says "ARCOD — connected".
                     subtitle = when {
                         !uiState.losslessEnabled ->
                             "Stream and download studio-quality FLAC. Off, everything plays via YouTube. Files ~10× larger than MP3."
-                        qbdlxExpired && !uiState.arcodConnected ->
+                        qbdlxExpired ->
                             "No lossless source configured — see below. Files ~10× larger than MP3."
                         else -> "FLAC for streaming and downloads. Files ~10× larger than MP3."
                     },
@@ -181,55 +170,14 @@ fun SettingsAudioQualityScreen(
                         // resolver read the same predicates.
                         LosslessRoutingStatus(rows = losslessRouting)
 
-                        // ARCOD — independent Qobuz lossless (a 2nd live source
-                        // alongside qbdlx). Connect via Google login in an in-app
-                        // WebView. Restored 2026-08-01 after the operator rotated
-                        // the key + moved us to the /v2/stash routes (verified live).
-                        SettingsNavRow(
-                            // No "— connected" suffix: the ROUTING row directly above
-                            // owns that fact, and stating it twice adjacently is how
-                            // the two claims drift apart.
-                            title = if (uiState.arcodConnected) "ARCOD" else "Connect ARCOD",
-                            subtitle = "Independent Qobuz lossless (2nd source)",
-                            onClick = onNavigateToArcodConnect,
-                            leadingContent = {
-                                Image(
-                                    painter = painterResource(
-                                        id = com.stash.core.ui.R.drawable.partner_arcod,
-                                    ),
-                                    contentDescription = null, // decorative; the row title already says "ARCOD"
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(RoundedCornerShape(6.dp)),
-                                )
-                            },
-                            titleTrailing = if (uiState.arcodConnected) {
-                                {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(StashTheme.extendedColors.success),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        )
-
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
                         // primary lossless source. The badge shows when no
                         // lossless path is configured (`LosslessAvailability
                         // .qbdlxEnabled`). No per-source toggle: a stale saved `false` with
                         // no UI to flip it back would kill lossless silently.
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            // Same gate as the card subtitle: qbdlxExpired excludes ARCOD, so
-                            // without the second term an ARCOD-only user would be told nothing
-                            // is configured directly below their "ARCOD — connected" row. With
-                            // it, this fires only when there is genuinely no lossless source,
-                            // which is what makes the broader wording true.
-                            if (qbdlxExpired && !uiState.arcodConnected) {
+                            // Same gate as the card subtitle.
+                            if (qbdlxExpired) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "No lossless source configured — connect your Qobuz account below",
