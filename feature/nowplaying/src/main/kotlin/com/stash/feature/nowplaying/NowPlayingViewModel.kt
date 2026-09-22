@@ -1208,6 +1208,8 @@ internal fun snackbarCopyFor(result: UpgradeResult): String = when (result) {
     UpgradeResult.Upgraded -> "Upgraded to FLAC"
     UpgradeResult.NoMatch -> "No lossless match found"
     UpgradeResult.Error -> "Couldn't check lossless sources"
+    // Only a background sweep is paced; a tap never is. Worded for completeness.
+    UpgradeResult.Paced -> "Lossless is busy — try again later"
 }
 
 /**

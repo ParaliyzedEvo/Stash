@@ -7,7 +7,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
+import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
+import kotlinx.coroutines.withContext
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -18,9 +21,19 @@ import dagger.assisted.AssistedInject
  * [com.stash.core.data.sync.workers.TrackDownloadWorker] picks it up, on
  * failure leaves the row alone for the next trigger.
  *
- * Does not download — it only re-resolves and re-queues. Never writes
- * COMPLETED or FAILED; the standard worker chain owns the actual download
- * once status is PENDING.
+ * Does not download — it re-resolves, re-queues, and hands each re-queued
+ * row to [SingleTrackDownloadEnqueuer] so it downloads now rather than at
+ * the next sync. Never writes COMPLETED or FAILED; the download worker owns
+ * that once status is PENDING.
+ *
+ * Runs as a download ([LosslessDownloadPurpose]): when the relay paces
+ * downloads, the sweep stops at that row — every row after it would be paced
+ * too — and asks WorkManager to retry later (its backoff grows each time), so
+ * a waiting library drains as the day's pool allows.
+ *
+ * ponytail: a row whose track is genuinely unavailable is re-resolved on every
+ * sweep (a Qobuz "locked" answer costs one relay quota each time); add a
+ * per-row attempt count if the waiting set grows large.
  *
  * Enqueued by `LosslessRetryScheduler` (Task 9) under a unique work name
  * so multiple triggers within a short window collapse to a single sweep.
@@ -40,6 +53,7 @@ class LosslessRetryWorker @AssistedInject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackDao: TrackDao,
     private val registry: LosslessSourceRegistry,
+    private val singleTrackDownloadEnqueuer: SingleTrackDownloadEnqueuer,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -54,6 +68,7 @@ class LosslessRetryWorker @AssistedInject constructor(
         }
 
         var resolvedCount = 0
+        val purpose = LosslessDownloadPurpose()
         for (entry in deferred) {
             val track = trackDao.getById(entry.trackId) ?: continue
             // runCatching mirrors DownloadManager's defensive pattern:
@@ -61,7 +76,7 @@ class LosslessRetryWorker @AssistedInject constructor(
             // sweep. Sources are also expected to swallow their own
             // errors and return null, but defense in depth is cheap.
             val match = runCatching {
-                registry.resolve(
+                withContext(purpose) { registry.resolve(
                     TrackQuery(
                         artist = track.artist,
                         title = track.title,
@@ -70,14 +85,18 @@ class LosslessRetryWorker @AssistedInject constructor(
                         durationMs = track.durationMs.takeIf { it > 0 },
                         spotifyUri = track.spotifyUri,
                     ),
-                )
+                ) }
             }.getOrNull()
             if (match != null) {
                 downloadQueueDao.updateStatus(
                     id = entry.id,
                     status = DownloadStatus.PENDING,
                 )
+                singleTrackDownloadEnqueuer.enqueue(entry.id)
                 resolvedCount++
+            } else if (purpose.pacedRetryAfterSec != null) {
+                // The pool is ahead of today's pace: every later row would be paced too.
+                return Result.retry()
             }
         }
         return Result.success(

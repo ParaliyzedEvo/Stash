@@ -9,7 +9,13 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -30,6 +36,29 @@ sealed interface RelayMint {
     object NoMatch : RelayMint
     /** The base is unavailable right now and has been cooled; try the next base. */
     object Unavailable : RelayMint
+    /**
+     * A download the relay asked to wait: the pool is ahead of the day's pace and streams come
+     * first. Not a sick relay — no cooldown. [retryAfterSec] is when the pace line catches up.
+     */
+    data class Paced(val retryAfterSec: Long) : RelayMint
+}
+
+/**
+ * Marks bulk, delay-tolerant work — sync downloads, the FLAC upgrade sweep, the lossless retry
+ * sweep. A relay mint made anywhere under this element sends `X-Stash-Purpose: download`, and
+ * the relay serves it only while the day's pool is on pace, so the people pressing play always
+ * come first. No element means a stream (a tap, the next track, a preview): that is the default
+ * on purpose, so nothing that forgets to label itself can be made to wait.
+ *
+ * A coroutine element rather than a parameter because the request passes through the source
+ * registry, the source and the router, none of which care; only the two ends do. When the relay
+ * answers "paced", [LosslessRelayClient] records it here and the caller defers the track
+ * (waits for FLAC) instead of taking a lossy copy that would stay lossy forever.
+ */
+class LosslessDownloadPurpose : AbstractCoroutineContextElement(Key) {
+    /** Set when the relay paced this work; the seconds until it may try again. */
+    @Volatile var pacedRetryAfterSec: Long? = null
+    companion object Key : CoroutineContext.Key<LosslessDownloadPurpose>
 }
 
 @Serializable
@@ -90,6 +119,11 @@ class LosslessRelayClient @Inject constructor(
 
     fun recentOutcomes(): List<String> = synchronized(recent) { recent.toList() }
 
+    private val _paced = MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Seconds-to-wait each time the relay paces a download; the retry scheduler resumes the waiting tracks. */
+    val pacedEvents: SharedFlow<Long> = _paced
+
     private fun note(base: String, startedAt: Long, outcome: String) {
         val now = clock()
         val stamp = runCatching { java.time.Instant.ofEpochMilli(now).toString().substring(11, 19) }.getOrDefault("?")
@@ -110,6 +144,7 @@ class LosslessRelayClient @Inject constructor(
 
     suspend fun mint(base: String, trackId: Long, formatId: Int): RelayMint = withContext(Dispatchers.IO) {
         val startedAt = clock()
+        val download = currentCoroutineContext()[LosslessDownloadPurpose]
         if (isCooled(base)) {
             note(base, startedAt, "skipped: cooled")
             return@withContext RelayMint.Unavailable
@@ -129,6 +164,7 @@ class LosslessRelayClient @Inject constructor(
         val req = Request.Builder().url(url)
             .header("X-Stash-Version", PROTOCOL_VERSION)
             .header("Accept", "application/json")
+            .also { if (download != null) it.header("X-Stash-Purpose", "download") }
             .also { signIfKeyed(it, trackId, formatId) }
             .get().build()
         // The body read stays INSIDE the try: a relay that returns 200 headers and then
@@ -159,6 +195,14 @@ class LosslessRelayClient @Inject constructor(
                     404 -> {
                         note(base, startedAt, "404 not available")
                         RelayMint.NoMatch
+                    }
+                    // Only a labelled download is ever paced; any other 429 is a limit and cools below.
+                    429 if download != null && body.contains("\"paced\"") -> {
+                        val wait = r.header("Retry-After")?.toLongOrNull()?.coerceAtLeast(60) ?: PACED_DEFAULT_WAIT_S
+                        download.pacedRetryAfterSec = wait
+                        _paced.tryEmit(wait)
+                        note(base, startedAt, "429 paced ${wait}s")
+                        RelayMint.Paced(wait)
                     }
                     503 -> {
                         Log.i(TAG, "relay ${host(base)} busy — cooling ${BUSY_COOLDOWN_MS / 1000}s")
@@ -248,6 +292,8 @@ class LosslessRelayClient @Inject constructor(
         const val PROTOCOL_VERSION = "1"
         const val BUSY_COOLDOWN_MS = 60_000L
         const val UNAVAILABLE_COOLDOWN_MS = 5 * 60_000L
+        /** A paced answer without a usable Retry-After waits an hour. */
+        const val PACED_DEFAULT_WAIT_S = 3600L
         /** Relay answers remembered for the diagnostics bundle. */
         internal const val RECENT_MAX = 20
     }

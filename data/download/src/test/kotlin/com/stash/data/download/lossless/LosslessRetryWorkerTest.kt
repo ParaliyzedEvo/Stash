@@ -6,7 +6,10 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadStatus
+import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
+import kotlinx.coroutines.currentCoroutineContext
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -38,6 +41,7 @@ class LosslessRetryWorkerTest {
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val registry: LosslessSourceRegistry = mockk()
+    private val enqueuer: SingleTrackDownloadEnqueuer = mockk(relaxed = true)
 
     private fun newWorker(): LosslessRetryWorker = LosslessRetryWorker(
         appContext = appContext,
@@ -45,7 +49,42 @@ class LosslessRetryWorkerTest {
         downloadQueueDao = downloadQueueDao,
         trackDao = trackDao,
         registry = registry,
+        singleTrackDownloadEnqueuer = enqueuer,
     )
+
+    @Test
+    fun `a re-queued row starts downloading now, not at the next sync`() = runTest {
+        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+        coEvery { registry.resolve(any()) } returns stubSourceResult()
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { enqueuer.enqueue(100L) }
+    }
+
+    @Test
+    fun `the sweep is a download, and stops at the first paced row and retries later`() = runTest {
+        coEvery { downloadQueueDao.waitingForLosslessTracks() } returns listOf(
+            entry(id = 100L, trackId = 1L),
+            entry(id = 101L, trackId = 2L),
+        )
+        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+        var labelled = false
+        coEvery { registry.resolve(any()) } coAnswers {
+            val purpose = currentCoroutineContext()[LosslessDownloadPurpose]
+            labelled = purpose != null
+            purpose?.pacedRetryAfterSec = 3600
+            null
+        }
+
+        val result = newWorker().doWork()
+
+        assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
+        assertEquals(true, labelled)
+        coVerify(exactly = 1) { registry.resolve(any()) } // row 101 never tried
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+    }
 
     @Test
     fun `resolved row flips to PENDING and reports resolved=1 total=1`() = runTest {

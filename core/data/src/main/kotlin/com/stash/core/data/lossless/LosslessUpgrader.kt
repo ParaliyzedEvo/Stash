@@ -21,5 +21,10 @@ interface LosslessUpgrader {
     /** Whether automatic lossless downloads are enabled by the master preference. */
     suspend fun isLosslessEnabled(): Boolean
 
-    suspend fun upgradeToLossless(track: Track): UpgradeResult
+    /**
+     * @param sweep true for background batches (the FLAC upgrade worker): the request is
+     *   labelled a download, so the relay serves it only from the day's spare capacity and
+     *   may answer [UpgradeResult.Paced]. A single tap leaves it false and keeps stream priority.
+     */
+    suspend fun upgradeToLossless(track: Track, sweep: Boolean = false): UpgradeResult
 }

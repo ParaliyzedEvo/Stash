@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -187,6 +188,36 @@ class LosslessRelayClientTest {
         val r = client.mint(base, 42, 27)
         assertThat(r).isInstanceOf(RelayMint.Ok::class.java)
         assertThat(server.takeRequest().getHeader("X-Stash-Install")).isNotEmpty()
+    }
+
+    // ── Streams first: downloads are labelled, and a "paced" answer waits ──────────────────
+
+    @Test fun `a stream sends no purpose, while a mint under LosslessDownloadPurpose says download`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/a.flac?etsp=1"}"""))
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/b.flac?etsp=1"}"""))
+        client.mint(base, 42, 27)
+        withContext(LosslessDownloadPurpose()) { client.mint(base, 43, 27) }
+        assertThat(server.takeRequest().getHeader("X-Stash-Purpose")).isNull()
+        assertThat(server.takeRequest().getHeader("X-Stash-Purpose")).isEqualTo("download")
+    }
+
+    @Test fun `429 paced on a download is Paced, records the wait, and does NOT cool the base`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "7980").setBody("""{"error":"paced"}"""))
+        server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1","format_id":7}"""))
+        val purpose = LosslessDownloadPurpose()
+        val r = withContext(purpose) { client.mint(base, 42, 27) }
+        assertThat(r).isEqualTo(RelayMint.Paced(7980))
+        assertThat(purpose.pacedRetryAfterSec).isEqualTo(7980L)
+        assertThat(client.isCooled(base)).isFalse()
+        // A stream right after still reaches the relay.
+        assertThat(client.mint(base, 43, 27)).isInstanceOf(RelayMint.Ok::class.java)
+    }
+
+    @Test fun `any other 429 still cools the base for 5 minutes`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "3600").setBody("""{"error":"rate_limited"}"""))
+        assertThat(withContext(LosslessDownloadPurpose()) { client.mint(base, 42, 27) }).isEqualTo(RelayMint.Unavailable)
+        now += LosslessRelayClient.BUSY_COOLDOWN_MS + 1
+        assertThat(client.isCooled(base)).isTrue()
     }
 
     private companion object {

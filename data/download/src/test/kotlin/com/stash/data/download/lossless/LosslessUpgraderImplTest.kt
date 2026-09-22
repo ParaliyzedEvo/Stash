@@ -50,6 +50,17 @@ class LosslessUpgraderImplTest {
         assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack()))
     }
 
+    @Test fun `a sweep is labelled a download, and a paced null is Paced, not NoMatch`() = runTest {
+        coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } coAnswers {
+            kotlinx.coroutines.currentCoroutineContext()[com.stash.data.download.lossless.relay.LosslessDownloadPurpose]
+                ?.pacedRetryAfterSec = 3600
+            null
+        }
+        assertEquals(UpgradeResult.Paced, subject.upgradeToLossless(stubTrack(), sweep = true))
+        // A tap carries no label, so the same null is still an honest NoMatch.
+        assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack()))
+    }
+
     @Test fun `Unmatched maps to NoMatch`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns
             TrackDownloadResult.Unmatched()
