@@ -15,6 +15,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
+import kotlinx.coroutines.withContext
 
 /**
  * Bridges the Now Playing dialog to [DownloadManager.tryLosslessDownload].
@@ -48,19 +50,25 @@ class LosslessUpgraderImpl @Inject constructor(
 
     override suspend fun isLosslessEnabled(): Boolean = losslessPrefs.enabledNow()
 
-    override suspend fun upgradeToLossless(track: Track): UpgradeResult = runCatching {
+    override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult = runCatching {
         // Capture old path BEFORE the download — the row's current file_path
         // gets overwritten by markAsDownloaded, so reading post-persist would
         // give us the new path and we'd skip the delete. May be null for stub
         // tracks that never downloaded; null-safe at the delete site.
         val oldPath = track.filePath
 
-        when (val result = downloadManager.tryLosslessDownload(track, forced = true)) {
+        val purpose = if (sweep) LosslessDownloadPurpose() else null
+        val result = if (purpose != null) {
+            withContext(purpose) { downloadManager.tryLosslessDownload(track, forced = true) }
+        } else {
+            downloadManager.tryLosslessDownload(track, forced = true)
+        }
+        when (result) {
             is TrackDownloadResult.Success -> {
                 persistUpgrade(track, result.filePath, oldPath)
                 UpgradeResult.Upgraded
             }
-            null,
+            null -> if (purpose?.pacedRetryAfterSec != null) UpgradeResult.Paced else UpgradeResult.NoMatch
             is TrackDownloadResult.Unmatched,
             is TrackDownloadResult.Failed,
             TrackDownloadResult.Deferred -> UpgradeResult.NoMatch

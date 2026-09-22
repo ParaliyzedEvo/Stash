@@ -79,6 +79,10 @@ class QbdlxFileUrlRouter @Inject constructor(
                 }
                 RelayMint.NoMatch -> return QbdlxResolveResult.RegionLocked
                 RelayMint.Unavailable -> Unit // cooled by the client; try the next base
+                // A download the relay asked to wait. The client noted it on the caller's
+                // LosslessDownloadPurpose, which is how DownloadManager knows to defer rather
+                // than go lossy; another base (a user's own endpoint) may still serve it.
+                is RelayMint.Paced -> Unit
             }
         }
         return null

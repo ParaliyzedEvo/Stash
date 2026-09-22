@@ -77,10 +77,17 @@ class FlacUpgradeWorker @AssistedInject constructor(
                     queueDao.setStatus(trackId, FlacUpgradeStatus.FAILED)
                     failed++
                 } else {
-                    val status = when (losslessUpgrader.upgradeToLossless(track)) {
+                    val status = when (losslessUpgrader.upgradeToLossless(track, sweep = true)) {
                         UpgradeResult.Upgraded -> { upgraded++; FlacUpgradeStatus.DONE }
                         UpgradeResult.NoMatch -> { noMatch++; FlacUpgradeStatus.NO_MATCH }
                         UpgradeResult.Error -> { failed++; FlacUpgradeStatus.FAILED }
+                        // The relay is serving streams first today. Leave this row and the rest
+                        // pending and come back later: WorkManager's backoff grows each time, and
+                        // each retry costs one catalog search and one unmetered relay answer.
+                        UpgradeResult.Paced -> {
+                            Log.i(TAG, "relay paced the FLAC upgrade sweep; ${pending.size - index} left, retrying later")
+                            return Result.retry()
+                        }
                     }
                     queueDao.setStatus(trackId, status)
                 }
