@@ -23,12 +23,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +57,7 @@ fun DiagnosticsPreviewScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
 
     Column(
         modifier = Modifier
@@ -116,7 +119,9 @@ fun DiagnosticsPreviewScreen(
 
             else -> {
                 Text(
-                    text = "Review what will be shared. No passwords or tokens are included.",
+                    text = "Review what will be shared. No passwords or tokens are included. " +
+                        "Share sends a zip with this report plus the full recent log; " +
+                        "attach it to your GitHub issue.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -154,7 +159,7 @@ fun DiagnosticsPreviewScreen(
                             // content:// URI + FLAG_GRANT_READ behind a chooser,
                             // with a Toast fallback when nothing can handle it.
                             val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
+                                type = state.bundle?.mimeType ?: "text/plain"
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                 putExtra(
                                     android.content.Intent.EXTRA_SUBJECT,
@@ -189,8 +194,20 @@ fun DiagnosticsPreviewScreen(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                // Home's "Report an issue" lands here first, so the report can
+                // travel with the bug instead of being asked for afterwards.
+                TextButton(
+                    onClick = { runCatching { uriHandler.openUri(ISSUE_TRACKER_URL) } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Open a GitHub issue")
+                }
+
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
 }
+
+/** Same page Home's "Report an issue" opened directly before the preview sat in front of it. */
+private const val ISSUE_TRACKER_URL = "https://github.com/rawnaldclark/Stash/issues/new"

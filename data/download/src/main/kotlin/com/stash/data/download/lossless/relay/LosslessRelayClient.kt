@@ -80,6 +80,26 @@ class LosslessRelayClient @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
     private val cooledUntil = ConcurrentHashMap<String, Long>()
 
+    /**
+     * The last [RECENT_MAX] answers relays gave this process, oldest first, one
+     * line each (`HH:mm:ssZ host outcome elapsed`) — host only, never a full base.
+     * Read by the diagnostics bundle so a "FLAC never works" report shows what the
+     * relay actually said instead of what the user guessed.
+     */
+    private val recent = ArrayDeque<String>()
+
+    fun recentOutcomes(): List<String> = synchronized(recent) { recent.toList() }
+
+    private fun note(base: String, startedAt: Long, outcome: String) {
+        val now = clock()
+        val stamp = runCatching { java.time.Instant.ofEpochMilli(now).toString().substring(11, 19) }.getOrDefault("?")
+        val line = "${stamp}Z ${host(base)} $outcome ${now - startedAt}ms"
+        synchronized(recent) {
+            recent.addLast(line)
+            while (recent.size > RECENT_MAX) recent.removeFirst()
+        }
+    }
+
     /** True while [base] is inside a cooldown; expired entries are dropped on read. */
     fun isCooled(base: String): Boolean {
         val until = cooledUntil[base] ?: return false
@@ -89,7 +109,11 @@ class LosslessRelayClient @Inject constructor(
     }
 
     suspend fun mint(base: String, trackId: Long, formatId: Int): RelayMint = withContext(Dispatchers.IO) {
-        if (isCooled(base)) return@withContext RelayMint.Unavailable
+        val startedAt = clock()
+        if (isCooled(base)) {
+            note(base, startedAt, "skipped: cooled")
+            return@withContext RelayMint.Unavailable
+        }
         // `base` is validated at write time (LosslessSourcePreferences.normaliseEndpoint),
         // but never let a junk value from a future caller throw out of here. Nothing to
         // cool — an unparseable base isn't a sick relay.
@@ -122,23 +146,30 @@ class LosslessRelayClient @Inject constructor(
                         if (u == null) {
                             Log.w(TAG, "relay ${host(base)} 200 with an unusable body — cooling")
                             cool(base, UNAVAILABLE_COOLDOWN_MS)
+                            note(base, startedAt, "200 unusable body")
                             RelayMint.Unavailable
                         } else {
                             // An omitted format_id decodes to 0, and 0 reads as region-locked
                             // downstream (QbdlxApiClient.classify treats < 6 that way) — echo
                             // what we asked for instead.
+                            note(base, startedAt, "ok fmt=${file.formatId.takeIf { it > 0 } ?: formatId}")
                             RelayMint.Ok(u, file.formatId.takeIf { it > 0 } ?: formatId, file.bitDepth, file.sampleRateHz)
                         }
                     }
-                    404 -> RelayMint.NoMatch
+                    404 -> {
+                        note(base, startedAt, "404 not available")
+                        RelayMint.NoMatch
+                    }
                     503 -> {
                         Log.i(TAG, "relay ${host(base)} busy — cooling ${BUSY_COOLDOWN_MS / 1000}s")
                         cool(base, BUSY_COOLDOWN_MS)
+                        note(base, startedAt, "503 busy")
                         RelayMint.Unavailable
                     }
                     else -> {
                         Log.w(TAG, "relay ${host(base)} HTTP ${r.code}: ${body.take(120)} — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
                         cool(base, UNAVAILABLE_COOLDOWN_MS)
+                        note(base, startedAt, "HTTP ${r.code}")
                         RelayMint.Unavailable
                     }
                 }
@@ -147,6 +178,7 @@ class LosslessRelayClient @Inject constructor(
             // Also covers a body that dies mid-read (callTimeout firing during string()) — that IS a sick relay.
             Log.w(TAG, "relay ${host(base)} unreachable (${e.javaClass.simpleName}) — cooling ${UNAVAILABLE_COOLDOWN_MS / 1000}s")
             cool(base, UNAVAILABLE_COOLDOWN_MS)
+            note(base, startedAt, "unreachable ${e.javaClass.simpleName}")
             RelayMint.Unavailable
         }
     }
@@ -216,5 +248,7 @@ class LosslessRelayClient @Inject constructor(
         const val PROTOCOL_VERSION = "1"
         const val BUSY_COOLDOWN_MS = 60_000L
         const val UNAVAILABLE_COOLDOWN_MS = 5 * 60_000L
+        /** Relay answers remembered for the diagnostics bundle. */
+        internal const val RECENT_MAX = 20
     }
 }

@@ -48,8 +48,8 @@ body:
       options:
         - Playback (Now Playing, audio, EQ, crossfade)
         - Sync (Spotify / YouTube Music)
-        - Downloads (Offline mode)
-        - Streaming (Online mode)
+        - Downloads
+        - Streaming / lossless (FLAC)
         - Search
         - Library
         - Login / connecting an account
@@ -81,9 +81,19 @@ body:
       required: true
 
   - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics file
+      description: |
+        In Stash, open **Settings → About → Share diagnostics** (or the wrench icon on Home → **Report an issue**), tap **Share**, save the zip somewhere you can reach it, then **drag it into this box**. It holds your app version, device, recent syncs, downloads, crash reports and logs — no passwords or tokens, and you can read every line before sharing. A report with the file usually gets fixed without a single follow-up question.
+      placeholder: Drop stash-diagnostics-….zip here
+    validations:
+      required: false
+
+  - type: textarea
     id: extra
     attributes:
-      label: Logs, screenshots, or a screen recording (optional, but very helpful)
-      description: A screenshot or recording often makes a bug obvious at a glance. A logcat is gold if you can grab one — but this field is optional.
+      label: Screenshots or a screen recording (optional, but very helpful)
+      description: A screenshot or recording often makes a bug obvious at a glance.
     validations:
       required: false
