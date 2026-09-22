@@ -142,4 +142,21 @@ class LosslessSourceRegistryTest {
         assertThat(registry.orderedSources().map { it.id })
             .containsExactly("squid_qobuz", "kennyy_qobuz", "lucida").inOrder()
     }
+
+    @Test
+    fun `a cancelled caller is rethrown, not treated as a failing source`() = runTest {
+        acceptAnyQuality()
+        coEvery { healthGate.isDegraded(any()) } returns false
+        val cancelled = mockk<LosslessSource> {
+            every { id } returns "lucida"
+            coEvery { isEnabled() } returns true
+            coEvery { resolve(any(), any()) } throws kotlinx.coroutines.CancellationException("worker stopped")
+        }
+        val next = fakeSource("other", flacResult("other"))
+
+        val thrown = runCatching { registry(linkedSetOf(cancelled, next)).resolve(query) }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
+        coVerify(exactly = 0) { next.resolve(any(), any()) } // the chain stops; no lossy fallthrough
+    }
 }

@@ -140,6 +140,28 @@ class DownloadQueueDaoFailedDownloadsTest {
         assertEquals(DownloadFailureType.AUTH_EXPIRED, row2.failureType)
     }
 
+    // ---- releaseClaim ----------------------------------------------
+
+    @Test fun releaseClaim_hands_an_in_progress_row_back_and_leaves_others_alone() = runTest {
+        seedTrack(id = 1, title = "Stopped mid-download", artist = "X")
+        seedTrack(id = 2, title = "User skipped", artist = "X")
+        seedTrack(id = 3, title = "Already done", artist = "X")
+        seedPendingQueueRow(queueId = 1, trackId = 1)
+        seedPendingQueueRow(queueId = 2, trackId = 2)
+        seedPendingQueueRow(queueId = 3, trackId = 3)
+        assertEquals(1, dao.claimForDownload(1))
+        dao.updateStatus(id = 2, status = DownloadStatus.SKIPPED)
+        dao.updateStatus(id = 3, status = DownloadStatus.COMPLETED)
+
+        assertEquals(1, dao.releaseClaim(1))
+        assertEquals(DownloadStatus.PENDING, dao.getById(1)!!.status)
+        assertEquals(1, dao.claimForDownload(1)) // the rerun can claim it again
+        assertEquals(0, dao.releaseClaim(2))
+        assertEquals(DownloadStatus.SKIPPED, dao.getById(2)!!.status)
+        assertEquals(0, dao.releaseClaim(3))
+        assertEquals(DownloadStatus.COMPLETED, dao.getById(3)!!.status)
+    }
+
     // ---- revertToPendingAfterInterruption -------------------------
 
     @Test fun revertToPendingAfterInterruption_flips_FAILED_to_PENDING_and_increments_retry() = runTest {

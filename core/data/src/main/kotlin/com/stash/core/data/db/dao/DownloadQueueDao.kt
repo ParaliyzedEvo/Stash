@@ -604,6 +604,15 @@ interface DownloadQueueDao {
     suspend fun resetStaleInProgress(): Int
 
     /**
+     * Hands one claimed row back (IN_PROGRESS → PENDING) when its worker is stopped
+     * before it finishes — WorkManager cancelling for an unmet constraint, say — so
+     * the rerun can [claimForDownload] it again. Guarded on IN_PROGRESS so a row the
+     * user skipped, or one that already finished, is never resurrected.
+     */
+    @Query("UPDATE download_queue SET status = 'PENDING' WHERE id = :id AND status = 'IN_PROGRESS'")
+    suspend fun releaseClaim(id: Long): Int
+
+    /**
      * Bulk requeue: flip every WAITING_FOR_LOSSLESS row back to PENDING.
      * Called when the user disables lossless or enables YouTube fallback —
      * the deferred state only makes sense under "lossless on + fallback off",

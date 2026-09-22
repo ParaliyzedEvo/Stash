@@ -144,7 +144,13 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 // from WorkManager stopping the whole worker. The rethrow below
                 // still propagates a genuine worker-wide cancellation.
                 val userCancelled = withContext(NonCancellable) {
-                    downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
+                    val skipped = downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
+                    // WorkManager stopped the worker (an unmet constraint, the OS
+                    // reclaiming the job): hand the claim back so the rerun can take
+                    // the row — claimForDownload skips IN_PROGRESS, which stranded
+                    // manual downloads (this partition) until the next sync.
+                    if (!skipped) downloadQueueDao.releaseClaim(queueItem.id)
+                    skipped
                 }
                 if (!userCancelled) {
                     throw cancelled

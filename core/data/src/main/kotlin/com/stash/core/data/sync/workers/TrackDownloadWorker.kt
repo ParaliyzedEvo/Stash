@@ -743,6 +743,29 @@ class TrackDownloadWorker @AssistedInject constructor(
         val itemJob = currentCoroutineContext().job
         downloadJobs.register(entry.id, itemJob)
         itemJob.invokeOnCompletion { downloadJobs.unregister(entry.id, itemJob) }
+        // If WorkManager stops the work anywhere after the claim — an unmet constraint
+        // (battery low, network gone) or the OS reclaiming the job — hand the claim back
+        // before rethrowing. WorkManager reruns the work when the constraint clears, and
+        // claimForDownload only takes PENDING/FAILED, so a claim left IN_PROGRESS made
+        // that rerun return success without downloading anything (seen on-device
+        // 2026-09-22, the stop landing after DownloadManager had already returned).
+        //
+        // ponytail: a process killed outright still leaves IN_PROGRESS until the next
+        // sync's resetStaleInProgress(); an in-process takeover would need the
+        // DownloadJobRegistry to be claim-atomic.
+        return try {
+            downloadClaimed(entry, track)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            withContext(NonCancellable) { downloadQueueDao.releaseClaim(entry.id) } // no-op unless IN_PROGRESS
+            throw ce
+        }
+    }
+
+    /** The claimed part of [runSingleTrackMode]; a stop in here hands the claim back. */
+    private suspend fun downloadClaimed(
+        entry: com.stash.core.data.db.entity.DownloadQueueEntity,
+        track: com.stash.core.model.Track,
+    ): Result {
         if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
             return Result.success()
         }
@@ -753,11 +776,9 @@ class TrackDownloadWorker @AssistedInject constructor(
                 preResolvedUrl = entry.youtubeUrl,
             )
         } catch (ce: kotlinx.coroutines.CancellationException) {
-            // Single-track retries are user-initiated, but WorkManager can
-            // still cancel us (e.g. the user backgrounded the app for too
-            // long). Don't mark the row FAILED — the queue stays in whatever
-            // state IN_PROGRESS-with-cancel left it; the next sync's
-            // resetStaleInProgress() will flip it back to PENDING.
+            // WorkManager stopped us. Don't mark the row FAILED: a user skip
+            // returns quietly, anything else rethrows to runSingleTrackMode,
+            // which hands the claim back for the rerun.
             //
             // NonCancellable around the read ONLY — see the chain-mode guard.
             val userCancelled = withContext(NonCancellable) {
