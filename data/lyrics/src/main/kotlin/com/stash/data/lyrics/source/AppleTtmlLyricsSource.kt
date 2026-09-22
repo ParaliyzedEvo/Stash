@@ -9,6 +9,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -94,12 +95,53 @@ class AppleTtmlLyricsSource(
             .addQueryParameter("id", songId)
             .addQueryParameter("ttml", "true")
             .build()
-        val body = get(url)?.trim() ?: return null
-        if (!body.startsWith("<")) {
-            Log.d(TAG, "Non-XML response for apple id $songId; treating as miss")
+        val raw = get(url) ?: return null
+        // BOM_CHAR isn't whitespace to .trim(), so a UTF-8-BOM'd XML body would otherwise
+        // wrongly fail the startsWith("<") check below.
+        val body = raw.trim().removePrefix(BOM_CHAR)
+
+        if (body.startsWith("<")) return body
+
+        // The spec says ttml=true returns raw XML, but this proxy family (see e.g. the
+        // api.paxsenix.org sibling, which returns JSON unconditionally) may still wrap it.
+        // Try to pull an XML string out of a JSON envelope before giving up.
+        extractTtmlFromJson(body)?.let { return it }
+
+        Log.d(
+            TAG,
+            "Non-XML, non-JSON-wrapped response for apple id $songId " +
+                "(${body.length} chars): \"${body.take(200)}\"",
+        )
+        return null
+    }
+
+    /** Looks for a string value that is itself XML, one level deep in a JSON object/array. */
+    private fun extractTtmlFromJson(body: String): String? {
+        val root = runCatching { JSONTokener(body).nextValue() }.getOrNull() ?: return null
+
+        fun fromObject(o: JSONObject): String? {
+            // paxsenix's envelope (confirmed shape: {type, content, source, cached_at}) uses "type"
+            // to say what "content" actually is; skip it outright when it explicitly isn't TTML,
+            // rather than relying on the leading-"<" check alone to reject an LRC/plain body.
+            val type = (o.opt("type") as? String)?.trim()?.uppercase()
+            if (type != null && type != "TTML") return null
+            for (key in TTML_JSON_KEYS) {
+                val v = o.opt(key) as? String ?: continue
+                val trimmed = v.trim()
+                if (trimmed.startsWith("<")) return trimmed
+            }
             return null
         }
-        return body
+
+        return when (root) {
+            is JSONObject -> fromObject(root)
+                ?: (root.opt("data") as? JSONObject)?.let(::fromObject)
+                ?: (root.opt("result") as? JSONObject)?.let(::fromObject)
+            is org.json.JSONArray -> (0 until root.length())
+                .mapNotNull { root.opt(it) as? JSONObject }
+                .firstNotNullOfOrNull(::fromObject)
+            else -> null
+        }
     }
 
     /** Body on 2xx, null on 404, throws on anything else. */
@@ -154,5 +196,7 @@ class AppleTtmlLyricsSource(
         const val DEFAULT_LYRICS_BASE_URL = "https://lyrics.paxsenix.org"
         const val DEFAULT_SEARCH_BASE_URL = "https://itunes.apple.com"
         private const val TAG = "AppleTtmlLyricsSource"
+        private const val BOM_CHAR = "\uFEFF"
+        private val TTML_JSON_KEYS = listOf("ttml", "data", "lyrics", "content", "xml")
     }
 }
