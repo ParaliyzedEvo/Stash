@@ -1024,14 +1024,20 @@ class LibraryViewModel @Inject constructor(
  * like timestamps. The other orders mirror the Songs tab.
  */
 internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track> = when (order) {
-    SortOrder.RECENT -> tracks.sortedByDescending { it.likedAtOrAdded() }
+    SortOrder.RECENT -> {
+        // Tracks with a real like timestamp first, newest like on top. Synced likes
+        // carry none (dateAdded is download time, which scrambles them by album), so
+        // they keep the incoming order = sync position = Spotify's newest-first.
+        val (stamped, synced) = tracks.partition { it.likedAtOrNull() != null }
+        stamped.sortedByDescending { it.likedAtOrNull() } + synced
+    }
     SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
     SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
     SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
 }
 
-private fun Track.likedAtOrAdded(): Long =
-    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull() ?: dateAdded
+private fun Track.likedAtOrNull(): Long? =
+    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
 
 private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
