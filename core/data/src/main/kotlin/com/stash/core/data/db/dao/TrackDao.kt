@@ -2359,4 +2359,18 @@ interface TrackDao {
         """
     )
     suspend fun countOtherPlaylistsClaimingTrack(trackId: Long, excludePlaylistId: Long): Int
+
+    /** Diagnostics: one line of library totals. */
+    @Query(
+        """
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(is_downloaded), 0) AS downloaded,
+               COALESCE(SUM(download_missing_at IS NOT NULL), 0) AS missingFiles
+        FROM tracks
+        """
+    )
+    suspend fun diagnosticsTotals(): TrackDiagnosticsTotals
 }
+
+/** Library totals for the diagnostics bundle. [missingFiles] = downloaded rows whose file is gone. */
+data class TrackDiagnosticsTotals(val total: Int, val downloaded: Int, val missingFiles: Int)
