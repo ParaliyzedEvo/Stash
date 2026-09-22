@@ -639,7 +639,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 syncLog.info(
                     "$finalDeferred song${if (finalDeferred == 1) "" else "s"} waiting for a " +
                         "lossless source — they'll download automatically when one is available " +
-                        "(connect ARCOD or your own Qobuz in Audio & Quality, or allow the " +
+                        "(connect your own Qobuz in Audio & Quality, or allow the " +
                         "YouTube fallback to get them now)",
                 )
             }

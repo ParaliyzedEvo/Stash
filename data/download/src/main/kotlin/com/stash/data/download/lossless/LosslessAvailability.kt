@@ -1,6 +1,5 @@
 package com.stash.data.download.lossless
 
-import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
@@ -11,7 +10,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /**
- * The ONE place that answers "is lossless available, and whose is it?" — three
+ * The ONE place that answers "is lossless available, and whose is it?" — two
  * as a Flow (for Home's combine) each with a suspend getter (for the download
  * pipeline), plus one per-call check ([fileUrlAvailableNow] — relay cooldowns are
  * in-memory and not observable). Defined once so the source, the download
@@ -20,8 +19,7 @@ import kotlinx.coroutines.flow.first
  *  - [qbdlxEnabled]       BYO login || relay configured || custom endpoint set
  *  - [fileUrlAvailableNow] login LIVE (not merely present) || custom endpoint not
  *                         cooled || any config relay not cooled — per call
- *  - [anyConfigured]      qbdlxEnabled || ARCOD connected  → download deferral reason
- *  - [anyUserOwned]       BYO login || custom endpoint || ARCOD → the Home banner
+ *  - [anyUserOwned]       BYO login || custom endpoint → the Home banner
  *                         (a dead PUBLIC relay must not hide the "connect your
  *                         own account" banner — that is the outage it exists for)
  *  - [routingRows]        the same facts spelled out per path, for Settings › Audio
@@ -32,7 +30,6 @@ class LosslessAvailability @Inject constructor(
     private val config: LosslessConfigFetcher,
     private val prefs: LosslessSourcePreferences,
     private val relayClient: LosslessRelayClient,
-    private val arcod: ArcodCredentialStore,
 ) {
     // ponytail: config.relays is empty until loadCached() completes, so a tap in the
     // first tens of ms after a cold start can see false and fall to the next rung once.
@@ -45,8 +42,7 @@ class LosslessAvailability @Inject constructor(
 
     /**
      * Point-in-time: is the user's OWN Qobuz login live? The only lossless path
-     * with no shared budget behind it — the relay has per-account caps and ARCOD
-     * a daily quota — so it is the only path speculative work (row prefetch) may
+     * with no shared budget behind it — the relay has per-account caps — so it is the only path speculative work (row prefetch) may
      * spend. A configured relay deliberately does not count.
      */
     suspend fun ownAccountLiveNow(): Boolean = credentialStore.loginLive()
@@ -58,15 +54,8 @@ class LosslessAvailability @Inject constructor(
         return config.relays.value.any { !relayClient.isCooled(it.base) }
     }
 
-    // ponytail: anyConfigured / anyUserOwned have no consumer yet — Plan A2 (download
-    // deferral reason) and Plan C (Home banner) are what read them.
-    val anyConfigured: Flow<Boolean> = combine(qbdlxEnabled, arcod.accessToken) { q, a -> q || a != null }
-    suspend fun anyConfiguredNow(): Boolean = anyConfigured.first()
-
     val anyUserOwned: Flow<Boolean> =
-        combine(credentialStore.hasLogin, prefs.customLosslessEndpoint, arcod.accessToken) { l, c, a ->
-            l || c != null || a != null
-        }
+        combine(credentialStore.hasLogin, prefs.customLosslessEndpoint) { l, c -> l || c != null }
     suspend fun anyUserOwnedNow(): Boolean = anyUserOwned.first()
 
     /**
@@ -85,8 +74,7 @@ class LosslessAvailability @Inject constructor(
         credentialStore.connectedEmailFlow,
         config.relays,
         prefs.customLosslessEndpoint,
-        arcod.accessToken,
-    ) { hasLogin, email, relays, custom, arcodToken ->
+    ) { hasLogin, email, relays, custom ->
         buildList {
             add(
                 RoutingRow(
@@ -112,14 +100,6 @@ class LosslessAvailability @Inject constructor(
             if (custom != null) {
                 add(RoutingRow("custom", "Custom endpoint", "configured", RoutingState.CONFIGURED))
             }
-            add(
-                RoutingRow(
-                    id = "arcod",
-                    label = "ARCOD",
-                    detail = if (arcodToken != null) "connected" else "not connected",
-                    state = if (arcodToken != null) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
-                ),
-            )
         }
     }
 }

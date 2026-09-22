@@ -17,8 +17,7 @@ import org.robolectric.RobolectricTestRunner
  * DataStore-backed unit tests for [QbdlxCredentialStore] — now a store for ONE
  * credential: the user's own connected Qobuz account.
  *
- * Mirrors [com.stash.data.download.lossless.arcod.ArcodCredentialStoreTest]
- * (Robolectric + ApplicationProvider + a real temp DataStore). The
+ * Robolectric + ApplicationProvider + a real temp DataStore. The
  * preferencesDataStore delegate is a single per-process instance, so persisted
  * login/pasted state leaks between tests unless wiped — clear it in @Before so
  * each test starts from a clean store. The live Qobuz web scrape is injected via

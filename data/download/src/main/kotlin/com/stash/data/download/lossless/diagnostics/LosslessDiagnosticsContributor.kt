@@ -8,7 +8,7 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.RoutingRow
-import com.stash.data.download.lossless.arcod.ArcodClient
+
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import com.stash.data.download.prefs.StreamingQualityPreferences
@@ -37,7 +37,7 @@ import okhttp3.Request
  *  - the routing rows exactly as Settings renders them ([LosslessAvailability]),
  *    minus the account email
  *  - the applied relay config (how many relays, `updated_at`) and, per relay,
- *    whether it is cooled right now; the ARCOD quota gate if it is closed
+ *    whether it is cooled right now
  *  - the last relay answers this process got ([LosslessRelayClient.recentOutcomes])
  *  - the network the phone is on (transport, metered, validated, VPN)
  *  - a live reachability probe of the config host, each relay and the Qobuz CDN —
@@ -56,7 +56,6 @@ class LosslessDiagnosticsContributor @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
     private val streamingQuality: StreamingQualityPreferences,
     private val streamingPreference: StreamingPreference,
-    private val arcodClient: ArcodClient,
 ) : DiagnosticsContributor {
 
     override val title: String = "Lossless"
@@ -90,15 +89,9 @@ class LosslessDiagnosticsContributor @Inject constructor(
         }
     }
 
-    private suspend fun routingBlock(): String = buildString {
-        appendLine("Routing (as Settings › Audio & Quality shows it):")
-        availability.routingRows.first().forEach { row -> appendLine("  ${row.label}: ${safeDetail(row)}") }
-        val blockedUntil = arcodClient.blockedUntilMs
-        append(
-            if (blockedUntil > nowMs()) "  ARCOD quota: blocked until ${iso(blockedUntil)}"
-            else "  ARCOD quota: open",
-        )
-    }
+    private suspend fun routingBlock(): String =
+        "Routing (as Settings › Audio & Quality shows it):\n" +
+            availability.routingRows.first().joinToString("\n") { row -> "  ${row.label}: ${safeDetail(row)}" }
 
     /** The Qobuz row's detail is the account email when known — print the state instead. */
     private fun safeDetail(row: RoutingRow): String =
