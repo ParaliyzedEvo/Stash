@@ -5,9 +5,11 @@ import android.net.Uri
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SourceAccountEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncStepResult
@@ -54,6 +56,8 @@ class DiagnosticsBundleBuilder @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackBlocklistDao: TrackBlocklistDao,
     private val sourceAccountDao: SourceAccountDao,
+    private val playlistDao: PlaylistDao,
+    private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
     private val crashFileStore: CrashFileStore,
     private val logcatCapture: LogcatCapture,
@@ -76,6 +80,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
         val sections = buildList {
             add(section("Header") { crashFileStore.deviceMetadataBlock() })
             add(section("Connection") { connectionSection() })
+            add(section("Library") { librarySection() })
             add(section("Recent sync history") { syncHistorySection() })
             add(section("Downloads") { downloadsSection() })
             add(section("Counts") { countsSection() })
@@ -243,6 +248,23 @@ class DiagnosticsBundleBuilder @Inject constructor(
                     if (index != failed.lastIndex) appendLine()
                 }
             }
+        }
+    }
+
+    // ── Library: what sync has built, as counts (never playlist names) ─────
+
+    private suspend fun librarySection(): String {
+        val t = trackDao.diagnosticsTotals()
+        val rows = playlistDao.diagnosticsCounts()
+        return buildString {
+            appendLine("== Library ==")
+            appendLine("Tracks: ${t.total} · downloaded ${t.downloaded} · file missing ${t.missingFiles}")
+            appendLine("Active playlists by source/type (total · switched on · never synced · no tracks linked):")
+            if (rows.isEmpty()) appendLine("  none")
+            rows.forEach {
+                appendLine("  ${it.source}/${it.type}: ${it.total} · on ${it.switchedOn} · never synced ${it.neverSynced} · empty ${it.empty}")
+            }
+            append("Inactive playlists: ${playlistDao.inactiveCount()}")
         }
     }
 

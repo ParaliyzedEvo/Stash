@@ -3,9 +3,13 @@ package com.stash.core.data.diagnostics
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.PlaylistDao
+import com.stash.core.data.db.dao.PlaylistDiagnosticsRow
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
+import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.TrackDiagnosticsTotals
 import android.content.Context
 import io.mockk.coEvery
 import io.mockk.every
@@ -41,6 +45,13 @@ class DiagnosticsBundleBuilderTest {
     }
     private val trackBlocklistDao: TrackBlocklistDao = mockk { every { observeCount() } returns flowOf(3) }
     private val sourceAccountDao: SourceAccountDao = mockk { every { getAll() } returns flowOf(emptyList()) }
+    private val playlistDao: PlaylistDao = mockk {
+        coEvery { diagnosticsCounts() } returns listOf(
+            PlaylistDiagnosticsRow("SPOTIFY", "DAILY_MIX", total = 6, switchedOn = 4, neverSynced = 1, empty = 2),
+        )
+        coEvery { inactiveCount() } returns 3
+    }
+    private val trackDao: TrackDao = mockk { coEvery { diagnosticsTotals() } returns TrackDiagnosticsTotals(120, 80, 2) }
     private val tokenManager: TokenManager = mockk {
         every { spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
         every { youTubeAuthState } returns MutableStateFlow(AuthState.NotConnected)
@@ -51,7 +62,7 @@ class DiagnosticsBundleBuilderTest {
 
     private fun builder(contributors: Set<DiagnosticsContributor> = emptySet()) = DiagnosticsBundleBuilder(
         context, syncHistoryDao, downloadQueueDao, trackBlocklistDao,
-        sourceAccountDao, tokenManager, crashFileStore, logcatCapture, contributors,
+        sourceAccountDao, playlistDao, trackDao, tokenManager, crashFileStore, logcatCapture, contributors,
     )
 
     private fun contributor(name: String, body: suspend () -> String) = object : DiagnosticsContributor {
@@ -64,6 +75,9 @@ class DiagnosticsBundleBuilderTest {
         assertTrue(text.contains("App version:"))
         assertTrue(text.contains("log line one"))
         assertTrue(text.contains("Blocklist: 3"))
+        assertTrue(text.contains("Tracks: 120 · downloaded 80 · file missing 2"))
+        assertTrue(text.contains("  SPOTIFY/DAILY_MIX: 6 · on 4 · never synced 1 · empty 2"))
+        assertTrue(text.contains("Inactive playlists: 3"))
     }
 
     @Test fun `contributed sections appear under their own headers, sorted by title, before the crash reports`() = runTest {

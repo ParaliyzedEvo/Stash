@@ -38,6 +38,23 @@ data class PlaylistRecency(
 )
 
 /**
+ * One row of the diagnostics bundle's Library section: active playlists of one
+ * source + type. See [PlaylistDao.diagnosticsCounts].
+ *
+ * @property switchedOn  Rows with the sync switch on.
+ * @property neverSynced Rows with no `last_synced` yet.
+ * @property empty       Rows with no live track linked — the "playlist shows 0 songs" reports.
+ */
+data class PlaylistDiagnosticsRow(
+    val source: String,
+    val type: String,
+    val total: Int,
+    val switchedOn: Int,
+    val neverSynced: Int,
+    val empty: Int,
+)
+
+/**
  * Data-access object for [PlaylistEntity] and the
  * [PlaylistTrackCrossRef] join table.
  */
@@ -875,4 +892,26 @@ interface PlaylistDao {
         """
     )
     suspend fun getStreamableOrDoneTrackIdsForRecipe(recipeId: Long): List<Long>
+
+    /** Diagnostics: active playlists counted per source + type. */
+    @Query(
+        """
+        SELECT p.source AS source, p.type AS type, COUNT(*) AS total,
+               SUM(p.sync_enabled) AS switchedOn,
+               SUM(p.last_synced IS NULL) AS neverSynced,
+               SUM(NOT EXISTS (
+                   SELECT 1 FROM playlist_tracks pt
+                   WHERE pt.playlist_id = p.id AND pt.removed_at IS NULL
+               )) AS empty
+        FROM playlists p
+        WHERE p.is_active = 1
+        GROUP BY p.source, p.type
+        ORDER BY p.source, p.type
+        """
+    )
+    suspend fun diagnosticsCounts(): List<PlaylistDiagnosticsRow>
+
+    /** Diagnostics: playlists marked inactive (gone upstream or unfollowed). */
+    @Query("SELECT COUNT(*) FROM playlists WHERE is_active = 0")
+    suspend fun inactiveCount(): Int
 }
