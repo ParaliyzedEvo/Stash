@@ -1445,7 +1445,7 @@ class ShareApiClientTest {
         assertThat(body).doesNotContain("\"sp\"") // nulls omitted
     }
 
-    @Test fun `update sends the key header; 403 404 410 map to typed results`() = runBlocking {
+    @Test fun `update sends the key header, 403 404 410 map to typed results`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"version":3}"""))
         assertThat(client.update("Kx7Qa2pL", doc, "KEY", 2)).isEqualTo(ShareResult.Ok(3))
         val put = server.takeRequest()
@@ -1463,7 +1463,7 @@ class ShareApiClientTest {
         assertThat(client.update("Kx7Qa2pL", doc, "KEY", 2)).isInstanceOf(ShareResult.Failed::class.java)
     }
 
-    @Test fun `get parses the doc; transport failure is Failed`() = runBlocking {
+    @Test fun `get parses the doc, transport failure is Failed`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"v":1,"id":"Kx7Qa2pL","version":2,"updatedAt":5,"name":"Ambient","tracks":[{"t":"T","a":"A"}],"extra":true}"""))
         val got = client.get("Kx7Qa2pL") as ShareResult.Ok
         assertThat(got.value.version).isEqualTo(2)
@@ -1944,7 +1944,7 @@ class SharedMixRepositoryFollowerTest {
         coVerify(atLeast = 2) { music.queueDownloadsForPlaylist(id) } // once on enable, once after the update
     }
 
-    @Test fun `410 converts to an ordinary playlist; 404 converts only on the second in a row`() = runBlocking {
+    @Test fun `410 converts to an ordinary playlist, 404 converts only on the second in a row`() = runBlocking {
         val id = repo.follow(doc(1, "One"))
         server.enqueue(MockResponse().setResponseCode(404))
         assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)).isEqualTo(FollowCheck.Unreachable)
@@ -2177,7 +2177,7 @@ class SharedMixFollowWorkerTest {
     private fun row(checked: Long?) = SharedMixEntity(1, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "A", lastCheckedAt = checked)
     private val sixHours = 6 * 3600_000L
 
-    @Test fun `forced checks always run; otherwise at most every 6 hours`() {
+    @Test fun `forced checks always run, otherwise at most every 6 hours`() {
         val now = 10 * sixHours
         assertThat(SharedMixFollowWorker.isDue(row(now - 1000), now, force = true)).isTrue()
         assertThat(SharedMixFollowWorker.isDue(row(now - 1000), now, force = false)).isFalse()
@@ -2335,7 +2335,7 @@ class PlaylistDaoFollowedPickerTest {
     @Before fun setUp() { db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java).allowMainThreadQueries().build() }
     @After fun tearDown() { db.close() }
 
-    @Test fun `an active follow is not pickable; a converted one is`() = runTest {
+    @Test fun `an active follow is not pickable, a converted one is`() = runTest {
         val dao = db.playlistDao()
         val mine = dao.insert(PlaylistEntity(name = "Mine", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM, syncEnabled = true))
         val followed = dao.insert(PlaylistEntity(name = "Followed", source = MusicSource.BOTH, sourceId = "share:AAAAAAAA", type = PlaylistType.CUSTOM))
@@ -3057,7 +3057,7 @@ class ShareMixViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    @Test fun `not shared yet offers the form; create stores the name and shows the link`() = runTest(dispatcher) {
+    @Test fun `not shared yet offers the form, create stores the name and shows the link`() = runTest(dispatcher) {
         coEvery { repo.observe(5) } returns flowOf(null)
         coEvery { pref.displayName() } returns "Rawn"
         coEvery { repo.share(5, "Sleep", "Rawn", true) } returns ShareResult.Ok("https://x/m/Kx7Qa2pL")
@@ -3068,7 +3068,7 @@ class ShareMixViewModelTest {
         coVerify { repo.share(5, "Sleep", "Rawn", true) }
     }
 
-    @Test fun `an owned share shows its link; a followed one shows the original link read-only`() = runTest(dispatcher) {
+    @Test fun `an owned share shows its link, a followed one shows the original link read-only`() = runTest(dispatcher) {
         coEvery { repo.observe(5) } returns flowOf(SharedMixEntity(5, "Kx7Qa2pL", SharedMixEntity.ROLE_OWNER, name = "Sleep", editKey = "k"))
         val owned = ShareMixViewModel(repo, pref); owned.bind(5, "Ambient"); advanceUntilIdle()
         val s = owned.state.value as ShareMixUiState.Shared
