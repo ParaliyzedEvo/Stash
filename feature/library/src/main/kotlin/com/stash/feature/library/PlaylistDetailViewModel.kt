@@ -74,6 +74,9 @@ class PlaylistDetailViewModel @Inject constructor(
         "playlistId is required but was not found in SavedStateHandle"
     }
 
+    /** Home's "Share mix" opens this screen with the share sheet already up. */
+    val openShare: Boolean = savedStateHandle.get<Boolean>("openShare") ?: false
+
     private val _searchQuery = MutableStateFlow("")
     private val _showSearch = MutableStateFlow(false)
 

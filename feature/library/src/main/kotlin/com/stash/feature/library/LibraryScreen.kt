@@ -1104,6 +1104,8 @@ private fun PlaylistsGrid(
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist whose share sheet is open.
+    var sharePlaylist by remember { mutableStateOf<Playlist?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Playlist awaiting image picker result.
@@ -1312,6 +1314,14 @@ private fun PlaylistsGrid(
                     selectedPlaylist = null
                 },
             )
+            BottomSheetActionRow(
+                icon = Icons.Default.Share,
+                label = "Share mix",
+                onClick = {
+                    sharePlaylist = playlist
+                    selectedPlaylist = null
+                },
+            )
             // Image options — only for custom playlists
             if (playlist.type == PlaylistType.CUSTOM) {
                 BottomSheetActionRow(
@@ -1359,6 +1369,10 @@ private fun PlaylistsGrid(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    sharePlaylist?.let {
+        com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylist = null })
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────

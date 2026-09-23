@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,6 +117,7 @@ fun PlaylistDetailScreen(
     var trackToShare by remember { mutableStateOf<Track?>(null) }
     var trackToSave by remember { mutableStateOf<Track?>(null) }
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
+    var showShareSheet by rememberSaveable { mutableStateOf(viewModel.openShare) }
     val sheetState = rememberModalBottomSheetState()
 
     // Multi-select state. `isActive` (non-empty selection) drives the contextual
@@ -176,6 +179,7 @@ fun PlaylistDetailScreen(
                         onPlayAll = { viewModel.playAll() },
                         onShuffle = { viewModel.shuffleAll() },
                         onToggleSearch = { viewModel.toggleSearch() },
+                        onShare = { showShareSheet = true },
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -382,6 +386,11 @@ fun PlaylistDetailScreen(
                 onShare = { trackToShare = it; selectedTrack = null },
             )
         }
+    }
+
+    // ── Share mix sheet ──
+    if (showShareSheet) state.playlist?.let { p ->
+        com.stash.feature.library.share.ShareMixSheet(p.id, p.name, state.tracks.size, onDismiss = { showShareSheet = false })
     }
 
     // ── Share links sheet ──────────────────────────────────────────────────
@@ -596,6 +605,7 @@ private fun PlaylistHeader(
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
+    onShare: () -> Unit,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -790,6 +800,22 @@ private fun PlaylistHeader(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Filter tracks",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                IconButton(
+                    onClick = onShare,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = extendedColors.glassBackground,
+                            shape = RoundedCornerShape(12.dp),
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share mix",
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
