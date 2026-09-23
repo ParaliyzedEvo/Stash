@@ -1,10 +1,10 @@
-/** Spec §3 limits. Returns an error string, or null when the document is valid. */
 export const MAX_BODY_BYTES = 1_000_000;
 export const MAX_TRACKS = 2000;
 
 const str = (v, min, max) => typeof v === "string" && v.trim().length >= min && v.length <= max;
 const optStr = (v, max) => v === undefined || v === null || (typeof v === "string" && v.length <= max);
 
+/** Spec §3 limits. Returns an error string, or null when the document is valid. */
 export function validateDoc(doc) {
     if (!doc || typeof doc !== "object") return "doc missing";
     if (doc.v !== 1) return "unsupported v";
@@ -22,6 +22,18 @@ export function validateDoc(doc) {
     }
     return null;
 }
+
+/** Copies only the §3 fields of a validated doc; unknown client fields are dropped. */
+export function cleanDoc(doc) {
+    return {
+        v: doc.v,
+        name: doc.name,
+        ...pick(doc, ["sharedBy", "covers"]),
+        tracks: doc.tracks.map((t) => pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"])),
+    };
+}
+
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]));
 
 /** base64url of 32 random bytes = 43 chars. */
 export const validEditKey = (k) => typeof k === "string" && /^[A-Za-z0-9_-]{43}$/.test(k);

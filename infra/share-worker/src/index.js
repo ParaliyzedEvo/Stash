@@ -3,18 +3,27 @@
  * One KV document per shared mix; updates and deletes are authorised by a per-mix edit key whose
  * SHA-256 is all we store.
  */
-import { validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.js";
+import { cleanDoc, validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
 import { assetLinks, messagePage, mixPage, trackPage } from "./pages.js";
 
 const MIX_API = /^\/v1\/mixes\/([A-Za-z0-9]{8})(\/version)?$/;
 
-export default { fetch: (request, env) => handle(request, env) };
+export default {
+    /** Any throw (a KV write 429, freeId giving up) becomes a retryable 503, not a bare 500. */
+    async fetch(request, env) {
+        try {
+            return await handle(request, env);
+        } catch {
+            return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
+        }
+    },
+};
 
 export async function handle(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
-    const method = request.method;
+    const method = request.method === "HEAD" ? "GET" : request.method;
 
     if (path === "/v1/mixes") return method === "POST" ? createMix(request, env, url) : methodNotAllowed();
     const m = MIX_API.exec(path);
@@ -41,16 +50,32 @@ export async function handle(request, env) {
 export function json(obj, status = 200, extra = {}) {
     return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...extra } });
 }
-const html = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+const HTML_HEADERS = {
+    "content-type": "text/html; charset=utf-8",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https:",
+    "x-content-type-options": "nosniff",
+};
+const html = (body, status = 200) => new Response(body, { status, headers: HTML_HEADERS });
 const methodNotAllowed = () => json({ error: "method_not_allowed" }, 405);
 
 async function readBody(request) {
-    const text = await request.text();
-    if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return { tooBig: true };
-    try { return { body: JSON.parse(text) }; } catch { return { body: null }; }
+    if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return { tooBig: true };
+    const buf = await request.arrayBuffer();
+    if (buf.byteLength > MAX_BODY_BYTES) return { tooBig: true };
+    try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
-const ip = (request) => request.headers.get("CF-Connecting-IP") || "?";
+/** Rate-limit key: an IPv4 address as is, an IPv6 one by its /64 (one host usually holds the whole /64). */
+export function limitKey(addr) {
+    if (!addr.includes(":")) return addr;
+    const [head, tail] = addr.split("::");
+    const left = head ? head.split(":") : [];
+    const right = tail ? tail.split(":") : [];
+    const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+    return groups.slice(0, 4).join(":");
+}
+
+const ip = (request) => limitKey(request.headers.get("CF-Connecting-IP") || "?");
 
 async function createMix(request, env, url) {
     if (!(await env.CREATE_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
@@ -60,7 +85,7 @@ async function createMix(request, env, url) {
     const problem = validateDoc(body.doc);
     if (problem) return json({ error: "bad_request", message: problem }, 400);
     const id = await freeId(env.SHARE_KV);
-    const doc = { ...body.doc, id, version: 1, updatedAt: Math.floor(Date.now() / 1000) };
+    const doc = { ...cleanDoc(body.doc), id, version: 1, updatedAt: Math.floor(Date.now() / 1000) };
     await writeMix(env.SHARE_KV, id, { doc, keyHash: await sha256Hex(body.editKey), deleted: false });
     return json({ id, version: 1, url: `${url.origin}/m/${id}` }, 201);
 }
@@ -97,8 +122,13 @@ async function updateMix(request, env, id) {
     if (tooBig) return json({ error: "too_large" }, 413);
     const problem = validateDoc(body?.doc);
     if (problem) return json({ error: "bad_request", message: problem }, 400);
-    const version = record.doc.version + 1;
-    const doc = { ...body.doc, id, version, updatedAt: Math.floor(Date.now() / 1000) };
+    // ponytail: KV is eventually consistent, so a stale read can return an old version; the owner (the
+    // only writer) sends the version it last got back, which floors the new one. Still open: a stale
+    // read just after DELETE could resurrect the mix (the app stops PUTting after a delete). Upgrade
+    // path: a Durable Object per mix.
+    const base = Number.isInteger(body.baseVersion) && body.baseVersion >= 0 ? body.baseVersion : 0;
+    const version = Math.max(record.doc.version, base) + 1;
+    const doc = { ...cleanDoc(body.doc), id, version, updatedAt: Math.floor(Date.now() / 1000) };
     await writeMix(env.SHARE_KV, id, { ...record, doc });
     return json({ version });
 }

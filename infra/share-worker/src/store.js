@@ -2,9 +2,15 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 const TOMBSTONE_TTL_S = 180 * 24 * 3600;
 const kvKey = (id) => `mix:${id}`;
 
+/** 8 unbiased alphanumerics: bytes >= 248 (4 × 62) are rejected so `% 62` stays uniform. */
 export function newId() {
-    const bytes = crypto.getRandomValues(new Uint8Array(8));
-    return Array.from(bytes, (b) => ALPHABET[b % 62]).join("");
+    let id = "";
+    while (id.length < 8) {
+        for (const b of crypto.getRandomValues(new Uint8Array(8))) {
+            if (b < 248 && id.length < 8) id += ALPHABET[b % 62];
+        }
+    }
+    return id;
 }
 
 export async function sha256Hex(s) {

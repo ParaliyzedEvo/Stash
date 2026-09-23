@@ -8,7 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "test": "node --no-warnings --test"
+    "test": "node --no-warnings --test test/*.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.135.0"

@@ -32,7 +32,7 @@ ${image ? `<meta property="og:image" content="${esc(image)}">` : ""}
 a.btn{display:inline-block;padding:12px 18px;border-radius:12px;background:#8b5cf6;color:#fff;text-decoration:none;margin:6px 8px 6px 0}
 a.alt{background:#2a2a35}li{margin:6px 0;color:#ccc}.muted{color:#999}</style></head>
 <body>${body}
-<p><a class="btn" href="${esc(pageUrl ? openInStash(pageUrl) : GET_STASH)}">Open in Stash</a><a class="btn alt" href="${GET_STASH}">Get Stash</a></p>
+<p>${pageUrl ? `<a class="btn" href="${esc(openInStash(pageUrl))}">Open in Stash</a>` : ""}<a class="btn alt" href="${GET_STASH}">Get Stash</a></p>
 </body></html>`;
 }
 
@@ -50,9 +50,9 @@ export function mixPage(doc, pageUrl) {
 }
 
 export function trackPage(params, pageUrl) {
-    const t = params.get("t") || "Unknown song";
-    const a = params.get("a") || "";
-    return shell({ title: `${t} · ${a}`, description: "A song shared on Stash", pageUrl,
+    const t = (params.get("t") || "Unknown song").slice(0, 500);
+    const a = (params.get("a") || "").slice(0, 500);
+    return shell({ title: a ? `${t} · ${a}` : t, description: "A song shared on Stash", pageUrl,
         body: `<h1>${esc(t)}</h1><p class="muted">${esc(a)}</p>` });
 }
 

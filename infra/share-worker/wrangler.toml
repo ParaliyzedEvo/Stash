@@ -1,7 +1,6 @@
 name = "stash-share"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
-compatibility_flags = ["nodejs_compat"]
 
 # Created in Task 23: `npx wrangler kv namespace create SHARE_KV`, then paste the id.
 [[kv_namespaces]]
