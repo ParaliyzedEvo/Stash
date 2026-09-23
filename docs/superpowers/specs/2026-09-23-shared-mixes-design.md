@@ -117,6 +117,8 @@ Any playlist type can be shared.
 | `share_id` | String, unique | |
 | `role` | `OWNER` / `FOLLOWER` | |
 | `edit_key` | String? | owner only; kept in backups |
+| `name` | String | owner: the shared name; follower: the last received name |
+| `notice_pending` | Boolean | follower: the one-time "stopped sharing" message is still to show |
 | `version` | Int | last published (owner) or last applied (follower) |
 | `content_hash` | String | owner: hash of the last published track list and name |
 | `auto_update` | Boolean | owner: "keep it updated" |
@@ -144,6 +146,7 @@ For each `OWNER` row with `auto_update` and status `ACTIVE`, it builds the docum
 - A header with name, "shared by", track count and last update time.
 - A cover mosaic from `covers`, and the track list.
 - Actions: **Play**, **Follow**, **Save a copy**.
+- Opening a link to a mix this phone shares shows **Play** and "This is your mix" instead of Follow/Save a copy. Opening one it already follows shows **Following** (opens the playlist) and **Unfollow**.
 
 If this mix is already followed on this phone, the screen shows **Following** and **Unfollow** instead of Follow.
 

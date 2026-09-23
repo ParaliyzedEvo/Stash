@@ -1181,7 +1181,7 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v47 -> v48: shared mixes (spec docs/superpowers/specs/2026-09-23-shared-mixes-design.md ง5).
+         * v47 -> v48: shared mixes (spec docs/superpowers/specs/2026-09-23-shared-mixes-design.md ยง5).
          * One row per playlist that this phone shares (OWNER) or follows (FOLLOWER). Additive.
          */
         val MIGRATION_47_48 = object : Migration(47, 48) {

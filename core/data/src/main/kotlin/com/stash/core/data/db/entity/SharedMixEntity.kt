@@ -25,7 +25,7 @@ data class SharedMixEntity(
     @PrimaryKey @ColumnInfo(name = "playlist_id") val playlistId: Long,
     @ColumnInfo(name = "share_id") val shareId: String,
     @ColumnInfo(name = "role") val role: String,
-    /** OWNER only: the secret that authorises updates. Kept in backups (spec §2). */
+    /** OWNER only: the secret that authorises updates. Kept in backups (spec §5). */
     @ColumnInfo(name = "edit_key") val editKey: String? = null,
     /** OWNER: the name the mix is shared under. FOLLOWER: the last name received. */
     @ColumnInfo(name = "name") val name: String,

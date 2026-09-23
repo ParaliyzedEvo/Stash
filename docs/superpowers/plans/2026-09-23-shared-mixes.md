@@ -1768,7 +1768,8 @@ class SharedMixRepository @Inject constructor(
         val key = newEditKey()
         return when (val r = api.create(doc, key)) {
             is ShareResult.Ok -> {
-                sharedMixDao.upsert(
+                sharedMixDao.delete(playlistId) // a stale REMOVED row from an earlier share
+                sharedMixDao.insert(
                     SharedMixEntity(
                         playlistId = playlistId, shareId = r.value.id, role = SharedMixEntity.ROLE_OWNER,
                         editKey = key, name = doc.name, version = r.value.version, contentHash = doc.contentHash(),
@@ -2016,7 +2017,9 @@ Add inside the class:
             ),
         )
         playlistDao.replaceMixMembership(playlistId, ids, doc.name, Instant.now())
-        sharedMixDao.upsert(
+        // insert, not upsert: a share_id clash must throw, never silently drop the row (Room's @Upsert
+        // falls back to UPDATE by primary key, which matches nothing). byShareId above makes it rare.
+        sharedMixDao.insert(
             SharedMixEntity(
                 playlistId = playlistId, shareId = doc.id, role = SharedMixEntity.ROLE_FOLLOWER,
                 name = doc.name, version = doc.version, sharedBy = doc.sharedBy, lastCheckedAt = System.currentTimeMillis(),
@@ -2431,6 +2434,47 @@ Expected: success.
 git add core/data/src/main/kotlin/com/stash/core/data/share/SharePreference.kt
 git commit -m "feat(share): remember the optional display name for shared mixes"
 ```
+
+### Task 15b: Backup merge keeps shared-mix links
+
+A full backup copies the whole database, so `shared_mixes` survives it. A likes-only export prunes it along with the playlists, which is correct. **Merge import** (`DatabaseBackupManager.mergeLibraryFrom`) copies only tracks, playlists and memberships, so it loses shared-mix rows:
+- An owner would lose the edit key and could never update or stop sharing that mix. Spec §5 says edit keys survive backups.
+- A followed playlist would arrive as an editable copy that never updates.
+
+**Files:**
+- Modify: `core/data/src/main/kotlin/com/stash/core/data/db/dao/SharedMixDao.kt` (add `getAll()`), `core/data/src/main/kotlin/com/stash/core/data/db/DatabaseBackupManager.kt` (`mergeLibraryFrom`, after the playlist mapping, the loop that fills `playlistIdMap`)
+- Test: `core/data/src/test/kotlin/com/stash/core/data/db/DatabaseBackupMergeTest.kt`
+
+- [ ] **Step 1: Write the failing test.** Add it to `DatabaseBackupMergeTest`, following that file's existing setup for a backup database and a live one. In the backup, give a playlist an OWNER row (`editKey = "k".repeat(43)`) and another playlist a FOLLOWER row. Merge into a live database that has neither playlist. Assert:
+  - both rows exist in the live database, keyed by the NEW live playlist ids;
+  - the OWNER row's `editKey` is intact.
+
+  Second case: the live database already has a row with the same `share_id`. The merge must keep the live row and not throw.
+
+- [ ] **Step 2: Run it and check it fails.** Run: `./gradlew :core:data:testDebugUnitTest --tests '*DatabaseBackupMergeTest' -q`. Expected: FAIL, no shared_mixes rows. `DatabaseBackupMergeTest` is flaky on Windows because of its long temp path; if it fails for that reason, rerun it alone.
+
+- [ ] **Step 3: Implement.** Add to `SharedMixDao`:
+  ```kotlin
+  @Query("SELECT * FROM shared_mixes") suspend fun getAll(): List<SharedMixEntity>
+  ```
+  In `mergeLibraryFrom`, read `val backupShared = backupDb.sharedMixDao().getAll()` next to the other backup reads. Then, inside the same transaction and right after the loop that fills `playlistIdMap`, get the live `SharedMixDao` the same way the method gets the live `playlistDao`, and add:
+  ```kotlin
+                  // ── 2b. Shared-mix links (spec §5: edit keys survive a backup) ──
+                  for (row in backupShared) {
+                      val livePlaylistId = playlistIdMap[row.playlistId] ?: continue
+                      if (sharedMixDao.forPlaylist(livePlaylistId) != null) continue // live row wins
+                      if (sharedMixDao.byShareId(row.shareId) != null) continue      // already linked elsewhere
+                      sharedMixDao.insert(row.copy(playlistId = livePlaylistId))
+                  }
+  ```
+
+- [ ] **Step 4: Run the tests and check they pass.** Run the same command. Expected: PASS.
+
+- [ ] **Step 5: Commit**
+  ```bash
+  git add core/data/src/main/kotlin/com/stash/core/data/db/dao/SharedMixDao.kt core/data/src/main/kotlin/com/stash/core/data/db/DatabaseBackupManager.kt core/data/src/test/kotlin/com/stash/core/data/db/DatabaseBackupMergeTest.kt
+  git commit -m "feat(share): backup merge keeps shared-mix links and edit keys"
+  ```
 
 ---
 
