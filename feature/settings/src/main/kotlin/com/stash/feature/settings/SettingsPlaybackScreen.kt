@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.ui.unit.dp
 import com.stash.core.data.prefs.LyricsSourcePreference
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
