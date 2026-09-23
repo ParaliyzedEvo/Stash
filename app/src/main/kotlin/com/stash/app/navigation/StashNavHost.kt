@@ -342,6 +342,10 @@ fun StashNavHost(
             )
         }
 
+        composable<SharedTrackRoute> {
+            com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+        }
+
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
