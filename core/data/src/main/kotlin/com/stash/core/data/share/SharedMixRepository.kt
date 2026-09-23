@@ -5,16 +5,24 @@ import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
+import com.stash.core.model.Track
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
+import com.stash.core.model.share.toTrack
 import java.security.SecureRandom
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+
+enum class FollowCheck { UpToDate, Updated, Removed, Unreachable }
 
 /** Only [Failed] is retried by the publish worker. */
 enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Rejected, Failed }
@@ -112,6 +120,100 @@ class SharedMixRepository @Inject constructor(
     private fun newEditKey(): String {
         val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
         return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+    }
+
+
+    // ── Follower ───────────────────────────────────────────────────────────────────────────
+
+    suspend fun fetch(shareId: String): ShareResult<SharedMixDocument> = api.get(shareId)
+    suspend fun byShareId(shareId: String): SharedMixEntity? = sharedMixDao.byShareId(shareId)
+
+    /** Persist every descriptor (deduped against the library), keeping document order and dropping repeats. */
+    suspend fun persistTracks(doc: SharedMixDocument): List<Long> =
+        doc.tracks.map { musicRepository.ensureTrackPersisted(it.toTrack()) }.distinct()
+
+    suspend fun tracksFor(doc: SharedMixDocument): List<Track> =
+        persistTracks(doc).mapNotNull { trackDao.getById(it)?.toDomain() }
+
+    /** Spec §6 Follow: a CUSTOM/BOTH playlist, source_id share:<id>, download off. Idempotent per share id. */
+    suspend fun follow(doc: SharedMixDocument): Long {
+        sharedMixDao.byShareId(doc.id)?.let { return it.playlistId }
+        val ids = persistTracks(doc)
+        val playlistId = playlistDao.insert(
+            PlaylistEntity(
+                name = doc.name, source = MusicSource.BOTH, sourceId = "share:${doc.id}",
+                type = PlaylistType.CUSTOM, isActive = true, syncEnabled = false,
+            ),
+        )
+        playlistDao.replaceMixMembership(playlistId, ids, doc.name, Instant.now())
+        // insert, not upsert: a share_id clash must throw, never silently drop the row (Room's @Upsert
+        // falls back to UPDATE by primary key, which matches nothing). byShareId above makes it rare.
+        sharedMixDao.insert(
+            SharedMixEntity(
+                playlistId = playlistId, shareId = doc.id, role = SharedMixEntity.ROLE_FOLLOWER,
+                name = doc.name, version = doc.version, sharedBy = doc.sharedBy, lastCheckedAt = System.currentTimeMillis(),
+            ),
+        )
+        return playlistId
+    }
+
+    /** Spec §6 Save a copy: an ordinary editable playlist, no link back. */
+    suspend fun saveCopy(doc: SharedMixDocument): Long {
+        val ids = persistTracks(doc)
+        val playlistId = musicRepository.createPlaylist(doc.name)
+        playlistDao.replaceMixMembership(playlistId, ids, doc.name, Instant.now())
+        return playlistId
+    }
+
+    /** Remove a followed mix. Tracks stay only if another playlist or a like claims them (existing orphan rules). */
+    suspend fun unfollow(playlistId: Long) {
+        val playlist = playlistDao.getById(playlistId)?.toDomain() ?: return
+        sharedMixDao.delete(playlistId)
+        musicRepository.removePlaylist(playlist)
+    }
+
+    /** "Download this mix" is the playlist's sync_enabled (spec §6); enabling also starts downloading now. */
+    suspend fun setDownload(playlistId: Long, on: Boolean) {
+        playlistDao.setSyncEnabled(playlistId, on)
+        if (on) musicRepository.queueDownloadsForPlaylist(playlistId)
+    }
+
+    suspend fun checkForUpdate(row: SharedMixEntity, now: Long): FollowCheck {
+        return when (val v = api.version(row.shareId)) {
+            is ShareResult.Ok -> {
+                if (v.value <= row.version) {
+                    sharedMixDao.upsert(row.copy(missingCount = 0, lastCheckedAt = now)); FollowCheck.UpToDate
+                } else when (val d = api.get(row.shareId)) {
+                    is ShareResult.Ok -> { apply(row, d.value, now); FollowCheck.Updated }
+                    ShareResult.Gone -> removed(row)
+                    else -> FollowCheck.Unreachable
+                }
+            }
+            ShareResult.Gone -> removed(row)
+            ShareResult.NotFound -> if (row.missingCount + 1 >= 2) removed(row) else {
+                sharedMixDao.upsert(row.copy(missingCount = row.missingCount + 1, lastCheckedAt = now)); FollowCheck.Unreachable
+            }
+            else -> FollowCheck.Unreachable
+        }
+    }
+
+    private suspend fun apply(row: SharedMixEntity, doc: SharedMixDocument, now: Long) {
+        val ids = persistTracks(doc)
+        playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
+        sharedMixDao.upsert(row.copy(name = doc.name, version = doc.version, sharedBy = doc.sharedBy, missingCount = 0, lastCheckedAt = now))
+        if (playlistDao.getById(row.playlistId)?.syncEnabled == true) musicRepository.queueDownloadsForPlaylist(row.playlistId)
+    }
+
+    private suspend fun removed(row: SharedMixEntity): FollowCheck {
+        sharedMixDao.upsert(row.copy(status = SharedMixEntity.STATUS_REMOVED, noticePending = true))
+        return FollowCheck.Removed
+    }
+
+    /** The one-time "stopped sharing" message (spec §6), or null. Clears the flag. */
+    suspend fun consumeRemovedNotice(playlistId: Long): String? {
+        val row = sharedMixDao.forPlaylist(playlistId)?.takeIf { it.noticePending } ?: return null
+        sharedMixDao.upsert(row.copy(noticePending = false))
+        return "${row.sharedBy ?: "The owner"} stopped sharing this mix. You keep your copy."
     }
 
     companion object {
