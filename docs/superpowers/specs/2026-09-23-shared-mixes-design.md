@@ -107,7 +107,7 @@ Any playlist type can be shared.
 - **Keep it updated for followers**, on by default.
 - **Create link**: `POST`, then the Android share sheet with `"<name>: <n> tracks on Stash · <url>"`.
 
-**Share sheet, already shared:** shows the link with **Copy link**, **Share again**, **Stop sharing**, and when the mix was last updated.
+**Share sheet, already shared:** shows the link with **Copy link**, **Share again**, and **Stop sharing** (plus the Keep-it-updated switch).
 
 **New Room table `shared_mixes`** (one schema migration):
 
@@ -162,7 +162,7 @@ If this mix is already followed on this phone, the screen shows **Following** an
 For each `FOLLOWER` row with status `ACTIVE`:
 - It calls `GET …/version`. If the version is newer, it calls `GET …/{id}` and reconciles:
   - descriptors not in the playlist are persisted and added;
-  - members no longer in the doc are soft-removed (`removed_at`), then go through the same cleanup as a synced playlist's removed tracks;
+  - membership is rewritten to exactly the doc's tracks with `PlaylistDao.replaceMixMembership` (the same atomic rewrite synced mixes use); tracks that leave are simply no longer members, and since received tracks are `BOTH` the removed-track sweep never deletes their rows or files;
   - `position` is rewritten to the doc's order;
   - the name is updated.
 - On a **410**: the row becomes `REMOVED` and the playlist turns into an ordinary editable playlist. Its `source_id` stays `share:<id>`, but it is no longer read-only because the row is no longer `ACTIVE`, and its `sync_enabled` (the Download switch) keeps whatever the user had set. The user sees a one-time message: "<sharedBy or 'The owner'> stopped sharing this mix; you keep your copy."

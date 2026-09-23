@@ -783,15 +783,13 @@ git commit -m "docs(share): stash-share Worker README"
 - Create: `core/model/src/main/kotlin/com/stash/core/model/share/SharedTrack.kt`
 - Test: `core/model/src/test/kotlin/com/stash/core/model/share/SharedTrackTest.kt`
 
-- [ ] **Step 1: Check that `core/model` has a test setup**
+- [ ] **Step 1: Add Truth to `core/model`'s tests**
 
-Run: `grep -n "testImplementation" core/model/build.gradle.kts`
-If there's no JUnit or Truth, add these to `core/model/build.gradle.kts` `dependencies { }`, copying the aliases `core/data` uses:
+`core/model` already has `testImplementation("junit:junit:4.13.2")`. Add Truth to its `dependencies { }` block, next to it:
 ```kotlin
-testImplementation(libs.junit)
 testImplementation(libs.truth)
 ```
-Confirm the alias names with `grep -n "junit\|truth" gradle/libs.versions.toml`.
+(Check the alias with `grep -n "truth" gradle/libs.versions.toml`.) `core/model` is an Android library, so its tests run with `testDebugUnitTest`. The plain `test` task doesn't accept `--tests`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -838,7 +836,7 @@ class SharedTrackTest {
 
 - [ ] **Step 3: Run it and check it fails**
 
-Run: `./gradlew :core:model:test --tests '*SharedTrackTest' -q`
+Run: `./gradlew :core:model:testDebugUnitTest --tests '*SharedTrackTest' -q`
 Expected: FAIL, unresolved reference `SharedTrack`.
 
 - [ ] **Step 4: Implement `SharedTrack.kt`**
@@ -910,7 +908,7 @@ fun SharedTrack.toTrack(): Track = Track(
 
 - [ ] **Step 5: Run the test and check it passes**
 
-Run: `./gradlew :core:model:test --tests '*SharedTrackTest' -q`
+Run: `./gradlew :core:model:testDebugUnitTest --tests '*SharedTrackTest' -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -968,7 +966,7 @@ class ShareLinksTest {
 
 - [ ] **Step 2: Run it and check it fails**
 
-Run: `./gradlew :core:model:test --tests '*ShareLinksTest' -q`
+Run: `./gradlew :core:model:testDebugUnitTest --tests '*ShareLinksTest' -q`
 Expected: FAIL, unresolved reference `ShareLinks`.
 
 - [ ] **Step 3: Implement `ShareLinks.kt`**
@@ -1040,7 +1038,7 @@ object ShareLinks {
 
 - [ ] **Step 4: Run the test and check it passes**
 
-Run: `./gradlew :core:model:test --tests '*ShareLinksTest' -q`
+Run: `./gradlew :core:model:testDebugUnitTest --tests '*ShareLinksTest' -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1457,6 +1455,10 @@ class ShareApiClientTest {
         assertThat(client.version("Kx7Qa2pL")).isEqualTo(ShareResult.NotFound)
         server.enqueue(MockResponse().setResponseCode(410))
         assertThat(client.get("Kx7Qa2pL")).isEqualTo(ShareResult.Gone)
+        server.enqueue(MockResponse().setResponseCode(400))
+        assertThat(client.update("Kx7Qa2pL", doc, "KEY")).isEqualTo(ShareResult.Rejected(400))
+        server.enqueue(MockResponse().setResponseCode(429))
+        assertThat(client.update("Kx7Qa2pL", doc, "KEY")).isInstanceOf(ShareResult.Failed::class.java)
     }
 
     @Test fun `get parses the doc; transport failure is Failed`() = runBlocking {
@@ -1500,6 +1502,9 @@ sealed interface ShareResult<out T> {
     data object NotFound : ShareResult<Nothing>
     data object Gone : ShareResult<Nothing>
     data object Forbidden : ShareResult<Nothing>
+    /** 400/413/other 4xx: the server will never accept this request as sent, so don't retry it. */
+    data class Rejected(val code: Int) : ShareResult<Nothing>
+    /** Network failure, 429 or 5xx: worth retrying later. */
     data class Failed(val message: String?) : ShareResult<Nothing>
 }
 
@@ -1546,6 +1551,8 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
                     403 -> ShareResult.Forbidden
                     404 -> ShareResult.NotFound
                     410 -> ShareResult.Gone
+                    429 -> ShareResult.Failed("HTTP 429")
+                    in 400..499 -> ShareResult.Rejected(r.code)
                     else -> ShareResult.Failed("HTTP ${r.code}")
                 }
             }
@@ -1702,13 +1709,15 @@ import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.share.ShareLinks
+import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 
-enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Failed }
+/** Only [Failed] is retried by the publish worker. */
+enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Rejected, Failed }
 
 /** Every share and follow operation (spec §5-6). */
 @Singleton
@@ -1724,16 +1733,30 @@ class SharedMixRepository @Inject constructor(
 
     // ── Owner ──────────────────────────────────────────────────────────────────────────────
 
-    /** Build the document from the playlist's live members, in order (removed ones excluded). */
+    /**
+     * Build the document from the playlist's live members, in order (removed ones excluded).
+     * Every field is clipped to the Worker's limits (worker src/validate.js) so one odd library
+     * row can never make the whole mix unpublishable.
+     */
     suspend fun buildDocument(playlistId: Long, name: String, sharedBy: String?): SharedMixDocument {
         val tracks = playlistDao.getTracksForPlaylist(playlistId).map { it.toDomain() }
+            .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
         return SharedMixDocument(
             name = name.trim().take(100),
             sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
-            covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.startsWith("https://") } }.distinct().take(4),
-            tracks = tracks.take(MAX_TRACKS).map { it.toSharedTrack() },
+            covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.startsWith("https://") && u.length <= 1000 } }.distinct().take(4),
+            tracks = tracks.take(MAX_TRACKS).map { it.toSharedTrack().withinLimits() },
         )
     }
+
+    private fun SharedTrack.withinLimits() = copy(
+        title = title.take(500),
+        artist = artist.take(500),
+        album = album?.take(500),
+        isrc = isrc?.takeIf { it.length <= 20 },
+        spotifyId = spotifyId?.takeIf { it.length <= 40 },
+        youtubeId = youtubeId?.takeIf { it.length <= 20 },
+    )
 
     /** Create a link for [playlistId]; returns the https URL. */
     suspend fun share(playlistId: Long, name: String, sharedBy: String?, autoUpdate: Boolean): ShareResult<String> {
@@ -1767,6 +1790,7 @@ class SharedMixRepository @Inject constructor(
             is ShareResult.Ok -> { sharedMixDao.upsert(row.copy(version = r.value, contentHash = hash)); PublishOutcome.Published }
             ShareResult.Gone, ShareResult.NotFound -> { sharedMixDao.upsert(row.copy(status = SharedMixEntity.STATUS_REMOVED)); PublishOutcome.Removed }
             ShareResult.Forbidden -> { Log.w(TAG, "edit key rejected for ${row.shareId}"); PublishOutcome.Forbidden }
+            is ShareResult.Rejected -> { Log.w(TAG, "server rejected ${row.shareId}: HTTP ${r.code}"); PublishOutcome.Rejected }
             is ShareResult.Failed -> PublishOutcome.Failed
         }
     }
@@ -1823,6 +1847,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.repository.MusicRepository
@@ -1867,6 +1892,13 @@ class SharedMixRepositoryFollowerTest {
             val t = firstArg<Track>()
             db.trackDao().findByCanonicalIdentity(t.title.lowercase(), t.artist.lowercase())?.id
                 ?: db.trackDao().insert(t.toEntity().copy(canonicalTitle = t.title.lowercase(), canonicalArtist = t.artist.lowercase()))
+        }
+        // Real row, as MusicRepositoryImpl.createPlaylist makes it (a relaxed mock would return 0 → FK failure).
+        coEvery { music.createPlaylist(any()) } coAnswers {
+            db.playlistDao().insert(
+                PlaylistEntity(name = firstArg(), source = MusicSource.BOTH, sourceId = "custom_${System.nanoTime()}",
+                    type = PlaylistType.CUSTOM, syncEnabled = true),
+            )
         }
         val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
         repo = SharedMixRepository(db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api)
@@ -2104,6 +2136,7 @@ class SharedMixPublishWorker @AssistedInject constructor(
         var retry = false
         for (row in sharedMixDao.activeOwnedWithUpdates()) {
             if (isStopped) break
+            // Only transient failures retry; Rejected/Forbidden would fail identically forever.
             if (repository.publishIfChanged(row) == PublishOutcome.Failed) retry = true
         }
         return if (retry) Result.retry() else Result.success()
@@ -2231,8 +2264,8 @@ Expected: PASS.
         com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
     ```
   - `MusicRepositoryImpl`:
-    - Add the constructor parameter `private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao`.
-    - At the end of `addTrackToPlaylist` (after `updateTrackCount`) and of `removeTrackFromPlaylist`, add:
+    - Add `private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao` as the **last** constructor parameter.
+    - At the end of `addTrackToPlaylist` (after `updateTrackCount`), of `removeTrackFromPlaylist`, **and of `removeTrackFromPlaylistAndMaybeDelete`** (around line 769; this is the path the playlist screen actually uses, from `PlaylistDetailViewModel` lines ~299 and ~420), add:
     ```kotlin
         if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
             com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
@@ -2254,10 +2287,10 @@ git diff --cached --name-only
 git commit -m "feat(share): publish and follow workers, triggered after sync, on start and after edits"
 ```
 
-### Task 14: Keep followed mixes out of the "Save to Playlist" pickers
+### Task 14: Followed mixes: out of the pickers, visible in Library
 
 **Files:**
-- Modify: `core/data/src/main/kotlin/com/stash/core/data/db/dao/PlaylistDao.kt` (`getPickablePlaylists` around line 813, `getUserCreatedPlaylists` around line 792)
+- Modify: `core/data/src/main/kotlin/com/stash/core/data/db/dao/PlaylistDao.kt` (`getPickablePlaylists` around line 813, `getUserCreatedPlaylists` around line 792, `getAllVisible` around line 342)
 - Test: `core/data/src/test/kotlin/com/stash/core/data/db/dao/PlaylistDaoFollowedPickerTest.kt`
 
 - [ ] **Step 1: Write the failing test** (the setup is the same as `SharedMixDaoTest`)
@@ -2296,6 +2329,8 @@ class PlaylistDaoFollowedPickerTest {
         db.sharedMixDao().upsert(SharedMixEntity(followed, "AAAAAAAA", SharedMixEntity.ROLE_FOLLOWER, name = "Followed"))
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine)
         assertThat(dao.getUserCreatedPlaylists().first().map { it.id }).containsExactly(mine)
+        // Followed with Download off and nothing downloaded: still in Library (the user asked for it).
+        assertThat(dao.getAllVisible(includeStreamable = false).first().map { it.id }).contains(followed)
         db.sharedMixDao().upsert(SharedMixEntity(followed, "AAAAAAAA", SharedMixEntity.ROLE_FOLLOWER, name = "Followed", status = SharedMixEntity.STATUS_REMOVED))
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine, followed)
     }
@@ -2315,6 +2350,13 @@ Expected: FAIL. `followed` is listed.
 
 In `getPickablePlaylists` it goes right after `AND type IN ('CUSTOM')`. In `getUserCreatedPlaylists` it goes after `is_active = 1`.
 
+Also make followed mixes visible in Library in download-only mode. `getAllVisible` hides a playlist with `sync_enabled = 0` and no downloaded tracks, which is exactly a freshly followed mix. Add one arm next to the `pinned_to_home_at` arm:
+
+```sql
+              -- Followed shared mix (spec §6): the user chose it, so it shows even with Download off.
+              OR p.source_id LIKE 'share:%'
+```
+
 - [ ] **Step 4: Run the test and check it passes**
 
 Run: `./gradlew :core:data:testDebugUnitTest --tests '*PlaylistDaoFollowedPickerTest' -q`
@@ -2324,7 +2366,7 @@ Expected: PASS.
 
 ```bash
 git add core/data/src/main/kotlin/com/stash/core/data/db/dao/PlaylistDao.kt core/data/src/test/kotlin/com/stash/core/data/db/dao/PlaylistDaoFollowedPickerTest.kt
-git commit -m "feat(share): followed mixes are not offered as Save-to-Playlist targets"
+git commit -m "feat(share): followed mixes stay out of Save-to-Playlist and stay visible in Library"
 ```
 
 ### Task 15: "Show my name as" preference
@@ -2389,7 +2431,7 @@ git commit -m "feat(share): remember the optional display name for shared mixes"
 **Files:**
 - Modify:
   - `app/src/main/AndroidManifest.xml` (next to the `stash://track` intent filter)
-  - `core/data/src/main/kotlin/com/stash/core/data/share/SharedTrackLinkHolder.kt`, **moved** from `core/data/.../share/`; it's the same package, so only the contents change
+  - `core/data/src/main/kotlin/com/stash/core/data/share/SharedTrackLinkHolder.kt` (already here; only its contents change)
   - `app/src/main/kotlin/com/stash/app/MainActivity.kt:27-30,91-119`
   - `app/src/main/kotlin/com/stash/app/navigation/StashScaffold.kt:123-154`
   - `app/src/main/kotlin/com/stash/app/navigation/TopLevelDestination.kt`
@@ -2501,6 +2543,14 @@ git commit -m "feat(share): https App Links and legacy stash://track route to th
 - Create: `feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixViewModel.kt`, `feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixScreen.kt`
 - Modify: `app/src/main/kotlin/com/stash/app/navigation/StashNavHost.kt`
 - Test: `feature/library/src/test/kotlin/com/stash/feature/library/share/SharedMixViewModelTest.kt`
+
+- [ ] **Step 0: Add MockK to `feature/library` tests.** It only has Mockito today. In `feature/library/build.gradle.kts`, next to the mockito lines:
+
+```kotlin
+    testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
+```
+
+The Task 17 and 19 tests use MockK. The existing `PlaylistDetailViewModelTest` stays on Mockito (Task 20).
 
 - [ ] **Step 1: Write the failing ViewModel test**
 
@@ -2788,11 +2838,13 @@ Run: `./gradlew :app:assembleDebug -q`
 Expected: success.
 
 ```bash
-git add feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixViewModel.kt feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixScreen.kt feature/library/src/test/kotlin/com/stash/feature/library/share/SharedMixViewModelTest.kt app/src/main/kotlin/com/stash/app/navigation/StashNavHost.kt
+git add feature/library/build.gradle.kts feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixViewModel.kt feature/library/src/main/kotlin/com/stash/feature/library/share/SharedMixScreen.kt feature/library/src/test/kotlin/com/stash/feature/library/share/SharedMixViewModelTest.kt app/src/main/kotlin/com/stash/app/navigation/StashNavHost.kt
 git commit -m "feat(share): shared mix screen — Play, Follow, Save a copy, Unfollow, error states"
 ```
 
 ### Task 18: The shared-track card
+
+Spec §6 says "Add to library". In Stash a single song is kept by liking it, so the button likes the track but is labelled the spec's way.
 
 **Files:**
 - Create: `feature/library/src/main/kotlin/com/stash/feature/library/share/SharedTrackViewModel.kt`, `feature/library/src/main/kotlin/com/stash/feature/library/share/SharedTrackScreen.kt`
@@ -2887,7 +2939,7 @@ fun SharedTrackScreen(onBack: () -> Unit, viewModel: SharedTrackViewModel = hilt
         Spacer(Modifier.height(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.play() }) { Text("Play") }
-            OutlinedButton(onClick = { viewModel.like() }, enabled = !liked) { Text(if (liked) "In Liked Songs" else "Add to Liked Songs") }
+            OutlinedButton(onClick = { viewModel.like() }, enabled = !liked) { Text(if (liked) "In your library" else "Add to library") }
         }
     }
 }
@@ -3106,6 +3158,13 @@ fun ShareMixSheet(
     LaunchedEffect(playlistId) { viewModel.bind(playlistId, playlistName) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Spec §5: "Create link" goes straight on to the Android share sheet once the link exists.
+    var justCreated by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        val s = state
+        if (justCreated && s is ShareMixUiState.Shared) { justCreated = false; sendLink(context, s.name, trackCount, s.url) }
+        if (s is ShareMixUiState.NotShared && s.error != null) justCreated = false
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Share mix", style = MaterialTheme.typography.titleLarge)
@@ -3123,7 +3182,7 @@ fun ShareMixSheet(
                         Switch(checked = auto, onCheckedChange = { auto = it })
                     }
                     s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = { viewModel.create(name, display.ifBlank { null }, auto) }, enabled = !s.working, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { justCreated = true; viewModel.create(name, display.ifBlank { null }, auto) }, enabled = !s.working, modifier = Modifier.fillMaxWidth()) {
                         Text(if (s.working) "Creating link…" else "Create link")
                     }
                 }
@@ -3131,7 +3190,7 @@ fun ShareMixSheet(
                     Text(s.url, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { sendLink(context, s.name, trackCount, s.url) }) { Text("Share") }
+                        Button(onClick = { sendLink(context, s.name, trackCount, s.url) }) { Text("Share again") }
                         OutlinedButton(onClick = { copy(context, s.url) }) { Text("Copy link") }
                     }
                     if (s.canManage) {
@@ -3178,7 +3237,7 @@ private fun copy(context: Context, url: String) {
     - Render `sharePlaylist?.let { ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylist = null }) }` inside `PlaylistsGrid`.
   - **Home mix action sheet:**
     - Add the route flag `@Serializable data class PlaylistDetailRoute(val playlistId: Long, val openShare: Boolean = false)`.
-    - Add `onShareMix: (Long) -> Unit` to `HomeScreen` and a row `MixActionRow(icon = Icons.Default.Share, label = "Share mix", onClick = { onShareMix(id); actionSheetMixId = null })` after "Open".
+    - Add `onShareMix: (Long) -> Unit = {}` to `HomeScreen` (a default, like its other callbacks) and a row `MixActionRow(icon = Icons.Default.Share, label = "Share mix", onClick = { onShareMix(id); actionSheetMixId = null })` after "Open".
     - In `StashNavHost`, pass `onShareMix = { id -> navController.navigate(PlaylistDetailRoute(id, openShare = true)) }`.
     - `PlaylistDetailViewModel` reads `val openShare: Boolean = savedStateHandle.get<Boolean>("openShare") ?: false`.
     - `PlaylistDetailScreen` initialises `showShareSheet` to `viewModel.openShare`.
@@ -3198,24 +3257,36 @@ git commit -m "feat(share): share sheet from playlist detail, Library long-press
 **Files:**
 - Modify: `feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailViewModel.kt`, `feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt`, `feature/library/src/test/kotlin/com/stash/feature/library/PlaylistDetailViewModelTest.kt`
 
-- [ ] **Step 1: Write the failing test.** Add it to `PlaylistDetailViewModelTest`. First add `sharedMixRepository = mockk(relaxed = true)` to the helper that constructs the VM.
+- [ ] **Step 1: Write the failing test.** Add it to `PlaylistDetailViewModelTest`, which uses **Mockito**, not MockK. First extend the existing `buildVm` helper (around line 297) with a parameter and pass it through to the constructor:
 
 ```kotlin
-    @Test fun `an active follow exposes read-only state; the removed notice is emitted once`() = runTest {
-        val shared = mockk<com.stash.core.data.share.SharedMixRepository>(relaxed = true)
-        coEvery { shared.observe(any()) } returns flowOf(
-            com.stash.core.data.db.entity.SharedMixEntity(1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient", sharedBy = "Rawn"),
-        )
-        coEvery { shared.consumeRemovedNotice(any()) } returns null
-        val vm = buildViewModel(sharedMixRepository = shared) // extend the existing helper with this parameter
-        advanceUntilIdle()
-        val f = vm.follow.value!!
-        assertThat(f.readOnly).isTrue()
-        assertThat(f.sharedBy).isEqualTo("Rawn")
-    }
+        sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
+            on { observe(any()) } doReturn flowOf(null)
+        },
+```
+```kotlin
+        sharedMixRepository = sharedMixRepository,
 ```
 
-(Adapt `buildViewModel` to the existing test's helper name; the existing tests construct the VM with named arguments at lines 312-321.)
+Then add the test. `follow` is a `WhileSubscribed` StateFlow, so the test must collect it or it stays `null`:
+
+```kotlin
+    @Test fun `an active follow exposes read-only state with the sharer's name`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(
+                com.stash.core.data.db.entity.SharedMixEntity(
+                    1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient", sharedBy = "Rawn",
+                ),
+            )
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        backgroundScope.launch { vm.follow.collect {} }
+        runCurrent()
+        val f = checkNotNull(vm.follow.value)
+        assertEquals(true, f.readOnly)
+        assertEquals("Rawn", f.sharedBy)
+    }
+```
 
 - [ ] **Step 2: Run it and check it fails**
 
@@ -3224,7 +3295,7 @@ Expected: FAIL, unresolved `follow`.
 
 - [ ] **Step 3: Extend `PlaylistDetailViewModel`**
   - Add the constructor parameter `private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository`.
-  - Add, keeping it separate from the existing 5-flow `combine`:
+  - Add the following **after** the `_playlist` declaration (around line 94). Property initialisers run in source order, so declaring `follow` earlier would hand `combine` a null. Keep it separate from the existing 5-flow `combine`:
 
 ```kotlin
     data class FollowUi(val readOnly: Boolean, val sharedBy: String?, val downloadOn: Boolean)
@@ -3256,7 +3327,7 @@ Expected: FAIL, unresolved `follow`.
         viewModelScope.launch { sharedMixRepository.consumeRemovedNotice(playlistId)?.let { _userMessages.tryEmit(it) } }
 ```
 
-  - Update **every** construction of `PlaylistDetailViewModel` in tests.
+  - Two test files construct `PlaylistDetailViewModel`. `PlaylistDetailViewModelTest.buildVm` was extended in Step 1. **`MixOfflineTapGuardTest`** also constructs it: pass `sharedMixRepository = mock { on { observe(any()) } doReturn flowOf(null) }` there as well.
 
 - [ ] **Step 4: Make the screen read-only for an active follow.** In `PlaylistDetailScreen`, collect `val follow by viewModel.follow.collectAsStateWithLifecycle()`, then:
   - Pass `onDelete = if (follow?.readOnly == true) null else { t -> trackToDelete = t }` to `TrackOptionsSheet`, keeping the existing lambda body.
@@ -3283,7 +3354,7 @@ Expected: both succeed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailViewModel.kt feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt feature/library/src/test/kotlin/com/stash/feature/library/PlaylistDetailViewModelTest.kt
+git add feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailViewModel.kt feature/library/src/main/kotlin/com/stash/feature/library/PlaylistDetailScreen.kt feature/library/src/test/kotlin/com/stash/feature/library/PlaylistDetailViewModelTest.kt feature/library/src/test/kotlin/com/stash/feature/library/MixOfflineTapGuardTest.kt
 git commit -m "feat(share): followed mixes are read-only, with Download this mix, Unfollow and the stopped-sharing notice"
 ```
 
