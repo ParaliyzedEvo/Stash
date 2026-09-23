@@ -112,7 +112,16 @@ class LibraryViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     fun unfollowPlaylist(playlist: Playlist) {
-        viewModelScope.launch { sharedMixRepository.unfollow(playlist.id) }
+        viewModelScope.launch {
+            try {
+                sharedMixRepository.unfollow(playlist.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "unfollow ${playlist.id} failed", e)
+                _userMessages.tryEmit("Couldn't unfollow this mix. Try again.")
+            }
+        }
     }
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */

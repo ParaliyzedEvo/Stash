@@ -202,7 +202,11 @@ fun PlaylistDetailScreen(
                                 Text("Download this mix", Modifier.weight(1f))
                                 Switch(checked = f.downloadOn, onCheckedChange = { viewModel.setFollowDownload(it) })
                             }
-                            TextButton(onClick = { viewModel.unfollow(onBack) }) { Text("Unfollow", color = MaterialTheme.colorScheme.error) }
+                            // Unfollow removes the playlist (and can take its downloads): second tap confirms.
+                            var confirmUnfollow by remember { mutableStateOf(false) }
+                            TextButton(onClick = { if (confirmUnfollow) viewModel.unfollow(onBack) else confirmUnfollow = true }) {
+                                Text(if (confirmUnfollow) "Tap again to unfollow" else "Unfollow", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }

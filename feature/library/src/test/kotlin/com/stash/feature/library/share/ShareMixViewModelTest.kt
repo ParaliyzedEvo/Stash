@@ -11,6 +11,7 @@ import io.mockk.mockk
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -30,14 +31,30 @@ class ShareMixViewModelTest {
     @After fun tearDown() { Dispatchers.resetMain() }
 
     @Test fun `not shared yet offers the form, create stores the name and shows the link`() = runTest(dispatcher) {
-        coEvery { repo.observe(5) } returns flowOf(null)
+        val row = MutableStateFlow<SharedMixEntity?>(null)
+        coEvery { repo.observe(5) } returns row
         coEvery { pref.displayName() } returns "Rawn"
-        coEvery { repo.share(5, "Sleep", "Rawn", true) } returns ShareResult.Ok("https://x/m/Kx7Qa2pL")
+        coEvery { repo.share(5, "Sleep", "Rawn", true) } coAnswers {
+            row.value = SharedMixEntity(5, "Kx7Qa2pL", SharedMixEntity.ROLE_OWNER, name = "Sleep", editKey = "k")
+            ShareResult.Ok("https://x/m/Kx7Qa2pL")
+        }
         val vm = ShareMixViewModel(repo, pref); vm.bind(5, "Ambient"); advanceUntilIdle()
         assertThat((vm.state.value as ShareMixUiState.NotShared).displayName).isEqualTo("Rawn")
         vm.create("Sleep", "Rawn", autoUpdate = true); advanceUntilIdle()
         coVerify { pref.setDisplayName("Rawn") }
-        coVerify { repo.share(5, "Sleep", "Rawn", true) }
+        val shared = vm.state.value as ShareMixUiState.Shared
+        assertThat(shared.url).endsWith("/m/Kx7Qa2pL")
+        assertThat(shared.name).isEqualTo("Sleep")
+    }
+
+    @Test fun `rebinding the same playlist clears a stale error`() = runTest(dispatcher) {
+        coEvery { repo.observe(5) } returns flowOf(null)
+        coEvery { repo.share(any(), any(), any(), any()) } throws IOException("disk")
+        val vm = ShareMixViewModel(repo, pref); vm.bind(5, "Ambient"); advanceUntilIdle()
+        vm.create("Sleep", null, autoUpdate = true); advanceUntilIdle()
+        assertThat((vm.state.value as ShareMixUiState.NotShared).error).isNotNull()
+        vm.bind(5, "Ambient"); advanceUntilIdle()
+        assertThat((vm.state.value as ShareMixUiState.NotShared).error).isNull()
     }
 
     @Test fun `an owned share shows its link, a followed one shows the original link read-only`() = runTest(dispatcher) {

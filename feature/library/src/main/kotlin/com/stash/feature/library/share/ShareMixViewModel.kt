@@ -37,7 +37,11 @@ class ShareMixViewModel @Inject constructor(
     private var observer: Job? = null
 
     fun bind(playlistId: Long, playlistName: String) {
-        if (this.playlistId == playlistId && observer != null) return
+        if (this.playlistId == playlistId && observer != null) {
+            // A reopened sheet starts clean, not with the last attempt's error.
+            (_state.value as? ShareMixUiState.NotShared)?.let { _state.value = it.copy(error = null) }
+            return
+        }
         this.playlistId = playlistId
         observer?.cancel()
         observer = viewModelScope.launch {

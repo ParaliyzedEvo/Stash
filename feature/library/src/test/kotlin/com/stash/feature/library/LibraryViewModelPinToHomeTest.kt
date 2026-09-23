@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -25,6 +26,7 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verifyBlocking
@@ -67,6 +69,29 @@ class LibraryViewModelPinToHomeTest {
         verifyBlocking(musicRepository) { setPlaylistPinnedToHome(7L, null) }
     }
 
+    @Test fun unfollow_calls_the_repository() = runTest {
+        val shared = sharedMock()
+        val vm = buildVm(repoMock(), shared)
+        vm.unfollowPlaylist(Playlist(id = 7, name = "Gym", source = MusicSource.SPOTIFY))
+        advanceUntilIdle()
+        verifyBlocking(shared) { unfollow(7L) }
+    }
+
+    @Test fun unfollow_that_throws_does_not_propagate() = runTest {
+        val shared = sharedMock()
+        org.mockito.kotlin.whenever(shared.unfollow(any())).doThrow(RuntimeException("db"))
+        val vm = buildVm(repoMock(), shared)
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { vm.userMessages.collect { messages.add(it) } }
+        vm.unfollowPlaylist(Playlist(id = 7, name = "Gym", source = MusicSource.SPOTIFY))
+        advanceUntilIdle() // an uncaught throw in viewModelScope would fail the test here
+        verifyBlocking(shared) { unfollow(7L) }
+        org.junit.Assert.assertEquals(listOf("Couldn't unfollow this mix. Try again."), messages)
+    }
+
+    private fun sharedMock(): com.stash.core.data.share.SharedMixRepository =
+        mock { on { observeActiveFollowedIds() } doReturn flowOf(emptyList()) }
+
     // ── harness (mirrors LibraryViewModelShuffleLikedTest) ───────────────
 
     private fun repoMock(): MusicRepository = mock {
@@ -79,7 +104,10 @@ class LibraryViewModelPinToHomeTest {
         on { getPlaylistsByType(any()) } doReturn flowOf(emptyList())
     }
 
-    private fun buildVm(musicRepository: MusicRepository): LibraryViewModel {
+    private fun buildVm(
+        musicRepository: MusicRepository,
+        sharedMixRepository: com.stash.core.data.share.SharedMixRepository = sharedMock(),
+    ): LibraryViewModel {
         val playerRepository: PlayerRepository = mock {
             on { playerState } doReturn MutableStateFlow(PlayerState())
         }
@@ -104,7 +132,7 @@ class LibraryViewModelPinToHomeTest {
             },
             libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
             artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
-            sharedMixRepository = org.mockito.kotlin.mock { on { observeActiveFollowedIds() }.thenReturn(kotlinx.coroutines.flow.flowOf(emptyList())) },
+            sharedMixRepository = sharedMixRepository,
         )
     }
 }

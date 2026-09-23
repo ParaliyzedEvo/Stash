@@ -87,6 +87,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -1114,7 +1115,8 @@ private fun PlaylistsGrid(
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
     // Playlist whose share sheet is open.
-    var sharePlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // Held as an id so the sheet survives rotation; the Playlist is looked up from the list shown.
+    var sharePlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Playlist awaiting image picker result.
@@ -1327,7 +1329,7 @@ private fun PlaylistsGrid(
                 icon = Icons.Default.Share,
                 label = "Share mix",
                 onClick = {
-                    sharePlaylist = playlist
+                    sharePlaylistId = playlist.id
                     selectedPlaylist = null
                 },
             )
@@ -1361,13 +1363,19 @@ private fun PlaylistsGrid(
             }
 
             if (followed) {
+                // Unfollow removes the playlist (and can take its downloads): second tap confirms.
+                var confirmUnfollow by remember(playlist.id) { mutableStateOf(false) }
                 BottomSheetActionRow(
                     icon = Icons.Default.RemoveCircleOutline,
-                    label = "Unfollow",
+                    label = if (confirmUnfollow) "Tap again to unfollow" else "Unfollow",
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
-                        onUnfollowPlaylist(playlist)
-                        selectedPlaylist = null
+                        if (confirmUnfollow) {
+                            onUnfollowPlaylist(playlist)
+                            selectedPlaylist = null
+                        } else {
+                            confirmUnfollow = true
+                        }
                     },
                 )
             } else {
@@ -1394,8 +1402,8 @@ private fun PlaylistsGrid(
         }
     }
 
-    sharePlaylist?.let {
-        com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylist = null })
+    sharePlaylistId?.let { id -> playlists.firstOrNull { it.id == id } }?.let {
+        com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylistId = null })
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────

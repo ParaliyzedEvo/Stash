@@ -25,6 +25,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
@@ -77,6 +78,35 @@ class PlaylistDetailViewModelTest {
         backgroundScope.launch { vm.follow.collect {} }
         runCurrent()
         assertEquals(false, checkNotNull(vm.follow.value).readOnly)
+    }
+
+    @Test fun `turning Download this mix on writes it through the repository`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
+        val vm = buildVm(sharedMixRepository = shared)
+        vm.setFollowDownload(true)
+        runCurrent()
+        org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, true) }
+    }
+
+    @Test fun `unfollow runs onDone only when it succeeds`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
+        val vm = buildVm(sharedMixRepository = shared)
+        var done = 0
+        vm.unfollow { done++ }
+        runCurrent()
+        assertEquals(1, done)
+        org.mockito.kotlin.verifyBlocking(shared) { unfollow(1L) }
+
+        val failing = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(null)
+            onBlocking { unfollow(any()) } doThrow RuntimeException("db")
+        }
+        val vm2 = buildVm(sharedMixRepository = failing)
+        val messages = collectMessages(vm2)
+        vm2.unfollow { done++ }
+        runCurrent()
+        assertEquals(1, done)
+        assertEquals(listOf("Couldn't unfollow this mix. Try again."), messages)
     }
 
     @Test
