@@ -45,4 +45,12 @@ interface LyricsDao {
     /** Downloaded tracks with no lyrics: never tried (NULL) or previously a miss (0L). */
     @Query("SELECT id FROM tracks WHERE is_downloaded = 1 AND (lyrics_fetched_at IS NULL OR lyrics_fetched_at = 0)")
     suspend fun trackIdsMissingLyrics(): List<Long>
+
+    /** Rows currently carrying word-synced TTML — used when the user switches to LRC-only, to know which to clean up. */
+    @Query("SELECT track_id FROM lyrics WHERE ttml IS NOT NULL")
+    suspend fun trackIdsWithTtml(): List<Long>
+
+    /** Wipes TTML off every row that has it. Returns the number of rows changed. */
+    @Query("UPDATE lyrics SET ttml = NULL, ttml_checked_at = NULL WHERE ttml IS NOT NULL")
+    suspend fun clearAllTtml(): Int
 }

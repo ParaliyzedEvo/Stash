@@ -107,6 +107,18 @@ class LyricsSidecarWriter @Inject constructor(
         writeSidecarFile(track, path, buildLrcBody(track, lyrics), "lrc", LRC_MIME)
     }
 
+    /**
+     * Deletes just the `.ttml` sidecar for [trackId], if one exists — used when the user switches
+     * their lyrics source preference to LRC-only and stored TTML is being wiped. Best-effort and
+     * silent: a missing track/file/sidecar is a normal outcome here, not an error.
+     */
+    suspend fun deleteTtmlSidecar(trackId: Long) {
+        val track = trackDao.getById(trackId) ?: return
+        val path = track.filePath ?: return
+        runCatching { deleteSidecarFile(track, path, "ttml") }
+            .onFailure { e -> Log.w(TAG, "Couldn't delete .ttml sidecar for track $trackId", e) }
+    }
+
     private suspend fun writeSidecarFile(track: TrackEntity, path: String, body: String, ext: String, mime: String) {
         if (path.startsWith("content://")) writeSafSidecar(track, body, ext, mime)
         else writeFilesystemSidecar(path, body, ext)

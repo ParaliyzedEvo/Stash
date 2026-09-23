@@ -6,8 +6,11 @@ import com.stash.core.data.db.dao.LyricsDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
+import com.stash.core.data.prefs.LyricsPreference
+import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
+import kotlinx.coroutines.flow.first
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
 import kotlinx.coroutines.CancellationException
@@ -53,6 +56,7 @@ class LyricsRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val sidecarWriter: LyricsSidecarWriter,
     private val clock: Clock,
+    private val lyricsPreference: LyricsPreference,
 ) {
 
     /** Observe the lyrics row for [trackId]. Emits null when no row exists yet. */
@@ -137,8 +141,30 @@ class LyricsRepository @Inject constructor(
      */
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
-    /** Track ids the TTML upgrade backfill still has to try. */
-    suspend fun trackIdsPendingTtml(): List<Long> = lyricsDao.trackIdsPendingTtml()
+    /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
+    suspend fun trackIdsPendingTtml(): List<Long> {
+        if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return emptyList()
+        return lyricsDao.trackIdsPendingTtml()
+    }
+
+    /**
+     * Applies a new [LyricsSourcePreference]. Switching TO [LyricsSourcePreference.LRC_ONLY] wipes
+     * every stored row's TTML (column + `.ttml` sidecar) and clears `tracks.lyrics_fetched_at` for
+     * those tracks, so they fall back into the existing "missing lyrics" pool — the normal retag /
+     * manual-fetch pipeline then re-fills them from LRC sources only, since [walkSources] now skips
+     * Apple. Switching back to APPLE_MUSIC does nothing extra: Apple simply re-enters the chain on
+     * the next fetch for whatever's still missing.
+     */
+    suspend fun setSourcePreference(preference: LyricsSourcePreference) {
+        if (preference == LyricsSourcePreference.LRC_ONLY) {
+            val affected = lyricsDao.trackIdsWithTtml()
+            affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
+            lyricsDao.clearAllTtml()
+            affected.forEach { id -> trackDao.setLyricsFetchedAt(id, null) }
+            Log.i(TAG, "Switched to LRC-only: wiped TTML for ${affected.size} track(s), queued for re-fetch")
+        }
+        lyricsPreference.setSourcePreference(preference)
+    }
 
     /** Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss). */
     suspend fun trackIdsMissingLyrics(): List<Long> = lyricsDao.trackIdsMissingLyrics()
@@ -180,6 +206,9 @@ class LyricsRepository @Inject constructor(
      * - no row / already TTML / instrumental / source not in chain -> SKIPPED
      */
     suspend fun upgradeToTtml(trackId: Long): TtmlUpgradeResult {
+        if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
+            return TtmlUpgradeResult.SKIPPED
+        }
         val apple = sources.firstOrNull { it.id == AppleTtmlLyricsSource.SOURCE_ID }
             ?: return TtmlUpgradeResult.SKIPPED
         val existing = lyricsDao.get(trackId) ?: return TtmlUpgradeResult.SKIPPED
@@ -237,9 +266,17 @@ class LyricsRepository @Inject constructor(
      * one source failed, the first failure is rethrown — "no lyrics" may
      * only be concluded from sources that actually answered.
      */
+    /** [sources] with Apple TTML filtered out when the user has chosen LRC-only. */
+    private suspend fun activeSources(): List<LyricsSource> =
+        if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
+            sources.filterNot { it.id == AppleTtmlLyricsSource.SOURCE_ID }
+        } else {
+            sources
+        }
+
     private suspend fun walkSources(query: LyricsQuery): LyricsResult? {
         var firstFailure: Exception? = null
-        for (source in sources) {
+        for (source in activeSources()) {
             try {
                 source.resolve(query)?.let { return it }
             } catch (e: CancellationException) {
