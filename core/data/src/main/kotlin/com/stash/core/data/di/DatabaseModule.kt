@@ -118,4 +118,7 @@ object DatabaseModule {
     @Provides
     fun provideSyncUndoDao(db: StashDatabase): com.stash.core.data.db.dao.SyncUndoDao =
         db.syncUndoDao()
+
+    @Provides
+    fun provideSharedMixDao(db: StashDatabase): com.stash.core.data.db.dao.SharedMixDao = db.sharedMixDao()
 }
