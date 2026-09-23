@@ -35,7 +35,7 @@ class SharedMixRepositoryOwnerTest {
             .allowMainThreadQueries().build()
         server = MockWebServer().also { it.start() }
         val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
-        repo = SharedMixRepository(db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api)
+        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api)
         playlistId = db.playlistDao().insert(PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "custom_1"))
         val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://img/1.jpg", source = MusicSource.SPOTIFY))
         val t2 = db.trackDao().insert(TrackEntity(title = "Two", artist = "B", source = MusicSource.YOUTUBE, youtubeId = "y2"))
@@ -74,6 +74,31 @@ class SharedMixRepositoryOwnerTest {
         server.enqueue(MockResponse().setResponseCode(410))
         assertThat(repo.publishIfChanged(db.sharedMixDao().forPlaylist(playlistId)!!)).isEqualTo(PublishOutcome.Removed)
         assertThat(db.sharedMixDao().forPlaylist(playlistId)!!.status).isEqualTo(SharedMixEntity.STATUS_REMOVED)
+    }
+
+    private suspend fun addTrack(title: String, position: Int) {
+        val t = db.trackDao().insert(TrackEntity(title = title, artist = "Z", source = MusicSource.BOTH))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t, position = position))
+    }
+
+    @Test fun `a publish from a stale snapshot never brings back a stopped share`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        repo.share(playlistId, "Sleep", null, true); server.takeRequest()
+        val snapshot = db.sharedMixDao().forPlaylist(playlistId)!!
+        db.sharedMixDao().delete(playlistId) // Stop sharing lands while the publish is in flight
+        addTrack("Three", 2)
+        server.enqueue(MockResponse().setBody("""{"version":2}"""))
+        assertThat(repo.publishIfChanged(snapshot)).isEqualTo(PublishOutcome.Published)
+        assertThat(db.sharedMixDao().forPlaylist(playlistId)).isNull()
+    }
+
+    @Test fun `an owner 404 is retried, never marked REMOVED`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        repo.share(playlistId, "Sleep", null, true); server.takeRequest()
+        addTrack("Three", 2)
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertThat(repo.publishIfChanged(db.sharedMixDao().forPlaylist(playlistId)!!)).isEqualTo(PublishOutcome.Failed)
+        assertThat(db.sharedMixDao().forPlaylist(playlistId)!!.status).isEqualTo(SharedMixEntity.STATUS_ACTIVE)
     }
 
     @Test fun `stop sharing deletes remotely and locally`() = runBlocking {

@@ -1,6 +1,7 @@
 package com.stash.core.data.share
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -14,6 +15,7 @@ import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.entity.SharedMixEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 /** Checks followed mixes for new versions (spec §6): after each sync (forced), and on app start at most every 6 h. */
 @HiltWorker
@@ -29,12 +31,20 @@ class SharedMixFollowWorker @AssistedInject constructor(
         val now = System.currentTimeMillis()
         for (row in sharedMixDao.activeFollowed()) {
             if (isStopped) break
-            if (isDue(row, now, force)) repository.checkForUpdate(row, now)
+            if (!isDue(row, now, force)) continue
+            try {
+                repository.checkForUpdate(row, now)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "check failed for ${row.shareId}", e) // one bad mix never stops the rest
+            }
         }
         return Result.success()
     }
 
     companion object {
+        private const val TAG = "SharedMix"
         private const val WORK_NAME = "stash_shared_mix_follow"
         private const val KEY_FORCE = "force"
         private const val INTERVAL_MS = 6 * 3600_000L

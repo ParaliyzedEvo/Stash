@@ -34,9 +34,9 @@ class SharedMixDaoTest {
 
     @Test fun `queries split owners and followers and deleting the playlist cascades`() = runTest {
         val owned = playlist("custom_a"); val followed = playlist("share:Kx7Qa2pL"); val paused = playlist("custom_b")
-        dao.upsert(SharedMixEntity(owned, "AAAAAAAA", SharedMixEntity.ROLE_OWNER, editKey = "k", name = "A"))
-        dao.upsert(SharedMixEntity(followed, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "F"))
-        dao.upsert(SharedMixEntity(paused, "BBBBBBBB", SharedMixEntity.ROLE_OWNER, editKey = "k", name = "B", autoUpdate = false))
+        dao.insert(SharedMixEntity(owned, "AAAAAAAA", SharedMixEntity.ROLE_OWNER, editKey = "k", name = "A"))
+        dao.insert(SharedMixEntity(followed, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "F"))
+        dao.insert(SharedMixEntity(paused, "BBBBBBBB", SharedMixEntity.ROLE_OWNER, editKey = "k", name = "B", autoUpdate = false))
         assertEquals(listOf(owned), dao.activeOwnedWithUpdates().map { it.playlistId })
         assertEquals(listOf(followed), dao.activeFollowed().map { it.playlistId })
         assertEquals(followed, dao.byShareId("Kx7Qa2pL")?.playlistId)

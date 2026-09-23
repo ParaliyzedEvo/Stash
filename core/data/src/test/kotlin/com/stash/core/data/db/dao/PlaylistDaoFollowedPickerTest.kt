@@ -28,12 +28,12 @@ class PlaylistDaoFollowedPickerTest {
         val dao = db.playlistDao()
         val mine = dao.insert(PlaylistEntity(name = "Mine", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM, syncEnabled = true))
         val followed = dao.insert(PlaylistEntity(name = "Followed", source = MusicSource.BOTH, sourceId = "share:AAAAAAAA", type = PlaylistType.CUSTOM))
-        db.sharedMixDao().upsert(SharedMixEntity(followed, "AAAAAAAA", SharedMixEntity.ROLE_FOLLOWER, name = "Followed"))
+        db.sharedMixDao().insert(SharedMixEntity(followed, "AAAAAAAA", SharedMixEntity.ROLE_FOLLOWER, name = "Followed"))
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine)
         assertThat(dao.getUserCreatedPlaylists().first().map { it.id }).containsExactly(mine)
         // Followed with Download off and nothing downloaded: still in Library (the user asked for it).
         assertThat(dao.getAllVisible(includeStreamable = false).first().map { it.id }).contains(followed)
-        db.sharedMixDao().upsert(SharedMixEntity(followed, "AAAAAAAA", SharedMixEntity.ROLE_FOLLOWER, name = "Followed", status = SharedMixEntity.STATUS_REMOVED))
+        db.sharedMixDao().markRemoved(followed, noticePending = false)
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine, followed)
     }
 }

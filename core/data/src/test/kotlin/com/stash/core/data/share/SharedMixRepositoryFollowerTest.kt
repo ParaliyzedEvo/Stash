@@ -58,7 +58,7 @@ class SharedMixRepositoryFollowerTest {
             )
         }
         val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
-        repo = SharedMixRepository(db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api)
+        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api)
     }
     @After fun tearDown() { db.close(); server.shutdown() }
 
@@ -109,6 +109,29 @@ class SharedMixRepositoryFollowerTest {
         assertThat(row.noticePending).isTrue()
         assertThat(repo.consumeRemovedNotice(id)).isEqualTo("Rawn stopped sharing this mix. You keep your copy.")
         assertThat(repo.consumeRemovedNotice(id)).isNull()
+    }
+
+    @Test fun `follow adopts an orphan share playlist left by an interrupted follow`() = runBlocking {
+        val orphan = db.playlistDao().insert(
+            PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "share:Kx7Qa2pL", type = PlaylistType.CUSTOM, syncEnabled = false),
+        )
+        assertThat(repo.follow(doc(1, "One", "Two"))).isEqualTo(orphan)
+        val row = db.sharedMixDao().forPlaylist(orphan)!!
+        assertThat(row.role).isEqualTo(SharedMixEntity.ROLE_FOLLOWER)
+        assertThat(row.shareId).isEqualTo("Kx7Qa2pL")
+        assertThat(titles(orphan)).containsExactly("One", "Two").inOrder()
+    }
+
+    @Test fun `a 404 followed by an up-to-date check resets the missing count`() = runBlocking {
+        val id = repo.follow(doc(1, "One"))
+        server.enqueue(MockResponse().setResponseCode(404))
+        repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)
+        assertThat(db.sharedMixDao().forPlaylist(id)!!.missingCount).isEqualTo(1)
+        server.enqueue(MockResponse().setBody("""{"version":1}"""))
+        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 2L)).isEqualTo(FollowCheck.UpToDate)
+        val row = db.sharedMixDao().forPlaylist(id)!!
+        assertThat(row.missingCount).isEqualTo(0)
+        assertThat(row.lastCheckedAt).isEqualTo(2L)
     }
 
     @Test fun `save a copy is an ordinary editable playlist with no shared row`() = runBlocking {

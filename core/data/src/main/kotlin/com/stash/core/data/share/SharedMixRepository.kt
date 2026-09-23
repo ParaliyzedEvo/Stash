@@ -2,6 +2,8 @@ package com.stash.core.data.share
 
 import android.util.Base64
 import android.util.Log
+import androidx.room.withTransaction
+import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.dao.TrackDao
@@ -30,6 +32,7 @@ enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Rejected, 
 /** Every share and follow operation (spec §5-6). */
 @Singleton
 class SharedMixRepository @Inject constructor(
+    private val database: StashDatabase,
     private val sharedMixDao: SharedMixDao,
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
@@ -96,8 +99,10 @@ class SharedMixRepository @Inject constructor(
         val hash = doc.contentHash()
         if (hash == row.contentHash) return PublishOutcome.Unchanged
         return when (val r = api.update(row.shareId, doc, key, row.version)) {
-            is ShareResult.Ok -> { sharedMixDao.upsert(row.copy(version = r.value, contentHash = hash)); PublishOutcome.Published }
-            ShareResult.Gone, ShareResult.NotFound -> { sharedMixDao.upsert(row.copy(status = SharedMixEntity.STATUS_REMOVED)); PublishOutcome.Removed }
+            is ShareResult.Ok -> { sharedMixDao.markPublished(row.playlistId, r.value, hash); PublishOutcome.Published }
+            ShareResult.Gone -> { sharedMixDao.markRemoved(row.playlistId, noticePending = false); PublishOutcome.Removed }
+            // KV can briefly 404 a just-created mix: retry, only a 410 means it's gone.
+            ShareResult.NotFound -> PublishOutcome.Failed
             ShareResult.Forbidden -> { Log.w(TAG, "edit key rejected for ${row.shareId}"); PublishOutcome.Forbidden }
             is ShareResult.Rejected -> { Log.w(TAG, "server rejected ${row.shareId}: HTTP ${r.code}"); PublishOutcome.Rejected }
             is ShareResult.Failed -> PublishOutcome.Failed
@@ -105,7 +110,7 @@ class SharedMixRepository @Inject constructor(
     }
 
     suspend fun setAutoUpdate(playlistId: Long, on: Boolean) {
-        sharedMixDao.forPlaylist(playlistId)?.let { sharedMixDao.upsert(it.copy(autoUpdate = on)) }
+        sharedMixDao.setAutoUpdate(playlistId, on)
     }
 
     /** Remove the link. A remote 404/410 still clears the local row. */
@@ -135,26 +140,39 @@ class SharedMixRepository @Inject constructor(
     suspend fun tracksFor(doc: SharedMixDocument): List<Track> =
         persistTracks(doc).mapNotNull { trackDao.getById(it)?.toDomain() }
 
-    /** Spec §6 Follow: a CUSTOM/BOTH playlist, source_id share:<id>, download off. Idempotent per share id. */
+    /**
+     * Spec §6 Follow: a CUSTOM/BOTH playlist, source_id share:<id>, download off. Idempotent per share id
+     * and atomic: a double tap returns the first follow's playlist, and a `share:<id>` playlist left
+     * without its row (a crash mid-follow; source_id is UNIQUE) is adopted instead of re-inserted.
+     */
     suspend fun follow(doc: SharedMixDocument): Long {
         sharedMixDao.byShareId(doc.id)?.let { return it.playlistId }
-        val ids = persistTracks(doc)
-        val playlistId = playlistDao.insert(
-            PlaylistEntity(
-                name = doc.name, source = MusicSource.BOTH, sourceId = "share:${doc.id}",
-                type = PlaylistType.CUSTOM, isActive = true, syncEnabled = false,
-            ),
-        )
-        playlistDao.replaceMixMembership(playlistId, ids, doc.name, Instant.now())
-        // insert, not upsert: a share_id clash must throw, never silently drop the row (Room's @Upsert
-        // falls back to UPDATE by primary key, which matches nothing). byShareId above makes it rare.
-        sharedMixDao.insert(
-            SharedMixEntity(
-                playlistId = playlistId, shareId = doc.id, role = SharedMixEntity.ROLE_FOLLOWER,
-                name = doc.name, version = doc.version, sharedBy = doc.sharedBy, lastCheckedAt = System.currentTimeMillis(),
-            ),
-        )
-        return playlistId
+        val ids = persistTracks(doc) // slow; kept out of the write transaction
+        val now = Instant.now()
+        return database.withTransaction {
+            sharedMixDao.byShareId(doc.id)?.let { return@withTransaction it.playlistId }
+            val orphan = playlistDao.findBySourceId("share:${doc.id}")
+            val playlistId = if (orphan != null) {
+                playlistDao.replaceMixMembership(orphan.id, ids, doc.name, now)
+                orphan.id
+            } else {
+                playlistDao.createMixWithMembership(
+                    PlaylistEntity(
+                        name = doc.name, source = MusicSource.BOTH, sourceId = "share:${doc.id}",
+                        type = PlaylistType.CUSTOM, isActive = true, syncEnabled = false,
+                    ),
+                    ids, now,
+                )
+            }
+            // insert (ABORT), not upsert: a clash must throw and roll the whole follow back.
+            sharedMixDao.insert(
+                SharedMixEntity(
+                    playlistId = playlistId, shareId = doc.id, role = SharedMixEntity.ROLE_FOLLOWER,
+                    name = doc.name, version = doc.version, sharedBy = doc.sharedBy, lastCheckedAt = now.toEpochMilli(),
+                ),
+            )
+            playlistId
+        }
     }
 
     /** Spec §6 Save a copy: an ordinary editable playlist, no link back. */
@@ -182,7 +200,7 @@ class SharedMixRepository @Inject constructor(
         return when (val v = api.version(row.shareId)) {
             is ShareResult.Ok -> {
                 if (v.value <= row.version) {
-                    sharedMixDao.upsert(row.copy(missingCount = 0, lastCheckedAt = now)); FollowCheck.UpToDate
+                    sharedMixDao.markChecked(row.playlistId, missingCount = 0, lastCheckedAt = now); FollowCheck.UpToDate
                 } else when (val d = api.get(row.shareId)) {
                     is ShareResult.Ok -> { applyUpdate(row, d.value, now); FollowCheck.Updated }
                     ShareResult.Gone -> removed(row)
@@ -191,7 +209,7 @@ class SharedMixRepository @Inject constructor(
             }
             ShareResult.Gone -> removed(row)
             ShareResult.NotFound -> if (row.missingCount + 1 >= 2) removed(row) else {
-                sharedMixDao.upsert(row.copy(missingCount = row.missingCount + 1, lastCheckedAt = now)); FollowCheck.Unreachable
+                sharedMixDao.markChecked(row.playlistId, row.missingCount + 1, now); FollowCheck.Unreachable
             }
             else -> FollowCheck.Unreachable
         }
@@ -199,20 +217,22 @@ class SharedMixRepository @Inject constructor(
 
     private suspend fun applyUpdate(row: SharedMixEntity, doc: SharedMixDocument, now: Long) {
         val ids = persistTracks(doc)
+        // Unfollowed mid-check: nothing to update (replaceMixMembership would hit an FK error).
+        if (playlistDao.getById(row.playlistId) == null) return
         playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
-        sharedMixDao.upsert(row.copy(name = doc.name, version = doc.version, sharedBy = doc.sharedBy, missingCount = 0, lastCheckedAt = now))
+        sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
         if (playlistDao.getById(row.playlistId)?.syncEnabled == true) musicRepository.queueDownloadsForPlaylist(row.playlistId)
     }
 
     private suspend fun removed(row: SharedMixEntity): FollowCheck {
-        sharedMixDao.upsert(row.copy(status = SharedMixEntity.STATUS_REMOVED, noticePending = true))
+        sharedMixDao.markRemoved(row.playlistId, noticePending = true)
         return FollowCheck.Removed
     }
 
     /** The one-time "stopped sharing" message (spec §6), or null. Clears the flag. */
     suspend fun consumeRemovedNotice(playlistId: Long): String? {
         val row = sharedMixDao.forPlaylist(playlistId)?.takeIf { it.noticePending } ?: return null
-        sharedMixDao.upsert(row.copy(noticePending = false))
+        sharedMixDao.clearNotice(playlistId)
         return "${row.sharedBy ?: "The owner"} stopped sharing this mix. You keep your copy."
     }
 

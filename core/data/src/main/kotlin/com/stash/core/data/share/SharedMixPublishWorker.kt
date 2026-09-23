@@ -1,6 +1,7 @@
 package com.stash.core.data.share
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -13,6 +14,7 @@ import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.SharedMixDao
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /** Republishes owned shared mixes whose content changed (spec §5). Quiet: failures retry with backoff. */
@@ -29,12 +31,20 @@ class SharedMixPublishWorker @AssistedInject constructor(
         for (row in sharedMixDao.activeOwnedWithUpdates()) {
             if (isStopped) break
             // Only transient failures retry; Rejected/Forbidden would fail identically forever.
-            if (repository.publishIfChanged(row) == PublishOutcome.Failed) retry = true
+            try {
+                if (repository.publishIfChanged(row) == PublishOutcome.Failed) retry = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "publish failed for ${row.shareId}", e) // one bad mix never stops the rest
+                retry = true
+            }
         }
         return if (retry) Result.retry() else Result.success()
     }
 
     companion object {
+        private const val TAG = "SharedMix"
         private const val WORK_NAME = "stash_shared_mix_publish"
 
         /** After a sync ([delaySeconds] 0) or ~30 s after a local edit, so a burst of edits becomes one publish. */
