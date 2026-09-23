@@ -191,12 +191,17 @@ class YTMusicApiClient @Inject constructor(
             if (isContinuation) parseUserPlaylistsContinuationPage(page) else parseUserPlaylists(page)
         }
 
-        if (paginated.items.isEmpty()) {
+        // distinctBy: grid continuations can repeat items across page boundaries
+        // (see getSavedAlbums) — the per-page parsers only dedupe within a
+        // single page via their own seenIds set.
+        val playlists = paginated.items.distinctBy { it.playlistId }
+
+        if (playlists.isEmpty()) {
             return SyncResult.Empty("Library returned no playlists")
         }
         return SyncResult.Success(
             PagedPlaylists(
-                playlists = paginated.items,
+                playlists = playlists,
                 partial = paginated.partial,
                 partialReason = paginated.partialReason,
             )
@@ -221,7 +226,7 @@ class YTMusicApiClient @Inject constructor(
             if (isContinuation) parseSavedAlbumsContinuationPage(page) else parseSavedAlbums(page)
         }
 
-            // Grid pagination is now walked by extractContinuationToken (shape 5),
+        // Grid pagination is now walked by extractContinuationToken (shape 5),
         // so paginated.partial is the honest signal — same as every other fetch
         // path. The old gridHasUnhandledContinuation probe MUST NOT come back:
         // page 1 of a multi-page grid always carries a trailing
@@ -1217,13 +1222,35 @@ class YTMusicApiClient @Inject constructor(
      * [parseUserPlaylists] but reads from `continuationContents.musicShelfContinuation`.
      */
     private fun parseUserPlaylistsContinuationPage(response: JsonObject): List<YTMusicPlaylist> {
-        val items = response.navigatePath(
-            "continuationContents", "musicShelfContinuation", "contents",
-        )?.asArray() ?: return emptyList()
         val out = mutableListOf<YTMusicPlaylist>()
-        for (item in items) {
-            val renderer = item.asObject()?.get("musicTwoRowItemRenderer")?.asObject() ?: continue
-            parseSinglePlaylistFromTwoRowRenderer(renderer)?.let { out.add(it) }
+
+        fun collect(items: JsonArray?) {
+            for (item in items ?: return) {
+                val renderer = item.asObject()
+                    ?.get("musicTwoRowItemRenderer")?.asObject()
+                    ?: item.asObject()?.get("musicResponsiveListItemRenderer")?.asObject()
+                    ?: continue  // skips the trailing continuationItemRenderer
+                parseSinglePlaylistFromTwoRowRenderer(renderer)?.let { out.add(it) }
+            }
+        }
+
+        // Legacy shelf envelope.
+        collect(
+            response.navigatePath("continuationContents", "musicShelfContinuation", "contents")?.asArray()
+        )
+        // Grid envelope — FEmusic_liked_playlists renders as a gridRenderer on
+        // the web client, same as FEmusic_liked_albums.
+        collect(
+            response.navigatePath("continuationContents", "gridContinuation", "items")?.asArray()
+        )
+        // Current envelope — both shelf and grid continuations can arrive as
+        // an append action instead of a continuationContents block.
+        response["onResponseReceivedActions"]?.asArray()?.forEach { action ->
+            collect(
+                action.asObject()
+                    ?.navigatePath("appendContinuationItemsAction", "continuationItems")
+                    ?.asArray()
+            )
         }
         return out
     }
