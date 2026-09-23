@@ -408,6 +408,419 @@ class YTMusicApiClientTest {
         tracks.forEach { assertNotNull(it.videoId); assertTrue(it.videoId.isNotEmpty()) }
     }
 
+        // ── Grid-shape fixture builders (albums/playlists tiles + continuation marker) ──
+
+    /** Minimal musicTwoRowItemRenderer album tile matching parseSingleAlbumFromTwoRowRenderer. */
+    private fun albumTile(browseId: String, title: String, artist: String) = buildJsonObject {
+        putJsonObject("musicTwoRowItemRenderer") {
+            putJsonObject("navigationEndpoint") {
+                putJsonObject("browseEndpoint") { put("browseId", browseId) }
+            }
+            putJsonObject("title") {
+                putJsonArray("runs") { addJsonObject { put("text", title) } }
+            }
+            putJsonObject("subtitle") {
+                putJsonArray("runs") {
+                    addJsonObject { put("text", "Album") }
+                    addJsonObject { put("text", " • ") }
+                    addJsonObject { put("text", artist) }
+                }
+            }
+            putJsonObject("thumbnailRenderer") {
+                putJsonObject("musicThumbnailRenderer") {
+                    putJsonObject("thumbnail") {
+                        putJsonArray("thumbnails") {
+                            addJsonObject { put("url", "https://example/$browseId.jpg") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Minimal musicTwoRowItemRenderer playlist tile matching parseSinglePlaylistFromTwoRowRenderer. */
+    private fun playlistTile(browseId: String, title: String) = buildJsonObject {
+        putJsonObject("musicTwoRowItemRenderer") {
+            putJsonObject("navigationEndpoint") {
+                putJsonObject("browseEndpoint") { put("browseId", browseId) }
+            }
+            putJsonObject("title") {
+                putJsonArray("runs") { addJsonObject { put("text", title) } }
+            }
+            putJsonObject("thumbnailRenderer") {
+                putJsonObject("musicThumbnailRenderer") {
+                    putJsonObject("thumbnail") {
+                        putJsonArray("thumbnails") {
+                            addJsonObject { put("url", "https://example/$browseId.jpg") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** The trailing grid item that carries the next-page token. */
+    private fun continuationItem(token: String) = buildJsonObject {
+        putJsonObject("continuationItemRenderer") {
+            putJsonObject("continuationEndpoint") {
+                putJsonObject("continuationCommand") { put("token", token) }
+            }
+        }
+    }
+
+    // ── extractContinuationToken: grid shapes (shape 5) ────────────────────
+
+    @Test fun `extractContinuationToken finds token in bare singleColumn gridRenderer`() {
+        val response = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(albumTile("MPREb_album1", "Album One", "Artist A"))
+                                                        add(continuationItem("GRID_TOKEN_BARE"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val client = fakeBrowseClient("{}")
+        assertEquals("GRID_TOKEN_BARE", client.extractContinuationTokenForTest(response))
+    }
+
+    @Test fun `extractContinuationToken finds token in gridRenderer nested in itemSectionRenderer`() {
+        val response = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("itemSectionRenderer") {
+                                                    putJsonArray("contents") {
+                                                        addJsonObject {
+                                                            putJsonObject("gridRenderer") {
+                                                                putJsonArray("items") {
+                                                                    add(albumTile("MPREb_album2", "Album Two", "Artist B"))
+                                                                    add(continuationItem("GRID_TOKEN_NESTED"))
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val client = fakeBrowseClient("{}")
+        assertEquals("GRID_TOKEN_NESTED", client.extractContinuationTokenForTest(response))
+    }
+
+    @Test fun `extractContinuationToken finds token in gridContinuation shelf-level continuations array`() {
+        val response = buildJsonObject {
+            putJsonObject("continuationContents") {
+                putJsonObject("gridContinuation") {
+                    putJsonArray("items") { add(albumTile("MPREb_album3", "Album Three", "Artist C")) }
+                    putJsonArray("continuations") {
+                        addJsonObject {
+                            putJsonObject("nextContinuationData") { put("continuation", "GRID_TOKEN_PAGE3") }
+                        }
+                    }
+                }
+            }
+        }
+        val client = fakeBrowseClient("{}")
+        assertEquals("GRID_TOKEN_PAGE3", client.extractContinuationTokenForTest(response))
+    }
+
+    @Test fun `extractContinuationToken finds token in gridContinuation trailing item`() {
+        val response = buildJsonObject {
+            putJsonObject("continuationContents") {
+                putJsonObject("gridContinuation") {
+                    putJsonArray("items") {
+                        add(albumTile("MPREb_album4", "Album Four", "Artist D"))
+                        add(continuationItem("GRID_TOKEN_PAGE4"))
+                    }
+                }
+            }
+        }
+        val client = fakeBrowseClient("{}")
+        assertEquals("GRID_TOKEN_PAGE4", client.extractContinuationTokenForTest(response))
+    }
+
+    // ── End-to-end grid pagination: getSavedAlbums / getUserPlaylists ──────
+
+    @Test fun `getSavedAlbums paginates via appendContinuationItemsAction envelope`() = runTest {
+        val page1 = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(albumTile("MPREb_p1a", "Page1 Album A", "Artist A"))
+                                                        add(albumTile("MPREb_p1b", "Page1 Album B", "Artist B"))
+                                                        add(continuationItem("ALBUMS_PAGE2"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // page2 arrives as the CURRENT envelope, not the legacy
+        // gridContinuation.items shape — this is what the fix must also read.
+        val page2 = buildJsonObject {
+            putJsonArray("onResponseReceivedActions") {
+                addJsonObject {
+                    putJsonObject("appendContinuationItemsAction") {
+                        putJsonArray("continuationItems") {
+                            add(albumTile("MPREb_p2a", "Page2 Album A", "Artist C"))
+                        }
+                    }
+                }
+            }
+        }
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(any(), anyOrNull())).thenReturn(page1)
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getSavedAlbums()
+        assertTrue("expected Success, got $result", result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertEquals(setOf("MPREb_p1a", "MPREb_p1b", "MPREb_p2a"), paged.albums.map { it.id }.toSet())
+        assertFalse("real pagination must not report the old permanent-partial bug", paged.partial)
+    }
+
+    @Test fun `getSavedAlbums dedupes albums repeated across grid pages`() = runTest {
+        val page1 = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(albumTile("MPREb_dup", "Dup Album", "Artist A"))
+                                                        add(continuationItem("DUP_PAGE2"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val page2 = buildJsonObject {
+            putJsonObject("continuationContents") {
+                putJsonObject("gridContinuation") {
+                    putJsonArray("items") {
+                        add(albumTile("MPREb_dup", "Dup Album", "Artist A"))
+                        add(albumTile("MPREb_new", "New Album", "Artist B"))
+                    }
+                }
+            }
+        }
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(any(), anyOrNull())).thenReturn(page1)
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getSavedAlbums()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertEquals(setOf("MPREb_dup", "MPREb_new"), paged.albums.map { it.id }.toSet())
+        assertEquals(2, paged.albums.size)
+    }
+
+    @Test fun `getUserPlaylists paginates via legacy gridContinuation envelope`() = runTest {
+        val page1 = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(playlistTile("VLplaylist1", "Playlist One"))
+                                                        add(continuationItem("PLAYLISTS_PAGE2"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val page2 = buildJsonObject {
+            putJsonObject("continuationContents") {
+                putJsonObject("gridContinuation") {
+                    putJsonArray("items") { add(playlistTile("VLplaylist2", "Playlist Two")) }
+                }
+            }
+        }
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(any(), anyOrNull())).thenReturn(page1)
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getUserPlaylists()
+        assertTrue("expected Success, got $result", result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertEquals(setOf("playlist1", "playlist2"), paged.playlists.map { it.playlistId }.toSet())
+        assertFalse(paged.partial)
+    }
+
+    @Test fun `getUserPlaylists paginates via appendContinuationItemsAction envelope`() = runTest {
+        val page1 = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(playlistTile("VLplaylistA", "Playlist A"))
+                                                        add(continuationItem("PLAYLISTS_APPEND_PAGE2"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val page2 = buildJsonObject {
+            putJsonArray("onResponseReceivedActions") {
+                addJsonObject {
+                    putJsonObject("appendContinuationItemsAction") {
+                        putJsonArray("continuationItems") { add(playlistTile("VLplaylistB", "Playlist B")) }
+                    }
+                }
+            }
+        }
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(any(), anyOrNull())).thenReturn(page1)
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getUserPlaylists()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertEquals(setOf("playlistA", "playlistB"), paged.playlists.map { it.playlistId }.toSet())
+    }
+
+    @Test fun `getUserPlaylists dedupes playlists repeated across grid pages`() = runTest {
+        val page1 = buildJsonObject {
+            putJsonObject("contents") {
+                putJsonObject("singleColumnBrowseResultsRenderer") {
+                    putJsonArray("tabs") {
+                        addJsonObject {
+                            putJsonObject("tabRenderer") {
+                                putJsonObject("content") {
+                                    putJsonObject("sectionListRenderer") {
+                                        putJsonArray("contents") {
+                                            addJsonObject {
+                                                putJsonObject("gridRenderer") {
+                                                    putJsonArray("items") {
+                                                        add(playlistTile("VLdup", "Dup Playlist"))
+                                                        add(continuationItem("DUP_PLAYLIST_PAGE2"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val page2 = buildJsonObject {
+            putJsonObject("continuationContents") {
+                putJsonObject("gridContinuation") {
+                    putJsonArray("items") {
+                        add(playlistTile("VLdup", "Dup Playlist"))
+                        add(playlistTile("VLnew", "New Playlist"))
+                    }
+                }
+            }
+        }
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(any(), anyOrNull())).thenReturn(page1)
+            whenever(inner.browseWithStatus(any())).thenReturn(RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val result = client.getUserPlaylists()
+        assertTrue(result is SyncResult.Success)
+        val paged = (result as SyncResult.Success).data
+        assertEquals(setOf("dup", "new"), paged.playlists.map { it.playlistId }.toSet())
+        assertEquals(2, paged.playlists.size)
+    }
+
     @Test
     fun `normalizeArtistBrowseId strips MPLA only before UC`() {
         // `MPLAUC…` is the music-channel variant — strip `MPLA` to expose the
