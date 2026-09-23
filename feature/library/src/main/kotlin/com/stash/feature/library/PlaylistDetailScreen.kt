@@ -47,6 +47,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -110,6 +111,9 @@ fun PlaylistDetailScreen(
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
     val buildState by viewModel.buildState.collectAsStateWithLifecycle()
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
+    // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
+    val follow by viewModel.follow.collectAsStateWithLifecycle()
+    val readOnly = follow?.readOnly == true
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -180,12 +184,27 @@ fun PlaylistDetailScreen(
                         onShuffle = { viewModel.shuffleAll() },
                         onToggleSearch = { viewModel.toggleSearch() },
                         onShare = { showShareSheet = true },
+                        readOnly = readOnly,
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
                     )
+                }
+
+                // ── Followed mix: sharer, Download this mix, Unfollow ───
+                follow?.takeIf { it.readOnly }?.let { f ->
+                    item(key = "follow") {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text("Following · from ${f.sharedBy ?: "a friend"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Download this mix", Modifier.weight(1f))
+                                Switch(checked = f.downloadOn, onCheckedChange = { viewModel.setFollowDownload(it) })
+                            }
+                            TextButton(onClick = { viewModel.unfollow(onBack) }) { Text("Unfollow", color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
                 }
 
                 // ── Search filter bar ───────────────────────────────────
@@ -315,7 +334,7 @@ fun PlaylistDetailScreen(
 
         // Action order: Delete must stay within the first four (visible) and
         // Play next collapses into the ⋮ overflow as the least-used action.
-        val selectionActions = listOf(
+        val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
@@ -331,7 +350,7 @@ fun PlaylistDetailScreen(
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            if (readOnly) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
                 showBatchDelete = true
             },
             SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
@@ -367,14 +386,14 @@ fun PlaylistDetailScreen(
                     trackToSave = it
                     selectedTrack = null
                 },
-                onDelete = {
+                onDelete = { t: Track ->
                     // Hand off to the confirmation dialog so the user can
                     // choose "delete only" vs "delete and block future
                     // syncs". Closing the sheet here prevents it from
                     // lingering behind the dialog.
-                    trackToDelete = it
+                    trackToDelete = t
                     selectedTrack = null
-                },
+                }.takeUnless { readOnly },
                 onDownload = {
                     viewModel.queueDownload(it.id)
                     selectedTrack = null
@@ -606,6 +625,7 @@ private fun PlaylistHeader(
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
     onShare: () -> Unit,
+    readOnly: Boolean,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -820,7 +840,7 @@ private fun PlaylistHeader(
                     )
                 }
 
-                if (playlist.type == PlaylistType.CUSTOM) {
+                if (playlist.type == PlaylistType.CUSTOM && !readOnly) {
                     IconButton(
                         onClick = onSetImage,
                         modifier = Modifier

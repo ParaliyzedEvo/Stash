@@ -48,6 +48,37 @@ class PlaylistDetailViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
+    @Test fun `an active follow exposes read-only state with the sharer's name`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(
+                com.stash.core.data.db.entity.SharedMixEntity(
+                    1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient", sharedBy = "Rawn",
+                ),
+            )
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        backgroundScope.launch { vm.follow.collect {} }
+        runCurrent()
+        val f = checkNotNull(vm.follow.value)
+        assertEquals(true, f.readOnly)
+        assertEquals("Rawn", f.sharedBy)
+    }
+
+    @Test fun `a follow whose owner stopped sharing is an ordinary editable playlist`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(
+                com.stash.core.data.db.entity.SharedMixEntity(
+                    1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
+                    status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED,
+                ),
+            )
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        backgroundScope.launch { vm.follow.collect {} }
+        runCurrent()
+        assertEquals(false, checkNotNull(vm.follow.value).readOnly)
+    }
+
     @Test
     fun playSelectedNext_loops_addNext_per_track() = runTest {
         val playerRepo = playerRepoMock()
@@ -309,6 +340,9 @@ class PlaylistDetailViewModelTest {
             on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
         },
         savedStateHandle: SavedStateHandle = SavedStateHandle(mapOf("playlistId" to 1L)),
+        sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
+            on { observe(any()) } doReturn flowOf(null)
+        },
     ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
@@ -318,5 +352,6 @@ class PlaylistDetailViewModelTest {
         connectivityMonitor = connectivityMonitor,
         recipeDao = recipeDao,
         discoveryQueueDao = discoveryQueueDao,
+        sharedMixRepository = sharedMixRepository,
     )
 }

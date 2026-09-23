@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -67,6 +68,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val connectivityMonitor: ConnectivityMonitor,
     private val recipeDao: StashMixRecipeDao,
     private val discoveryQueueDao: DiscoveryQueueDao,
+    private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -95,6 +97,47 @@ class PlaylistDetailViewModel @Inject constructor(
 
     /** Holds the one-shot playlist metadata fetched in [init]. */
     private val _playlist = MutableStateFlow<Playlist?>(null)
+
+    /** Non-null when this playlist is a followed mix (spec §6). Declared after [_playlist]: initialisers run in order. */
+    data class FollowUi(val readOnly: Boolean, val sharedBy: String?, val downloadOn: Boolean)
+
+    val follow: StateFlow<FollowUi?> = combine(
+        sharedMixRepository.observe(playlistId),
+        _playlist,
+    ) { row, playlist ->
+        row?.takeIf { it.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER }?.let {
+            FollowUi(
+                // A REMOVED follow (owner stopped sharing) is an ordinary editable playlist.
+                readOnly = it.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE,
+                sharedBy = it.sharedBy,
+                downloadOn = playlist?.syncEnabled == true,
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setFollowDownload(on: Boolean) = viewModelScope.launch {
+        if (followAction("change download for") { sharedMixRepository.setDownload(playlistId, on) }) {
+            _playlist.value = _playlist.value?.copy(syncEnabled = on)
+        } else {
+            _userMessages.tryEmit("Couldn't change that. Try again.")
+        }
+    }
+
+    /** [onDone] runs only once the follow is really gone. */
+    fun unfollow(onDone: () -> Unit) = viewModelScope.launch {
+        if (followAction("unfollow") { sharedMixRepository.unfollow(playlistId) }) onDone()
+        else _userMessages.tryEmit("Couldn't unfollow this mix. Try again.")
+    }
+
+    /** A failed DB/IO call becomes false (and a log line), never a crash. */
+    private suspend fun followAction(action: String, block: suspend () -> Unit): Boolean = try {
+        block(); true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("PlaylistDetailVM", "$action $playlistId failed", e)
+        false
+    }
 
     /**
      * Combined UI state that reacts to:
@@ -464,6 +507,18 @@ class PlaylistDetailViewModel @Inject constructor(
     /** Snackbar-targeted messages (delete confirmation, errors). */
     val userMessages: kotlinx.coroutines.flow.SharedFlow<String> =
         _userMessages.asSharedFlow()
+
+    // The one-time "stopped sharing" notice (spec §6). This init sits after [_userMessages] so it is
+    // initialised, and waits for the screen's collector: the flow has no replay, so an emit before the
+    // Snackbar subscribes would be lost after the flag was already cleared.
+    init {
+        viewModelScope.launch {
+            _userMessages.subscriptionCount.first { it > 0 }
+            followAction("read the stopped-sharing notice for") {
+                sharedMixRepository.consumeRemovedNotice(playlistId)?.let { _userMessages.tryEmit(it) }
+            }
+        }
+    }
 
     /** User-created playlists for the Save to Playlist picker. */
     val userPlaylists = musicRepository.getUserCreatedPlaylists()

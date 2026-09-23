@@ -301,6 +301,9 @@ class MixOfflineTapGuardTest {
             discoveryQueueDao = mock {
                 on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
             },
+            sharedMixRepository = mock {
+                on { observe(any()) } doReturn flowOf(null)
+            },
         )
     }
 }
