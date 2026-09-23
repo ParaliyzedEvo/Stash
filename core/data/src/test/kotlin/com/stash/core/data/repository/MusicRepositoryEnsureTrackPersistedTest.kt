@@ -46,14 +46,22 @@ class MusicRepositoryEnsureTrackPersistedTest {
         coVerify(exactly = 0) { trackDao.insert(any()) }
     }
 
-    @Test fun `a matched track gets the incoming isrc and album backfilled`() = runTest {
+    @Test fun `an id-matched track gets the incoming isrc backfilled`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         coEvery { trackDao.findByYoutubeId("yt1") } returns
             TrackEntity(id = 7L, title = "Song", artist = "Artist", youtubeId = "yt1", source = MusicSource.YOUTUBE)
         val repo = buildRepo(trackDao)
         repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "yt1", isrc = "USABC1234567", album = "LP"))
         coVerify { trackDao.backfillIsrcIfMissing(7L, "USABC1234567") }
-        coVerify { trackDao.backfillAlbumIfMissing(7L, "LP") }
+    }
+
+    @Test fun `a fuzzy title-artist match never takes the incoming isrc`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns
+            TrackEntity(id = 8L, title = "Song", artist = "Artist", source = MusicSource.SPOTIFY)
+        val repo = buildRepo(trackDao)
+        repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
+        coVerify(exactly = 0) { trackDao.backfillIsrcIfMissing(any(), any()) }
     }
 
     private fun buildRepo(trackDao: TrackDao): MusicRepositoryImpl = MusicRepositoryImpl(

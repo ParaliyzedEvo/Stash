@@ -47,8 +47,8 @@ class SharedMixRepository @Inject constructor(
      * row can never make the whole mix unpublishable.
      */
     suspend fun buildDocument(playlistId: Long, name: String, sharedBy: String?): SharedMixDocument {
+        // Untagged local files are kept: toSharedTrack() gives them placeholder title/artist.
         val tracks = playlistDao.getTracksForPlaylist(playlistId).map { it.toDomain() }
-            .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
         return SharedMixDocument(
             name = name.trim().take(100),
             sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
@@ -184,7 +184,7 @@ class SharedMixRepository @Inject constructor(
                 if (v.value <= row.version) {
                     sharedMixDao.upsert(row.copy(missingCount = 0, lastCheckedAt = now)); FollowCheck.UpToDate
                 } else when (val d = api.get(row.shareId)) {
-                    is ShareResult.Ok -> { apply(row, d.value, now); FollowCheck.Updated }
+                    is ShareResult.Ok -> { applyUpdate(row, d.value, now); FollowCheck.Updated }
                     ShareResult.Gone -> removed(row)
                     else -> FollowCheck.Unreachable
                 }
@@ -197,7 +197,7 @@ class SharedMixRepository @Inject constructor(
         }
     }
 
-    private suspend fun apply(row: SharedMixEntity, doc: SharedMixDocument, now: Long) {
+    private suspend fun applyUpdate(row: SharedMixEntity, doc: SharedMixDocument, now: Long) {
         val ids = persistTracks(doc)
         playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
         sharedMixDao.upsert(row.copy(name = doc.name, version = doc.version, sharedBy = doc.sharedBy, missingCount = 0, lastCheckedAt = now))

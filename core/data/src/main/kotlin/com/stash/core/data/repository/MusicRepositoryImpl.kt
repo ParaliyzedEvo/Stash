@@ -469,7 +469,9 @@ class MusicRepositoryImpl @Inject constructor(
         val cArtist = canonicalizeIdentity(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
-                backfillFrom(existing, track)
+                // Fuzzy title/artist match: could be a different recording (radio edit vs album),
+                // and lossless trusts ISRC, so only duration is taken here.
+                backfillFrom(existing, track, trustIsrc = false)
                 return existing.id
             }
         }
@@ -485,10 +487,13 @@ class MusicRepositoryImpl @Inject constructor(
         )
     }
 
-    private suspend fun backfillFrom(existing: com.stash.core.data.db.entity.TrackEntity, incoming: Track) {
+    /**
+     * Fills a matched row's blanks from the incoming track. Album is deliberately not backfilled:
+     * without album_artist it would split the Albums tab's (album, album_artist) grouping.
+     */
+    private suspend fun backfillFrom(existing: com.stash.core.data.db.entity.TrackEntity, incoming: Track, trustIsrc: Boolean = true) {
         if (existing.durationMs <= 0L && incoming.durationMs > 0L) trackDao.backfillDurationIfMissing(existing.id, incoming.durationMs)
-        incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
-        incoming.album.takeIf { it.isNotBlank() }?.let { trackDao.backfillAlbumIfMissing(existing.id, it) }
+        if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
 
     /** Same normalization as [SearchDownloadCoordinator.canonicalize] — kept

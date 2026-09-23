@@ -46,6 +46,7 @@ object NetworkModule {
             }
             redactHeader("Authorization")
             redactHeader("Cookie")
+            redactHeader("X-Stash-Edit-Key")
         }
 
         return OkHttpClient.Builder()
