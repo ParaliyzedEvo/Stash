@@ -33,7 +33,7 @@ The unit both this feature and Listen Together depend on. Any Stash can turn it 
 | `sp` Spotify track id | the id part of `spotify_uri` | no |
 | `yt` YouTube video id | `youtube_id` | no |
 
-When a descriptor is received, it becomes a track row via `ensureTrackPersisted` (`MusicRepositoryImpl`), which de-duplicates by YouTube id, then Spotify URI, then canonical (title, artist). New rows are stream-only (`is_downloaded = 0`, `is_streamable = 1`) and already get `isrc` through `TrackMapper.toEntity`. **On the match path, `ensureTrackPersisted` currently returns the existing row and only backfills duration, so it must be extended to also backfill `isrc` and `album` when the existing row has none**, so lossless matching (Qobuz searches by ISRC first) can use them.
+When a descriptor is received, it becomes a track row via `ensureTrackPersisted` (`MusicRepositoryImpl`), which de-duplicates by YouTube id, then Spotify URI, then canonical (title, artist). New rows are stream-only (`is_downloaded = 0`, `is_streamable = 1`) and already get `isrc` through `TrackMapper.toEntity`. **On the match path, `ensureTrackPersisted` currently returns the existing row and only backfills duration, so it must be extended to also backfill `isrc` and `album` when the existing row has none**, so lossless matching (Qobuz searches by ISRC first) can use them. **A newly persisted descriptor track's `source`** is `SPOTIFY` when the descriptor has `sp`, else `YOUTUBE` when it has `yt`, else `BOTH`, so Library's source filters place it where a synced track with the same IDs would be.
 
 ## 3. The shared-mix document
 
@@ -122,7 +122,6 @@ Any playlist type can be shared.
 | `auto_update` | Boolean | owner: "keep it updated" |
 | `status` | `ACTIVE` / `REMOVED` | |
 | `shared_by` | String? | follower: display name shown in the UI |
-| `download` | Boolean | follower: "Download this mix" switch (default false) |
 | `missing_count` | Int | follower: consecutive 404s (see below) |
 | `last_checked_at` | Long? | follower |
 
@@ -151,9 +150,9 @@ If this mix is already followed on this phone, the screen shows **Following** an
 **Play, Follow and Save a copy** persist the descriptors (§2). Then:
 - **Play:** queues the tracks with `setQueue`.
 - **Follow:** creates a playlist and a `FOLLOWER` row.
-  - Playlist fields: the same identity as a playlist the user creates in Stash (`MusicRepositoryImpl.createPlaylist`): `type = CUSTOM`, `source = BOTH`, `sync_enabled = true`, except that `source_id = "share:<id>"` instead of `"custom_<uuid>"`. `BOTH` is what the playlist picker, the user-created-playlist queries and the protected-playlist checks (`TrackDao`) recognise as user-curated. Spotify/YouTube deactivation (`deactivateMissingForSource`, `deactivateMissingSpotifyCustomPlaylists`) only touches SPOTIFY/YOUTUBE rows, so sync never removes it.
+  - Playlist fields: the same identity as a playlist the user creates in Stash (`MusicRepositoryImpl.createPlaylist`): `type = CUSTOM`, `source = BOTH`, except that `source_id = "share:<id>"` instead of `"custom_<uuid>"` and **`sync_enabled = false`** (see Downloading). `BOTH` is what the playlist picker, the user-created-playlist queries and the protected-playlist checks (`TrackDao`) recognise as user-curated. Spotify/YouTube deactivation (`deactivateMissingForSource`, `deactivateMissingSpotifyCustomPlaylists`) only touches SPOTIFY/YOUTUBE rows, so sync never removes it.
   - The playlist is **read-only**: add, remove, reorder and rename are hidden for playlists that have a `FOLLOWER` row, and the "Save to Playlist" picker (`PlaylistDao.getPickablePlaylists`) excludes them. The header reads "Following · from <sharedBy>".
-  - **Downloading:** the followed mix's screen has a **Download this mix** switch, off by default and stored as `shared_mixes.download`. Manage playlists is per source (Spotify/YouTube/Last.fm), so it is not the home for this switch. Turning it on calls `queueDownloadsForPlaylist`. While it's on, tracks added by a follow update are queued the same way. Turning it off stops queueing new tracks; files already downloaded stay, as with any playlist.
+  - **Downloading:** the followed mix's screen has a **Download this mix** switch that **is `playlists.sync_enabled`**, created off. Manage playlists is per source (Spotify/YouTube/Last.fm), so it is not the home for this switch. The existing download machinery then does the rest with no new code: after each sync, `LibraryReconciliationUseCase` → `DownloadQueueDao.getUnqueuedTrackIds` queues the undownloaded members of every `sync_enabled` playlist, including tracks a follow update added, and `cancelDownloadsWithNoEnabledPlaylist` drains queued ones when it is switched off. Turning it on also calls `queueDownloadsForPlaylist` so downloading starts immediately instead of at the next sync. Files already downloaded stay when it's switched off, as with any playlist.
 - **Save a copy:** creates an ordinary editable playlist through `createPlaylist` (`CUSTOM`/`BOTH`, `source_id = "custom_<uuid>"`) and adds the tracks, with no `shared_mixes` row.
 
 **`SharedMixFollower`** checks for updates:
@@ -166,7 +165,7 @@ For each `FOLLOWER` row with status `ACTIVE`:
   - members no longer in the doc are soft-removed (`removed_at`), then go through the same cleanup as a synced playlist's removed tracks;
   - `position` is rewritten to the doc's order;
   - the name is updated.
-- On a **410**: the row becomes `REMOVED` and the playlist turns into an ordinary editable playlist. Its `source_id` stays `share:<id>`, but it is no longer read-only because the row is no longer `ACTIVE`. The user sees a one-time message: "<sharedBy or 'The owner'> stopped sharing this mix; you keep your copy."
+- On a **410**: the row becomes `REMOVED` and the playlist turns into an ordinary editable playlist. Its `source_id` stays `share:<id>`, but it is no longer read-only because the row is no longer `ACTIVE`, and its `sync_enabled` (the Download switch) keeps whatever the user had set. The user sees a one-time message: "<sharedBy or 'The owner'> stopped sharing this mix; you keep your copy."
 - On a **404**: treated like 410 only after **two consecutive** 404s, counted in `missing_count` and reset on any successful response, so a transient KV miss never converts a live follow.
 
 **Unfollow:** deletes the `FOLLOWER` row and the playlist. Tracks are kept only if another playlist or a like claims them, following the existing orphan rules.
