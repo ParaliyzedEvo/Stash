@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">Añadir a tus me gusta</string>
+    <string name="notification_action_unlike">Eliminar de tus me gusta</string>
+    <string name="notification_action_repeat_off">En bucle apagado</string>
+    <string name="notification_action_repeat_all">Repetir todo</string>
+    <string name="notification_action_repeat_one">Repetir una vez</string>
+    <string name="notification_action_shuffle_on">Mezclas activadas</string>
+    <string name="notification_action_shuffle_off">Mezclas desactivadas</string>
+    <string name="shuffle_play">Aleatorio</string>
+    <string name="resuming_channel_name">Reproducción</string>
+    <string name="resuming_notification_title">Resumir…</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">Ajouter à mes morceaux préférés</string>
+    <string name="notification_action_unlike">Supprimer de la liste des morceaux préférés</string>
+    <string name="notification_action_repeat_off">Répéter désactivé</string>
+    <string name="notification_action_repeat_all">Tout répéter</string>
+    <string name="notification_action_repeat_one">Répéter une fois</string>
+    <string name="notification_action_shuffle_on">Lecture aléatoire activée</string>
+    <string name="notification_action_shuffle_off">Lecture aléatoire désactivée</string>
+    <string name="shuffle_play">Lecture aléatoire</string>
+    <string name="resuming_channel_name">Lecture</string>
+    <string name="resuming_notification_title">Reprise…</string>
+</resources>
