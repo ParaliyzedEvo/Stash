@@ -203,3 +203,26 @@ test("the wait runs until the pace line reaches today's usage; a full pool is st
     await withGlobalUsed(full, 100); // the global cap answers first (503) — pacing never masks it
     assert.equal((await handle(mintReq(42, 27, { purpose: "download" }), full, qobuz(), NOW)).status, 503);
 });
+
+// ── Visibility: a salted hash of the caller's IP rides on the install's quota row ─────────
+function quotaRows(e) {
+    return e.DB.raw.prepare("SELECT key, n, ip FROM quota WHERE key LIKE 'i:%' ORDER BY key").all().map((r) => ({ ...r }));
+}
+
+test("with IP_SALT set, each install's quota row carries the same short hash for the same IP; no extra rows", async () => {
+    const e = env({ IP_SALT: "salt-1" });
+    await handle(mintReq(42, 27, { install: "install-aaaa" }), e, qobuz([200, GOOD]), NOW);
+    await handle(mintReq(43, 27, { install: "install-bbbb" }), e, qobuz([200, GOOD]), NOW);
+    const rows = quotaRows(e);
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].ip, /^[0-9a-f]{16}$/);
+    assert.equal(rows[0].ip, rows[1].ip); // two installs, one IP → visible as a pair
+    assert.notEqual(rows[0].ip, "203.0.113.9"); // never the raw address
+    assert.equal(e.DB.raw.prepare("SELECT COUNT(*) AS c FROM quota").get().c, 3); // global + 2 installs, as before
+});
+
+test("without IP_SALT nothing about the IP is stored", async () => {
+    const e = env();
+    await handle(mintReq(42, 27), e, qobuz([200, GOOD]), NOW);
+    assert.equal(quotaRows(e)[0].ip, null);
+});

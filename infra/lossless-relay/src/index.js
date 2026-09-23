@@ -16,6 +16,7 @@
  * State: D1 (accounts' rotation state, the shared mint cache, daily quotas).
  * Secrets: RELAY_KEY, RELAY_KEY_PREV (optional), QOBUZ_ACCOUNTS. Deploy: see README.md.
  */
+import { createHmac } from "node:crypto";
 import { verifyMint } from "./auth.js";
 import { mintFromQobuz } from "./qobuz.js";
 import {
@@ -114,7 +115,7 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         const cf = request.cf || {};
         console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} purpose=${h("X-Stash-Purpose") || "-"} cc=${cf.country || "?"} colo=${cf.colo || "?"} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
         if (r.kind === "ok" || r.kind === "locked") {
-            const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install)];
+            const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install, ipTag(env, h("CF-Connecting-IP")))];
             if (r.kind === "ok" && r.etsp) writes.push(putCachedStmt(env.DB, trackId, formatId, r)); // no etsp → serve once, never cache
             await env.DB.batch(writes);
             return r.kind === "ok" ? ok(r.url, r.formatId, r.bitDepth, r.sampleRateHz, "MISS") : json({ error: "not_available" }, 404);
@@ -135,6 +136,16 @@ export function pacedWaitSec(used, caps, nowSec) {
     const elapsed = nowSec % 86400;
     const reachedAt = (used / caps.global - caps.paceHeadroomPct / 100) * 86400;
     return reachedAt <= elapsed ? 0 : Math.ceil(reachedAt - elapsed) + 60;
+}
+
+/**
+ * A short salted hash of the caller's IP for the abuse report (many installs behind one IP is
+ * how a scraper rotating install ids shows up), or null when IP_SALT is unset. The salt is a
+ * Worker secret, never the relay key: that key is public, and with it the whole IPv4 space
+ * would reverse in minutes.
+ */
+function ipTag(env, ip) {
+    return env.IP_SALT && ip ? createHmac("sha256", env.IP_SALT).update(ip).digest("hex").slice(0, 16) : null;
 }
 
 function vars(env) {

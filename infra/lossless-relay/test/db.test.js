@@ -81,14 +81,19 @@ test("prune gives a dead account another chance after six hours; a fresh kill st
     assert.deepEqual(await db.prepare("SELECT state, dead_reason FROM accounts WHERE label = 'fresh'").first(), { state: "dead", dead_reason: "401" });
 });
 
-test("quota upserts per day and key; prune keeps today and yesterday", async () => {
+test("quota upserts per day and key", async () => {
     const db = fakeD1();
     await db.batch([bumpQuotaStmt(db, "2026-09-01", "global"), bumpQuotaStmt(db, "2026-09-01", "global"), bumpQuotaStmt(db, "2026-09-01", "i:x")]);
     assert.equal(await readQuota(db, "2026-09-01", "global"), 2);
     assert.equal(await readQuota(db, "2026-09-01", "i:x"), 1);
     assert.equal(await readQuota(db, "2026-09-02", "global"), 0);
-    await db.batch([bumpQuotaStmt(db, "2026-08-30", "global")]);
-    await prune(db, T0); // keeps 2026-08-31 and 2026-09-01
-    assert.equal(await readQuota(db, "2026-08-30", "global"), 0);
-    assert.equal(await readQuota(db, "2026-09-01", "global"), 2);
+});
+
+test("prune keeps a week of quota rows for the IP report, and drops older ones", async () => {
+    const db = fakeD1();
+    const now = 1788282000; // 2026-09-01
+    await db.batch([bumpQuotaStmt(db, "2026-08-24", "global"), bumpQuotaStmt(db, "2026-08-25", "global"), bumpQuotaStmt(db, "2026-09-01", "global")]);
+    await prune(db, now);
+    const days = db.raw.prepare("SELECT day FROM quota ORDER BY day").all().map((r) => r.day);
+    assert.deepEqual(days, ["2026-08-25", "2026-09-01"]);
 });
