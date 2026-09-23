@@ -25,22 +25,17 @@ class ShareLinksTest {
     }
 
     @Test
-    fun `stash link encodes title and artist and carries known ids`() {
-        val link = stashShareLink(
-            title = "Song & Dance",
-            artist = "Aphex Twin",
-            spotifyUri = "spotify:track:abc",
-            youtubeId = "xyz",
-        )
-        assertThat(link).startsWith("stash://track?t=Song+%26+Dance&a=Aphex+Twin")
-        assertThat(link).contains("&s=")
-        assertThat(link).contains("&y=xyz")
+    fun `stash link is the https track link with the known ids`() {
+        val link = stashShareLink(title = "Song & Dance", artist = "Aphex Twin", spotifyUri = "spotify:track:abc", youtubeId = "xyz")
+        assertThat(link).startsWith("https://stash-share.rawnaldclark.workers.dev/t?t=Song+%26+Dance&a=Aphex+Twin")
+        assertThat(link).contains("&sp=abc")
+        assertThat(link).contains("&yt=xyz")
     }
 
     @Test
     fun `stash link omits missing ids`() {
-        val link = stashShareLink("T", "A", spotifyUri = null, youtubeId = null)
-        assertThat(link).isEqualTo("stash://track?t=T&a=A")
+        assertThat(stashShareLink("T", "A", spotifyUri = null, youtubeId = null))
+            .isEqualTo("https://stash-share.rawnaldclark.workers.dev/t?t=T&a=A")
     }
 
     @Test
