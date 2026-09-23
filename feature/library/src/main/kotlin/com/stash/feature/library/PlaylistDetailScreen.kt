@@ -409,7 +409,7 @@ fun PlaylistDetailScreen(
 
     // ── Share mix sheet ──
     if (showShareSheet) state.playlist?.let { p ->
-        com.stash.feature.library.share.ShareMixSheet(p.id, p.name, state.tracks.size, onDismiss = { showShareSheet = false })
+        com.stash.feature.library.share.ShareMixSheet(p.id, p.name, p.trackCount, onDismiss = { showShareSheet = false })
     }
 
     // ── Share links sheet ──────────────────────────────────────────────────

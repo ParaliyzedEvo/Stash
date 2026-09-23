@@ -1,12 +1,13 @@
 package com.stash.feature.library.share
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.data.share.SharedTrackLinkHolder
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,12 +21,13 @@ import kotlinx.coroutines.launch
 /** The card an incoming shared-track link opens (spec §6). */
 @HiltViewModel
 class SharedTrackViewModel @Inject constructor(
-    holder: SharedTrackLinkHolder,
+    savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val likeCoordinator: LikeCoordinator,
 ) : ViewModel() {
-    val track: SharedTrack? = holder.consume()
+    /** Parsed from the route's link, so the card survives process death. */
+    val track: SharedTrack? = (ShareLinks.parse(savedStateHandle.get<String>("link")) as? ShareLinks.Parsed.Track)?.track
     private val _liked = MutableStateFlow(false)
     val liked: StateFlow<Boolean> = _liked
     private val _message = MutableStateFlow<String?>(null)
@@ -36,25 +38,35 @@ class SharedTrackViewModel @Inject constructor(
 
     fun play() = safely("play") {
         val id = persisted() ?: return@safely
-        musicRepository.observeTrackById(id).first()?.let { playerRepository.setQueue(listOf(it), 0) }
+        val t = musicRepository.observeTrackById(id).first() ?: return@safely
+        _liked.value = t.stashLikedAt != null
+        playerRepository.setQueue(listOf(t), 0)
     }
 
     fun like() = safely("add") {
         val id = persisted() ?: return@safely
         likeCoordinator.setLiked(id, true)
-        _liked.value = true
+        _liked.value = musicRepository.observeTrackById(id).first()?.stashLikedAt != null
     }
 
-    /** A failure (DB, IO) becomes a message, never a crash. */
-    private fun safely(action: String, block: suspend () -> Unit) = viewModelScope.launch {
+    private var busy = false
+
+    /** A failure (DB, IO) becomes a message, never a crash. [busy] drops a double tap. */
+    private fun safely(action: String, block: suspend () -> Unit) {
+        if (busy) return
+        busy = true
         _message.value = null
-        try {
-            block()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w("SharedTrackVM", "$action failed", e)
-            _message.value = "Couldn't $action this song. Try again."
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("SharedTrackVM", "$action failed", e)
+                _message.value = "Couldn't $action this song. Try again."
+            } finally {
+                busy = false
+            }
         }
     }
 }

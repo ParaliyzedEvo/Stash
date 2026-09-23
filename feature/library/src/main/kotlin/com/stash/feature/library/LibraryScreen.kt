@@ -192,6 +192,7 @@ fun LibraryScreen(
     }
     
 
+    val followedPlaylistIds by viewModel.followedPlaylistIds.collectAsStateWithLifecycle()
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
             state = state,
@@ -211,6 +212,8 @@ fun LibraryScreen(
             onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
             onRemovePlaylist = viewModel::removePlaylist,
             onDeletePlaylist = viewModel::deletePlaylist,
+            followedPlaylistIds = followedPlaylistIds,
+            onUnfollowPlaylist = viewModel::unfollowPlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
@@ -463,6 +466,8 @@ private fun LibraryContent(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    followedPlaylistIds: Set<Long> = emptySet(),
+    onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
@@ -660,6 +665,8 @@ private fun LibraryContent(
                         onAddPlaylistToQueue = onAddPlaylistToQueue,
                         onRemovePlaylist = onRemovePlaylist,
                         onDeletePlaylist = onDeletePlaylist,
+                        followedPlaylistIds = followedPlaylistIds,
+                        onUnfollowPlaylist = onUnfollowPlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
@@ -1096,6 +1103,8 @@ private fun PlaylistsGrid(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    followedPlaylistIds: Set<Long> = emptySet(),
+    onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
@@ -1322,8 +1331,10 @@ private fun PlaylistsGrid(
                     selectedPlaylist = null
                 },
             )
+            // An active follow is read-only (spec §6): no image edits, and Unfollow replaces Remove/Delete.
+            val followed = playlist.id in followedPlaylistIds
             // Image options — only for custom playlists
-            if (playlist.type == PlaylistType.CUSTOM) {
+            if (playlist.type == PlaylistType.CUSTOM && !followed) {
                 BottomSheetActionRow(
                     icon = Icons.Default.Image,
                     label = if (playlist.artUrl != null) "Change Image" else "Add Image",
@@ -1349,23 +1360,35 @@ private fun PlaylistsGrid(
                 }
             }
 
-            BottomSheetActionRow(
-                icon = Icons.Default.RemoveCircleOutline,
-                label = "Remove Playlist",
-                onClick = {
-                    onRemovePlaylist(playlist)
-                    selectedPlaylist = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Delete,
-                label = "Delete Playlist & Songs",
-                tint = MaterialTheme.colorScheme.error,
-                onClick = {
-                    playlistToDelete = playlist
-                    selectedPlaylist = null
-                },
-            )
+            if (followed) {
+                BottomSheetActionRow(
+                    icon = Icons.Default.RemoveCircleOutline,
+                    label = "Unfollow",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        onUnfollowPlaylist(playlist)
+                        selectedPlaylist = null
+                    },
+                )
+            } else {
+                BottomSheetActionRow(
+                    icon = Icons.Default.RemoveCircleOutline,
+                    label = "Remove Playlist",
+                    onClick = {
+                        onRemovePlaylist(playlist)
+                        selectedPlaylist = null
+                    },
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Delete,
+                    label = "Delete Playlist & Songs",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        playlistToDelete = playlist
+                        selectedPlaylist = null
+                    },
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }

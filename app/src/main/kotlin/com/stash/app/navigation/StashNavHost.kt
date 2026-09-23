@@ -340,6 +340,10 @@ fun StashNavHost(
             com.stash.feature.library.share.SharedMixScreen(
                 onBack = { navController.popBackStack() },
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                // Follow / Save a copy land on the new playlist; Back skips the mix screen.
+                onJoinedPlaylist = { id ->
+                    navController.navigate(PlaylistDetailRoute(id)) { popUpTo<SharedMixRoute> { inclusive = true } }
+                },
             )
         }
 

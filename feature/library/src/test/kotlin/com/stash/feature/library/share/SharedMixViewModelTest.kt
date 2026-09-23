@@ -7,6 +7,8 @@ import com.stash.core.data.share.ShareResult
 import com.stash.core.data.share.SharedMixDocument
 import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.PlaybackSource
+import com.stash.core.model.Track
 import com.stash.core.model.share.SharedTrack
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -90,5 +92,34 @@ class SharedMixViewModelTest {
         assertThat(s.busy).isFalse()
         assertThat(s.followedPlaylistId).isNull()
         assertThat(s.message).isNotNull()
+    }
+
+    @Test fun `play from a followed mix plays from that playlist`() = runTest(dispatcher) {
+        val tracks = listOf(mockk<Track>())
+        coEvery { repo.fetch(any()) } returns ShareResult.Ok(doc)
+        coEvery { repo.byShareId(any()) } returns SharedMixEntity(9, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "Ambient")
+        coEvery { repo.tracksFor(doc) } returns tracks
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        coVerify { player.setQueue(tracks, 0, PlaybackSource.Playlist(9, "Ambient")) }
+    }
+
+    @Test fun `play from an unfollowed mix keeps the default source`() = runTest(dispatcher) {
+        val tracks = listOf(mockk<Track>())
+        coEvery { repo.fetch(any()) } returns ShareResult.Ok(doc)
+        coEvery { repo.byShareId(any()) } returns null
+        coEvery { repo.tracksFor(doc) } returns tracks
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        coVerify { player.setQueue(tracks, 0, PlaybackSource.Unknown) }
+    }
+
+    @Test fun `unfollow removes the playlist and clears followedPlaylistId`() = runTest(dispatcher) {
+        coEvery { repo.fetch(any()) } returns ShareResult.Ok(doc)
+        coEvery { repo.byShareId(any()) } returns SharedMixEntity(9, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "Ambient")
+        val vm = vm(); advanceUntilIdle()
+        vm.unfollow(); advanceUntilIdle()
+        coVerify { repo.unfollow(9) }
+        assertThat((vm.state.value as SharedMixUiState.Loaded).followedPlaylistId).isNull()
     }
 }

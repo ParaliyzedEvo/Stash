@@ -51,6 +51,9 @@ interface SharedMixDao {
     @Query("SELECT * FROM shared_mixes WHERE role = '${SharedMixEntity.ROLE_FOLLOWER}' AND status = '${SharedMixEntity.STATUS_ACTIVE}'")
     suspend fun activeFollowed(): List<SharedMixEntity>
 
+    @Query("SELECT playlist_id FROM shared_mixes WHERE role = '${SharedMixEntity.ROLE_FOLLOWER}' AND status = '${SharedMixEntity.STATUS_ACTIVE}'")
+    fun observeActiveFollowedIds(): Flow<List<Long>>
+
     @Query("SELECT * FROM shared_mixes") suspend fun getAll(): List<SharedMixEntity>
 
     @Query("DELETE FROM shared_mixes WHERE playlist_id = :playlistId")

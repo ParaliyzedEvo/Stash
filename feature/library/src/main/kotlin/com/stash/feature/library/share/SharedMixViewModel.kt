@@ -9,6 +9,7 @@ import com.stash.core.data.share.ShareResult
 import com.stash.core.data.share.SharedMixDocument
 import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.PlaybackSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
@@ -89,7 +90,9 @@ class SharedMixViewModel @Inject constructor(
 
     fun play() = withLoaded("play") { s ->
         val tracks = repository.tracksFor(s.doc)
-        if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, 0)
+        if (tracks.isEmpty()) return@withLoaded
+        val source = s.followedPlaylistId?.let { PlaybackSource.Playlist(it, s.doc.name) } ?: PlaybackSource.Unknown
+        playerRepository.setQueue(tracks, 0, source)
     }
 
     fun follow(onFollowed: (Long) -> Unit) = withLoaded("follow") { s ->

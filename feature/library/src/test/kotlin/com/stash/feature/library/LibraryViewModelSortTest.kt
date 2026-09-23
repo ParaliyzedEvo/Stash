@@ -100,5 +100,6 @@ class LibraryViewModelSortTest {
         },
         libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
         artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
+        sharedMixRepository = org.mockito.kotlin.mock { on { observeActiveFollowedIds() }.thenReturn(kotlinx.coroutines.flow.flowOf(emptyList())) },
     )
 }

@@ -40,6 +40,9 @@ class SharedMixRepository @Inject constructor(
     private val api: ShareApiClient,
 ) {
     fun observe(playlistId: Long): Flow<SharedMixEntity?> = sharedMixDao.observeForPlaylist(playlistId)
+
+    /** Playlists that are an active follow, i.e. read-only in the Library (spec §6). */
+    fun observeActiveFollowedIds(): Flow<List<Long>> = sharedMixDao.observeActiveFollowedIds()
     suspend fun forPlaylist(playlistId: Long): SharedMixEntity? = sharedMixDao.forPlaylist(playlistId)
 
     // ── Owner ──────────────────────────────────────────────────────────────────────────────

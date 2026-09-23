@@ -1,8 +1,11 @@
 package com.stash.feature.library.share
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,10 +38,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SharedMixScreen(
     onBack: () -> Unit,
     onOpenPlaylist: (Long) -> Unit,
+    /** Follow / Save a copy: opens the new playlist in place of this screen. */
+    onJoinedPlaylist: (Long) -> Unit = onOpenPlaylist,
     viewModel: SharedMixViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -62,11 +68,14 @@ fun SharedMixScreen(
                         Column {
                             Text(s.doc.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val by = s.doc.sharedBy?.let { " · shared by $it" }.orEmpty()
-                            Text("${s.doc.tracks.size} tracks$by", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val updated = s.doc.updatedAt.takeIf { it > 0 }?.let {
+                                " · updated " + DateUtils.getRelativeTimeSpanString(it * 1000, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+                            }.orEmpty()
+                            Text("${s.doc.tracks.size} tracks$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = viewModel::play, enabled = !s.busy) { Text("Play") }
                         when {
                             s.isOwnMix -> Text("This is your mix", Modifier.align(Alignment.CenterVertically))
@@ -75,8 +84,8 @@ fun SharedMixScreen(
                                 OutlinedButton(onClick = viewModel::unfollow, enabled = !s.busy) { Text("Unfollow") }
                             }
                             else -> {
-                                Button(onClick = { viewModel.follow(onOpenPlaylist) }, enabled = !s.busy) { Text("Follow") }
-                                OutlinedButton(onClick = { viewModel.saveCopy(onOpenPlaylist) }, enabled = !s.busy) { Text("Save a copy") }
+                                Button(onClick = { viewModel.follow(onJoinedPlaylist) }, enabled = !s.busy) { Text("Follow") }
+                                OutlinedButton(onClick = { viewModel.saveCopy(onJoinedPlaylist) }, enabled = !s.busy) { Text("Save a copy") }
                             }
                         }
                     }

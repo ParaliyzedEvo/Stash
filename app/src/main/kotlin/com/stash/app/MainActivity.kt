@@ -26,8 +26,8 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     companion object {
-        /** [pendingDeepLink] target for an incoming shared-track link (https or stash://track). */
-        const val DEEP_LINK_SHARED_TRACK = "shared_track"
+        /** [pendingDeepLink] prefix for a shared-track link; the raw link follows. */
+        const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
 
         /** [pendingDeepLink] prefix for a shared-mix link; the share id follows. */
         const val DEEP_LINK_SHARED_MIX_PREFIX = "shared_mix:"
@@ -38,9 +38,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
-
-    @Inject
-    lateinit var sharedTrackLinkHolder: com.stash.core.data.share.SharedTrackLinkHolder
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.
@@ -75,9 +72,15 @@ class MainActivity : ComponentActivity() {
         }
 
         // Handle the initial intent (share target cold-start path,
-        // notification deep-link cold-start path, etc).
-        handleShareIntent(intent)
-        handleDeepLinkIntent(intent)
+        // notification deep-link cold-start path, etc). Not on a restore
+        // (process death / config change) or a Recents relaunch: those
+        // replay the original intent, and the nav back stack is already restored.
+        val relaunch = savedInstanceState != null ||
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (!relaunch) {
+            handleShareIntent(intent)
+            handleDeepLinkIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -103,8 +106,7 @@ class MainActivity : ComponentActivity() {
                     true
                 }
                 is ShareLinks.Parsed.Track -> {
-                    sharedTrackLinkHolder.set(parsed.track)
-                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK
+                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + intent.data.toString()
                     true
                 }
                 null -> false
