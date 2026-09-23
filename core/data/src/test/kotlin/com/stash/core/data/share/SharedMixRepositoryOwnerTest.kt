@@ -1,0 +1,87 @@
+package com.stash.core.data.share
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SharedMixEntity
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.repository.MusicRepository
+import com.stash.core.model.MusicSource
+import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [33])
+class SharedMixRepositoryOwnerTest {
+    private lateinit var db: StashDatabase
+    private lateinit var server: MockWebServer
+    private lateinit var repo: SharedMixRepository
+    private var playlistId = 0L
+
+    @Before fun setUp() = runBlocking {
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
+            .allowMainThreadQueries().build()
+        server = MockWebServer().also { it.start() }
+        val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        repo = SharedMixRepository(db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api)
+        playlistId = db.playlistDao().insert(PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "custom_1"))
+        val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://img/1.jpg", source = MusicSource.SPOTIFY))
+        val t2 = db.trackDao().insert(TrackEntity(title = "Two", artist = "B", source = MusicSource.YOUTUBE, youtubeId = "y2"))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t1, position = 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t2, position = 1))
+    }
+    @After fun tearDown() { db.close(); server.shutdown() }
+
+    @Test fun `share creates the link and stores an OWNER row with key and hash`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        val out = repo.share(playlistId, name = "Sleep", sharedBy = "Rawn", autoUpdate = true)
+        assertThat(out).isEqualTo(ShareResult.Ok("https://stash-share.rawnaldclark.workers.dev/m/Kx7Qa2pL"))
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"name\":\"Sleep\"")
+        assertThat(body).contains("\"t\":\"One\"")
+        assertThat(body).contains("\"covers\":[\"https://img/1.jpg\"]")
+        val row = db.sharedMixDao().forPlaylist(playlistId)!!
+        assertThat(row.role).isEqualTo(SharedMixEntity.ROLE_OWNER)
+        assertThat(row.editKey).hasLength(43)
+        assertThat(row.contentHash).isNotEmpty()
+    }
+
+    @Test fun `publish sends only when the content changed, and 410 marks REMOVED`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        repo.share(playlistId, "Sleep", null, true); server.takeRequest()
+        assertThat(repo.publishIfChanged(db.sharedMixDao().forPlaylist(playlistId)!!)).isEqualTo(PublishOutcome.Unchanged)
+        val t3 = db.trackDao().insert(TrackEntity(title = "Three", artist = "C", source = MusicSource.BOTH))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t3, position = 2))
+        server.enqueue(MockResponse().setBody("""{"version":2}"""))
+        assertThat(repo.publishIfChanged(db.sharedMixDao().forPlaylist(playlistId)!!)).isEqualTo(PublishOutcome.Published)
+        assertThat(server.takeRequest().method).isEqualTo("PUT")
+        assertThat(db.sharedMixDao().forPlaylist(playlistId)!!.version).isEqualTo(2)
+        db.playlistDao().updateName(playlistId, "ignored") // only the shared name matters
+        val t4 = db.trackDao().insert(TrackEntity(title = "Four", artist = "D", source = MusicSource.BOTH))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t4, position = 3))
+        server.enqueue(MockResponse().setResponseCode(410))
+        assertThat(repo.publishIfChanged(db.sharedMixDao().forPlaylist(playlistId)!!)).isEqualTo(PublishOutcome.Removed)
+        assertThat(db.sharedMixDao().forPlaylist(playlistId)!!.status).isEqualTo(SharedMixEntity.STATUS_REMOVED)
+    }
+
+    @Test fun `stop sharing deletes remotely and locally`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
+        repo.share(playlistId, "Sleep", null, true); server.takeRequest()
+        server.enqueue(MockResponse().setResponseCode(204))
+        repo.stopSharing(playlistId)
+        assertThat(server.takeRequest().method).isEqualTo("DELETE")
+        assertThat(db.sharedMixDao().forPlaylist(playlistId)).isNull()
+    }
+}

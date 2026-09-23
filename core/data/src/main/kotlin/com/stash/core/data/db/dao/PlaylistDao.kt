@@ -693,6 +693,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX' AND sync_enabled = 1")
     suspend fun disableLegacyDailyMixSync(): Int
 
+    /** The followed mix's "Download this mix" switch (spec §6): sync_enabled only, no Home pin. */
+    @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
+    suspend fun setSyncEnabled(playlistId: Long, enabled: Boolean)
+
     /**
      * One-shot data migration: hide every YouTube playlist that currently
      * has zero linked tracks. Cleans up stale "My Mix N" rows left over
