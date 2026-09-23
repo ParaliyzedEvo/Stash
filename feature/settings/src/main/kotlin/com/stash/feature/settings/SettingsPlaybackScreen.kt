@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.ui.unit.dp
+import com.stash.core.data.prefs.LyricsSourcePreference
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,7 +45,9 @@ fun SettingsPlaybackScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
+    lyricsViewModel: LyricsSettingsViewModel = hiltViewModel(),
 ) {
+    val lyricsSourcePreference by lyricsViewModel.sourcePreference.collectAsStateWithLifecycle()
     val streamingEnabled by viewModel.streamingEnabled.collectAsStateWithLifecycle()
     val streamOnCellular by viewModel.streamOnCellular.collectAsStateWithLifecycle()
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
@@ -161,6 +165,30 @@ fun SettingsPlaybackScreen(
                     }
                 }
             },
+        )
+
+        SettingsSectionLabel("Lyrics")
+        SettingsSegmented(
+            options = listOf("Apple Music", "LRC only"),
+            selectedIndex = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) 1 else 0,
+            onSelect = {
+                lyricsViewModel.setSourcePreference(
+                    if (it == 1) LyricsSourcePreference.LRC_ONLY else LyricsSourcePreference.APPLE_MUSIC,
+                )
+            },
+        )
+        Text(
+            text = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) {
+                "Word-synced lyrics are off. Switching back on re-fetches Apple Music's " +
+                    "word-synced lyrics where available."
+            } else {
+                "Prefers Apple Music's word-synced lyrics. Switching to LRC only removes any " +
+                    "stored word-synced lyrics and re-fetches from line-synced sources — use " +
+                    "\"Fetch lyrics\" in Library Health to run it now."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = 8.dp),
         )
     }
 }

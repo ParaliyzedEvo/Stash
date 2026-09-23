@@ -1,7 +1,9 @@
 package com.stash.data.lyrics.di
 
+import android.content.Context
 import com.stash.core.common.Clock
 import com.stash.core.common.SystemClock
+import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
 import com.stash.data.lyrics.source.InnerTubeLyricsGatewayImpl
 import com.stash.data.lyrics.source.KugouLyricsSource
@@ -11,6 +13,7 @@ import com.stash.data.lyrics.source.YtMusicLyricsSource
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
@@ -68,10 +71,24 @@ abstract class LyricsModule {
         @Provides
         @Singleton
         fun provideLyricsSources(
+            appleTtml: AppleTtmlLyricsSource,
             lrclib: LrclibLyricsSource,
             kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
-        ): List<@JvmSuppressWildcards LyricsSource> = listOf(lrclib, kugou, ytmusic)
+        ): List<@JvmSuppressWildcards LyricsSource> = listOf(appleTtml, lrclib, kugou, ytmusic)
+
+        /** Word-synced Apple Music TTML via lyrics.paxsenix.org; first so it wins when it has syllable timing. */
+        @Provides
+        @Singleton
+        fun provideAppleTtmlLyricsSource(
+            okHttpClient: OkHttpClient,
+            @ApplicationContext context: Context,
+        ): AppleTtmlLyricsSource {
+            val versionName = context.packageManager
+                .getPackageInfo(context.packageName, 0)
+                .versionName ?: "unknown"
+            return AppleTtmlLyricsSource(okHttpClient, versionName)
+        }
 
         /** KuGou: synced LRC for most of what LRCLIB misses; between LRCLIB and the plain-text fallback. */
         @Provides
