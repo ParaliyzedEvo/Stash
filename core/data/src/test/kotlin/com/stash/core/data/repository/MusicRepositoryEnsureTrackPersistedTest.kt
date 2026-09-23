@@ -80,5 +80,6 @@ class MusicRepositoryEnsureTrackPersistedTest {
         syncPreferencesManager = mockk(relaxed = true),
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
         lastFmRecommendationSource = mockk(relaxed = true),
+        sharedMixDao = mockk(relaxed = true),
     )
 }

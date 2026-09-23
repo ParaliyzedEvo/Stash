@@ -53,6 +53,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager,
     private val singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
+    private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -703,6 +704,9 @@ class MusicRepositoryImpl @Inject constructor(
         // or the Library card lies ("1 tracks" but the detail shows 4).
         val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
         playlistDao.updateTrackCount(playlistId, count)
+        if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
     }
 
     override suspend fun ensureDownloadsMixSeeded(): Long {
@@ -736,6 +740,9 @@ class MusicRepositoryImpl @Inject constructor(
         // or the Library card lies ("1 tracks" but the detail shows 4).
         val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
         playlistDao.updateTrackCount(playlistId, count)
+        if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
     }
 
     override fun getUserCreatedPlaylists(): Flow<List<com.stash.core.model.Playlist>> =
@@ -776,6 +783,10 @@ class MusicRepositoryImpl @Inject constructor(
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
     ): MusicRepository.CascadeRemovalSummary {
+        // Shared mixes (spec §5): at the top, before the early returns below. The job waits 30 s.
+        if (sharedMixDao.forPlaylist(fromPlaylistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
         // v0.9.15: explicit-block override. If the user ticked "Block this
         // track" on the delete dialog, that intent always wins — we tear
         // down the file + every cross-ref + insert the blocklist entry,
