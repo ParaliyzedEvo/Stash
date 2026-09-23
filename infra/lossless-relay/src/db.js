@@ -9,6 +9,9 @@ export const hourKey = (nowSec) => new Date(nowSec * 1000).toISOString().slice(0
 /** Serve a cached mint only while its URL has at least this long left (spec §6.3). */
 export const CACHE_MIN_LEFT_S = 900;
 
+/** Quota rows kept for `npm run report` (the caps themselves only ever read today's). */
+export const QUOTA_KEEP_DAYS = 7;
+
 export async function getCached(db, trackId, formatId, nowSec) {
     return db.prepare(
         "SELECT url, got_format_id, bit_depth, sample_rate, etsp FROM mints WHERE track_id = ?1 AND format_id = ?2 AND etsp - ?3 >= ?4",
@@ -27,8 +30,11 @@ export async function readQuota(db, day, key) {
     return row ? row.n : 0;
 }
 
-export function bumpQuotaStmt(db, day, key) {
-    return db.prepare("INSERT INTO quota (day, key, n) VALUES (?1, ?2, 1) ON CONFLICT(day, key) DO UPDATE SET n = n + 1").bind(day, key);
+/** `ip` (a salted hash, or null) is kept on the row as last seen — same write, no extra rows. */
+export function bumpQuotaStmt(db, day, key, ip = null) {
+    return db.prepare(
+        "INSERT INTO quota (day, key, n, ip) VALUES (?1, ?2, 1, ?3) ON CONFLICT(day, key) DO UPDATE SET n = n + 1, ip = COALESCE(?3, ip)",
+    ).bind(day, key, ip);
 }
 
 /**
@@ -75,7 +81,8 @@ export const DEAD_RETRY_S = 6 * 3600;
 export async function prune(db, nowSec) {
     await db.batch([
         db.prepare("DELETE FROM mints WHERE etsp < ?1").bind(nowSec),
-        db.prepare("DELETE FROM quota WHERE day < ?1").bind(dayKey(nowSec - 86400)),
+        // A week back plus today: the caps only read today; the IP report reads the rest.
+        db.prepare("DELETE FROM quota WHERE day < ?1").bind(dayKey(nowSec - QUOTA_KEEP_DAYS * 86400)),
         db.prepare("UPDATE accounts SET state = 'live', dead_reason = '' WHERE state = 'dead' AND last_used_at < ?1").bind(nowSec - DEAD_RETRY_S),
     ]);
 }
