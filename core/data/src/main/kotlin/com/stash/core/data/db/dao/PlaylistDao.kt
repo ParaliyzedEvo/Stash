@@ -349,6 +349,8 @@ interface PlaylistDao {
               -- never auto-download (#368), so without this arm a radio sharing no
               -- track with the user's own playlists could never reach Home.
               OR p.pinned_to_home_at IS NOT NULL
+              -- Followed shared mix (spec §6): the user chose it, so it shows even with Download off.
+              OR p.source_id LIKE 'share:%'
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
@@ -793,7 +795,13 @@ interface PlaylistDao {
     suspend fun getNextPosition(playlistId: Long): Int
 
     /** All user-created custom playlists (source = BOTH means local). */
-    @Query("SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1 ORDER BY name ASC")
+    @Query(
+        """
+        SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1
+          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
+        ORDER BY name ASC
+        """
+    )
     fun getUserCreatedPlaylists(): Flow<List<PlaylistEntity>>
 
     /**
@@ -819,6 +827,8 @@ interface PlaylistDao {
         SELECT * FROM playlists
         WHERE is_active = 1
           AND type IN ('CUSTOM')
+          -- An active followed shared mix is read-only (spec §6).
+          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
           AND (
               source = 'BOTH'
               OR sync_enabled = 1
