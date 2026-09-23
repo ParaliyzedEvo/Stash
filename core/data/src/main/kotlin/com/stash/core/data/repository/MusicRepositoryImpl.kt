@@ -440,7 +440,7 @@ class MusicRepositoryImpl @Inject constructor(
         if (track.id > 0L) {
             val existing = trackDao.getById(track.id)
             if (existing != null) {
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return track.id
             }
         }
@@ -454,14 +454,14 @@ class MusicRepositoryImpl @Inject constructor(
         val youtubeId = track.youtubeId
         if (!youtubeId.isNullOrBlank()) {
             trackDao.findByYoutubeId(youtubeId)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return existing.id
             }
         }
         val spotifyUri = track.spotifyUri
         if (!spotifyUri.isNullOrBlank()) {
             trackDao.findBySpotifyUri(spotifyUri)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return existing.id
             }
         }
@@ -469,7 +469,7 @@ class MusicRepositoryImpl @Inject constructor(
         val cArtist = canonicalizeIdentity(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return existing.id
             }
         }
@@ -485,10 +485,10 @@ class MusicRepositoryImpl @Inject constructor(
         )
     }
 
-    private suspend fun backfillDurationIfBetter(trackId: Long, existing: Long, incoming: Long) {
-        if (existing <= 0L && incoming > 0L) {
-            trackDao.backfillDurationIfMissing(trackId, incoming)
-        }
+    private suspend fun backfillFrom(existing: com.stash.core.data.db.entity.TrackEntity, incoming: Track) {
+        if (existing.durationMs <= 0L && incoming.durationMs > 0L) trackDao.backfillDurationIfMissing(existing.id, incoming.durationMs)
+        incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
+        incoming.album.takeIf { it.isNotBlank() }?.let { trackDao.backfillAlbumIfMissing(existing.id, it) }
     }
 
     /** Same normalization as [SearchDownloadCoordinator.canonicalize] — kept

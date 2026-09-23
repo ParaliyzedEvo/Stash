@@ -1788,6 +1788,13 @@ interface TrackDao {
     @Query("UPDATE tracks SET duration_ms = :durationMs WHERE id = :trackId AND duration_ms <= 0")
     suspend fun backfillDurationIfMissing(trackId: Long, durationMs: Long)
 
+    /** Shared-mix descriptors carry ISRC; a matched library row without one gains it (lossless matches by ISRC). */
+    @Query("UPDATE tracks SET isrc = :isrc WHERE id = :trackId AND (isrc IS NULL OR isrc = '')")
+    suspend fun backfillIsrcIfMissing(trackId: Long, isrc: String)
+
+    @Query("UPDATE tracks SET album = :album WHERE id = :trackId AND (album IS NULL OR album = '')")
+    suspend fun backfillAlbumIfMissing(trackId: Long, album: String)
+
     /**
      * Set the cached canonical ATV/OMV video id for this track. Called once
      * per track by [com.stash.core.data.youtube.YtCanonicalResolver] when it
