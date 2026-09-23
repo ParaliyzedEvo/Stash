@@ -5,7 +5,7 @@ compatibility_date = "2026-09-01"
 # Created in Task 23: `npx wrangler kv namespace create SHARE_KV`, then paste the id.
 [[kv_namespaces]]
 binding = "SHARE_KV"
-id = "REPLACE_IN_TASK_23"
+id = "94631ba84a3d4c7da690c4d2dc7a19c8"
 
 # A ratelimits binding carries ONE fixed limit, so creating and writing get one each (spec §4).
 [[ratelimits]]
