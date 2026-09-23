@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
 import kotlinx.coroutines.test.runTest
@@ -511,5 +512,56 @@ class DatabaseBackupMergeTest {
 
         assertTrue(result.isFailure)
         assertEquals(1, live.trackDao().getAllForIntegrityScan().size)
+    }
+
+    @Test
+    fun `merge keeps shared-mix links`() = runTest {
+        // Two unrelated live playlists so the merged ones get different ids than in the backup.
+        live.playlistDao().insert(playlist("Live A", "live-a"))
+        live.playlistDao().insert(playlist("Live B", "live-b"))
+        val uri = buildBackupZip { backup ->
+            val own = backup.playlistDao().insert(playlist("Mine", "custom-own"))
+            val fol = backup.playlistDao().insert(playlist("Theirs", "share:BBBBBBBB"))
+            backup.sharedMixDao().insert(
+                SharedMixEntity(own, "AAAAAAAA", SharedMixEntity.ROLE_OWNER, editKey = "k".repeat(43), name = "Mine"),
+            )
+            backup.sharedMixDao().insert(SharedMixEntity(fol, "BBBBBBBB", SharedMixEntity.ROLE_FOLLOWER, name = "Theirs"))
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        val ownId = live.playlistDao().findBySourceId("custom-own")!!.id
+        val folId = live.playlistDao().findBySourceId("share:BBBBBBBB")!!.id
+        val ownRow = live.sharedMixDao().forPlaylist(ownId)!!
+        assertEquals("AAAAAAAA", ownRow.shareId)
+        assertEquals(SharedMixEntity.ROLE_OWNER, ownRow.role)
+        assertEquals("k".repeat(43), ownRow.editKey)
+        assertEquals(SharedMixEntity.ROLE_FOLLOWER, live.sharedMixDao().forPlaylist(folId)!!.role)
+        assertEquals(ownId, live.sharedMixDao().byShareId("AAAAAAAA")!!.playlistId)
+        assertEquals(folId, live.sharedMixDao().byShareId("BBBBBBBB")!!.playlistId)
+    }
+
+    @Test
+    fun `merge keeps a live share row`() = runTest {
+        val livePid = live.playlistDao().insert(playlist("Live Mine", "live-own"))
+        live.sharedMixDao().insert(
+            SharedMixEntity(livePid, "AAAAAAAA", SharedMixEntity.ROLE_OWNER, editKey = "live", name = "Live Mine"),
+        )
+        val uri = buildBackupZip { backup ->
+            val own = backup.playlistDao().insert(playlist("Backup Mine", "backup-own"))
+            backup.sharedMixDao().insert(
+                SharedMixEntity(own, "AAAAAAAA", SharedMixEntity.ROLE_OWNER, editKey = "k".repeat(43), name = "Backup Mine"),
+            )
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        val kept = live.sharedMixDao().byShareId("AAAAAAAA")!!
+        assertEquals(livePid, kept.playlistId)
+        assertEquals("live", kept.editKey)
+        val merged = live.playlistDao().findBySourceId("backup-own")!!
+        assertNull(live.sharedMixDao().forPlaylist(merged.id))
     }
 }
