@@ -1447,18 +1447,20 @@ class ShareApiClientTest {
 
     @Test fun `update sends the key header; 403 404 410 map to typed results`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"version":3}"""))
-        assertThat(client.update("Kx7Qa2pL", doc, "KEY")).isEqualTo(ShareResult.Ok(3))
-        assertThat(server.takeRequest().getHeader("X-Stash-Edit-Key")).isEqualTo("KEY")
+        assertThat(client.update("Kx7Qa2pL", doc, "KEY", 2)).isEqualTo(ShareResult.Ok(3))
+        val put = server.takeRequest()
+        assertThat(put.getHeader("X-Stash-Edit-Key")).isEqualTo("KEY")
+        assertThat(put.body.readUtf8()).contains("\"baseVersion\":2")
         server.enqueue(MockResponse().setResponseCode(403))
-        assertThat(client.update("Kx7Qa2pL", doc, "BAD")).isEqualTo(ShareResult.Forbidden)
+        assertThat(client.update("Kx7Qa2pL", doc, "BAD", 2)).isEqualTo(ShareResult.Forbidden)
         server.enqueue(MockResponse().setResponseCode(404))
         assertThat(client.version("Kx7Qa2pL")).isEqualTo(ShareResult.NotFound)
         server.enqueue(MockResponse().setResponseCode(410))
         assertThat(client.get("Kx7Qa2pL")).isEqualTo(ShareResult.Gone)
         server.enqueue(MockResponse().setResponseCode(400))
-        assertThat(client.update("Kx7Qa2pL", doc, "KEY")).isEqualTo(ShareResult.Rejected(400))
+        assertThat(client.update("Kx7Qa2pL", doc, "KEY", 2)).isEqualTo(ShareResult.Rejected(400))
         server.enqueue(MockResponse().setResponseCode(429))
-        assertThat(client.update("Kx7Qa2pL", doc, "KEY")).isInstanceOf(ShareResult.Failed::class.java)
+        assertThat(client.update("Kx7Qa2pL", doc, "KEY", 2)).isInstanceOf(ShareResult.Failed::class.java)
     }
 
     @Test fun `get parses the doc; transport failure is Failed`() = runBlocking {
@@ -1527,8 +1529,9 @@ class ShareApiClient @Inject constructor(private val okHttpClient: OkHttpClient)
         }
     }
 
-    suspend fun update(id: String, doc: SharedMixDocument, editKey: String): ShareResult<Int> {
-        val body = buildJsonObject { put("doc", docJson(doc)) }
+    /** [baseVersion] = the version this phone last got back; the Worker never goes below it + 1 (stale-KV guard). */
+    suspend fun update(id: String, doc: SharedMixDocument, editKey: String, baseVersion: Int): ShareResult<Int> {
+        val body = buildJsonObject { put("doc", docJson(doc)); put("baseVersion", baseVersion) }
         return call(Request.Builder().url("$baseUrl/v1/mixes/$id").header(KEY_HEADER, editKey).put(body.toBody())) {
             ShareJson.decodeFromString(VersionBody.serializer(), it).version
         }
@@ -1786,7 +1789,7 @@ class SharedMixRepository @Inject constructor(
         if (doc.tracks.isEmpty()) return PublishOutcome.Unchanged // an emptied playlist isn't published
         val hash = doc.contentHash()
         if (hash == row.contentHash) return PublishOutcome.Unchanged
-        return when (val r = api.update(row.shareId, doc, key)) {
+        return when (val r = api.update(row.shareId, doc, key, row.version)) {
             is ShareResult.Ok -> { sharedMixDao.upsert(row.copy(version = r.value, contentHash = hash)); PublishOutcome.Published }
             ShareResult.Gone, ShareResult.NotFound -> { sharedMixDao.upsert(row.copy(status = SharedMixEntity.STATUS_REMOVED)); PublishOutcome.Removed }
             ShareResult.Forbidden -> { Log.w(TAG, "edit key rejected for ${row.shareId}"); PublishOutcome.Forbidden }
