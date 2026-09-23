@@ -141,15 +141,18 @@ fun StashScaffold(
                 onDeepLinkConsumed()
             }
             com.stash.app.MainActivity.DEEP_LINK_SHARED_TRACK -> {
-                // Shared stash://track link: land on Search — SearchViewModel
-                // consumes the pre-deposited query from SharedTrackLinkHolder.
-                navController.navigate(SearchRoute) {
-                    launchSingleTop = true
-                }
+                // Shared track link: the card consumes the track from SharedTrackLinkHolder.
+                navController.navigate(SharedTrackRoute) // not singleTop: each link needs a fresh card (the VM consumes the holder once)
                 onDeepLinkConsumed()
             }
             null -> Unit
-            else -> onDeepLinkConsumed()  // unknown target — clear so we don't loop
+            else -> {
+                if (pendingDeepLink.startsWith(com.stash.app.MainActivity.DEEP_LINK_SHARED_MIX_PREFIX)) {
+                    val id = pendingDeepLink.removePrefix(com.stash.app.MainActivity.DEEP_LINK_SHARED_MIX_PREFIX)
+                    navController.navigate(SharedMixRoute(id))
+                }
+                onDeepLinkConsumed() // unknown targets are cleared too, so we don't loop
+            }
         }
     }
 

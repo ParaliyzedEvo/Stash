@@ -317,9 +317,6 @@ class SearchViewModelTest {
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
         recentSearchesStore = recentSearchesStore,
-        // Real instance — a no-dep AtomicReference holder; consume() is null
-        // unless a test deposits a link.
-        sharedTrackLinkHolder = com.stash.core.data.share.SharedTrackLinkHolder(),
     )
 
     private fun sampleTrack(): TrackItem = TrackItem(
