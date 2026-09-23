@@ -5,6 +5,7 @@
  */
 import { validateDoc, validEditKey, MAX_BODY_BYTES } from "./validate.js";
 import { freeId, readMix, sameHex, sha256Hex, writeMix, writeTombstone } from "./store.js";
+import { assetLinks, messagePage, mixPage, trackPage } from "./pages.js";
 
 const MIX_API = /^\/v1\/mixes\/([A-Za-z0-9]{8})(\/version)?$/;
 
@@ -25,12 +26,22 @@ export async function handle(request, env) {
         if (method === "DELETE") return deleteMix(request, env, id);
         return methodNotAllowed();
     }
+    if (method === "GET" && path === "/.well-known/assetlinks.json") return json(assetLinks(), 200, { "cache-control": "public, max-age=3600" });
+    if (method === "GET" && path === "/t") return html(trackPage(url.searchParams, url.href));
+    const page = /^\/m\/([A-Za-z0-9]{8})$/.exec(path);
+    if (method === "GET" && page) {
+        const record = await readMix(env.SHARE_KV, page[1]);
+        if (record === null) return html(messagePage("Mix not found", "This link doesn't point to a mix."), 404);
+        if (record.deleted) return html(messagePage("No longer shared", "This mix is no longer shared."), 410);
+        return html(mixPage(record.doc, url.href));
+    }
     return json({ error: "not_found" }, 404);
 }
 
 export function json(obj, status = 200, extra = {}) {
     return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...extra } });
 }
+const html = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 const methodNotAllowed = () => json({ error: "method_not_allowed" }, 405);
 
 async function readBody(request) {
