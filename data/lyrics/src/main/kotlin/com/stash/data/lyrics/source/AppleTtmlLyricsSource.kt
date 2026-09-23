@@ -144,17 +144,34 @@ class AppleTtmlLyricsSource(
         }
     }
 
-    /** Body on 2xx, null on 404, throws on anything else. */
+    /**
+     * Body on 2xx, null on 404, throws on anything else.
+     *
+     * Retries ONCE on a transport failure (any [IOException] — connection refused, TLS handshake
+     * failure, timeout). A pooled OkHttp connection that some VPN configurations silently drop
+     * while idle looks fine to OkHttp until the next write, at which point it fails mid-handshake
+     * rather than as a clean "couldn't connect" — a single retry gets a fresh connection and almost
+     * always succeeds when that's the cause. A second failure is presumed real and propagates.
+     */
     private fun get(url: HttpUrl): String? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Stash/$appVersion (Android)")
-            .build()
-        http.newCall(request).execute().use { response ->
-            if (response.code == 404) return null
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
-            return response.body?.string()
+        val request = Request.Builder().url(url).header("User-Agent", "Stash (Android)").build()
+        var lastError: IOException? = null
+        repeat(2) { attempt ->
+            try {
+                http.newCall(request).execute().use { response ->
+                    if (response.code == 404) return null
+                    if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+                    return response.body?.string()
+                }
+            } catch (e: IOException) {
+                lastError = e
+                if (attempt == 0) {
+                    Log.d(TAG, "Transport failure on ${url.host}, retrying once: ${e.message}")
+                    Thread.sleep(250)
+                }
+            }
         }
+        throw lastError!!
     }
 
     private data class Candidate(val id: String, val title: String, val artist: String, val durationMs: Long)
