@@ -4,6 +4,8 @@ import com.stash.core.common.Clock
 import com.stash.core.data.db.dao.LyricsDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
+import com.stash.core.data.prefs.LyricsPreference
+import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
@@ -11,9 +13,11 @@ import com.stash.data.lyrics.source.LyricsSource
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -23,6 +27,11 @@ import org.junit.Test
 class LyricsRepositoryTest {
 
     private val clock = object : Clock { override fun now() = 1_700_000_000_000L }
+
+    /** Default preference stub: Apple Music enabled, i.e. nothing is filtered out of the chain. */
+    private fun appleEnabledPreference(): LyricsPreference = mockk {
+        every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
+    }
 
     @Test fun `success path - writes row, stamps, invokes sidecar`() = runTest {
         val lrclib = fakeSource("lrclib", LyricsResult("lrclib", "plain", "[00:01.00]plain", false, null, "42"))
@@ -34,7 +43,7 @@ class LyricsRepositoryTest {
         coEvery { trackDao.setLyricsFetchedAt(any(), any()) } just Runs
         coEvery { sidecar.write(any(), any()) } just Runs
 
-        val repo = LyricsRepository(listOf(lrclib, ytm), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(lrclib, ytm), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         val result = repo.resolveAndStore(query(1L))
 
         assertNotNull(result)
@@ -51,7 +60,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>()
-        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         repo.resolveAndStore(query(1L))
         coVerify(exactly = 0) { sidecar.write(any(), any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
@@ -63,7 +72,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>()
-        val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         assertNull(repo.resolveAndStore(query(1L)))
         coVerify(exactly = 0) { lyricsDao.upsert(any()) }
         coVerify(exactly = 0) { sidecar.write(any(), any()) }
@@ -78,7 +87,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
-        val repo = LyricsRepository(listOf(failing, miss), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(failing, miss), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         try {
             repo.resolveAndStore(query(1L))
             org.junit.Assert.fail("expected the source failure to propagate")
@@ -95,7 +104,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
-        val repo = LyricsRepository(listOf(failing, hit), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(failing, hit), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         assertNotNull(repo.resolveAndStore(query(1L)))
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
     }
@@ -104,6 +113,7 @@ class LyricsRepositoryTest {
         val failing = throwingSource("lrclib", java.io.IOException("timeout"))
         val repo = LyricsRepository(
             listOf(failing), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), clock,
+            appleEnabledPreference(),
         )
         try {
             repo.resolveTransient(query(0L))
@@ -118,7 +128,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
-        val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         repo.resolveAndStore(query(1L))
         coVerify(exactly = 0) { b.resolve(any()) }
     }
@@ -129,11 +139,25 @@ class LyricsRepositoryTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>()
         coEvery { sidecar.write(any(), any()) } throws RuntimeException("disk full")
-        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock)
+        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         // Should NOT throw
         repo.resolveAndStore(query(1L))
         coVerify { lyricsDao.upsert(any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
+    }
+
+    @Test fun `LRC_ONLY preference excludes apple-ttml from the chain`() = runTest {
+        val apple = mockk<LyricsSource>(relaxed = true) { every { id } returns "apple-ttml" }
+        val hit = fakeSource("lrclib", LyricsResult("lrclib", "p", null, false, null, "1"))
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
+        val lrcOnlyPreference = mockk<LyricsPreference> {
+            every { sourcePreference } returns flowOf(LyricsSourcePreference.LRC_ONLY)
+        }
+        val repo = LyricsRepository(listOf(apple, hit), lyricsDao, trackDao, sidecar, clock, lrcOnlyPreference)
+        repo.resolveAndStore(query(1L))
+        coVerify(exactly = 0) { apple.resolve(any()) }
     }
 
     private fun fakeSource(sourceId: String, result: LyricsResult?): LyricsSource = object : LyricsSource {
