@@ -208,7 +208,9 @@ class SharedMixRepository @Inject constructor(
                 }
             }
             ShareResult.Gone -> removed(row)
-            ShareResult.NotFound -> if (row.missingCount + 1 >= 2) removed(row) else {
+            // Only a 410 tombstone means "stopped sharing". A 404 is KV lag or a lost record, never proof, so the
+            // follow stays live; missing_count just records it for diagnostics.
+            ShareResult.NotFound -> {
                 sharedMixDao.markChecked(row.playlistId, row.missingCount + 1, now); FollowCheck.Unreachable
             }
             else -> FollowCheck.Unreachable
@@ -217,11 +219,14 @@ class SharedMixRepository @Inject constructor(
 
     private suspend fun applyUpdate(row: SharedMixEntity, doc: SharedMixDocument, now: Long) {
         val ids = persistTracks(doc)
-        // Unfollowed mid-check: nothing to update (replaceMixMembership would hit an FK error).
-        if (playlistDao.getById(row.playlistId) == null) return
-        playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
-        sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
-        if (playlistDao.getById(row.playlistId)?.syncEnabled == true) musicRepository.queueDownloadsForPlaylist(row.playlistId)
+        val download = database.withTransaction {
+            // Unfollowed mid-check: nothing to update (replaceMixMembership would hit an FK error).
+            val playlist = playlistDao.getById(row.playlistId) ?: return@withTransaction null
+            playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
+            sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
+            playlist.syncEnabled
+        }
+        if (download == true) musicRepository.queueDownloadsForPlaylist(row.playlistId)
     }
 
     private suspend fun removed(row: SharedMixEntity): FollowCheck {

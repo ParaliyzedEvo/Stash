@@ -17,8 +17,10 @@ npx wrangler deploy
 
 ## Remove a mix by hand
 
+Write a tombstone rather than deleting the key. Followers only stop following on a 410; a bare 404 is treated as a temporary miss.
+
 ```bash
-npx wrangler kv key delete --binding SHARE_KV --remote "mix:<id>"
+npx wrangler kv key put --binding SHARE_KV --remote --ttl 15552000 "mix:<id>" '{"deleted":true}'
 ```
 
 ## Moving to a custom domain later

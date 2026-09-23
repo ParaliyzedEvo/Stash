@@ -90,7 +90,7 @@ A deleted mix keeps only `{ "deleted": true }` for 180 days (KV expiration), so 
 
 **Consistency:** KV reads can lag a write by up to about 60 s between regions. That's acceptable: followers see an update on their next check.
 
-**Operator removal:** delete the KV key by hand with `wrangler kv key delete` if a mix must come down.
+**Operator removal:** write a `{"deleted":true}` tombstone with `wrangler kv key put` (see the Worker README) so followers get a 410.
 
 ## 5. App: sharing a mix (owner)
 
@@ -169,7 +169,7 @@ For each `FOLLOWER` row with status `ACTIVE`:
   - `position` is rewritten to the doc's order;
   - the name is updated.
 - On a **410**: the row becomes `REMOVED` and the playlist turns into an ordinary editable playlist. Its `source_id` stays `share:<id>`, but it is no longer read-only because the row is no longer `ACTIVE`, and its `sync_enabled` (the Download switch) keeps whatever the user had set. The user sees a one-time message: "<sharedBy or 'The owner'> stopped sharing this mix; you keep your copy."
-- On a **404**: treated like 410 only after **two consecutive** 404s, counted in `missing_count` and reset on any successful response, so a transient KV miss never converts a live follow.
+- On a **404**: never converts. Only the server's 410 tombstone means "stopped sharing"; a 404 is KV lag or a lost record. `missing_count` just records consecutive 404s for diagnostics. (Operator removal writes a tombstone, see the Worker README.)
 
 **Unfollow:** deletes the `FOLLOWER` row and the playlist. Tracks are kept only if another playlist or a like claims them, following the existing orphan rules.
 

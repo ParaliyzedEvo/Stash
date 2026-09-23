@@ -97,13 +97,15 @@ class SharedMixRepositoryFollowerTest {
         coVerify(atLeast = 2) { music.queueDownloadsForPlaylist(id) } // once on enable, once after the update
     }
 
-    @Test fun `410 converts to an ordinary playlist, 404 converts only on the second in a row`() = runBlocking {
+    @Test fun `only 410 converts to an ordinary playlist, repeated 404s never do`() = runBlocking {
         val id = repo.follow(doc(1, "One"))
-        server.enqueue(MockResponse().setResponseCode(404))
-        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)).isEqualTo(FollowCheck.Unreachable)
-        assertThat(db.sharedMixDao().forPlaylist(id)!!.status).isEqualTo(SharedMixEntity.STATUS_ACTIVE)
-        server.enqueue(MockResponse().setResponseCode(404))
-        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 2L)).isEqualTo(FollowCheck.Removed)
+        repeat(3) { i ->
+            server.enqueue(MockResponse().setResponseCode(404))
+            assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = i + 1L)).isEqualTo(FollowCheck.Unreachable)
+            assertThat(db.sharedMixDao().forPlaylist(id)!!.status).isEqualTo(SharedMixEntity.STATUS_ACTIVE)
+        }
+        server.enqueue(MockResponse().setResponseCode(410))
+        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 9L)).isEqualTo(FollowCheck.Removed)
         val row = db.sharedMixDao().forPlaylist(id)!!
         assertThat(row.status).isEqualTo(SharedMixEntity.STATUS_REMOVED)
         assertThat(row.noticePending).isTrue()
