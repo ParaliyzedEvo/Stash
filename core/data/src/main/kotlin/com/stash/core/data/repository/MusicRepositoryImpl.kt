@@ -613,7 +613,23 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removePlaylist(playlist: Playlist) {
+        takeDownSharedLinkIfOwned(playlist.id)
         playlistDao.delete(playlist.toEntity())
+    }
+
+    /**
+     * The shared_mixes row (and its edit key) cascades away with the playlist, so an owned, still
+     * active share must queue its server DELETE first or the link stays live forever. Followers
+     * never qualify: unfollowing must not take the owner's mix down.
+     */
+    private suspend fun takeDownSharedLinkIfOwned(playlistId: Long) {
+        val row = sharedMixDao.forPlaylist(playlistId) ?: return
+        val key = row.editKey ?: return
+        if (row.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER &&
+            row.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
+        ) {
+            com.stash.core.data.share.SharedMixUnshareWorker.enqueue(context, row.shareId, key)
+        }
     }
 
     override suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?) {
@@ -876,7 +892,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Finally remove the playlist itself. playlist_tracks rows for it
         // have already been handled per-track above; this just clears the
         // container row. Uses the existing remove path for consistency.
-        playlistDao.getById(playlistId)?.let { playlistDao.delete(it) }
+        playlistDao.getById(playlistId)?.let {
+            takeDownSharedLinkIfOwned(playlistId)
+            playlistDao.delete(it)
+        }
 
         return MusicRepository.CascadeRemovalSummary(
             deleted = deleted,
