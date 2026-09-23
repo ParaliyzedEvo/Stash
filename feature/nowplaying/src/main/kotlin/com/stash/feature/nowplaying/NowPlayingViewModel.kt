@@ -497,7 +497,27 @@ class NowPlayingViewModel @Inject constructor(
      * synced renderer only cares about the position, so this is the
      * narrower subscription that matches what it needs.
      */
-    val currentPositionMs: StateFlow<Long> = playerRepository.currentPosition
+    /**
+     * Raw per-track sync offset (signed ms; positive delays lyrics), for the sheet's Offset dialog
+     * to show the current value. 0 for streaming tracks (id == 0L) — nothing to key a row on.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lyricsSyncOffsetMs: StateFlow<Long> = uiState
+        .map { it.currentTrack }
+        .distinctUntilChanged { old, new -> trackKey(old) == trackKey(new) }
+        .flatMapLatest { track ->
+            if (track != null && track.id > 0L) lyricsRepository.observeSyncOffsetMs(track.id) else flowOf(0L)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), 0L)
+
+    /**
+     * Position fed to the lyrics sheet + live bar, with [lyricsSyncOffsetMs] baked in. Everything
+     * else (the progress bar, `onSeekTo`, etc.) keeps using the player's raw position untouched.
+     */
+    val currentPositionMs: StateFlow<Long> = combine(
+        playerRepository.currentPosition,
+        lyricsSyncOffsetMs,
+    ) { pos, offsetMs -> (pos - offsetMs).coerceAtLeast(0L) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),
@@ -1028,6 +1048,13 @@ class NowPlayingViewModel @Inject constructor(
                 _streamingLyricsState.value = result
             }
         }
+    }
+
+    /** Adjust sync for the current track. No-op for streaming tracks (id == 0L) — see [lyricsSyncOffsetMs]. */
+    fun setLyricsSyncOffsetMs(offsetMs: Long) {
+        val track = _uiState.value.currentTrack ?: return
+        if (track.id <= 0L) return
+        viewModelScope.launch { lyricsRepository.setSyncOffsetMs(track.id, offsetMs) }
     }
 
     /**

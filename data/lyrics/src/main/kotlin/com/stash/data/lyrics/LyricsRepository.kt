@@ -141,6 +141,11 @@ class LyricsRepository @Inject constructor(
      */
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
 
+    /** See [LyricsDao.observeSyncOffsetMs]. Coerces the "no row" null to 0 — no offset applies. */
+    fun observeSyncOffsetMs(trackId: Long): Flow<Long> = lyricsDao.observeSyncOffsetMs(trackId).map { it ?: 0L }
+
+    suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long) = lyricsDao.setSyncOffsetMs(trackId, offsetMs)
+
     /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
     suspend fun trackIdsPendingTtml(): List<Long> {
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return emptyList()

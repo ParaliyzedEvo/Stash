@@ -53,4 +53,11 @@ interface LyricsDao {
     /** Wipes TTML off every row that has it. Returns the number of rows changed. */
     @Query("UPDATE lyrics SET ttml = NULL, ttml_checked_at = NULL WHERE ttml IS NOT NULL")
     suspend fun clearAllTtml(): Int
+
+    /** Null when no row exists yet (never fetched) — callers treat that as "no offset set". */
+    @Query("SELECT sync_offset_ms FROM lyrics WHERE track_id = :trackId")
+    fun observeSyncOffsetMs(trackId: Long): Flow<Long?>
+
+    @Query("UPDATE lyrics SET sync_offset_ms = :offsetMs WHERE track_id = :trackId")
+    suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long)
 }

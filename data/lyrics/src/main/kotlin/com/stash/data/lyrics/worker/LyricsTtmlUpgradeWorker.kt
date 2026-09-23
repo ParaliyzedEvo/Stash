@@ -58,15 +58,17 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         var fetched = 0
         var notFound = 0
         var failed = 0
-        var streak = 0
 
-        fun summary(bailed: Boolean) = workDataOf(
+        // OUT_BAILED is kept (always false) rather than removed — LyricsFetchStatus.Done and the
+        // Library Health card both still read it, and there's no reason to touch three more files
+        // for a field that's simply never true anymore.
+        fun summary() = workDataOf(
             OUT_TOTAL to total,
             OUT_UPGRADED to upgraded,
             OUT_FETCHED to fetched,
             OUT_NOT_FOUND to notFound,
             OUT_FAILED to failed,
-            OUT_BAILED to bailed,
+            OUT_BAILED to false,
         )
 
         suspend fun report() {
@@ -74,23 +76,19 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             if (manual) promoteToForeground(done, total)
         }
 
-        fun bail(): Result {
-            Log.w(TAG, "Bailing after $streak consecutive failures (done=$done/$total)")
-            // Auto: let WorkManager back off and resume. Manual: report it, the user can tap again.
-            if (!manual && runAttemptCount < MAX_ATTEMPTS) return Result.retry()
-            if (manual) notifyDone(upgraded + fetched, notFound, bailed = true)
-            return Result.success(summary(bailed = true))
-        }
-
+        // A per-track failure means every source in the chain either missed or errored for THAT
+        // track (e.g. one source's host is unreachable on this network, as opposed to a genuine
+        // "no lyrics exist"). LyricsRepository already leaves the track's fetched_at stamp
+        // untouched on this outcome specifically so it stays eligible for a future retag/manual
+        // run — so the right move here is just to count it and move on to the next track, not stop
+        // the whole run. A single unreachable host would otherwise strand every track behind it in
+        // the queue.
         for (trackId in toUpgrade) {
             done++
             when (lyricsRepository.upgradeToTtml(trackId)) {
-                TtmlUpgradeResult.UPGRADED -> { upgraded++; streak = 0 }
-                TtmlUpgradeResult.NO_TTML -> streak = 0
-                TtmlUpgradeResult.FAILED -> {
-                    failed++
-                    if (++streak >= MAX_CONSECUTIVE_FAILURES) return bail()
-                }
+                TtmlUpgradeResult.UPGRADED -> upgraded++
+                TtmlUpgradeResult.NO_TTML -> Unit
+                TtmlUpgradeResult.FAILED -> failed++
                 TtmlUpgradeResult.SKIPPED -> continue          // no network used, no pacing needed
             }
             report()
@@ -100,12 +98,9 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         for (trackId in toFetch) {
             done++
             when (lyricsRepository.fetchLyricsNow(trackId)) {
-                ManualFetchResult.FETCHED -> { fetched++; streak = 0 }
-                ManualFetchResult.NOT_FOUND -> { notFound++; streak = 0 }
-                ManualFetchResult.FAILED -> {
-                    failed++
-                    if (++streak >= MAX_CONSECUTIVE_FAILURES) return bail()
-                }
+                ManualFetchResult.FETCHED -> fetched++
+                ManualFetchResult.NOT_FOUND -> notFound++
+                ManualFetchResult.FAILED -> failed++
                 ManualFetchResult.SKIPPED -> continue
             }
             report()
@@ -114,7 +109,7 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
 
         Log.i(TAG, "Lyrics run finished: upgraded=$upgraded fetched=$fetched notFound=$notFound failed=$failed of $total")
         if (manual) notifyDone(upgraded + fetched, notFound, bailed = false)
-        return Result.success(summary(bailed = false))
+        return Result.success(summary())
     }
 
     // ── foreground / notifications ──────────────────────────────────────────────────────────────
@@ -201,8 +196,6 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         private const val NOTIFICATION_ID = 9271
         private const val NOTIFICATION_ID_DONE = 9272
 
-        private const val MAX_CONSECUTIVE_FAILURES = 5
-        private const val MAX_ATTEMPTS = 3
         private const val REQUEST_SPACING_MS = 3_000L
     }
 }
