@@ -2265,7 +2265,14 @@ Expected: PASS.
     ```
   - `MusicRepositoryImpl`:
     - Add `private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao` as the **last** constructor parameter.
-    - At the end of `addTrackToPlaylist` (after `updateTrackCount`), of `removeTrackFromPlaylist`, **and of `removeTrackFromPlaylistAndMaybeDelete`** (around line 769; this is the path the playlist screen actually uses, from `PlaylistDetailViewModel` lines ~299 and ~420), add:
+    - At the end of `addTrackToPlaylist` (after `updateTrackCount`) and of `removeTrackFromPlaylist`, add the snippet below.
+    - **`removeTrackFromPlaylistAndMaybeDelete`** (around line 769) is the path the playlist screen actually uses (`PlaylistDetailViewModel` ~299 and ~420). It has four early `return`s (blacklist, keptProtected, keptElsewhere, missing row), so the check goes **at the top, before the `if (alsoBlacklist)` branch**, and its parameter is **`fromPlaylistId`**, not `playlistId`. The job waits 30 s, so it running before the delete finishes doesn't matter:
+    ```kotlin
+        if (sharedMixDao.forPlaylist(fromPlaylistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
+    ```
+    - The snippet for the other two functions:
     ```kotlin
         if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
             com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
@@ -2350,7 +2357,7 @@ Expected: FAIL. `followed` is listed.
 
 In `getPickablePlaylists` it goes right after `AND type IN ('CUSTOM')`. In `getUserCreatedPlaylists` it goes after `is_active = 1`.
 
-Also make followed mixes visible in Library in download-only mode. `getAllVisible` hides a playlist with `sync_enabled = 0` and no downloaded tracks, which is exactly a freshly followed mix. Add one arm next to the `pinned_to_home_at` arm:
+Also make followed mixes visible in Library in download-only mode. (`getAllVisible` also feeds Home, so followed mixes appear there too, which is intended. In practice the arm matters when a follow has no downloaded tracks and none that count as streamable.) `getAllVisible` hides a playlist with `sync_enabled = 0` and no downloaded tracks, which is exactly a freshly followed mix. Add one arm next to the `pinned_to_home_at` arm:
 
 ```sql
               -- Followed shared mix (spec §6): the user chose it, so it shows even with Download off.
