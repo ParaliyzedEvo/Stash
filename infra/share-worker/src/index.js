@@ -14,7 +14,8 @@ export default {
     async fetch(request, env) {
         try {
             return await handle(request, env);
-        } catch {
+        } catch (e) {
+            console.error(e); // visible in `wrangler tail`
             return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
         }
     },
@@ -67,7 +68,7 @@ async function readBody(request) {
 
 /** Rate-limit key: an IPv4 address as is, an IPv6 one by its /64 (one host usually holds the whole /64). */
 export function limitKey(addr) {
-    if (!addr.includes(":")) return addr;
+    if (!addr.includes(":") || addr.includes(".")) return addr; // IPv4, or IPv4-mapped IPv6
     const [head, tail] = addr.split("::");
     const left = head ? head.split(":") : [];
     const right = tail ? tail.split(":") : [];
@@ -126,7 +127,7 @@ async function updateMix(request, env, id) {
     // only writer) sends the version it last got back, which floors the new one. Still open: a stale
     // read just after DELETE could resurrect the mix (the app stops PUTting after a delete). Upgrade
     // path: a Durable Object per mix.
-    const base = Number.isInteger(body.baseVersion) && body.baseVersion >= 0 ? body.baseVersion : 0;
+    const base = Number.isInteger(body.baseVersion) && body.baseVersion >= 0 && body.baseVersion <= 1_000_000_000 ? body.baseVersion : 0; // stays a Kotlin Int
     const version = Math.max(record.doc.version, base) + 1;
     const doc = { ...cleanDoc(body.doc), id, version, updatedAt: Math.floor(Date.now() / 1000) };
     await writeMix(env.SHARE_KV, id, { ...record, doc });
