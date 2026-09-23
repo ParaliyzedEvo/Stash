@@ -1100,12 +1100,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         errorMessage = if (paged.partial) paged.partialReason else null,
                     )
                 )
-                // Flip the shared completeness flag on a real truncation only.
-                // It gates deactivateMissingForSource for every YouTube-source
+                // Only flip the shared completeness flag on a REAL detected
+                // truncation (see gridHasUnhandledContinuation) — the flag
+                // gates deactivateMissingForSource for every YouTube-source
                 // playlist this run, saved albums included now that they're
-                // typed CUSTOM (#343/#348). paged.partial now comes from
-                // paginateBrowse itself — the grid probe that used to stand in
-                // for it is gone, because it fired on every paginated library.
+                // typed CUSTOM (#343/#348). A common, non-paginated library
+                // must never suppress that cleanup; a genuinely truncated one
+                // correctly should, exactly like a truncated playlist fetch
+                // already does.
                 if (paged.partial) markYoutubeIncomplete("getSavedAlbums partial: ${paged.partialReason}")
                 Log.d(TAG, "fetchAndSnapshotSavedAlbums: found ${paged.albums.size} saved albums")
                 coroutineScope {
