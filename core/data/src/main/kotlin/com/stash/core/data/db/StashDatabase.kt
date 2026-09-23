@@ -95,7 +95,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoMembershipEntity::class,
         ArtistImageEntity::class,
     ],
-    version = 49,
+    version = 47,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1278,30 +1278,6 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v47 -> v48: word-synced lyrics. `lyrics.ttml` is the raw Apple-style TTML (source of
-         * truth for the syllable renderer; `synced_lrc` is derived from it so every LRC consumer
-         * keeps working). `ttml_checked_at` is the upgrade backfill's "asked, Apple has nothing"
-         * stamp: NULL = never tried, so the worker terminates instead of re-polling misses.
-         * Purely additive.
-         */
-        val MIGRATION_47_48 = object : Migration(47, 48) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE lyrics ADD COLUMN ttml TEXT")
-                db.execSQL("ALTER TABLE lyrics ADD COLUMN ttml_checked_at INTEGER")
-            }
-        }
-
-        /**
-         * v48 -> v49: per-track lyrics sync offset (`lyrics.sync_offset_ms`, signed milliseconds,
-         * default 0). Positive delays lyrics, negative shows them earlier. Purely additive.
-         */
-        val MIGRATION_48_49 = object : Migration(48, 49) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE lyrics ADD COLUMN sync_offset_ms INTEGER NOT NULL DEFAULT 0")
-            }
-        }
-
-        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1361,8 +1337,6 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_44_45,
                 MIGRATION_45_46,
                 MIGRATION_46_47,
-                MIGRATION_47_48,
-                MIGRATION_48_49,
             )
         }
     }

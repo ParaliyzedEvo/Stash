@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -21,14 +20,6 @@ private val Context.lyricsDataStore: DataStore<Preferences> by preferencesDataSt
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
-/** Which source family the lyrics chain is allowed to use. See [LyricsPreference.sourcePreference]. */
-enum class LyricsSourcePreference {
-    /** Default. Apple Music (word-synced TTML) is consulted first, LRC sources fall back. */
-    APPLE_MUSIC,
-    /** Apple Music is never consulted — LRCLIB/KuGou/YT only. */
-    LRC_ONLY,
-}
-
 /**
  * Lyrics display preferences.
  *
@@ -36,18 +27,12 @@ enum class LyricsSourcePreference {
  * Default OFF: watching lyrics tick by can pull the listener out of the
  * music. Off, every track with lyrics (synced or plain) shows the quiet
  * "View lyrics ♪" bar instead; the opt-in toggle lives in the lyrics sheet.
- *
- * [sourcePreference] — whether the fetch chain consults Apple Music's word-synced TTML at all.
- * Changing this doesn't itself trigger any fetch/cleanup — see
- * [com.stash.data.lyrics.LyricsRepository.setSourcePreference] for what switching to LRC_ONLY does
- * to already-stored lyrics.
  */
 @Singleton
 class LyricsPreference @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val liveBarKey = booleanPreferencesKey("live_bar_enabled")
-    private val sourceKey = stringPreferencesKey("lyrics_source_preference")
 
     val liveBarEnabled: Flow<Boolean> = context.lyricsDataStore.data.map { prefs ->
         prefs[liveBarKey] ?: false
@@ -55,15 +40,5 @@ class LyricsPreference @Inject constructor(
 
     suspend fun setLiveBarEnabled(value: Boolean) {
         context.lyricsDataStore.edit { it[liveBarKey] = value }
-    }
-
-    val sourcePreference: Flow<LyricsSourcePreference> = context.lyricsDataStore.data.map { prefs ->
-        prefs[sourceKey]?.let { stored ->
-            runCatching { LyricsSourcePreference.valueOf(stored) }.getOrNull()
-        } ?: LyricsSourcePreference.APPLE_MUSIC
-    }
-
-    suspend fun setSourcePreference(value: LyricsSourcePreference) {
-        context.lyricsDataStore.edit { it[sourceKey] = value.name }
     }
 }

@@ -37,7 +37,6 @@ import com.stash.core.data.db.dao.LibraryHealthBucket
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.theme.StashTheme
-import com.stash.data.download.lyrics.LyricsFetchStatus
 
 /**
  * Library Health screen — answers "what's actually in my library?" by
@@ -55,10 +54,8 @@ import com.stash.data.download.lyrics.LyricsFetchStatus
 fun LibraryHealthScreen(
     onNavigateBack: () -> Unit,
     viewModel: LibraryHealthViewModel = hiltViewModel(),
-    lyricsViewModel: LyricsFetchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val lyricsStatus by lyricsViewModel.status.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -118,13 +115,6 @@ fun LibraryHealthScreen(
         Spacer(Modifier.height(20.dp))
 
         QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
-
-        Spacer(Modifier.height(20.dp))
-
-        LyricsFetchSection(
-            status = lyricsStatus,
-            onFetch = lyricsViewModel::fetchLyrics,
-        )
 
         Spacer(Modifier.height(40.dp))
     }
@@ -486,92 +476,6 @@ private fun QualityInfoRefreshSection(onClick: () -> Unit) {
                 },
             ) {
                 Text("Refresh")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LyricsFetchSection(
-    status: LyricsFetchStatus,
-    onFetch: () -> Unit,
-) {
-    SectionHeader(title = "Lyrics")
-    GlassCard {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            when (status) {
-                LyricsFetchStatus.Idle, LyricsFetchStatus.Queued -> {
-                    Text(
-                        text = "Fetch lyrics",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (status == LyricsFetchStatus.Queued) {
-                            "Queued, waiting for a suitable connection. Tap to start now on any network."
-                        } else {
-                            "Look up lyrics for downloaded tracks that are missing them. " +
-                                "Keeps running in the background, so you can leave the app. " +
-                                "A notification shows progress."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = onFetch) { Text("Fetch lyrics") }
-                }
-                is LyricsFetchStatus.Running -> {
-                    Text(
-                        text = if (status.total > 0) {
-                            "Fetching lyrics… ${status.done} / ${status.total}"
-                        } else {
-                            "Fetching lyrics…"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    if (status.total > 0) {
-                        LinearProgressIndicator(
-                            progress = { status.done.toFloat() / status.total.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-                }
-                is LyricsFetchStatus.Done -> {
-                    val updated = status.fetched + status.upgraded
-                    Text(
-                        text = if (updated > 0) {
-                            "Done: $updated ${if (updated == 1) "track" else "tracks"} updated."
-                        } else {
-                            "Done: nothing needed updating."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    if (status.notFound > 0) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "No lyrics found for ${status.notFound} " +
-                                "${if (status.notFound == 1) "track" else "tracks"}.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (status.bailed) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Stopped early: the lyrics service isn't responding. Try again in a bit.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = onFetch) { Text("Fetch again") }
-                }
             }
         }
     }

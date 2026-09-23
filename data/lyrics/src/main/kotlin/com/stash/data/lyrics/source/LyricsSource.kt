@@ -23,6 +23,4 @@ data class LyricsResult(
     val instrumental: Boolean,
     val language: String?,
     val sourceLyricsId: String?,
-    /** Raw word-synced TTML when the source has one; null for LRC/plain-only sources. */
-    val ttml: String? = null,
 )

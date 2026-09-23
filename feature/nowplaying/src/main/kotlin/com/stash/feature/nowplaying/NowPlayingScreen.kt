@@ -267,22 +267,18 @@ fun NowPlayingScreen(
     val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
     val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
     val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
-    val lyricsSyncOffsetMs by viewModel.lyricsSyncOffsetMs.collectAsStateWithLifecycle()
     if (showLyrics) {
         LyricsBottomSheet(
             state = lyricsState,
             currentPositionMs = lyricsPositionMs,
             liveLyricsEnabled = liveLyricsEnabled,
             onLiveLyricsToggle = viewModel::setLiveLyricsBarEnabled,
-            isPlaying = uiState.isPlaying && !uiState.isBuffering,
             onSeek = viewModel::onLyricsLineSeek,
             canSaveToFile = track?.isDownloaded == true,
             savingToFile = exportingLyricsTrackId != null,
             onSaveToFile = viewModel::exportLyricsForCurrentTrack,
             onRetry = viewModel::onLyricsRetry,
             onDismiss = viewModel::onDismissLyrics,
-            currentOffsetMs = lyricsSyncOffsetMs,
-            onOffsetChange = viewModel::setLyricsSyncOffsetMs,
         )
     }
 
@@ -666,7 +662,6 @@ fun NowPlayingScreen(
                 accentColor = npAccent(uiState.vibrantColor),
                 liveEnabled = liveLyricsEnabled,
                 onTap = viewModel::onShowLyrics,
-                isPlaying = uiState.isPlaying && !uiState.isBuffering,
             )
         }
     }

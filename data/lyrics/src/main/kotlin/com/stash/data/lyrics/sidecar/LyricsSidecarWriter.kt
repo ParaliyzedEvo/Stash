@@ -19,36 +19,31 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * v0.9.36 sidecar writer, extended for word-synced (TTML) lyrics.
+ * v0.9.36 sidecar `.lrc` writer.
  *
- * Writes a sidecar next to the audio file on every successful lyrics fetch, so external players
- * pick lyrics up by convention. Two bodies compete for that role:
+ * Writes `<basename>.lrc` next to the audio file on every successful
+ * lyrics fetch, so external players (PowerAmp, VLC, Musicolet, etc.)
+ * pick up the lyrics by convention without any Stash-specific
+ * integration. Two storage targets are supported:
  *
- *  - **`.lrc`** — line-synced text, understood by essentially every external player (PowerAmp,
- *    VLC, Musicolet, etc.).
- *  - **`.ttml`** — Apple's word-synced format, when the source provided it. Few external players
- *    read this today, but it's the source of truth for Stash's own syllable renderer.
+ *  - **Internal storage** — `track.filePath` is an absolute filesystem
+ *    path; the sidecar is written via plain `java.io.File` next to the
+ *    audio (correct under every folder structure).
+ *  - **SAF tree** — `track.filePath` starts with `content://`; the
+ *    sidecar location is derived from the user's persisted external
+ *    tree URI (from [StoragePreference], NOT from the audio URI —
+ *    DocumentFile.fromTreeUri requires the tree ROOT, not a child),
+ *    walked down through the SAME [LibraryLayoutResolver] location the
+ *    download pipeline used (#198/#104: Artist/Album, Single folder,
+ *    Per playlist), so the `.lrc` always lands in the directory the
+ *    download created.
  *
- * When a track has TTML, the `.ttml` sidecar is written and the `.lrc` is DELETED rather than kept
- * alongside it — the `.ttml` supersedes it. The delete only runs after the `.ttml` write itself
- * succeeds, so a failure never leaves a track with no sidecar at all. When a track has no TTML
- * (LRCLIB/KuGou/YT hits), the `.lrc` is written exactly as before.
+ * Write failure is non-fatal for the Room state: [LyricsRepository]
+ * wraps the throwing `write()` API in `runCatching`; only that path is best-effort
+ * — the lyrics row + `tracks.lyrics_fetched_at` stamp are the source
+ * of truth for the in-app reader; the sidecar is a courtesy.
  *
- * Two storage targets are supported:
- *
- *  - **Internal storage** — `track.filePath` is an absolute filesystem path; sidecars are written
- *    via plain `java.io.File` next to the audio.
- *  - **SAF tree** — `track.filePath` starts with `content://`; the sidecar location is derived from
- *    the user's persisted external tree URI ([StoragePreference]), walked down through the same
- *    [LibraryLayoutResolver] location the download pipeline used, so a sidecar always lands where
- *    the download created it. See [resolveSafLocation].
- *
- * Write failure is non-fatal for the Room state: [com.stash.data.lyrics.LyricsRepository] wraps the
- * throwing `write()` in `runCatching`; only that path is best-effort — the lyrics row +
- * `tracks.lyrics_fetched_at` stamp are the source of truth for the in-app reader; the sidecar is a
- * courtesy.
- *
- * `.lrc` body format:
+ * Body format (LRC convention):
  * ```
  * [ti:<title>]
  * [ar:<albumArtist or artist if blank>]
@@ -58,10 +53,10 @@ import javax.inject.Singleton
  * <synced LRC body, or plain text if synced is missing>
  * ```
  *
- * [write] throws [IOException] when both `syncedLrc` and `plainText` are null/blank AND there's no
- * `ttml` either (the instrumental case) — `LyricsRepository` already guards this for the
- * instrumental flag, but `write()` re-checks defensively so callers can't accidentally create a
- * header-only sidecar with no body.
+ * Rejected with [IOException] when both bodies are null/blank
+ * (the instrumental case). `LyricsRepository` already guards this for
+ * the instrumental flag, but `write()` re-checks defensively so callers
+ * can't accidentally create a header-only `.lrc` with no body.
  */
 @Singleton
 class LyricsSidecarWriter @Inject constructor(
@@ -71,130 +66,75 @@ class LyricsSidecarWriter @Inject constructor(
 ) {
 
     /**
-     * Writes the sidecar(s) for [trackId] using [lyrics]. See class KDoc for which extension(s)
-     * end up on disk.
+     * Writes the `.lrc` sidecar for [trackId] using [lyrics].
      *
      * Fails when:
-     *   - Both `syncedLrc`/`plainText` and `ttml` are null/blank (the instrumental case).
+     *   - Both `syncedLrc` and `plainText` are null/blank (instrumental).
      *   - The track row is gone (deleted mid-flight).
      *   - The track has no [TrackEntity.filePath] (legacy / sync-only row).
-     *   - The SAF tree URI is unset on a `content://` filePath.
+     *   - The SAF tree URI is unset on a `content://` filePath (the user
+     *     swapped storage modes; we can't infer the tree root from the
+     *     child URI, so writing fails rather than guessing).
      *
-     * Throws on disk/SAF I/O failure so [com.stash.data.lyrics.LyricsRepository] can `runCatching`
-     * it as non-fatal.
+     * Throws on disk/SAF I/O failure so [LyricsRepository] can
+     * `runCatching` it as non-fatal.
      */
     suspend fun write(trackId: Long, lyrics: LyricsEntity) {
-        val ttml = lyrics.ttml?.takeUnless(String::isBlank)
-        if (ttml == null && lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
-            fail("No lyrics body for track $trackId")
-        }
+        if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) fail("No lyrics body for track $trackId")
         val track = trackDao.getById(trackId) ?: fail("Track $trackId no longer exists")
         val path = track.filePath ?: fail("Track $trackId has no downloaded file")
-
-        if (ttml != null) {
-            // TTML supersedes the plain .lrc: write it first, and only once THAT succeeds, drop
-            // the old .lrc rather than leaving a stale duplicate next to the new file.
-            writeSidecarFile(track, path, ttml, "ttml", TTML_MIME)
-            runCatching { deleteSidecarFile(track, path, "lrc") }
-                .onFailure { e -> Log.w(TAG, "Stale .lrc cleanup failed for track $trackId", e) }
-            return
+        val body = buildLrcBody(track, lyrics)
+        if (path.startsWith("content://")) {
+            writeSafSidecar(track, body)
+        } else {
+            writeFilesystemSidecar(path, body)
         }
-
-        // No TTML for this track: keep the plain .lrc as the on-disk sidecar.
-        if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
-            fail("No lyrics body for track $trackId")
-        }
-        writeSidecarFile(track, path, buildLrcBody(track, lyrics), "lrc", LRC_MIME)
     }
 
-    /**
-     * Deletes just the `.ttml` sidecar for [trackId], if one exists — used when the user switches
-     * their lyrics source preference to LRC-only and stored TTML is being wiped. Best-effort and
-     * silent: a missing track/file/sidecar is a normal outcome here, not an error.
-     */
-    suspend fun deleteTtmlSidecar(trackId: Long) {
-        val track = trackDao.getById(trackId) ?: return
-        val path = track.filePath ?: return
-        runCatching { deleteSidecarFile(track, path, "ttml") }
-            .onFailure { e -> Log.w(TAG, "Couldn't delete .ttml sidecar for track $trackId", e) }
-    }
-
-    private suspend fun writeSidecarFile(track: TrackEntity, path: String, body: String, ext: String, mime: String) {
-        if (path.startsWith("content://")) writeSafSidecar(track, body, ext, mime)
-        else writeFilesystemSidecar(path, body, ext)
-    }
-
-    private suspend fun deleteSidecarFile(track: TrackEntity, path: String, ext: String) {
-        if (path.startsWith("content://")) deleteSafSidecar(track, ext)
-        else deleteFilesystemSidecar(path, ext)
-    }
-
-    private fun writeFilesystemSidecar(audioPath: String, body: String, ext: String) {
+    private fun writeFilesystemSidecar(audioPath: String, body: String) {
         val audio = File(audioPath)
         val parent = audio.parentFile ?: run {
             Log.w(TAG, "Cannot resolve parent directory for $audioPath; sidecar skipped")
             throw IOException("Cannot resolve parent directory for $audioPath")
         }
-        val sidecar = File(parent, "${audio.nameWithoutExtension}.$ext")
+        val sidecar = File(parent, "${audio.nameWithoutExtension}.lrc")
         sidecar.writeText(body, Charsets.UTF_8)
     }
 
-    private fun deleteFilesystemSidecar(audioPath: String, ext: String) {
-        val audio = File(audioPath)
-        val parent = audio.parentFile ?: return
-        File(parent, "${audio.nameWithoutExtension}.$ext").takeIf { it.exists() }?.delete()
-    }
-
-    private suspend fun writeSafSidecar(track: TrackEntity, body: String, ext: String, mime: String) {
-        val (tree, segments, baseName) = resolveSafLocation(track)
-            ?: fail("Track ${track.id} has no SAF tree configured")
-        var cursor = tree
-        for (segment in segments) {
-            cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
-        }
-        val filename = "$baseName.$ext"
-        val existing = cursor.findFile(filename)
-        val target = existing ?: cursor.createFile(mime, filename) ?: run {
-            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
-            throw IOException("Could not create SAF sidecar $filename")
-        }
-        context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
-            out.write(body.toByteArray(Charsets.UTF_8))
-        } ?: fail("Could not open SAF output stream for sidecar ${target.uri}")
-    }
-
-    private suspend fun deleteSafSidecar(track: TrackEntity, ext: String) {
-        val (tree, segments, baseName) = resolveSafLocation(track) ?: return
-        var cursor = tree
-        for (segment in segments) {
-            cursor = cursor.findFile(segment)?.takeIf { it.isDirectory } ?: return
-        }
-        cursor.findFile("$baseName.$ext")?.delete()
-    }
-
-    /**
-     * Resolves (tree root, directory segments relative to the tree, filename without extension)
-     * for [track]'s sidecar location. Shared by [writeSafSidecar] and [deleteSafSidecar] so both
-     * land on / clean up the exact same path.
-     *
-     * Prefers the audio's OWN directory (decoded straight from its content URI via
-     * [safLocationBesideAudio]) over re-deriving from the current layout preference — a track
-     * downloaded under one layout stays put until Reorganize runs, and re-deriving from the
-     * CURRENT preference would target an empty folder while the audio sat elsewhere.
-     */
-    private suspend fun resolveSafLocation(track: TrackEntity): Triple<DocumentFile, List<String>, String>? {
+    private suspend fun writeSafSidecar(track: TrackEntity, body: String) {
+        // IMPORTANT: DocumentFile.fromTreeUri expects the STORAGE TREE
+        // ROOT URI, not the audio file's content URI. Reading the
+        // child's URI would yield "permission denied" or worse. The
+        // tree URI lives in [StoragePreference]; if it's unset on a
+        // `content://` path the user has swapped storage modes since
+        // download and we can't recover, so this writer throws.
         val treeUri: Uri = storagePreference.externalTreeUri.first() ?: run {
-            Log.w(TAG, "Track ${track.id} has SAF filePath but no externalTreeUri persisted; sidecar skipped")
-            return null
+            Log.w(
+                TAG,
+                "Track ${track.id} has SAF filePath but no externalTreeUri persisted; sidecar skipped",
+            )
+            throw IOException("Missing SAF tree for track ${track.id}")
         }
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: run {
             Log.w(TAG, "DocumentFile.fromTreeUri returned null for $treeUri; sidecar skipped")
-            return null
+            throw IOException("Invalid SAF tree $treeUri")
         }
+        // The sidecar contract is "next to the audio", so the audio's OWN
+        // directory wins over anything re-derived. A track downloaded under
+        // one layout stays put until Reorganize runs, and re-deriving from
+        // the CURRENT preference would drop the .lrc in an empty folder while
+        // the audio sat elsewhere — invisible to every external player.
+        // Falls back to the layout resolver when the provider's document ids
+        // don't follow the `<volume>:<path>` convention we can decode.
         val beside = safLocationBesideAudio(treeUri, track.filePath)
-        val (segments, baseName) = beside ?: run {
-            // track.artist (not albumArtist) matches what commitDownload slugged into the
-            // directory names (#198/#104).
+        val segments: List<String>
+        val baseName: String
+        if (beside != null) {
+            segments = beside.first
+            baseName = beside.second
+        } else {
+            // track.artist (not albumArtist) matches what commitDownload
+            // slugged into the directory names (#198/#104).
             val layout = runCatching { storagePreference.libraryLayout.first() }
                 .getOrDefault(LibraryLayout.DEFAULT)
             val playlistName =
@@ -210,15 +150,29 @@ class LyricsSidecarWriter @Inject constructor(
                 title = track.title,
                 playlistName = playlistName,
             )
-            location.segments to location.baseName
+            segments = location.segments
+            baseName = location.baseName
         }
-        return Triple(tree, segments, baseName)
+        var cursor = tree
+        for (segment in segments) {
+            cursor = findOrCreateDir(cursor, segment) ?: fail("Could not create directory '$segment'")
+        }
+        val filename = "$baseName.lrc"
+        val existing = cursor.findFile(filename)
+        val target = existing ?: cursor.createFile(LRC_MIME, filename) ?: run {
+            Log.w(TAG, "Could not create SAF sidecar '$filename' under ${cursor.uri}")
+            throw IOException("Could not create SAF sidecar $filename")
+        }
+        context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
+            out.write(body.toByteArray(Charsets.UTF_8))
+        } ?: fail("Could not open SAF output stream for sidecar ${target.uri}")
     }
+
 
     /**
      * Decode a SAF audio document uri into (directory segments relative to
-     * the picked tree, filename without extension) so a sidecar can be
-     * written/deleted in the audio's ACTUAL directory.
+     * the picked tree, filename without extension) so the sidecar can be
+     * written in the audio's ACTUAL directory.
      *
      * Mirrors the `<volume>:<path>` decode used by the reorganize pass.
      * Returns null whenever the ids don't parse or the document doesn't sit
@@ -240,7 +194,8 @@ class LyricsSidecarWriter @Inject constructor(
     }
 
     /**
-     * SAF-side `findOrCreateDir`. Returns `null` (logged) instead of throwing — sidecar failure
+     * SAF-side `findOrCreateDir`. Mirrors the helper in `FileOrganizer`
+     * but returns `null` (logged) instead of throwing — sidecar failure
      * is converted to IOException by its caller.
      */
     private fun findOrCreateDir(parent: DocumentFile, name: String): DocumentFile? {
@@ -268,7 +223,10 @@ class LyricsSidecarWriter @Inject constructor(
 
     private companion object {
         private const val TAG = "LyricsSidecarWriter"
+        // LRC has no official MIME type; mirror the de-facto convention
+        // used by other lyric-aware Android apps. The provider creating
+        // the document is allowed to coerce this to text/plain if it
+        // doesn't recognise the value — the sidecar still functions.
         private const val LRC_MIME = "application/x-lrc"
-        private const val TTML_MIME = "application/x-ttml"
     }
 }
