@@ -335,6 +335,13 @@ fun StashNavHost(
             )
         }
 
+        composable<SharedMixRoute> {
+            com.stash.feature.library.share.SharedMixScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+            )
+        }
+
         composable<ArtistDetailRoute> {
             ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
