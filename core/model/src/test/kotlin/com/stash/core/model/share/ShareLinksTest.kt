@@ -33,4 +33,16 @@ class ShareLinksTest {
         assertThat(ShareLinks.parse("not a url")).isNull()
         assertThat(ShareLinks.parse("$base/t?t=%zz&a=A")).isNull()
     }
+
+    @Test fun `hostile or sloppy links are bounded, normalised or rejected`() {
+        val long = "x".repeat(5000)
+        val t = (ShareLinks.parse("$base/t?t=$long&a=A") as ShareLinks.Parsed.Track).track
+        assertThat(t.title).hasLength(500)
+        assertThat(ShareLinks.parse("HTTPS://STASH-SHARE.RAWNALDCLARK.WORKERS.DEV/m/Kx7Qa2pL/")).isEqualTo(ShareLinks.Parsed.Mix("Kx7Qa2pL"))
+        assertThat(ShareLinks.parse("stash:track?t=a&a=b")).isNull()
+        assertThat(ShareLinks.parse("$base/t?t=+&a=A")).isNull()
+        val round = SharedTrack("C++ é", "Artist", durationMs = null)
+        assertThat(ShareLinks.parse(ShareLinks.trackUrl(round))).isEqualTo(ShareLinks.Parsed.Track(round))
+        assertThat((ShareLinks.parse("$base/t?t=T&a=A&d=-5") as ShareLinks.Parsed.Track).track.durationMs).isNull()
+    }
 }

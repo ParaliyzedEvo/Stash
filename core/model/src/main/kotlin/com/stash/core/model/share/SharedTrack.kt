@@ -35,8 +35,9 @@ fun spotifyTrackId(uri: String?): String? {
 }
 
 fun Track.toSharedTrack(): SharedTrack = SharedTrack(
-    title = title,
-    artist = artist,
+    // Title and artist are required by links and the Worker; a local file may lack them.
+    title = title.clean() ?: "Unknown title",
+    artist = artist.clean() ?: "Unknown artist",
     album = album.clean(),
     durationMs = durationMs.takeIf { it > 0 },
     isrc = isrc.clean(),

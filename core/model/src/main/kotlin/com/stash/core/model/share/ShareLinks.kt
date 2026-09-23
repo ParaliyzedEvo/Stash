@@ -32,25 +32,32 @@ object ShareLinks {
 
     /** A share link (https mix/track, or the legacy `stash://track`), or null when it isn't one. */
     fun parse(link: String?): Parsed? {
-        val uri = runCatching { URI(link ?: return null) }.getOrNull() ?: return null
-        val q = query(uri.rawQuery)
+        if (link == null) return null
+        // Links arrive from any app or page, so nothing here may throw.
+        val (uri, q) = runCatching { URI(link).let { it to query(it.rawQuery) } }.getOrNull() ?: return null
+        val scheme = uri.scheme?.lowercase()
+        val host = uri.host?.lowercase()
+        val path = uri.path.orEmpty().trimEnd('/')
         return when {
-            uri.scheme == "https" && uri.host in ShareConfig.HOSTS -> when {
-                uri.path.startsWith("/m/") -> uri.path.removePrefix("/m/").takeIf { ID.matches(it) }?.let { Parsed.Mix(it) }
-                uri.path == "/t" -> trackFrom(q["t"], q["a"], q["al"], q["d"], q["isrc"], q["sp"], q["yt"])
+            scheme == "https" && host in ShareConfig.HOSTS -> when {
+                path.startsWith("/m/") -> path.removePrefix("/m/").takeIf { ID.matches(it) }?.let { Parsed.Mix(it) }
+                path == "/t" -> trackFrom(q["t"], q["a"], q["al"], q["d"], q["isrc"], q["sp"], q["yt"])
                 else -> null
             }
-            uri.scheme == "stash" && uri.host == "track" ->
+            scheme == "stash" && host == "track" ->
                 trackFrom(q["t"], q["a"], null, null, null, spotifyTrackId(q["s"]), q["y"])
             else -> null
         }
     }
 
     private fun trackFrom(t: String?, a: String?, al: String?, d: String?, isrc: String?, sp: String?, yt: String?): Parsed? {
-        if (t.isNullOrBlank() || a.isNullOrBlank()) return null
+        // Same caps as the Worker's validator: a hostile link can't push huge strings into the DB.
+        fun String?.field(max: Int) = this?.trim()?.take(max)?.ifEmpty { null }
+        val title = t.field(500) ?: return null
+        val artist = a.field(500) ?: return null
         return Parsed.Track(
-            SharedTrack(t, a, al?.ifBlank { null }, d?.toLongOrNull()?.takeIf { it > 0 },
-                isrc?.ifBlank { null }, sp?.ifBlank { null }, yt?.ifBlank { null }),
+            SharedTrack(title, artist, al.field(500), d?.toLongOrNull()?.takeIf { it > 0 },
+                isrc.field(20), sp.field(40), yt.field(20)),
         )
     }
 
