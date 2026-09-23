@@ -1,0 +1,16 @@
+{
+  "name": "stash-share",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stores shared Stash mixes (one JSON document per mix in KV) and serves their preview pages.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --no-warnings --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.135.0"
+  }
+}
