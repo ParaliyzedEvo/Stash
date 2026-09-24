@@ -991,7 +991,7 @@ class NowPlayingViewModel @Inject constructor(
     fun exportLyricsForCurrentTrack() {
         val track = _uiState.value.currentTrack?.takeIf { it.id > 0L && it.isDownloaded } ?: return
         if (!_exportingLyricsTrackId.compareAndSet(expect = null, update = track.id)) return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             try {
                 val message = try {
                     val lyrics = lyricsRepository.get(track.id)
