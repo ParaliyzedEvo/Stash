@@ -36,4 +36,10 @@ class PlaylistDaoFollowedPickerTest {
         db.sharedMixDao().markRemoved(followed, noticePending = false)
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine, followed)
     }
+
+    @Test fun `your own playlist shows with downloads off and nothing downloaded`() = runTest {
+        val dao = db.playlistDao()
+        val mine = dao.insert(PlaylistEntity(name = "Saved copy", source = MusicSource.BOTH, sourceId = "custom_2", type = PlaylistType.CUSTOM, syncEnabled = false))
+        assertThat(dao.getAllVisible(includeStreamable = false).first().map { it.id }).containsExactly(mine)
+    }
 }

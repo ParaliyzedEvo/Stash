@@ -140,7 +140,7 @@ class SharedMixRepositoryFollowerTest {
         val id = repo.saveCopy(doc(1, "One", "Two"))
         val p = db.playlistDao().getById(id)!!
         assertThat(p.sourceId).startsWith("custom_")
-        assertThat(p.syncEnabled).isTrue()
+        assertThat(p.syncEnabled).isFalse()
         assertThat(titles(id)).containsExactly("One", "Two").inOrder()
         assertThat(db.sharedMixDao().forPlaylist(id)).isNull()
     }

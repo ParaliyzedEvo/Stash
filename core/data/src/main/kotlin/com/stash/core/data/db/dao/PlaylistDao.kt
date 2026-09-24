@@ -351,6 +351,9 @@ interface PlaylistDao {
               OR p.pinned_to_home_at IS NOT NULL
               -- Followed shared mix (spec §6): the user chose it, so it shows even with Download off.
               OR p.source_id LIKE 'share:%'
+              -- A playlist the user made (createPlaylist, incl. a saved copy of a shared mix)
+              -- shows in Library with downloads off. Android Auto filters these back out.
+              OR p.source_id LIKE 'custom_%'
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id

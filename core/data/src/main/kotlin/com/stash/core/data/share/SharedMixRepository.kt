@@ -188,6 +188,8 @@ class SharedMixRepository @Inject constructor(
     suspend fun saveCopy(doc: SharedMixDocument): Long {
         val ids = persistTracks(doc)
         val playlistId = musicRepository.createPlaylist(doc.name)
+        // Streams until the user switches downloads on (spec §6); set before any track joins.
+        playlistDao.setSyncEnabled(playlistId, false)
         playlistDao.replaceMixMembership(playlistId, ids, doc.name, Instant.now())
         return playlistId
     }
