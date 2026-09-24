@@ -163,6 +163,19 @@ class SharedMixRepositoryFollowerTest {
         for (kept in listOf("Liked", "Other", "Downloaded", "Heard")) assertThat(db.trackDao().getById(ids[kept]!!)).isNotNull()
     }
 
+    @Test fun `an update deletes the dropped songs nothing else claims`() = runBlocking {
+        val id = repo.follow(doc(1, "A", "B", "Liked"))
+        val ids = db.playlistDao().getTracksForPlaylist(id).associate { it.title to it.id }
+        db.openHelper.writableDatabase.execSQL("UPDATE tracks SET stash_liked_at = 1 WHERE id = ${ids["Liked"]}")
+        server.enqueue(MockResponse().setBody("""{"version":2}"""))
+        server.enqueue(MockResponse().setBody(docJson(doc(2, "A", "C"))))
+        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)).isEqualTo(FollowCheck.Updated)
+        assertThat(db.trackDao().getById(ids["B"]!!)).isNull()
+        assertThat(db.trackDao().getById(ids["A"]!!)).isNotNull()
+        assertThat(db.trackDao().getById(ids["Liked"]!!)).isNotNull()
+        assertThat(titles(id)).containsExactly("A", "C").inOrder()
+    }
+
     @Test fun `a newer document format is never applied`() = runBlocking {
         val id = repo.follow(doc(1, "One"))
         server.enqueue(MockResponse().setBody("""{"version":2}"""))

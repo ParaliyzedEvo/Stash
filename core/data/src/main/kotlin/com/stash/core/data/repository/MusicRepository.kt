@@ -129,6 +129,9 @@ interface MusicRepository {
     /** A single playlist with its full track list. */
     suspend fun getPlaylistWithTracks(id: Long): Playlist?
 
+    /** The playlist row (no tracks), re-emitted whenever it changes: renames, the Download switch. */
+    fun observePlaylist(id: Long): Flow<Playlist?>
+
     /** All active playlists of a given type (e.g. LIKED_SONGS). */
     fun getPlaylistsByType(type: com.stash.core.model.PlaylistType): Flow<List<Playlist>>
 

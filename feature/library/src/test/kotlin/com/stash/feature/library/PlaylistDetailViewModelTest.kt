@@ -28,6 +28,7 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -78,6 +79,43 @@ class PlaylistDetailViewModelTest {
         backgroundScope.launch { vm.follow.collect {} }
         runCurrent()
         assertEquals(false, checkNotNull(vm.follow.value).readOnly)
+    }
+
+    @Test fun `a rename in the database reaches the header`() = runTest {
+        val live = MutableStateFlow<com.stash.core.model.Playlist?>(null)
+        val music = musicRepoMock().stub {
+            on { observePlaylist(any()) } doReturn live
+            onBlocking { getPlaylistWithTracks(1L) } doReturn
+                com.stash.core.model.Playlist(id = 1L, name = "Ambient", source = com.stash.core.model.MusicSource.BOTH)
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.uiState.collect {} }
+        runCurrent()
+        assertEquals("Ambient", vm.uiState.value.playlist?.name)
+        live.value = com.stash.core.model.Playlist(id = 1L, name = "Sleep", source = com.stash.core.model.MusicSource.BOTH, syncEnabled = true)
+        runCurrent()
+        assertEquals("Sleep", vm.uiState.value.playlist?.name)
+        assertEquals(true, vm.uiState.value.playlist?.syncEnabled)
+    }
+
+    @Test fun `the stopped-sharing notice shows once when the follow flips while the screen is open`() = runTest {
+        val row = MutableStateFlow(
+            com.stash.core.data.db.entity.SharedMixEntity(1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient"),
+        )
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn row
+            onBlocking { consumeRemovedNotice(1L) } doReturn "Rawn stopped sharing this mix. You keep your copy."
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        val messages = collectMessages(vm)
+        assertEquals(emptyList<String>(), messages)
+        val removed = row.value.copy(status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED, noticePending = true)
+        row.value = removed
+        runCurrent()
+        row.value = removed.copy(missingCount = 1) // an unrelated re-emit with the flag still set
+        runCurrent()
+        assertEquals(listOf("Rawn stopped sharing this mix. You keep your copy."), messages)
+        org.mockito.kotlin.verifyBlocking(shared, org.mockito.kotlin.times(1)) { consumeRemovedNotice(1L) }
     }
 
     @Test fun `turning Download this mix on writes it through the repository`() = runTest {
@@ -339,6 +377,7 @@ class PlaylistDetailViewModelTest {
 
     private fun musicRepoMock(): MusicRepository = mock {
         on { getTracksByPlaylist(any()) } doReturn flowOf(emptyList())
+        on { observePlaylist(any()) } doReturn flowOf(null)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true
         onBlocking {

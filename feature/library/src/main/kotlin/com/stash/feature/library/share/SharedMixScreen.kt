@@ -74,7 +74,9 @@ fun SharedMixScreen(
                             Text(s.doc.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val by = s.doc.sharedBy?.let { " · shared by $it" }.orEmpty()
                             val updated = s.doc.updatedAt.takeIf { it > 0 }?.let {
-                                " · updated " + DateUtils.getRelativeTimeSpanString(it * 1000, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+                                val now = System.currentTimeMillis()
+                                if (now - it * 1000 < DateUtils.MINUTE_IN_MILLIS) " · updated just now"
+                                else " · updated " + DateUtils.getRelativeTimeSpanString(it * 1000, now, DateUtils.MINUTE_IN_MILLIS)
                             }.orEmpty()
                             Text("${s.doc.tracks.size} tracks$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

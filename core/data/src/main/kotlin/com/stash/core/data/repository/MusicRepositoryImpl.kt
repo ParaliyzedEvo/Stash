@@ -419,6 +419,9 @@ class MusicRepositoryImpl @Inject constructor(
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
         trackDao.observeByYoutubeId(youtubeId).map { it?.toDomain() }
 
+    override fun observePlaylist(id: Long): Flow<Playlist?> =
+        playlistDao.getByIdFlow(id).map { it?.toDomain() }
+
     override suspend fun getPlaylistWithTracks(id: Long): Playlist? {
         val result = playlistDao.getPlaylistWithTracks(id) ?: return null
         return result.playlist.toDomain().copy(

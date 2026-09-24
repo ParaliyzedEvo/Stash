@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -191,6 +194,12 @@ class PlaylistDetailViewModel @Inject constructor(
 
     init {
         loadPlaylistMetadata()
+        // The header follows the row: a followed mix renamed by its owner's update, the Download switch.
+        viewModelScope.launch {
+            musicRepository.observePlaylist(playlistId).collect { live ->
+                if (live != null) _playlist.value = _playlist.value?.copy(name = live.name, syncEnabled = live.syncEnabled)
+            }
+        }
     }
 
     // ── Data loading ────────────────────────────────────────────────────
@@ -508,15 +517,24 @@ class PlaylistDetailViewModel @Inject constructor(
     val userMessages: kotlinx.coroutines.flow.SharedFlow<String> =
         _userMessages.asSharedFlow()
 
-    // The one-time "stopped sharing" notice (spec §6). This init sits after [_userMessages] so it is
-    // initialised, and waits for the screen's collector: the flow has no replay, so an emit before the
-    // Snackbar subscribes would be lost after the flag was already cleared.
+    // The one-time "stopped sharing" notice (spec §6), driven by the live row so it also fires when the
+    // follow flips to REMOVED while this screen is open or restored from the back stack. It fires on each
+    // rise of notice_pending (distinctUntilChanged drops Room's same-value re-emits); collect is sequential,
+    // so a consume in flight is never re-entered, and consumeRemovedNotice clears the flag (null once cleared).
+    // Each consume waits for the Snackbar's collector: the flow has no replay, so an emit before it
+    // subscribes would be lost after the flag was already cleared. This init sits after [_userMessages].
     init {
         viewModelScope.launch {
-            _userMessages.subscriptionCount.first { it > 0 }
-            followAction("read the stopped-sharing notice for") {
-                sharedMixRepository.consumeRemovedNotice(playlistId)?.let { _userMessages.tryEmit(it) }
-            }
+            sharedMixRepository.observe(playlistId)
+                .map { it?.noticePending == true }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
+                    _userMessages.subscriptionCount.first { it > 0 }
+                    followAction("read the stopped-sharing notice for") {
+                        sharedMixRepository.consumeRemovedNotice(playlistId)?.let { _userMessages.tryEmit(it) }
+                    }
+                }
         }
     }
 

@@ -237,7 +237,10 @@ class SharedMixRepository @Inject constructor(
         val download = database.withTransaction {
             // Unfollowed mid-check: nothing to update (replaceMixMembership would hit an FK error).
             val playlist = playlistDao.getById(row.playlistId) ?: return@withTransaction null
+            val dropped = playlistDao.getOrderedTrackIdsForPlaylist(row.playlistId) - ids.toSet()
             playlistDao.replaceMixMembership(row.playlistId, ids, doc.name, Instant.ofEpochMilli(now))
+            // Songs the owner took out go the way unfollow's do, unless something else claims them.
+            trackDao.deleteUnclaimedTracks(dropped)
             sharedMixDao.markApplied(row.playlistId, doc.version, doc.name, doc.sharedBy, now)
             playlist.syncEnabled
         }
