@@ -169,6 +169,7 @@ class LyricsSidecarWriterTest {
         syncedLrc: String? = null,
         plainText: String? = null,
         instrumental: Boolean = false,
+        ttml: String? = null,
     ) = LyricsEntity(
         trackId = 1L,
         plainText = plainText,
@@ -178,5 +179,88 @@ class LyricsSidecarWriterTest {
         source = "lrclib",
         sourceLyricsId = "42",
         fetchedAt = 1_700_000_000_000L,
+        ttml = ttml,
     )
+
+    // ── TTML behavior ────────────────────────────────────────────────────────────────────────
+
+    @Test fun `existing track with TTML keeps its lrc and gets a ttml alongside it`() = runTest {
+        val audio = tmp.newFile("existing.flac")
+        // The .lrc already being on disk is what "existing track" means here — this write must
+        // not delete it. An earlier version of the writer did delete the .lrc once a track had
+        // TTML, which meant external-player (PowerAmp/VLC/Musicolet) users lost lyrics across
+        // most of their library the first time the TTML upgrade ran.
+        File(audio.parent, "existing.lrc").writeText("[00:01.00]old body", Charsets.UTF_8)
+        val track = stubTrack(filePath = audio.absolutePath)
+        val writer = makeWriter(track)
+
+        writer.write(
+            track.id,
+            lyricsEntity(syncedLrc = "[00:01.00]new body", plainText = "new body", ttml = "<tt>new</tt>"),
+            isNewTrack = false,
+        )
+
+        val lrc = File(audio.parent, "existing.lrc")
+        val ttmlFile = File(audio.parent, "existing.ttml")
+        assertTrue(".lrc must still exist", lrc.exists())
+        assertTrue(".ttml must be written alongside it", ttmlFile.exists())
+        assertTrue(".lrc refreshed with this fetch's body", lrc.readText(Charsets.UTF_8).contains("new body"))
+        assertEquals("<tt>new</tt>", ttmlFile.readText(Charsets.UTF_8))
+    }
+
+    @Test fun `brand-new track with TTML writes only ttml, no lrc`() = runTest {
+        val audio = tmp.newFile("brandnew.flac")
+        val track = stubTrack(filePath = audio.absolutePath)
+        val writer = makeWriter(track)
+
+        writer.write(
+            track.id,
+            lyricsEntity(syncedLrc = "[00:01.00]hi", plainText = "hi", ttml = "<tt>hi</tt>"),
+            isNewTrack = true,
+        )
+
+        assertTrue(".ttml must exist", File(audio.parent, "brandnew.ttml").exists())
+        assertFalse(
+            "no .lrc for a first-time TTML fetch — writeLrcSidecar() covers the explicit save action",
+            File(audio.parent, "brandnew.lrc").exists(),
+        )
+    }
+
+    @Test fun `writeLrcSidecar always writes lrc regardless of ttml or new-track state`() = runTest {
+        val audio = tmp.newFile("saveaction.flac")
+        val track = stubTrack(filePath = audio.absolutePath)
+        val writer = makeWriter(track)
+
+        // Simulates the "Save with song file" button on a track that was fetched fresh with TTML
+        // (isNewTrack = true above means write() alone wouldn't have produced an .lrc).
+        writer.writeLrcSidecar(track.id, lyricsEntity(syncedLrc = "[00:01.00]saved", plainText = "saved"))
+
+        val lrc = File(audio.parent, "saveaction.lrc")
+        assertTrue("explicit save always produces an .lrc", lrc.exists())
+        assertTrue(lrc.readText(Charsets.UTF_8).contains("saved"))
+    }
+
+    @Test fun `deleteTtmlSidecar removes only the ttml file, leaves lrc untouched`() = runTest {
+        val audio = tmp.newFile("wipe.flac")
+        File(audio.parent, "wipe.lrc").writeText("keep me", Charsets.UTF_8)
+        File(audio.parent, "wipe.ttml").writeText("<tt>drop me</tt>", Charsets.UTF_8)
+        val track = stubTrack(filePath = audio.absolutePath)
+        val writer = makeWriter(track)
+
+        writer.deleteTtmlSidecar(track.id)
+
+        assertFalse(".ttml must be gone", File(audio.parent, "wipe.ttml").exists())
+        assertTrue(".lrc must be untouched", File(audio.parent, "wipe.lrc").exists())
+        assertEquals("keep me", File(audio.parent, "wipe.lrc").readText(Charsets.UTF_8))
+    }
+
+    @Test fun `deleteTtmlSidecar on a missing track is a silent no-op`() = runTest {
+        val trackDao = mockk<TrackDao>()
+        coEvery { trackDao.getById(99L) } returns null
+        val storagePrefs = mockk<StoragePreference>()
+        val writer = LyricsSidecarWriter(trackDao = trackDao, context = context, storagePreference = storagePrefs)
+
+        // Should not throw.
+        writer.deleteTtmlSidecar(99L)
+    }
 }

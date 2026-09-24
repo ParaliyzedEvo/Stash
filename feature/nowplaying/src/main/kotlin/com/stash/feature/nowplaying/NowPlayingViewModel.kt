@@ -995,15 +995,21 @@ class NowPlayingViewModel @Inject constructor(
             try {
                 val message = try {
                     val lyrics = lyricsRepository.get(track.id)
-                    if (lyrics == null || lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
-                        "No lyrics to save yet"
-                    } else {
-                        lyricsSidecarWriter.write(track.id, lyrics)
-                        "Lyrics saved with the song file"
+                    when {
+                        lyrics != null && !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) -> {
+                            // Explicit save always writes .lrc, even for a TTML-only track — see
+                            // LyricsSidecarWriter for why the automatic post-fetch write doesn't.
+                            lyricsSidecarWriter.writeLrcSidecar(track.id, lyrics)
+                            "Lyrics saved with the song file"
+                        }
+                        // 0L = every source definitively answered "no lyrics"; distinct from a fetch
+                        // that simply hasn't succeeded yet (stamp stays null on a source failure).
+                        track.lyricsFetchedAt == 0L -> "No lyrics found for this track"
+                        else -> "Couldn't fetch lyrics yet — try again from the lyrics sheet"
                     }
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { "Couldn't save lyrics" }
-                val suffix = if (_uiState.value.currentTrack?.id != track.id) " for ‘${track.title}’" else ""
+                val suffix = if (_uiState.value.currentTrack?.id != track.id) " for '${track.title}'" else ""
                 _userMessages.emit("$message$suffix.")
             } finally {
                 _exportingLyricsTrackId.compareAndSet(expect = track.id, update = null)
@@ -1036,6 +1042,7 @@ class NowPlayingViewModel @Inject constructor(
                 albumArtist = track.albumArtist.ifBlank { null },
                 durationMs = track.durationMs.takeIf { it > 0 },
                 youtubeVideoId = track.youtubeId,
+                interactive = true,
             )
             val result = try {
                 lyricsViewStateForResult(lyricsRepository.resolveTransient(query))
@@ -1063,7 +1070,11 @@ class NowPlayingViewModel @Inject constructor(
      * ([onSeekTo]) so the seek is bounded by the current duration.
      */
     fun onLyricsLineSeek(timestampMs: Long) {
-        onSeekTo(timestampMs)
+        // currentPositionMs (what a tapped line's timestamp is measured against) is the raw player
+        // position MINUS the sync offset — undo that here so seeking lands the DISPLAYED position,
+        // not the raw one, on the tapped line. With a non-zero offset, seeking to the raw timestamp
+        // alone lights up the wrong line.
+        onSeekTo(timestampMs + lyricsSyncOffsetMs.value)
     }
 
     /**
@@ -1102,6 +1113,7 @@ class NowPlayingViewModel @Inject constructor(
                     albumArtist = track.albumArtist.ifBlank { null },
                     durationMs = track.durationMs.takeIf { it > 0 },
                     youtubeVideoId = track.youtubeId,
+                    interactive = true,
                 )
                 try {
                     lyricsRepository.resolveAndStore(query)

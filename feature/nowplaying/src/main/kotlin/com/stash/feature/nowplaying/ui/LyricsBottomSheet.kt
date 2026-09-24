@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,19 +39,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import kotlin.math.roundToLong
 
 /**
  * v0.9.36 Task 12 — full-bleed lyrics sheet for Now Playing.
- *
- * Mirrors [QueueBottomSheet] structurally so the two sheets feel like
- * siblings: `skipPartiallyExpanded = true` (no half-state — the sheet
- * either fills the screen or it's dismissed), explicit close button in
- * a thin header row, no drag handle, surface-tinted container.
- *
- * Dispatches to one of the renderers in [LyricsView] based on [state].
- * The synced renderer needs `currentPositionMs` for the highlight; all
- * the other states ignore it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,25 +55,15 @@ fun LyricsBottomSheet(
     onSeek: (Long) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
-    // "Save with song file" footer (writes the .lrc beside the downloaded
-    // audio so external players pick the lyrics up). Shown only for
-    // downloaded tracks while lyrics are actually on screen.
     canSaveToFile: Boolean = false,
     savingToFile: Boolean = false,
     onSaveToFile: () -> Unit = {},
-    // Drives the word-synced clock: false = hold at the last position (paused/buffering).
     isPlaying: Boolean = true,
-    // Per-track sync adjustment — see the Offset button in the header.
     currentOffsetMs: Long = 0L,
     onOffsetChange: (Long) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Issue #382 — hold the screen on while lyrics are on screen. This
-    // composable only exists while the sheet is open (the call site guards
-    // it with `if (showLyrics)`), so the flag is scoped to exactly that.
-    // Restore the previous value rather than forcing false, so we never
-    // clear a keep-screen-on set by something else.
     val view = LocalView.current
     DisposableEffect(view) {
         val wasKeepingScreenOn = view.keepScreenOn
@@ -105,16 +87,11 @@ fun LyricsBottomSheet(
                 liveEnabled = liveLyricsEnabled,
                 onLiveToggle = onLiveLyricsToggle,
                 onClose = onDismiss,
-                // Sync adjustment only makes sense once lyrics are actually timed on screen.
                 showOffsetButton = state is LyricsViewState.Synced,
                 currentOffsetMs = currentOffsetMs,
                 onOffsetChange = onOffsetChange,
             )
 
-            // Fixed-height body region so the renderers (which all use
-            // fillMaxSize) have a bounded parent. 70% of screen leaves
-            // room for the header without pushing the sheet past the
-            // status bar — close to how the QueueBottomSheet lays out.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -145,21 +122,13 @@ fun LyricsBottomSheet(
                 }
             }
 
-            // Quiet footer action: only when the track is downloaded AND
-            // lyrics are actually showing — you save what you can see.
-            val lyricsOnScreen =
-                state is LyricsViewState.Synced || state is LyricsViewState.Plain
+            val lyricsOnScreen = state is LyricsViewState.Synced || state is LyricsViewState.Plain
             if (canSaveToFile && lyricsOnScreen) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    TextButton(
-                        enabled = !savingToFile,
-                        onClick = onSaveToFile,
-                    ) {
+                    TextButton(enabled = !savingToFile, onClick = onSaveToFile) {
                         Icon(
                             imageVector = Icons.Filled.Download,
                             contentDescription = null,
@@ -179,12 +148,6 @@ fun LyricsBottomSheet(
     }
 }
 
-/**
- * Compact header — title on the left; the "Live" toggle (the live
- * synced-line bar opt-in) sits seamlessly beside the close button.
- * Matches QueueBottomSheet's header proportions so the two sheets share
- * their silhouette when stacked in the Now Playing UI.
- */
 @Composable
 private fun LyricsHeader(
     liveEnabled: Boolean,
@@ -203,9 +166,7 @@ private fun LyricsHeader(
         )
     }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -213,20 +174,14 @@ private fun LyricsHeader(
             if (showOffsetButton) {
                 TextButton(onClick = { showOffsetDialog = true }) {
                     Text(
-                        text = if (currentOffsetMs == 0L) {
-                            "Offset"
-                        } else {
-                            "Offset %+.1fs".format(currentOffsetMs / 1000f)
+                        text = if (currentOffsetMs == 0L) "Offset" else {
+                            "Offset %+.1fs".format(Locale.ROOT, currentOffsetMs / 1000f)
                         },
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
-            Text(
-                text = "Lyrics",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            Text(text = "Lyrics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -235,28 +190,20 @@ private fun LyricsHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(6.dp))
-            com.stash.core.ui.components.StashSwitch(
-                checked = liveEnabled,
-                onCheckedChange = onLiveToggle,
-            )
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-            }
+            com.stash.core.ui.components.StashSwitch(checked = liveEnabled, onCheckedChange = onLiveToggle)
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
         }
     }
 }
 
 /**
- * Body height in dp. Picked to match QueueBottomSheet's effective
- * working area on a Pixel 6 Pro after the navigation bar + header are
- * subtracted. Tall enough to host ~12 synced lines comfortably.
- */
-private const val LYRICS_BODY_HEIGHT_DP = 560
-
-/**
- * Sync-adjustment popup: a ±5s slider in 0.1s steps for the common case, plus a plain text field
- * for anything further out (hard-capped at ±60s so a typo can't push lyrics a day off). Every
- * change applies immediately — there's no separate "confirm" beyond dismissing.
+ * Sync-adjustment popup: ±5s slider in 0.1s steps, plus a text field for anything further out
+ * (hard-capped ±60s).
+ *
+ * The slider only PERSISTS on release ([Slider.onValueChangeFinished]) — writing to Room on every
+ * tick meant the just-written value flowed back down through [currentOffsetMs] mid-drag and
+ * visibly snapped the slider backward. Dragging still moves the displayed number instantly via
+ * local state; only the DB write is deferred to release.
  */
 @Composable
 private fun OffsetAdjustDialog(
@@ -268,7 +215,7 @@ private fun OffsetAdjustDialog(
         mutableStateOf((currentOffsetMs / 1000f).coerceIn(-OFFSET_SLIDER_RANGE_S, OFFSET_SLIDER_RANGE_S))
     }
     var customText by remember(currentOffsetMs) {
-        mutableStateOf("%.1f".format(currentOffsetMs / 1000f))
+        mutableStateOf("%.1f".format(Locale.ROOT, currentOffsetMs / 1000f))
     }
 
     fun apply(seconds: Float) {
@@ -287,7 +234,7 @@ private fun OffsetAdjustDialog(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "%+.1f s".format(sliderSeconds),
+                    text = "%+.1f s".format(Locale.ROOT, sliderSeconds),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -295,9 +242,9 @@ private fun OffsetAdjustDialog(
                     value = sliderSeconds,
                     onValueChange = { v ->
                         sliderSeconds = v
-                        customText = "%.1f".format(v)
-                        apply(v)
+                        customText = "%.1f".format(Locale.ROOT, v)
                     },
+                    onValueChangeFinished = { apply(sliderSeconds) },
                     valueRange = -OFFSET_SLIDER_RANGE_S..OFFSET_SLIDER_RANGE_S,
                     steps = OFFSET_SLIDER_STEPS,
                 )
@@ -318,7 +265,11 @@ private fun OffsetAdjustDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     TextButton(onClick = {
-                        val v = customText.toFloatOrNull() ?: return@TextButton
+                        // Accept a comma decimal separator (Germany, France, ...) as well as a
+                        // period — toFloatOrNull() only understands the latter regardless of the
+                        // device's own locale, so a comma-locale device typing "1,5" and tapping
+                        // Set silently did nothing.
+                        val v = customText.replace(',', '.').toFloatOrNull() ?: return@TextButton
                         sliderSeconds = v.coerceIn(-OFFSET_SLIDER_RANGE_S, OFFSET_SLIDER_RANGE_S)
                         apply(v)
                     }) { Text("Set") }
@@ -334,6 +285,7 @@ private fun OffsetAdjustDialog(
     )
 }
 
+private const val LYRICS_BODY_HEIGHT_DP = 560
 private const val OFFSET_SLIDER_RANGE_S = 5f
-private const val OFFSET_SLIDER_STEPS = 99   // 10s span / 0.1s increments - 1
+private const val OFFSET_SLIDER_STEPS = 99
 private const val OFFSET_HARD_CAP_S = 60f

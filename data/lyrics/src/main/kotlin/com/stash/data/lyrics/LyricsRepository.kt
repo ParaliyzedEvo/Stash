@@ -5,51 +5,44 @@ import com.stash.core.common.Clock
 import com.stash.core.data.db.dao.LyricsDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.LyricsEntity
-import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.core.data.prefs.LyricsPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
+import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
-import kotlinx.coroutines.flow.first
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
- * and workers (post-download + backfill) go through this class.
- *
- * `resolveAndStore` walks the [sources] chain in priority order
- * (LRCLIB -> KuGou -> InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`),
- * persists the first non-null result to the `lyrics` table, stamps
- * `tracks.lyrics_fetched_at` with the success epoch-millis, and
- * triggers a sidecar `.lrc` write for the non-instrumental case.
- *
- * Sentinel rules (see `LyricsDao` docs):
- * - Successful fetch -> upsert lyrics row + stamp `lyrics_fetched_at = clock.now()`.
- * - Definitive miss across all sources -> no row + stamp `lyrics_fetched_at = 0L`.
- *   The 0L sentinel keeps the backfill worker's `WHERE lyrics_fetched_at IS NULL`
- *   predicate honest so it terminates.
- * - Source FAILURE (network/HTTP/parse — the source threw) with no hit from a
- *   later source -> THROWS and leaves the stamp untouched, so the track stays
- *   retryable (worker backoff, next sheet open). Failures must never write the
- *   0L sentinel: conflating them permanently miss-stamped ~72% of the library's
- *   "No lyrics found" tracks (2026-07-05 forensics).
- *
- * Sidecar-write failure is logged but does NOT unwind the Room state.
- * The Room row + stamp are the source of truth; the sidecar is a best-effort
- * courtesy for external players.
- */
 /** Outcome of [LyricsRepository.upgradeToTtml]. Only UPGRADED changes stored lyrics. */
 enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, SKIPPED }
 
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
 
+/**
+ * Sole entrypoint for the lyrics subsystem. Both UI (Now Playing sheet)
+ * and workers (post-download + backfill) go through this class.
+ *
+ * `resolveAndStore` walks the [sources] chain in priority order (Apple TTML -> LRCLIB -> KuGou ->
+ * InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`, and Apple is skipped
+ * entirely when [LyricsPreference.sourcePreference] is [LyricsSourcePreference.LRC_ONLY] — see
+ * [activeSources]), persists the first non-null result to the `lyrics` table, stamps
+ * `tracks.lyrics_fetched_at` with the success epoch-millis, and triggers a sidecar write.
+ *
+ * Sentinel rules (see `LyricsDao` docs):
+ * - Successful fetch -> upsert lyrics row + stamp `lyrics_fetched_at = clock.now()`.
+ * - Definitive miss across all sources -> no row + stamp `lyrics_fetched_at = 0L`.
+ * - Source FAILURE (network/HTTP/parse — the source threw) with no hit from a
+ *   later source -> THROWS and leaves the stamp untouched, so the track stays retryable.
+ *
+ * Sidecar-write failure is logged but does NOT unwind the Room state.
+ */
 @Singleton
 class LyricsRepository @Inject constructor(
     private val sources: List<@JvmSuppressWildcards LyricsSource>,
@@ -60,31 +53,19 @@ class LyricsRepository @Inject constructor(
     private val lyricsPreference: LyricsPreference,
 ) {
 
-    /** Observe the lyrics row for [trackId]. Emits null when no row exists yet. */
     fun observe(trackId: Long): Flow<LyricsEntity?> = lyricsDao.observe(trackId)
 
-    /**
-     * Observe the parent track's `lyrics_fetched_at` stamp. The sheet pairs this
-     * with [observe] so it reacts the moment a fetch finishes — the stamp is what
-     * distinguishes "never tried" (null → Loading) from "tried and missed"
-     * (0L → None), and watching it live is what stops the sheet sticking on
-     * Loading until a close+reopen re-queries the track.
-     */
     fun observeFetchedAt(trackId: Long): Flow<Long?> = trackDao.observeLyricsFetchedAt(trackId)
 
-    /** One-shot read of the lyrics row for [trackId], or null when absent. */
     suspend fun get(trackId: Long): LyricsEntity? = lyricsDao.get(trackId)
 
     /**
-     * Walks [sources] in order, returns the first non-null
-     * [com.stash.data.lyrics.source.LyricsResult], persists it to Room,
-     * stamps `tracks.lyrics_fetched_at`, and (for non-instrumental hits)
-     * triggers a sidecar `.lrc` write.
+     * Walks [sources] in order, returns the first non-null [LyricsResult], persists it to Room,
+     * stamps `tracks.lyrics_fetched_at`, and triggers a sidecar write.
      *
-     * On a definitive all-source miss, stamps `tracks.lyrics_fetched_at = 0L`
-     * and returns null without writing a row. If any source FAILED and no
-     * later source hit, rethrows that failure without stamping — the caller
-     * decides retry policy (worker backoff / sheet Error state).
+     * On a definitive all-source miss, stamps `tracks.lyrics_fetched_at = 0L` and returns null
+     * without writing a row. If any source FAILED and no later source hit, rethrows that failure
+     * without stamping.
      */
     suspend fun resolveAndStore(query: LyricsQuery): LyricsEntity? {
         val result = walkSources(query)
@@ -92,6 +73,12 @@ class LyricsRepository @Inject constructor(
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
         }
+        // Loaded once, used for two things: (1) whether this is the track's first-ever fetch —
+        // decides whether the sidecar writer also writes a .lrc alongside a fresh .ttml, see
+        // LyricsSidecarWriter — and (2) carrying over any sync offset the user already set: upsert
+        // replaces the whole row, so without this a rewrite (an Apple upgrade, or Retry) silently
+        // reset a manually-tuned offset back to 0.
+        val previousRow = lyricsDao.get(query.trackId)
         val now = clock.now()
         val entity = LyricsEntity(
             trackId = query.trackId,
@@ -103,49 +90,20 @@ class LyricsRepository @Inject constructor(
             sourceLyricsId = result.sourceLyricsId,
             fetchedAt = now,
             ttml = result.ttml,
+            syncOffsetMs = previousRow?.syncOffsetMs ?: 0L,
         )
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(query.trackId, now)
         if (!result.instrumental) {
-            runCatching { sidecarWriter.write(query.trackId, entity) }
-                .onFailure { e ->
-                    // Non-fatal: Room row + stamp are the source of truth.
-                    Log.w(TAG, "Sidecar write failed for trackId=${query.trackId}", e)
-                }
+            runCatching { sidecarWriter.write(query.trackId, entity, isNewTrack = previousRow == null) }
+                .onFailure { e -> Log.w(TAG, "Sidecar write failed for trackId=${query.trackId}", e) }
         }
         return entity
     }
 
-    /**
-     * Transient source-chain walk for tracks that have no persistent
-     * `tracks` row to key against — typically streaming-mode playback
-     * where the audio is fetched by URL and never written to the
-     * library. Returns the first non-null [LyricsResult] without
-     * touching Room or the sidecar writer; caller renders the result
-     * directly into its own state.
-     *
-     * Re-opening the sheet on the same streaming track re-runs the
-     * source chain (no cache). LRCLIB is fast (~200ms typical) so the
-     * UX cost is acceptable, and avoiding Room means we don't have to
-     * invent a fake parent row for the FK CASCADE.
-     *
-     * Same failure contract as [resolveAndStore]: null = definitive miss,
-     * throws when a source failed and nothing hit.
-     */
     suspend fun resolveTransient(query: LyricsQuery): LyricsResult? = walkSources(query)
 
-    /**
-     * Clears `tracks.lyrics_fetched_at` back to NULL (never tried). The
-     * Retry path calls this before re-resolving so the sheet's stamp
-     * observer flips to Loading immediately — the visible feedback that
-     * was missing when Retry left the 0L sentinel in place.
-     */
     suspend fun clearFetchStamp(trackId: Long) = trackDao.setLyricsFetchedAt(trackId, null)
-
-    /** See [LyricsDao.observeSyncOffsetMs]. Coerces the "no row" null to 0 — no offset applies. */
-    fun observeSyncOffsetMs(trackId: Long): Flow<Long> = lyricsDao.observeSyncOffsetMs(trackId).map { it ?: 0L }
-
-    suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long) = lyricsDao.setSyncOffsetMs(trackId, offsetMs)
 
     /** Empty when the user has set LRC-only — nothing to upgrade if Apple is never consulted. */
     suspend fun trackIdsPendingTtml(): List<Long> {
@@ -153,32 +111,13 @@ class LyricsRepository @Inject constructor(
         return lyricsDao.trackIdsPendingTtml()
     }
 
-    /**
-     * Applies a new [LyricsSourcePreference]. Switching TO [LyricsSourcePreference.LRC_ONLY] wipes
-     * every stored row's TTML (column + `.ttml` sidecar) and clears `tracks.lyrics_fetched_at` for
-     * those tracks, so they fall back into the existing "missing lyrics" pool — the normal retag /
-     * manual-fetch pipeline then re-fills them from LRC sources only, since [walkSources] now skips
-     * Apple. Switching back to APPLE_MUSIC does nothing extra: Apple simply re-enters the chain on
-     * the next fetch for whatever's still missing.
-     */
-    suspend fun setSourcePreference(preference: LyricsSourcePreference) {
-        if (preference == LyricsSourcePreference.LRC_ONLY) {
-            val affected = lyricsDao.trackIdsWithTtml()
-            affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
-            lyricsDao.clearAllTtml()
-            affected.forEach { id -> trackDao.setLyricsFetchedAt(id, null) }
-            Log.i(TAG, "Switched to LRC-only: wiped TTML for ${affected.size} track(s), queued for re-fetch")
-        }
-        lyricsPreference.setSourcePreference(preference)
-    }
-
     /** Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss). */
     suspend fun trackIdsMissingLyrics(): List<Long> = lyricsDao.trackIdsMissingLyrics()
 
     /**
      * Manual-run path: walks the full source chain for one track and stores the hit. Failures are
-     * swallowed into [ManualFetchResult.FAILED] (state untouched, so it stays retryable); a definitive
-     * miss re-stamps 0L exactly as [resolveAndStore] always does.
+     * swallowed into [ManualFetchResult.FAILED] (state untouched, so it stays retryable); a
+     * definitive miss re-stamps 0L exactly as [resolveAndStore] always does.
      */
     suspend fun fetchLyricsNow(trackId: Long): ManualFetchResult {
         val track = trackDao.getById(trackId) ?: return ManualFetchResult.SKIPPED
@@ -202,13 +141,32 @@ class LyricsRepository @Inject constructor(
     }
 
     /**
-     * Backfill path: asks ONLY the Apple TTML source (never the whole chain, so a good LRC can't be
-     * swapped for a worse one) and replaces the stored lyrics + sidecar only on a hit.
+     * Applies a new [LyricsSourcePreference]. Switching TO [LyricsSourcePreference.LRC_ONLY] wipes
+     * every stored row's TTML (column + `.ttml` sidecar) and clears `tracks.lyrics_fetched_at` for
+     * those tracks, so they fall back into the existing "missing lyrics" pool. Switching back to
+     * APPLE_MUSIC does nothing extra: Apple simply re-enters the chain on the next fetch — no work
+     * is queued automatically here.
+     */
+    suspend fun setSourcePreference(preference: LyricsSourcePreference) {
+        if (preference == LyricsSourcePreference.LRC_ONLY) {
+            val affected = lyricsDao.trackIdsWithTtml()
+            affected.forEach { id -> sidecarWriter.deleteTtmlSidecar(id) }
+            lyricsDao.clearAllTtml()
+            affected.forEach { id -> trackDao.setLyricsFetchedAt(id, null) }
+            Log.i(TAG, "Switched to LRC-only: wiped TTML for ${affected.size} track(s), queued for re-fetch")
+        }
+        lyricsPreference.setSourcePreference(preference)
+    }
+
+    /**
+     * Backfill path: asks ONLY the Apple TTML source and replaces the stored lyrics + sidecar only
+     * on a hit.
      *
-     * - hit                  -> row upserted (source/plain/synced/ttml), fetch stamp refreshed,
-     *                           `.lrc` (+ `.ttml`) sidecar rewritten -> UPGRADED
-     * - clean miss           -> `ttml_checked_at` stamped, row untouched -> NO_TTML
-     * - source threw         -> NOTHING written, stays pending for the next run -> FAILED
+     * - hit          -> row upserted (sync offset carried over from [existing]), fetch stamp
+     *                   refreshed, sidecar rewritten (keeps the existing .lrc, adds/refreshes .ttml
+     *                   beside it) -> UPGRADED
+     * - clean miss   -> `ttml_checked_at` stamped, row untouched -> NO_TTML
+     * - source threw -> NOTHING written, stays pending -> FAILED
      * - no row / already TTML / instrumental / source not in chain -> SKIPPED
      */
     suspend fun upgradeToTtml(trackId: Long): TtmlUpgradeResult {
@@ -255,24 +213,24 @@ class LyricsRepository @Inject constructor(
             fetchedAt = now,
             ttml = result.ttml,
             ttmlCheckedAt = now,
+            syncOffsetMs = existing.syncOffsetMs,
         )
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(trackId, now)
         if (track.filePath != null) {
+            // existing != null above means this is never a "new" fetch — the writer keeps whatever
+            // .lrc was already there and adds/refreshes the .ttml beside it.
             runCatching { sidecarWriter.write(trackId, entity) }
                 .onFailure { e -> Log.w(TAG, "Sidecar rewrite failed for trackId=$trackId", e) }
         }
         return TtmlUpgradeResult.UPGRADED
     }
 
-    /**
-     * Priority-ordered source walk distinguishing miss from failure: a
-     * throwing source is logged and the walk continues (LRCLIB down must
-     * not block the InnerTube fallback), but if nothing hits and at least
-     * one source failed, the first failure is rethrown — "no lyrics" may
-     * only be concluded from sources that actually answered.
-     */
-    /** [sources] with Apple TTML filtered out when the user has chosen LRC-only. */
+    /** Null when no row exists yet (never fetched) — callers treat that as "no offset set". */
+    fun observeSyncOffsetMs(trackId: Long): Flow<Long> = lyricsDao.observeSyncOffsetMs(trackId).map { it ?: 0L }
+
+    suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long) = lyricsDao.setSyncOffsetMs(trackId, offsetMs)
+
     private suspend fun activeSources(): List<LyricsSource> =
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
             sources.filterNot { it.id == AppleTtmlLyricsSource.SOURCE_ID }

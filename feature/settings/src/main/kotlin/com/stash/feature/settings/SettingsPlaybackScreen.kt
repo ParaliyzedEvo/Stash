@@ -179,8 +179,9 @@ fun SettingsPlaybackScreen(
         )
         Text(
             text = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) {
-                "Word-synced lyrics are off. Switching back on re-fetches Apple Music's " +
-                    "word-synced lyrics where available."
+                "Word-synced lyrics are off. Switching back doesn't re-fetch anything right away — " +
+                    "tracks pick up Apple Music's word-synced lyrics the next time they're fetched " +
+                    "(a new release's automatic pass, or \"Fetch lyrics\" in Library Health)."
             } else {
                 "Prefers Apple Music's word-synced lyrics. Switching to LRC only removes any " +
                     "stored word-synced lyrics and re-fetches from line-synced sources — use " +

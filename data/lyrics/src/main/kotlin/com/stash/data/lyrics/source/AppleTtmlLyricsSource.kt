@@ -17,20 +17,31 @@ import kotlin.math.abs
 
 /**
  * Word-synced lyrics: iTunes Search (title/artist -> Apple Music song id) then
- * lyrics.paxsenix.org `apple-music/lyrics?ttml=true`. Miss = null, transport/HTTP failure = throws
- * (same contract as [LyricsRepository.walkSources] expects).
+ * lyrics.paxsenix.org `apple-music/lyrics?ttml=true`.
+ *
+ * [LyricsQuery.interactive] picks a timeout/retry profile:
+ *  - interactive (lyrics sheet's inline on-open fetch, a Retry tap — someone is watching "Loading"):
+ *    a short per-request timeout, no retry, so an unreachable host fails fast and the chain moves
+ *    on to LRCLIB instead of stalling the UI.
+ *  - background (backfill worker, manual library-wide fetch): a longer timeout, one retry.
+ * Either way, an HTTP-level failure (429 / 5xx) is NEVER retried: the server answered, just badly,
+ * and hitting it again immediately only makes rate limiting worse. Only a transport failure
+ * (timeout, refused connection, a TLS handshake dying on a pooled connection some VPNs silently
+ * drop) is eligible for the background profile's single retry.
  */
 class AppleTtmlLyricsSource(
     client: OkHttpClient,
-    private val appVersion: String,
+    private val appVersionName: String,
     private val lyricsBaseUrl: String = DEFAULT_LYRICS_BASE_URL,
     private val searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
 ) : LyricsSource {
 
-    override val id = SOURCE_ID 
+    override val id = SOURCE_ID
     override val displayName = "Apple Music (word-synced)"
 
-    private val http = client.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
+    private val userAgent = "Stash/$appVersionName (Android)"
+    private val interactiveHttp = client.newBuilder().callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
+    private val backgroundHttp = client.newBuilder().callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
 
     override suspend fun resolve(query: LyricsQuery): LyricsResult? = withContext(Dispatchers.IO) {
         val songId = findSongId(query)
@@ -38,7 +49,7 @@ class AppleTtmlLyricsSource(
             Log.d(TAG, "no Apple match for \"${query.title}\" - ${query.artist}")
             return@withContext null
         }
-        val ttml = fetchTtml(songId)
+        val ttml = fetchTtml(songId, query.interactive)
         if (ttml == null) {
             Log.d(TAG, "apple id $songId (\"${query.title}\") has no TTML")
             return@withContext null
@@ -68,7 +79,7 @@ class AppleTtmlLyricsSource(
             .addQueryParameter("entity", "song")
             .addQueryParameter("limit", "10")
             .build()
-        val body = get(url) ?: return null
+        val body = get(url, query.interactive) ?: return null
         val results = JSONObject(body).optJSONArray("results") ?: return null
         val candidates = (0 until results.length()).mapNotNull { i ->
             val o = results.optJSONObject(i) ?: return@mapNotNull null
@@ -89,24 +100,16 @@ class AppleTtmlLyricsSource(
         return pickBest(query, candidates)?.id
     }
 
-    private fun fetchTtml(songId: String): String? {
+    private fun fetchTtml(songId: String, interactive: Boolean): String? {
         val url = lyricsBaseUrl.toHttpUrl().newBuilder()
             .addPathSegments("apple-music/lyrics")
             .addQueryParameter("id", songId)
             .addQueryParameter("ttml", "true")
             .build()
-        val raw = get(url) ?: return null
-        // BOM_CHAR isn't whitespace to .trim(), so a UTF-8-BOM'd XML body would otherwise
-        // wrongly fail the startsWith("<") check below.
+        val raw = get(url, interactive) ?: return null
         val body = raw.trim().removePrefix(BOM_CHAR)
-
         if (body.startsWith("<")) return body
-
-        // The spec says ttml=true returns raw XML, but this proxy family (see e.g. the
-        // api.paxsenix.org sibling, which returns JSON unconditionally) may still wrap it.
-        // Try to pull an XML string out of a JSON envelope before giving up.
         extractTtmlFromJson(body)?.let { return it }
-
         Log.d(
             TAG,
             "Non-XML, non-JSON-wrapped response for apple id $songId " +
@@ -115,14 +118,10 @@ class AppleTtmlLyricsSource(
         return null
     }
 
-    /** Looks for a string value that is itself XML, one level deep in a JSON object/array. */
     private fun extractTtmlFromJson(body: String): String? {
         val root = runCatching { JSONTokener(body).nextValue() }.getOrNull() ?: return null
 
         fun fromObject(o: JSONObject): String? {
-            // paxsenix's envelope (confirmed shape: {type, content, source, cached_at}) uses "type"
-            // to say what "content" actually is; skip it outright when it explicitly isn't TTML,
-            // rather than relying on the leading-"<" check alone to reject an LRC/plain body.
             val type = (o.opt("type") as? String)?.trim()?.uppercase()
             if (type != null && type != "TTML") return null
             for (key in TTML_JSON_KEYS) {
@@ -144,28 +143,32 @@ class AppleTtmlLyricsSource(
         }
     }
 
+    /** Thrown for a non-2xx, non-404 HTTP response — the server answered, just badly. Never retried. */
+    private class HttpStatusException(code: Int, host: String) : IOException("HTTP $code from $host")
+
     /**
      * Body on 2xx, null on 404, throws on anything else.
      *
-     * Retries ONCE on a transport failure (any [IOException] — connection refused, TLS handshake
-     * failure, timeout). A pooled OkHttp connection that some VPN configurations silently drop
-     * while idle looks fine to OkHttp until the next write, at which point it fails mid-handshake
-     * rather than as a clean "couldn't connect" — a single retry gets a fresh connection and almost
-     * always succeeds when that's the cause. A second failure is presumed real and propagates.
+     * [interactive] picks the timeout/retry profile (see class KDoc). A transport failure gets one
+     * retry in the background profile only; an [HttpStatusException] (429/5xx) never retries.
      */
-    private fun get(url: HttpUrl): String? {
-        val request = Request.Builder().url(url).header("User-Agent", "Stash (Android)").build()
+    private fun get(url: HttpUrl, interactive: Boolean): String? {
+        val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
+        val httpClient = if (interactive) interactiveHttp else backgroundHttp
+        val maxAttempts = if (interactive) 1 else 2
         var lastError: IOException? = null
-        repeat(2) { attempt ->
+        repeat(maxAttempts) { attempt ->
             try {
-                http.newCall(request).execute().use { response ->
+                httpClient.newCall(request).execute().use { response ->
                     if (response.code == 404) return null
-                    if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+                    if (!response.isSuccessful) throw HttpStatusException(response.code, url.host)
                     return response.body?.string()
                 }
+            } catch (e: HttpStatusException) {
+                throw e
             } catch (e: IOException) {
                 lastError = e
-                if (attempt == 0) {
+                if (attempt < maxAttempts - 1) {
                     Log.d(TAG, "Transport failure on ${url.host}, retrying once: ${e.message}")
                     Thread.sleep(250)
                 }
@@ -177,17 +180,15 @@ class AppleTtmlLyricsSource(
     private data class Candidate(val id: String, val title: String, val artist: String, val durationMs: Long)
 
     private fun normalize(s: String): String = s.lowercase(Locale.ROOT)
-        .replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "")   // (feat. x) [Remastered]
-        .replace(Regex("""\s+-\s+.*$"""), "")             // " - Remastered 2011"
+        .replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "")
+        .replace(Regex("""\s+-\s+.*$"""), "")
         .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
         .trim()
 
     private fun pickBest(query: LyricsQuery, candidates: List<Candidate>): Candidate? {
         val wantTitle = normalize(query.title)
-        val wantArtists = listOfNotNull(query.albumArtist, query.artist)
-            .map(::normalize).filter { it.isNotEmpty() }
+        val wantArtists = listOfNotNull(query.albumArtist, query.artist).map(::normalize).filter { it.isNotEmpty() }
         val wantMs = query.durationMs ?: 0L
-
         return candidates.mapNotNull { c ->
             val t = normalize(c.title)
             val titleScore = when {
@@ -215,5 +216,7 @@ class AppleTtmlLyricsSource(
         private const val TAG = "AppleTtmlLyricsSource"
         private const val BOM_CHAR = "\uFEFF"
         private val TTML_JSON_KEYS = listOf("ttml", "data", "lyrics", "content", "xml")
+        private const val INTERACTIVE_TIMEOUT_S = 4L
+        private const val BACKGROUND_TIMEOUT_S = 10L
     }
 }

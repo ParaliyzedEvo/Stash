@@ -28,7 +28,6 @@ class LyricsRepositoryTest {
 
     private val clock = object : Clock { override fun now() = 1_700_000_000_000L }
 
-    /** Default preference stub: Apple Music enabled, i.e. nothing is filtered out of the chain. */
     private fun appleEnabledPreference(): LyricsPreference = mockk {
         every { sourcePreference } returns flowOf(LyricsSourcePreference.APPLE_MUSIC)
     }
@@ -39,9 +38,10 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>()
         val trackDao = mockk<TrackDao>()
         val sidecar = mockk<LyricsSidecarWriter>()
+        coEvery { lyricsDao.get(any()) } returns null
         coEvery { lyricsDao.upsert(any()) } just Runs
         coEvery { trackDao.setLyricsFetchedAt(any(), any()) } just Runs
-        coEvery { sidecar.write(any(), any()) } just Runs
+        coEvery { sidecar.write(any(), any(), any()) } just Runs
 
         val repo = LyricsRepository(listOf(lrclib, ytm), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         val result = repo.resolveAndStore(query(1L))
@@ -52,17 +52,52 @@ class LyricsRepositoryTest {
         assertEquals(1L, capture.captured.trackId)
         assertEquals("lrclib", capture.captured.source)
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
-        coVerify { sidecar.write(1L, any()) }
+        coVerify { sidecar.write(1L, any(), any()) }
+    }
+
+    @Test fun `resolveAndStore carries the existing sync offset forward instead of resetting it`() = runTest {
+        val lrclib = fakeSource("lrclib", LyricsResult("lrclib", "plain", "[00:01.00]plain", false, null, "42"))
+        val lyricsDao = mockk<LyricsDao>()
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
+        coEvery { lyricsDao.get(1L) } returns LyricsEntity(
+            trackId = 1L, plainText = "old", syncedLrc = null, instrumental = false,
+            language = null, source = "lrclib", sourceLyricsId = "old", fetchedAt = 1L,
+            syncOffsetMs = -1_500L,
+        )
+        coEvery { lyricsDao.upsert(any()) } just Runs
+
+        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
+        repo.resolveAndStore(query(1L))
+
+        val capture = slot<LyricsEntity>()
+        coVerify { lyricsDao.upsert(capture(capture)) }
+        assertEquals(-1_500L, capture.captured.syncOffsetMs)
+    }
+
+    @Test fun `resolveAndStore treats a track with no prior row as new for the sidecar writer`() = runTest {
+        val lrclib = fakeSource("lrclib", LyricsResult("lrclib", "plain", null, false, null, "42"))
+        val lyricsDao = mockk<LyricsDao>()
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val sidecar = mockk<LyricsSidecarWriter>()
+        coEvery { lyricsDao.get(1L) } returns null
+        coEvery { lyricsDao.upsert(any()) } just Runs
+        coEvery { sidecar.write(any(), any(), any()) } just Runs
+
+        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
+        repo.resolveAndStore(query(1L))
+
+        coVerify { sidecar.write(1L, any(), isNewTrack = true) }
     }
 
     @Test fun `instrumental path - writes row, stamps, does NOT invoke sidecar`() = runTest {
         val lrclib = fakeSource("lrclib", LyricsResult("lrclib", null, null, true, null, "42"))
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
-        val sidecar = mockk<LyricsSidecarWriter>()
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
         val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         repo.resolveAndStore(query(1L))
-        coVerify(exactly = 0) { sidecar.write(any(), any()) }
+        coVerify(exactly = 0) { sidecar.write(any(), any(), any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
     }
 
@@ -71,17 +106,15 @@ class LyricsRepositoryTest {
         val b = fakeSource("innertube", null)
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
-        val sidecar = mockk<LyricsSidecarWriter>()
+        val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
         val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         assertNull(repo.resolveAndStore(query(1L)))
         coVerify(exactly = 0) { lyricsDao.upsert(any()) }
-        coVerify(exactly = 0) { sidecar.write(any(), any()) }
+        coVerify(exactly = 0) { sidecar.write(any(), any(), any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 0L) }
     }
 
     @Test fun `source failure with no hit - THROWS and does NOT stamp 0L`() = runTest {
-        // The poisoning bug: a transient failure must never be recorded as a
-        // permanent miss. The stamp stays untouched so the track is retryable.
         val failing = throwingSource("lrclib", java.io.IOException("lrclib get HTTP 429"))
         val miss = fakeSource("innertube", null)
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
@@ -138,9 +171,8 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>()
-        coEvery { sidecar.write(any(), any()) } throws RuntimeException("disk full")
+        coEvery { sidecar.write(any(), any(), any()) } throws RuntimeException("disk full")
         val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
-        // Should NOT throw
         repo.resolveAndStore(query(1L))
         coVerify { lyricsDao.upsert(any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }

@@ -30,8 +30,10 @@ import kotlinx.coroutines.delay
  *
  * Only ever adds: a hit replaces the row + sidecars, a miss/failure leaves everything as it was.
  * Idempotent and resumable: each run recomputes what's pending. Paced at ~1 track / 3s (the iTunes
- * Search API is ~20 req/min and the lyrics API is a free community service). Bails after
- * [MAX_CONSECUTIVE_FAILURES] failures in a row: auto retries with backoff, manual reports it.
+ * Search API is ~20 req/min and the lyrics API is a free community service). A per-track failure
+ * (every source in the chain missed or errored for that one track) is counted and the run moves on
+ * to the next track rather than stopping — [LyricsRepository] leaves the fetch stamp untouched on
+ * that outcome specifically, so it stays eligible for the next run regardless.
  */
 @HiltWorker
 class LyricsTtmlUpgradeWorker @AssistedInject constructor(

@@ -308,7 +308,7 @@ Stash builds on top of several open-source projects:
 - **[Media3 / ExoPlayer](https://github.com/androidx/media)** — audio playback
 - **[ytmusicapi](https://github.com/sigma67/ytmusicapi)** — YouTube Music API reverse-engineering reference
 - **[Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics)** — reference for the word-synced lyrics UI (sweep, scale, glow, interludes)
-- **[paxsenix's lyrics API](https://lyrics.paxsenix.org/)** — Apple Music TTML lyrics source
+- **[paxsenix's lyrics API](https://lyrics.paxsenix.org/)/itunes.apple.com** — word-synced Apple Music lyrics (title/artist search, then lyrics lookup)
 - **[Bungee Shade](https://fonts.google.com/specimen/Bungee+Shade)** — the wordmark font, by David Jonathan Ross (SIL OFL)
 - **Discord logo** — Simple Icons (CC0)
 
