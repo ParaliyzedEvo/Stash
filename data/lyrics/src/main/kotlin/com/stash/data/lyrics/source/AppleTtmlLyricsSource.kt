@@ -1,6 +1,8 @@
 package com.stash.data.lyrics.source
 
 import android.util.Log
+import com.stash.core.common.Clock
+import com.stash.core.common.SystemClock
 import com.stash.data.lyrics.parser.TtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,6 +13,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -28,12 +31,24 @@ import kotlin.math.abs
  * and hitting it again immediately only makes rate limiting worse. Only a transport failure
  * (timeout, refused connection, a TLS handshake dying on a pooled connection some VPNs silently
  * drop) is eligible for the background profile's single retry.
+ *
+ * The live endpoint is slow (measured 2026-09-24: over 60 s per id, so both timeout profiles
+ * always lose), but the server keeps working after we hang up and caches the result, so
+ * `apple-music/cache/{id}` is asked first. It is fast either way, and it is how a slow first
+ * lookup turns into lyrics on the next try.
+ *
+ * Skip window: after [SKIP_AFTER_TIMEOUTS] live lookups in a row time out, or on any HTTP 429,
+ * the live call is skipped for [SKIP_WINDOW_MS] and [resolve] throws [AppleSkippedException], so the
+ * chain moves straight on to LRCLIB (and, being a failure rather than a miss, the track stays
+ * retryable). The cache is still asked during the window. Any live response resets the count.
+ * Instance state, which is process-wide because the source is a Hilt singleton.
  */
 class AppleTtmlLyricsSource(
     client: OkHttpClient,
     private val appVersionName: String,
     private val lyricsBaseUrl: String = DEFAULT_LYRICS_BASE_URL,
     private val searchBaseUrl: String = DEFAULT_SEARCH_BASE_URL,
+    private val clock: Clock = SystemClock(),
 ) : LyricsSource {
 
     override val id = SOURCE_ID
@@ -43,13 +58,24 @@ class AppleTtmlLyricsSource(
     private val interactiveHttp = client.newBuilder().callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
     private val backgroundHttp = client.newBuilder().callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
 
+    private var consecutiveTimeouts = 0
+    private var skipUntilMs = 0L
+
+    /** Thrown while the skip window is open: a failure, so the source walk moves on and retries later. */
+    class AppleSkippedException : IOException("Apple lyrics skipped: the service keeps timing out or rate-limiting")
+
     override suspend fun resolve(query: LyricsQuery): LyricsResult? = withContext(Dispatchers.IO) {
-        val songId = findSongId(query)
+        val songId = try {
+            findSongId(query)
+        } catch (e: HttpStatusException) {
+            if (e.code == 429) openSkipWindow()
+            throw e
+        }
         if (songId == null) {
             Log.d(TAG, "no Apple match for \"${query.title}\" - ${query.artist}")
             return@withContext null
         }
-        val ttml = fetchTtml(songId, query.interactive)
+        val ttml = fetchCachedTtml(songId) ?: fetchLiveTracked(songId, query.interactive)
         if (ttml == null) {
             Log.d(TAG, "apple id $songId (\"${query.title}\") has no TTML")
             return@withContext null
@@ -98,6 +124,51 @@ class AppleTtmlLyricsSource(
                     .ifEmpty { "0 results" },
         )
         return pickBest(query, candidates)?.id
+    }
+
+    /**
+     * `apple-music/cache/{id}`: 200 + raw TTML XML on a hit. A miss is HTTP 404 with a JSON body
+     * `{"detail":"Track '<id>' is not in the Google Drive cache."}` (observed 2026-09-24), which
+     * [get] maps to null. Any error or a non-TTML body is also a miss: the live call decides.
+     */
+    private fun fetchCachedTtml(songId: String): String? {
+        val url = lyricsBaseUrl.toHttpUrl().newBuilder()
+            .addPathSegments("apple-music/cache")
+            .addPathSegment(songId)
+            .build()
+        val body = try {
+            get(url, interactive = true)   // short timeout, no retry
+        } catch (e: IOException) {
+            Log.d(TAG, "cache lookup for apple id $songId failed: ${e.message}")
+            null
+        }?.trim()?.removePrefix(BOM_CHAR)
+        return body?.takeIf { it.startsWith("<tt") }
+            ?.also { Log.d(TAG, "cache hit for apple id $songId") }
+    }
+
+    @Synchronized
+    private fun skipWindowOpen(): Boolean = clock.now() < skipUntilMs
+
+    @Synchronized
+    private fun openSkipWindow() {
+        consecutiveTimeouts = 0
+        skipUntilMs = clock.now() + SKIP_WINDOW_MS
+        Log.w(TAG, "Skipping Apple lyrics for ${SKIP_WINDOW_MS / 60_000} min")
+    }
+
+    /** The live lookup, gated and counted by the skip window (see class KDoc). */
+    private fun fetchLiveTracked(songId: String, interactive: Boolean): String? {
+        if (skipWindowOpen()) throw AppleSkippedException()
+        return try {
+            fetchTtml(songId, interactive).also { synchronized(this) { consecutiveTimeouts = 0 } }
+        } catch (e: HttpStatusException) {
+            if (e.code == 429) openSkipWindow()
+            throw e
+        } catch (e: InterruptedIOException) {   // OkHttp's callTimeout and socket timeouts
+            val n = synchronized(this) { ++consecutiveTimeouts }
+            if (n >= SKIP_AFTER_TIMEOUTS) openSkipWindow()
+            throw e
+        }
     }
 
     private fun fetchTtml(songId: String, interactive: Boolean): String? {
@@ -221,5 +292,7 @@ class AppleTtmlLyricsSource(
         private val TTML_JSON_KEYS = listOf("ttml", "data", "lyrics", "content", "xml")
         private const val INTERACTIVE_TIMEOUT_S = 4L
         private const val BACKGROUND_TIMEOUT_S = 10L
+        internal const val SKIP_AFTER_TIMEOUTS = 3
+        internal const val SKIP_WINDOW_MS = 10 * 60_000L
     }
 }
