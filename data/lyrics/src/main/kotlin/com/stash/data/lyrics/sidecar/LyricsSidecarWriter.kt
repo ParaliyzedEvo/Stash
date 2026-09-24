@@ -23,16 +23,9 @@ import javax.inject.Singleton
  *
  * [write] NEVER deletes an `.lrc`. An earlier version did delete it once a track had `.ttml`, which
  * meant external-player users lost lyrics across most of their library the first time the TTML
- * upgrade ran. Now:
- *
- *  - A track that already had lyrics before this write (`isNewTrack = false` — an Apple upgrade of
- *    an existing row, a Retry) keeps its `.lrc` (refreshed from this fetch's own body when
- *    available) and gets/refreshes `.ttml` alongside it.
- *  - A track fetched for the very first time (`isNewTrack = true`) that lands on a TTML result
- *    writes ONLY `.ttml` automatically — there's no prior `.lrc` to preserve, and most users only
- *    read lyrics in-app. [writeLrcSidecar] covers the explicit "Save with song file" action for
- *    anyone who wants one anyway.
- *  - A result with no TTML (LRCLIB/KuGou/YT) always just writes `.lrc`, same as before TTML existed.
+ * upgrade ran. Now a TTML result writes `.ttml` AND `.lrc` (the LRC derived from the same fetch),
+ * so external players (PowerAmp/VLC/Musicolet) keep working for new downloads too; a result with
+ * no TTML (LRCLIB/KuGou/YT) just writes `.lrc`, same as before TTML existed.
  *
  * Two storage targets: internal ([writeFilesystemSidecar]) and SAF tree ([writeSafSidecar], keyed
  * off the audio's own directory — see [resolveSafLocation]).
@@ -49,12 +42,12 @@ class LyricsSidecarWriter @Inject constructor(
 
     /**
      * Writes the sidecar(s) for [trackId] using [lyrics]. See class KDoc for which extension(s)
-     * end up on disk and how [isNewTrack] changes that.
+     * end up on disk.
      *
      * Fails when both `syncedLrc`/`plainText` and `ttml` are null/blank, the track row is gone, it
      * has no [TrackEntity.filePath], or (SAF) the tree URI is unset.
      */
-    suspend fun write(trackId: Long, lyrics: LyricsEntity, isNewTrack: Boolean = false) {
+    suspend fun write(trackId: Long, lyrics: LyricsEntity) {
         val ttml = lyrics.ttml?.takeUnless(String::isBlank)
         val hasLrcBody = !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank())
         if (ttml == null && !hasLrcBody) fail("No lyrics body for track $trackId")
@@ -64,10 +57,9 @@ class LyricsSidecarWriter @Inject constructor(
 
         if (ttml != null) {
             writeSidecarFile(track, path, ttml, "ttml", TTML_MIME)
-            if (isNewTrack) return   // no prior .lrc to preserve; writeLrcSidecar() covers on-demand
             if (hasLrcBody) {
                 runCatching { writeSidecarFile(track, path, buildLrcBody(track, lyrics), "lrc", LRC_MIME) }
-                    .onFailure { e -> Log.w(TAG, ".lrc refresh alongside .ttml failed for track $trackId", e) }
+                    .onFailure { e -> Log.w(TAG, ".lrc alongside .ttml failed for track $trackId", e) }
             }
             return
         }

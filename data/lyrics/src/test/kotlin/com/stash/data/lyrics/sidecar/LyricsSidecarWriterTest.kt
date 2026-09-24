@@ -197,7 +197,6 @@ class LyricsSidecarWriterTest {
         writer.write(
             track.id,
             lyricsEntity(syncedLrc = "[00:01.00]new body", plainText = "new body", ttml = "<tt>new</tt>"),
-            isNewTrack = false,
         )
 
         val lrc = File(audio.parent, "existing.lrc")
@@ -208,7 +207,7 @@ class LyricsSidecarWriterTest {
         assertEquals("<tt>new</tt>", ttmlFile.readText(Charsets.UTF_8))
     }
 
-    @Test fun `brand-new track with TTML writes only ttml, no lrc`() = runTest {
+    @Test fun `brand-new track with TTML writes both ttml and lrc`() = runTest {
         val audio = tmp.newFile("brandnew.flac")
         val track = stubTrack(filePath = audio.absolutePath)
         val writer = makeWriter(track)
@@ -216,12 +215,11 @@ class LyricsSidecarWriterTest {
         writer.write(
             track.id,
             lyricsEntity(syncedLrc = "[00:01.00]hi", plainText = "hi", ttml = "<tt>hi</tt>"),
-            isNewTrack = true,
         )
 
         assertTrue(".ttml must exist", File(audio.parent, "brandnew.ttml").exists())
-        assertFalse(
-            "no .lrc for a first-time TTML fetch — writeLrcSidecar() covers the explicit save action",
+        assertTrue(
+            "a new download gets an .lrc too, so external players see its lyrics",
             File(audio.parent, "brandnew.lrc").exists(),
         )
     }
@@ -231,8 +229,7 @@ class LyricsSidecarWriterTest {
         val track = stubTrack(filePath = audio.absolutePath)
         val writer = makeWriter(track)
 
-        // Simulates the "Save with song file" button on a track that was fetched fresh with TTML
-        // (isNewTrack = true above means write() alone wouldn't have produced an .lrc).
+        // Simulates the "Save with song file" button.
         writer.writeLrcSidecar(track.id, lyricsEntity(syncedLrc = "[00:01.00]saved", plainText = "saved"))
 
         val lrc = File(audio.parent, "saveaction.lrc")

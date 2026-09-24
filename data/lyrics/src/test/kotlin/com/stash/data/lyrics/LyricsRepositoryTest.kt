@@ -41,7 +41,7 @@ class LyricsRepositoryTest {
         coEvery { lyricsDao.get(any()) } returns null
         coEvery { lyricsDao.upsert(any()) } just Runs
         coEvery { trackDao.setLyricsFetchedAt(any(), any()) } just Runs
-        coEvery { sidecar.write(any(), any(), any()) } just Runs
+        coEvery { sidecar.write(any(), any()) } just Runs
 
         val repo = LyricsRepository(listOf(lrclib, ytm), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         val result = repo.resolveAndStore(query(1L))
@@ -52,7 +52,7 @@ class LyricsRepositoryTest {
         assertEquals(1L, capture.captured.trackId)
         assertEquals("lrclib", capture.captured.source)
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
-        coVerify { sidecar.write(1L, any(), any()) }
+        coVerify { sidecar.write(1L, any()) }
     }
 
     @Test fun `resolveAndStore carries the existing sync offset forward instead of resetting it`() = runTest {
@@ -75,21 +75,6 @@ class LyricsRepositoryTest {
         assertEquals(-1_500L, capture.captured.syncOffsetMs)
     }
 
-    @Test fun `resolveAndStore treats a track with no prior row as new for the sidecar writer`() = runTest {
-        val lrclib = fakeSource("lrclib", LyricsResult("lrclib", "plain", null, false, null, "42"))
-        val lyricsDao = mockk<LyricsDao>()
-        val trackDao = mockk<TrackDao>(relaxed = true)
-        val sidecar = mockk<LyricsSidecarWriter>()
-        coEvery { lyricsDao.get(1L) } returns null
-        coEvery { lyricsDao.upsert(any()) } just Runs
-        coEvery { sidecar.write(any(), any(), any()) } just Runs
-
-        val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
-        repo.resolveAndStore(query(1L))
-
-        coVerify { sidecar.write(1L, any(), isNewTrack = true) }
-    }
-
     @Test fun `instrumental path - writes row, stamps, does NOT invoke sidecar`() = runTest {
         val lrclib = fakeSource("lrclib", LyricsResult("lrclib", null, null, true, null, "42"))
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
@@ -97,7 +82,7 @@ class LyricsRepositoryTest {
         val sidecar = mockk<LyricsSidecarWriter>(relaxed = true)
         val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         repo.resolveAndStore(query(1L))
-        coVerify(exactly = 0) { sidecar.write(any(), any(), any()) }
+        coVerify(exactly = 0) { sidecar.write(any(), any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 1_700_000_000_000L) }
     }
 
@@ -110,7 +95,7 @@ class LyricsRepositoryTest {
         val repo = LyricsRepository(listOf(a, b), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         assertNull(repo.resolveAndStore(query(1L)))
         coVerify(exactly = 0) { lyricsDao.upsert(any()) }
-        coVerify(exactly = 0) { sidecar.write(any(), any(), any()) }
+        coVerify(exactly = 0) { sidecar.write(any(), any()) }
         coVerify { trackDao.setLyricsFetchedAt(1L, 0L) }
     }
 
@@ -171,7 +156,7 @@ class LyricsRepositoryTest {
         val lyricsDao = mockk<LyricsDao>(relaxed = true)
         val trackDao = mockk<TrackDao>(relaxed = true)
         val sidecar = mockk<LyricsSidecarWriter>()
-        coEvery { sidecar.write(any(), any(), any()) } throws RuntimeException("disk full")
+        coEvery { sidecar.write(any(), any()) } throws RuntimeException("disk full")
         val repo = LyricsRepository(listOf(lrclib), lyricsDao, trackDao, sidecar, clock, appleEnabledPreference())
         repo.resolveAndStore(query(1L))
         coVerify { lyricsDao.upsert(any()) }

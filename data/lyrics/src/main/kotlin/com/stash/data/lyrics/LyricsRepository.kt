@@ -73,11 +73,9 @@ class LyricsRepository @Inject constructor(
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
         }
-        // Loaded once, used for two things: (1) whether this is the track's first-ever fetch —
-        // decides whether the sidecar writer also writes a .lrc alongside a fresh .ttml, see
-        // LyricsSidecarWriter — and (2) carrying over any sync offset the user already set: upsert
-        // replaces the whole row, so without this a rewrite (an Apple upgrade, or Retry) silently
-        // reset a manually-tuned offset back to 0.
+        // Carries over any sync offset the user already set: upsert replaces the whole row, so
+        // without this a rewrite (an Apple upgrade, or Retry) silently reset a manually-tuned
+        // offset back to 0.
         val previousRow = lyricsDao.get(query.trackId)
         val now = clock.now()
         val entity = LyricsEntity(
@@ -95,7 +93,7 @@ class LyricsRepository @Inject constructor(
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(query.trackId, now)
         if (!result.instrumental) {
-            runCatching { sidecarWriter.write(query.trackId, entity, isNewTrack = previousRow == null) }
+            runCatching { sidecarWriter.write(query.trackId, entity) }
                 .onFailure { e -> Log.w(TAG, "Sidecar write failed for trackId=${query.trackId}", e) }
         }
         return entity
