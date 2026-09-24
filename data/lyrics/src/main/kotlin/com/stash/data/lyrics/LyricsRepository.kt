@@ -68,7 +68,7 @@ class LyricsRepository @Inject constructor(
      * without stamping.
      */
     suspend fun resolveAndStore(query: LyricsQuery): LyricsEntity? {
-        val result = walkSources(query)
+        val (result, appleCleanMiss) = walkSourcesNotingApple(query)
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
             return null
@@ -88,6 +88,14 @@ class LyricsRepository @Inject constructor(
             sourceLyricsId = result.sourceLyricsId,
             fetchedAt = now,
             ttml = result.ttml,
+            // Remember "Apple asked, has nothing" so the upgrade pass doesn't re-ask on every
+            // release. An Apple error (or LRC-only) keeps the previous stamp — but only a MISS
+            // stamp: a row that had TTML before must stay eligible for the upgrade pass.
+            ttmlCheckedAt = when {
+                result.ttml != null || appleCleanMiss -> now
+                previousRow?.ttml == null -> previousRow?.ttmlCheckedAt
+                else -> null
+            },
             syncOffsetMs = previousRow?.syncOffsetMs ?: 0L,
         )
         lyricsDao.upsert(entity)
@@ -237,11 +245,17 @@ class LyricsRepository @Inject constructor(
             sources
         }
 
-    private suspend fun walkSources(query: LyricsQuery): LyricsResult? {
+    private suspend fun walkSources(query: LyricsQuery): LyricsResult? = walkSourcesNotingApple(query).first
+
+    /** [walkSources], plus whether the Apple source was asked and cleanly returned nothing. */
+    private suspend fun walkSourcesNotingApple(query: LyricsQuery): Pair<LyricsResult?, Boolean> {
         var firstFailure: Exception? = null
+        var appleCleanMiss = false
         for (source in activeSources()) {
             try {
-                source.resolve(query)?.let { return it }
+                val result = source.resolve(query)
+                if (result != null) return result to appleCleanMiss
+                if (source.id == AppleTtmlLyricsSource.SOURCE_ID) appleCleanMiss = true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -250,7 +264,7 @@ class LyricsRepository @Inject constructor(
             }
         }
         firstFailure?.let { throw it }
-        return null
+        return null to appleCleanMiss
     }
 
     private companion object {

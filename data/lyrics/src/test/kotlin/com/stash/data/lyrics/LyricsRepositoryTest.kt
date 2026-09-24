@@ -201,6 +201,27 @@ class LyricsRepositoryTest {
         )
     }
 
+    @Test fun `a clean Apple miss stamps ttmlCheckedAt, an Apple error carries the old stamp`() = runTest {
+        val lrclib = fakeSource("lrclib", LyricsResult("lrclib", "p", "[00:01.00]p", false, null, "1"))
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { lyricsDao.get(1L) } returns LyricsEntity(
+            trackId = 1L, plainText = "p", syncedLrc = null, instrumental = false, language = null,
+            source = "lrclib", sourceLyricsId = null, fetchedAt = 1L, ttmlCheckedAt = 42L,
+        )
+        val stored = mutableListOf<LyricsEntity>()
+        coEvery { lyricsDao.upsert(capture(stored)) } just Runs
+        fun repo(apple: LyricsSource) = LyricsRepository(
+            listOf(apple, lrclib), lyricsDao, trackDao, mockk(relaxed = true), clock, appleEnabledPreference(),
+        )
+
+        repo(fakeSource(AppleTtmlLyricsSource.SOURCE_ID, null)).resolveAndStore(query(1L))
+        assertEquals(1_700_000_000_000L, stored.last().ttmlCheckedAt)
+
+        repo(throwingSource(AppleTtmlLyricsSource.SOURCE_ID, java.io.IOException("down"))).resolveAndStore(query(1L))
+        assertEquals(42L, stored.last().ttmlCheckedAt)
+    }
+
     private fun fakeSource(sourceId: String, result: LyricsResult?): LyricsSource = object : LyricsSource {
         override val id = sourceId
         override val displayName = sourceId
