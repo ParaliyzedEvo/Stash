@@ -35,6 +35,9 @@ import kotlinx.coroutines.delay
  * run STOPS (success, [OUT_BAILED] = true) on an HTTP 429 from the Apple path or after
  * [MAX_CONSECUTIVE_FAILURES] upgrade failures in a row — hammering a rate-limiting or unreachable
  * free service for the rest of the library only makes things worse. What's left stays pending.
+ * A bail stops only the Apple upgrade loop: the manual fetch for tracks with no lyrics still runs,
+ * and the Apple source's own skip window (opened by a 429 or repeated timeouts) keeps Apple out of
+ * it, so LRCLIB/KuGou can still fill those tracks.
  */
 @HiltWorker
 class LyricsTtmlUpgradeWorker @AssistedInject constructor(
@@ -98,7 +101,7 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             delay(REQUEST_SPACING_MS)
         }
 
-        for (trackId in if (bailed) emptyList() else toFetch) {
+        for (trackId in toFetch) {
             done++
             when (lyricsRepository.fetchLyricsNow(trackId)) {
                 ManualFetchResult.FETCHED -> fetched++

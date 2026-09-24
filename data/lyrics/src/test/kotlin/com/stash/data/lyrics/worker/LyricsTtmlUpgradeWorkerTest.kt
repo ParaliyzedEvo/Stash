@@ -6,7 +6,9 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.workDataOf
 import com.stash.data.lyrics.LyricsRepository
+import com.stash.data.lyrics.ManualFetchResult
 import com.stash.data.lyrics.TtmlUpgradeResult
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -36,9 +38,10 @@ class LyricsTtmlUpgradeWorkerTest {
 
     private var lastResult: ListenableWorker.Result? = null
 
-    private fun runWorker(repo: LyricsRepository): ListenableWorker.Result {
+    private fun runWorker(repo: LyricsRepository, manual: Boolean = false): ListenableWorker.Result {
         runTest {
             lastResult = TestListenableWorkerBuilder<LyricsTtmlUpgradeWorker>(context)
+                .setInputData(workDataOf(LyricsTtmlUpgradeWorker.KEY_MANUAL to manual))
                 .setWorkerFactory(object : WorkerFactory() {
                     override fun createWorker(c: Context, name: String, p: WorkerParameters) =
                         LyricsTtmlUpgradeWorker(c, p, repo)
@@ -74,5 +77,18 @@ class LyricsTtmlUpgradeWorkerTest {
         val result = runWorker(repo)
         assertFalse(result.bailed())
         coVerify(exactly = 1) { repo.upgradeToTtml(9L) }
+    }
+
+    @Test fun `a bail still runs the manual fetch for tracks with no lyrics`() {
+        val repo = repoWith(TtmlUpgradeResult.RATE_LIMITED, TtmlUpgradeResult.UPGRADED)
+        coEvery { repo.trackIdsMissingLyrics() } returns listOf(10L, 11L)
+        coEvery { repo.fetchLyricsNow(10L) } returns ManualFetchResult.FETCHED
+        coEvery { repo.fetchLyricsNow(11L) } returns ManualFetchResult.NOT_FOUND
+        val result = runWorker(repo, manual = true)
+        assertTrue(result.bailed())
+        coVerify(exactly = 0) { repo.upgradeToTtml(2L) }
+        coVerify(exactly = 1) { repo.fetchLyricsNow(10L) }
+        coVerify(exactly = 1) { repo.fetchLyricsNow(11L) }
+        assertEquals(1, (result as ListenableWorker.Result.Success).outputData.getInt(LyricsTtmlUpgradeWorker.OUT_FETCHED, -1))
     }
 }
