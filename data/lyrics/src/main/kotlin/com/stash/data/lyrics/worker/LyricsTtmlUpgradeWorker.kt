@@ -30,10 +30,11 @@ import kotlinx.coroutines.delay
  *
  * Only ever adds: a hit replaces the row + sidecars, a miss/failure leaves everything as it was.
  * Idempotent and resumable: each run recomputes what's pending. Paced at ~1 track / 3s (the iTunes
- * Search API is ~20 req/min and the lyrics API is a free community service). A per-track failure
- * (every source in the chain missed or errored for that one track) is counted and the run moves on
- * to the next track rather than stopping — [LyricsRepository] leaves the fetch stamp untouched on
- * that outcome specifically, so it stays eligible for the next run regardless.
+ * Search API is ~20 req/min and the lyrics API is a free community service). A single per-track
+ * failure is counted and the run moves on ([LyricsRepository] leaves the track pending), but the
+ * run STOPS (success, [OUT_BAILED] = true) on an HTTP 429 from the Apple path or after
+ * [MAX_CONSECUTIVE_FAILURES] upgrade failures in a row — hammering a rate-limiting or unreachable
+ * free service for the rest of the library only makes things worse. What's left stays pending.
  */
 @HiltWorker
 class LyricsTtmlUpgradeWorker @AssistedInject constructor(
@@ -61,16 +62,15 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         var notFound = 0
         var failed = 0
 
-        // OUT_BAILED is kept (always false) rather than removed — LyricsFetchStatus.Done and the
-        // Library Health card both still read it, and there's no reason to touch three more files
-        // for a field that's simply never true anymore.
+        var bailed = false
+
         fun summary() = workDataOf(
             OUT_TOTAL to total,
             OUT_UPGRADED to upgraded,
             OUT_FETCHED to fetched,
             OUT_NOT_FOUND to notFound,
             OUT_FAILED to failed,
-            OUT_BAILED to false,
+            OUT_BAILED to bailed,
         )
 
         suspend fun report() {
@@ -78,26 +78,27 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             if (manual) promoteToForeground(done, total)
         }
 
-        // A per-track failure means every source in the chain either missed or errored for THAT
-        // track (e.g. one source's host is unreachable on this network, as opposed to a genuine
-        // "no lyrics exist"). LyricsRepository already leaves the track's fetched_at stamp
-        // untouched on this outcome specifically so it stays eligible for a future retag/manual
-        // run — so the right move here is just to count it and move on to the next track, not stop
-        // the whole run. A single unreachable host would otherwise strand every track behind it in
-        // the queue.
+        var consecutiveFailures = 0
         for (trackId in toUpgrade) {
             done++
-            when (lyricsRepository.upgradeToTtml(trackId)) {
+            val result = lyricsRepository.upgradeToTtml(trackId)
+            when (result) {
                 TtmlUpgradeResult.UPGRADED -> upgraded++
                 TtmlUpgradeResult.NO_TTML -> Unit
-                TtmlUpgradeResult.FAILED -> failed++
+                TtmlUpgradeResult.FAILED, TtmlUpgradeResult.RATE_LIMITED -> failed++
                 TtmlUpgradeResult.SKIPPED -> continue          // no network used, no pacing needed
+            }
+            consecutiveFailures = if (result == TtmlUpgradeResult.FAILED) consecutiveFailures + 1 else 0
+            if (result == TtmlUpgradeResult.RATE_LIMITED || consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                Log.w(TAG, "Stopping the lyrics run early: $result, $consecutiveFailures failure(s) in a row")
+                bailed = true
+                break
             }
             report()
             delay(REQUEST_SPACING_MS)
         }
 
-        for (trackId in toFetch) {
+        for (trackId in if (bailed) emptyList() else toFetch) {
             done++
             when (lyricsRepository.fetchLyricsNow(trackId)) {
                 ManualFetchResult.FETCHED -> fetched++
@@ -109,8 +110,8 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             delay(REQUEST_SPACING_MS)
         }
 
-        Log.i(TAG, "Lyrics run finished: upgraded=$upgraded fetched=$fetched notFound=$notFound failed=$failed of $total")
-        if (manual) notifyDone(upgraded + fetched, notFound, bailed = false)
+        Log.i(TAG, "Lyrics run finished: upgraded=$upgraded fetched=$fetched notFound=$notFound failed=$failed of $total bailed=$bailed")
+        if (manual) notifyDone(upgraded + fetched, notFound, bailed)
         return Result.success(summary())
     }
 
@@ -199,5 +200,6 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         private const val NOTIFICATION_ID_DONE = 9272
 
         private const val REQUEST_SPACING_MS = 3_000L
+        internal const val MAX_CONSECUTIVE_FAILURES = 5
     }
 }

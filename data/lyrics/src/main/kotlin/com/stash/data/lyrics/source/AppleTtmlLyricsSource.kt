@@ -143,8 +143,11 @@ class AppleTtmlLyricsSource(
         }
     }
 
-    /** Thrown for a non-2xx, non-404 HTTP response — the server answered, just badly. Never retried. */
-    private class HttpStatusException(code: Int, host: String) : IOException("HTTP $code from $host")
+    /**
+     * Thrown for a non-2xx, non-404 HTTP response — the server answered, just badly. Never retried.
+     * Public so the upgrade pass can tell a 429 (stop asking) from any other failure.
+     */
+    class HttpStatusException(val code: Int, host: String) : IOException("HTTP $code from $host")
 
     /**
      * Body on 2xx, null on 404, throws on anything else.

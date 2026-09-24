@@ -7,6 +7,7 @@ import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.data.prefs.LyricsPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
+import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
@@ -175,6 +176,29 @@ class LyricsRepositoryTest {
         val repo = LyricsRepository(listOf(apple, hit), lyricsDao, trackDao, sidecar, clock, lrcOnlyPreference)
         repo.resolveAndStore(query(1L))
         coVerify(exactly = 0) { apple.resolve(any()) }
+    }
+
+    @Test fun `upgradeToTtml reports RATE_LIMITED for an HTTP 429 and FAILED for other errors`() = runTest {
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { lyricsDao.get(1L) } returns LyricsEntity(
+            trackId = 1L, plainText = "p", syncedLrc = null, instrumental = false, language = null,
+            source = "lrclib", sourceLyricsId = null, fetchedAt = 1L,
+        )
+        coEvery { trackDao.getById(1L) } returns mockk(relaxed = true)
+        fun repoThrowing(e: Exception) = LyricsRepository(
+            listOf(throwingSource(AppleTtmlLyricsSource.SOURCE_ID, e)),
+            lyricsDao, trackDao, mockk(relaxed = true), clock, appleEnabledPreference(),
+        )
+
+        assertEquals(
+            TtmlUpgradeResult.RATE_LIMITED,
+            repoThrowing(AppleTtmlLyricsSource.HttpStatusException(429, "lyrics.paxsenix.org")).upgradeToTtml(1L),
+        )
+        assertEquals(
+            TtmlUpgradeResult.FAILED,
+            repoThrowing(AppleTtmlLyricsSource.HttpStatusException(503, "lyrics.paxsenix.org")).upgradeToTtml(1L),
+        )
     }
 
     private fun fakeSource(sourceId: String, result: LyricsResult?): LyricsSource = object : LyricsSource {

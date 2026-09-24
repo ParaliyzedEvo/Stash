@@ -20,7 +20,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Outcome of [LyricsRepository.upgradeToTtml]. Only UPGRADED changes stored lyrics. */
-enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, SKIPPED }
+enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED }
 
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
@@ -164,7 +164,7 @@ class LyricsRepository @Inject constructor(
      *                   refreshed, sidecar rewritten (keeps the existing .lrc, adds/refreshes .ttml
      *                   beside it) -> UPGRADED
      * - clean miss   -> `ttml_checked_at` stamped, row untouched -> NO_TTML
-     * - source threw -> NOTHING written, stays pending -> FAILED
+     * - source threw -> NOTHING written, stays pending -> FAILED (RATE_LIMITED for an HTTP 429)
      * - no row / already TTML / instrumental / source not in chain -> SKIPPED
      */
     suspend fun upgradeToTtml(trackId: Long): TtmlUpgradeResult {
@@ -192,7 +192,8 @@ class LyricsRepository @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "TTML upgrade failed for trackId=$trackId", e)
-            return TtmlUpgradeResult.FAILED
+            val rateLimited = (e as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429
+            return if (rateLimited) TtmlUpgradeResult.RATE_LIMITED else TtmlUpgradeResult.FAILED
         }
 
         val now = clock.now()
