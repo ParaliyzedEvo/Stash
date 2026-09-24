@@ -13,7 +13,7 @@ async function withMix(e, doc) {
 
 test("mix page escapes every string and carries Open Graph tags", async () => {
     const e = env();
-    const id = await withMix(e, { v: 1, name: "<script>alert(1)</script>", sharedBy: "\"Rawn\"", covers: ["https://img.test/a.jpg"],
+    const id = await withMix(e, { v: 1, name: "<script>alert(1)</script>", sharedBy: "\"Rawn\"", covers: ["https://i.scdn.co/image/a"],
         tracks: [{ t: "<b>T</b>", a: "A&B" }] });
     const r = await handle(new Request(`${BASE}/m/${id}`), e);
     assert.equal(r.status, 200);
@@ -22,7 +22,7 @@ test("mix page escapes every string and carries Open Graph tags", async () => {
     assert.ok(!html.includes("<script>alert(1)</script>"));
     assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
     assert.ok(html.includes("&lt;b&gt;T&lt;/b&gt;") && html.includes("A&amp;B") && html.includes("&quot;Rawn&quot;"));
-    assert.ok(html.includes('property="og:title"') && html.includes('content="https://img.test/a.jpg"'));
+    assert.ok(html.includes('property="og:title"') && html.includes('content="https://i.scdn.co/image/a"'));
     assert.ok(html.includes(`intent://`) && html.includes("releases/latest"));
 });
 
@@ -50,4 +50,12 @@ test("assetlinks lists both packages with their certificate fingerprints", async
     const pkgs = body.map((s) => s.target.package_name).sort();
     assert.deepEqual(pkgs, ["com.stash.app", "com.stash.app.debug"]);
     for (const s of body) assert.match(s.target.sha256_cert_fingerprints[0], /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+});
+
+test("mix page never uses an off-list cover stored before the allowlist", async () => {
+    const e = env();
+    await e.SHARE_KV.put("mix:Old1Mix2", JSON.stringify({ keyHash: "0".repeat(64), doc: { v: 1, id: "Old1Mix2", version: 1, name: "Old",
+        covers: ["https://evil.example/a.jpg"], tracks: [{ t: "T", a: "A" }] } }));
+    const html = await (await handle(new Request(`${BASE}/m/Old1Mix2`), e)).text();
+    assert.ok(!html.includes("evil.example"));
 });

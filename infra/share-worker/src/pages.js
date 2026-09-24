@@ -1,3 +1,4 @@
+import { allowedCover } from "./validate.js";
 const GET_STASH = "https://github.com/rawnaldclark/Stash/releases/latest";
 const RELEASE_SHA256 = "8E:12:46:95:BE:83:58:C5:44:50:D9:F4:A2:B9:39:EF:77:2C:24:19:2E:C6:1C:FB:6B:33:08:7B:AB:08:A8:BA";
 const DEBUG_SHA256 = "80:0F:72:0A:31:6B:07:F6:45:38:23:71:FE:F4:1D:FA:B6:4F:39:EF:DA:D7:04:D6:A5:05:02:65:F1:6C:70:AA";
@@ -43,7 +44,7 @@ export function mixPage(doc, pageUrl) {
     return shell({
         title: doc.name,
         description: `${doc.tracks.length} tracks · shared on Stash`,
-        image: doc.covers?.[0],
+        image: doc.covers?.find(allowedCover), // docs stored before the allowlist may carry any host
         pageUrl,
         body: `<h1>${esc(doc.name)}</h1><p class="muted">${doc.tracks.length} tracks${by}</p><ol>${items}</ol>${more}`,
     });

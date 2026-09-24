@@ -49,3 +49,15 @@ test("create rejects a body over 1 MB with 413 and is rate-limited with 429", as
     const limited = env({ CREATE_RL: { limit: async () => ({ success: false }) } });
     assert.equal((await post({ doc: doc(), editKey: KEY }, limited)).status, 429);
 });
+
+test("covers off the album-art allowlist are dropped, not rejected", async () => {
+    const e = env();
+    const covers = ["https://i.scdn.co/image/a", "https://evil.example/log.gif", "https://x.i.ytimg.com/vi/b.jpg", "https://i.scdn.co.evil.example/c"];
+    const r = await post({ doc: doc({ covers }), editKey: KEY }, e);
+    assert.equal(r.status, 201);
+    const stored = await e.SHARE_KV.get(`mix:${(await r.json()).id}`, "json");
+    assert.deepEqual(stored.doc.covers, ["https://i.scdn.co/image/a", "https://x.i.ytimg.com/vi/b.jpg"]);
+    const none = await post({ doc: doc({ covers: ["https://evil.example/a.jpg"] }), editKey: KEY }, e);
+    assert.equal(none.status, 201);
+    assert.equal((await e.SHARE_KV.get(`mix:${(await none.json()).id}`, "json")).doc.covers, undefined);
+});

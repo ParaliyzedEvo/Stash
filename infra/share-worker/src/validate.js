@@ -1,6 +1,29 @@
 export const MAX_BODY_BYTES = 1_000_000;
 export const MAX_TRACKS = 2000;
 
+/**
+ * Album-art CDNs Stash itself loads art from. Covers on any other host are dropped, so a sharer
+ * can't point recipients' apps (or link previews) at a server that logs their IPs.
+ * Keep in sync with ShareConfig.COVER_HOSTS in core/model (ShareLinks.kt).
+ */
+export const COVER_HOSTS = [
+    "i.scdn.co", "mosaic.scdn.co", // Spotify
+    "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com", // YouTube
+    "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net", // Last.fm
+    "static.qobuz.com", "c.saavncdn.com", // Qobuz, JioSaavn
+];
+
+/** True for an https URL whose host is on [COVER_HOSTS] (exactly, or as a subdomain). */
+export function allowedCover(url) {
+    let host;
+    try {
+        const u = new URL(url);
+        if (u.protocol !== "https:") return false;
+        host = u.hostname.toLowerCase();
+    } catch { return false; }
+    return COVER_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
 const str = (v, min, max) => typeof v === "string" && v.trim().length >= min && v.length <= max;
 const optStr = (v, max) => v === undefined || v === null || (typeof v === "string" && v.length <= max);
 
@@ -28,7 +51,9 @@ export function cleanDoc(doc) {
     return {
         v: doc.v,
         name: doc.name,
-        ...pick(doc, ["sharedBy", "covers"]),
+        ...pick(doc, ["sharedBy"]),
+        // Dropped, not rejected: the app builds covers from local art, which can come from other hosts.
+        ...(doc.covers?.some(allowedCover) ? { covers: doc.covers.filter(allowedCover) } : {}),
         tracks: doc.tracks.map((t) => pick(t, ["t", "a", "al", "d", "isrc", "sp", "yt"])),
     };
 }
