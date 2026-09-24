@@ -997,8 +997,7 @@ class NowPlayingViewModel @Inject constructor(
                     val lyrics = lyricsRepository.get(track.id)
                     when {
                         lyrics != null && !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) -> {
-                            // Explicit save always writes .lrc, even for a TTML-only track — see
-                            // LyricsSidecarWriter for why the automatic post-fetch write doesn't.
+                            // Explicit save always writes .lrc. The writer hops to Dispatchers.IO itself.
                             lyricsSidecarWriter.writeLrcSidecar(track.id, lyrics)
                             "Lyrics saved with the song file"
                         }

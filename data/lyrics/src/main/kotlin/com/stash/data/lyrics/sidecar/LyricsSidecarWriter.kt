@@ -12,7 +12,9 @@ import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.data.download.files.LibraryLayoutResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
@@ -42,12 +44,12 @@ class LyricsSidecarWriter @Inject constructor(
 
     /**
      * Writes the sidecar(s) for [trackId] using [lyrics]. See class KDoc for which extension(s)
-     * end up on disk.
+     * end up on disk. Disk/SAF I/O runs on [Dispatchers.IO], so callers may be on Main.
      *
      * Fails when both `syncedLrc`/`plainText` and `ttml` are null/blank, the track row is gone, it
      * has no [TrackEntity.filePath], or (SAF) the tree URI is unset.
      */
-    suspend fun write(trackId: Long, lyrics: LyricsEntity) {
+    suspend fun write(trackId: Long, lyrics: LyricsEntity): Unit = withContext(Dispatchers.IO) {
         val ttml = lyrics.ttml?.takeUnless(String::isBlank)
         val hasLrcBody = !(lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank())
         if (ttml == null && !hasLrcBody) fail("No lyrics body for track $trackId")
@@ -61,7 +63,7 @@ class LyricsSidecarWriter @Inject constructor(
                 runCatching { writeSidecarFile(track, path, buildLrcBody(track, lyrics), "lrc", LRC_MIME) }
                     .onFailure { e -> Log.w(TAG, ".lrc alongside .ttml failed for track $trackId", e) }
             }
-            return
+            return@withContext
         }
 
         if (!hasLrcBody) fail("No lyrics body for track $trackId")
@@ -72,7 +74,7 @@ class LyricsSidecarWriter @Inject constructor(
      * Explicit "Save with song file" action: always writes the plain `.lrc`, regardless of whether
      * `.ttml` also exists or whether this is a new/existing track.
      */
-    suspend fun writeLrcSidecar(trackId: Long, lyrics: LyricsEntity) {
+    suspend fun writeLrcSidecar(trackId: Long, lyrics: LyricsEntity): Unit = withContext(Dispatchers.IO) {
         if (lyrics.syncedLrc.isNullOrBlank() && lyrics.plainText.isNullOrBlank()) {
             fail("No lyrics body for track $trackId")
         }
@@ -82,9 +84,9 @@ class LyricsSidecarWriter @Inject constructor(
     }
 
     /** Deletes just the `.ttml` sidecar — used when the user switches to LRC-only. Best-effort/silent. */
-    suspend fun deleteTtmlSidecar(trackId: Long) {
-        val track = trackDao.getById(trackId) ?: return
-        val path = track.filePath ?: return
+    suspend fun deleteTtmlSidecar(trackId: Long): Unit = withContext(Dispatchers.IO) {
+        val track = trackDao.getById(trackId) ?: return@withContext
+        val path = track.filePath ?: return@withContext
         runCatching { deleteSidecarFile(track, path, "ttml") }
             .onFailure { e -> Log.w(TAG, "Couldn't delete .ttml sidecar for track $trackId", e) }
     }
