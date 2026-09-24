@@ -59,7 +59,8 @@ fun LyricsBottomSheet(
     savingToFile: Boolean = false,
     onSaveToFile: () -> Unit = {},
     isPlaying: Boolean = true,
-    currentOffsetMs: Long = 0L,
+    /** Null = no lyrics row to store an offset on (streaming / not fetched yet): Offset is hidden. */
+    currentOffsetMs: Long? = null,
     onOffsetChange: (Long) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -87,8 +88,8 @@ fun LyricsBottomSheet(
                 liveEnabled = liveLyricsEnabled,
                 onLiveToggle = onLiveLyricsToggle,
                 onClose = onDismiss,
-                showOffsetButton = state is LyricsViewState.Synced,
-                currentOffsetMs = currentOffsetMs,
+                showOffsetButton = state is LyricsViewState.Synced && currentOffsetMs != null,
+                currentOffsetMs = currentOffsetMs ?: 0L,
                 onOffsetChange = onOffsetChange,
             )
 

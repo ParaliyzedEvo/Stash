@@ -15,7 +15,6 @@ import com.stash.data.lyrics.source.LyricsSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -234,7 +233,7 @@ class LyricsRepository @Inject constructor(
     }
 
     /** Null when no row exists yet (never fetched) — callers treat that as "no offset set". */
-    fun observeSyncOffsetMs(trackId: Long): Flow<Long> = lyricsDao.observeSyncOffsetMs(trackId).map { it ?: 0L }
+    fun observeSyncOffsetMs(trackId: Long): Flow<Long?> = lyricsDao.observeSyncOffsetMs(trackId)
 
     suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long) = lyricsDao.setSyncOffsetMs(trackId, offsetMs)
 

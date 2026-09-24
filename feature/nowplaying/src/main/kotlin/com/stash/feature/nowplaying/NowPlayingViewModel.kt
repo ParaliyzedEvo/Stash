@@ -499,16 +499,17 @@ class NowPlayingViewModel @Inject constructor(
      */
     /**
      * Raw per-track sync offset (signed ms; positive delays lyrics), for the sheet's Offset dialog
-     * to show the current value. 0 for streaming tracks (id == 0L) — nothing to key a row on.
+     * to show the current value. Null when there's nothing to store an offset on — a streaming
+     * track (id == 0L) or a track with no lyrics row yet — so the sheet hides its Offset button.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val lyricsSyncOffsetMs: StateFlow<Long> = uiState
+    val lyricsSyncOffsetMs: StateFlow<Long?> = uiState
         .map { it.currentTrack }
         .distinctUntilChanged { old, new -> trackKey(old) == trackKey(new) }
         .flatMapLatest { track ->
-            if (track != null && track.id > 0L) lyricsRepository.observeSyncOffsetMs(track.id) else flowOf(0L)
+            if (track != null && track.id > 0L) lyricsRepository.observeSyncOffsetMs(track.id) else flowOf(null)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), 0L)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
      * Position fed to the lyrics sheet + live bar, with [lyricsSyncOffsetMs] baked in. Everything
@@ -517,7 +518,7 @@ class NowPlayingViewModel @Inject constructor(
     val currentPositionMs: StateFlow<Long> = combine(
         playerRepository.currentPosition,
         lyricsSyncOffsetMs,
-    ) { pos, offsetMs -> (pos - offsetMs).coerceAtLeast(0L) }
+    ) { pos, offsetMs -> (pos - (offsetMs ?: 0L)).coerceAtLeast(0L) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),
@@ -1073,7 +1074,7 @@ class NowPlayingViewModel @Inject constructor(
         // position MINUS the sync offset — undo that here so seeking lands the DISPLAYED position,
         // not the raw one, on the tapped line. With a non-zero offset, seeking to the raw timestamp
         // alone lights up the wrong line.
-        onSeekTo(timestampMs + lyricsSyncOffsetMs.value)
+        onSeekTo(timestampMs + (lyricsSyncOffsetMs.value ?: 0L))
     }
 
     /**
