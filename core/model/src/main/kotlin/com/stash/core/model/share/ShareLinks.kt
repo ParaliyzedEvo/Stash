@@ -8,6 +8,24 @@ import java.net.URLEncoder
 object ShareConfig {
     const val BASE_URL = "https://stash-share.rawnaldclark.workers.dev"
     val HOSTS: Set<String> = setOf("stash-share.rawnaldclark.workers.dev")
+
+    /**
+     * Album-art CDNs a shared mix's covers may point at. Anything else could log recipients' IPs.
+     * Keep in sync with COVER_HOSTS in infra/share-worker/src/validate.js.
+     */
+    val COVER_HOSTS: List<String> = listOf(
+        "i.scdn.co", "mosaic.scdn.co",
+        "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com",
+        "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net",
+        "static.qobuz.com", "c.saavncdn.com",
+    )
+
+    /** An https URL on [COVER_HOSTS], exactly or as a subdomain. Never throws. */
+    fun isAllowedCover(url: String?): Boolean {
+        val uri = runCatching { URI(url ?: return false) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) && COVER_HOSTS.any { host == it || host.endsWith(".$it") }
+    }
 }
 
 object ShareLinks {
@@ -17,6 +35,9 @@ object ShareLinks {
     }
 
     private val ID = Regex("^[A-Za-z0-9]{8}$")
+
+    /** A share id for logs: the id is the only secret a link has, so logs show just a prefix. */
+    fun logId(shareId: String): String = shareId.take(3) + "…"
 
     fun mixUrl(shareId: String): String = "${ShareConfig.BASE_URL}/m/$shareId"
 

@@ -45,6 +45,9 @@ interface SharedMixDao {
     @Query("SELECT * FROM shared_mixes WHERE share_id = :shareId")
     suspend fun byShareId(shareId: String): SharedMixEntity?
 
+    @Query("SELECT * FROM shared_mixes WHERE share_id = :shareId")
+    fun observeByShareId(shareId: String): Flow<SharedMixEntity?>
+
     @Query("SELECT * FROM shared_mixes WHERE role = '${SharedMixEntity.ROLE_OWNER}' AND status = '${SharedMixEntity.STATUS_ACTIVE}' AND auto_update = 1")
     suspend fun activeOwnedWithUpdates(): List<SharedMixEntity>
 

@@ -58,7 +58,7 @@ class SharedMixRepositoryFollowerTest {
             )
         }
         val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
-        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api)
+        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), music, api, ApplicationProvider.getApplicationContext())
     }
     @After fun tearDown() { db.close(); server.shutdown() }
 
@@ -143,5 +143,32 @@ class SharedMixRepositoryFollowerTest {
         assertThat(p.syncEnabled).isTrue()
         assertThat(titles(id)).containsExactly("One", "Two").inOrder()
         assertThat(db.sharedMixDao().forPlaylist(id)).isNull()
+    }
+
+    @Test fun `unfollow deletes only the tracks nothing else claims`() = runBlocking {
+        coEvery { music.removePlaylist(any()) } coAnswers { db.playlistDao().delete(db.playlistDao().getById(firstArg<com.stash.core.model.Playlist>().id)!!) }
+        val id = repo.follow(doc(1, "Loose", "Liked", "Other", "Downloaded", "Heard"))
+        val ids = db.playlistDao().getTracksForPlaylist(id).associate { it.title to it.id }
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("UPDATE tracks SET stash_liked_at = 1 WHERE id = ${ids["Liked"]}")
+        sql.execSQL("UPDATE tracks SET is_downloaded = 1, file_path = '/x.flac' WHERE id = ${ids["Downloaded"]}")
+        val other = db.playlistDao().insert(PlaylistEntity(name = "Mine", source = MusicSource.BOTH, sourceId = "custom_o", type = PlaylistType.CUSTOM))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(playlistId = other, trackId = ids["Other"]!!, position = 0))
+        db.listeningEventDao().insert(com.stash.core.data.db.entity.ListeningEventEntity(trackId = ids["Heard"]!!, startedAt = 1L))
+
+        repo.unfollow(id)
+
+        assertThat(db.playlistDao().getById(id)).isNull()
+        assertThat(db.trackDao().getById(ids["Loose"]!!)).isNull()
+        for (kept in listOf("Liked", "Other", "Downloaded", "Heard")) assertThat(db.trackDao().getById(ids[kept]!!)).isNotNull()
+    }
+
+    @Test fun `a newer document format is never applied`() = runBlocking {
+        val id = repo.follow(doc(1, "One"))
+        server.enqueue(MockResponse().setBody("""{"version":2}"""))
+        server.enqueue(MockResponse().setBody(docJson(doc(2, "Two").copy(v = 2))))
+        assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)).isEqualTo(FollowCheck.Unreachable)
+        assertThat(titles(id)).containsExactly("One")
+        assertThat(db.sharedMixDao().forPlaylist(id)!!.version).isEqualTo(1)
     }
 }

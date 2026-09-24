@@ -37,7 +37,7 @@ class SharedMixFollowWorker @AssistedInject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "check failed for ${row.shareId}", e) // one bad mix never stops the rest
+                Log.w(TAG, "check failed for ${com.stash.core.model.share.ShareLinks.logId(row.shareId)}", e) // one bad mix never stops the rest
             }
         }
         return Result.success()

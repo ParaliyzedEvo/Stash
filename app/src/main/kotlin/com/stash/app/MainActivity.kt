@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
                     true
                 }
                 is ShareLinks.Parsed.Track -> {
-                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + intent.data.toString()
+                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackUrl(parsed.track) // bounded, normalised
                     true
                 }
                 null -> false

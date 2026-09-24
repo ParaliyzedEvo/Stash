@@ -28,6 +28,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.stash.core.model.share.ShareConfig
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -61,7 +65,8 @@ fun SharedMixScreen(
             is SharedMixUiState.Loaded -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        s.doc.covers.firstOrNull()?.let {
+                        // Docs stored before the Worker allowlist may carry any host: never load an off-list one.
+                        s.doc.covers.firstOrNull(ShareConfig::isAllowedCover)?.let {
                             AsyncImage(it, null, Modifier.size(96.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
                             Spacer(Modifier.size(16.dp))
                         }
@@ -81,7 +86,10 @@ fun SharedMixScreen(
                             s.isOwnMix -> Text("This is your mix", Modifier.align(Alignment.CenterVertically))
                             s.followedPlaylistId != null -> {
                                 OutlinedButton(onClick = { onOpenPlaylist(s.followedPlaylistId) }) { Text("Following") }
-                                OutlinedButton(onClick = viewModel::unfollow, enabled = !s.busy) { Text("Unfollow") }
+                                var confirmUnfollow by remember { mutableStateOf(false) }
+                                OutlinedButton(onClick = { if (confirmUnfollow) viewModel.unfollow() else confirmUnfollow = true }, enabled = !s.busy) {
+                                    Text(if (confirmUnfollow) "Tap again to unfollow" else "Unfollow")
+                                }
                             }
                             else -> {
                                 Button(onClick = { viewModel.follow(onJoinedPlaylist) }, enabled = !s.busy) { Text("Follow") }

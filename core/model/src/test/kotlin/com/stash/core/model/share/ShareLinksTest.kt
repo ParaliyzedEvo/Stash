@@ -45,4 +45,14 @@ class ShareLinksTest {
         assertThat(ShareLinks.parse(ShareLinks.trackUrl(round))).isEqualTo(ShareLinks.Parsed.Track(round))
         assertThat((ShareLinks.parse("$base/t?t=T&a=A&d=-5") as ShareLinks.Parsed.Track).track.durationMs).isNull()
     }
+
+    @Test fun `cover allowlist matches hosts exactly or as a subdomain, https only`() {
+        assertThat(ShareConfig.isAllowedCover("https://i.scdn.co/image/a")).isTrue()
+        assertThat(ShareConfig.isAllowedCover("https://x.i.ytimg.com/vi/b.jpg")).isTrue()
+        assertThat(ShareConfig.isAllowedCover("https://evil.example/a.jpg")).isFalse()
+        assertThat(ShareConfig.isAllowedCover("https://i.scdn.co.evil.example/a")).isFalse()
+        assertThat(ShareConfig.isAllowedCover("http://i.scdn.co/a")).isFalse()
+        assertThat(ShareConfig.isAllowedCover("not a url")).isFalse()
+        assertThat(ShareConfig.isAllowedCover(null)).isFalse()
+    }
 }

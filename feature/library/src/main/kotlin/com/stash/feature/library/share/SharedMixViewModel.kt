@@ -10,6 +10,7 @@ import com.stash.core.data.share.SharedMixDocument
 import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlaybackSource
+import com.stash.core.model.share.ShareLinks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
@@ -41,7 +42,20 @@ class SharedMixViewModel @Inject constructor(
     private val _state = MutableStateFlow<SharedMixUiState>(SharedMixUiState.Loading)
     val state: StateFlow<SharedMixUiState> = _state
 
-    init { load() }
+    init {
+        load()
+        // Live follow state: an Unfollow elsewhere (Library, the playlist screen) shows here too.
+        viewModelScope.launch {
+            repository.observeByShareId(shareId).collect { row ->
+                (_state.value as? SharedMixUiState.Loaded)?.let { _state.value = it.withRow(row) }
+            }
+        }
+    }
+
+    private fun SharedMixUiState.Loaded.withRow(row: SharedMixEntity?) = copy(
+        followedPlaylistId = row?.takeIf { it.role == SharedMixEntity.ROLE_FOLLOWER }?.playlistId,
+        isOwnMix = row?.role == SharedMixEntity.ROLE_OWNER,
+    )
 
     fun load() {
         _state.value = SharedMixUiState.Loading
@@ -49,12 +63,8 @@ class SharedMixViewModel @Inject constructor(
             _state.value = try {
                 when (val r = repository.fetch(shareId)) {
                     is ShareResult.Ok -> if (r.value.v > 1) SharedMixUiState.Error("Update Stash to open this mix.", false) else {
-                        val row = repository.byShareId(shareId)
-                        SharedMixUiState.Loaded(
-                            doc = r.value,
-                            followedPlaylistId = row?.takeIf { it.role == SharedMixEntity.ROLE_FOLLOWER }?.playlistId,
-                            isOwnMix = row?.role == SharedMixEntity.ROLE_OWNER,
-                        )
+                        SharedMixUiState.Loaded(doc = r.value, followedPlaylistId = null, isOwnMix = false)
+                            .withRow(repository.byShareId(shareId))
                     }
                     ShareResult.Gone -> SharedMixUiState.Error("This mix is no longer shared.", false)
                     ShareResult.NotFound -> SharedMixUiState.Error("This link doesn't point to a mix.", false)
@@ -63,7 +73,7 @@ class SharedMixViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "load $shareId failed", e)
+                Log.w(TAG, "load ${ShareLinks.logId(shareId)} failed", e)
                 SharedMixUiState.Error(RETRY_MESSAGE, true)
             }
         }
@@ -80,7 +90,7 @@ class SharedMixViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "$action $shareId failed", e)
+                Log.w(TAG, "$action ${ShareLinks.logId(shareId)} failed", e)
                 (_state.value as? SharedMixUiState.Loaded)?.let { _state.value = it.copy(message = "Couldn't $action this mix. Try again.") }
             } finally {
                 (_state.value as? SharedMixUiState.Loaded)?.let { _state.value = it.copy(busy = false) }

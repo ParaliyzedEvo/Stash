@@ -36,7 +36,7 @@ class SharedMixPublishWorker @AssistedInject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "publish failed for ${row.shareId}", e) // one bad mix never stops the rest
+                Log.w(TAG, "publish failed for ${com.stash.core.model.share.ShareLinks.logId(row.shareId)}", e) // one bad mix never stops the rest
                 retry = true
             }
         }

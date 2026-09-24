@@ -122,4 +122,16 @@ class SharedMixViewModelTest {
         coVerify { repo.unfollow(9) }
         assertThat((vm.state.value as SharedMixUiState.Loaded).followedPlaylistId).isNull()
     }
+
+    @Test fun `an unfollow elsewhere clears the follow state live`() = runTest(dispatcher) {
+        val row = SharedMixEntity(9, "Kx7Qa2pL", SharedMixEntity.ROLE_FOLLOWER, name = "Ambient")
+        val rows = kotlinx.coroutines.flow.MutableStateFlow<SharedMixEntity?>(row)
+        coEvery { repo.fetch(any()) } returns ShareResult.Ok(doc)
+        coEvery { repo.byShareId(any()) } returns row
+        io.mockk.every { repo.observeByShareId("Kx7Qa2pL") } returns rows
+        val vm = vm(); advanceUntilIdle()
+        assertThat((vm.state.value as SharedMixUiState.Loaded).followedPlaylistId).isEqualTo(9L)
+        rows.value = null; advanceUntilIdle()
+        assertThat((vm.state.value as SharedMixUiState.Loaded).followedPlaylistId).isNull()
+    }
 }

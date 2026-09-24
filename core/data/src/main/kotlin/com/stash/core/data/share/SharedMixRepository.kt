@@ -1,5 +1,6 @@
 package com.stash.core.data.share
 
+import android.content.Context
 import android.util.Base64
 import android.util.Log
 import androidx.room.withTransaction
@@ -14,10 +15,12 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
 import com.stash.core.model.share.toTrack
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.SecureRandom
 import java.time.Instant
 import javax.inject.Inject
@@ -38,6 +41,7 @@ class SharedMixRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val musicRepository: MusicRepository,
     private val api: ShareApiClient,
+    @ApplicationContext private val context: Context,
 ) {
     fun observe(playlistId: Long): Flow<SharedMixEntity?> = sharedMixDao.observeForPlaylist(playlistId)
 
@@ -58,7 +62,7 @@ class SharedMixRepository @Inject constructor(
         return SharedMixDocument(
             name = name.trim().take(100),
             sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
-            covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.startsWith("https://") && u.length <= 1000 } }.distinct().take(4),
+            covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.length <= 1000 && ShareConfig.isAllowedCover(u) } }.distinct().take(4),
             tracks = tracks.take(MAX_TRACKS).map { it.toSharedTrack().withinLimits() },
         )
     }
@@ -106,14 +110,15 @@ class SharedMixRepository @Inject constructor(
             ShareResult.Gone -> { sharedMixDao.markRemoved(row.playlistId, noticePending = false); PublishOutcome.Removed }
             // KV can briefly 404 a just-created mix: retry, only a 410 means it's gone.
             ShareResult.NotFound -> PublishOutcome.Failed
-            ShareResult.Forbidden -> { Log.w(TAG, "edit key rejected for ${row.shareId}"); PublishOutcome.Forbidden }
-            is ShareResult.Rejected -> { Log.w(TAG, "server rejected ${row.shareId}: HTTP ${r.code}"); PublishOutcome.Rejected }
+            ShareResult.Forbidden -> { Log.w(TAG, "edit key rejected for ${ShareLinks.logId(row.shareId)}"); PublishOutcome.Forbidden }
+            is ShareResult.Rejected -> { Log.w(TAG, "server rejected ${ShareLinks.logId(row.shareId)}: HTTP ${r.code}"); PublishOutcome.Rejected }
             is ShareResult.Failed -> PublishOutcome.Failed
         }
     }
 
     suspend fun setAutoUpdate(playlistId: Long, on: Boolean) {
         sharedMixDao.setAutoUpdate(playlistId, on)
+        if (on) SharedMixPublishWorker.enqueue(context) // edits made while it was off go out now
     }
 
     /** Remove the link. A remote 404/410 still clears the local row. */
@@ -135,6 +140,7 @@ class SharedMixRepository @Inject constructor(
 
     suspend fun fetch(shareId: String): ShareResult<SharedMixDocument> = api.get(shareId)
     suspend fun byShareId(shareId: String): SharedMixEntity? = sharedMixDao.byShareId(shareId)
+    fun observeByShareId(shareId: String): Flow<SharedMixEntity?> = sharedMixDao.observeByShareId(shareId)
 
     /** Persist every descriptor (deduped against the library), keeping document order and dropping repeats. */
     suspend fun persistTracks(doc: SharedMixDocument): List<Long> =
@@ -186,11 +192,16 @@ class SharedMixRepository @Inject constructor(
         return playlistId
     }
 
-    /** Remove a followed mix. Tracks stay only if another playlist or a like claims them (existing orphan rules). */
+    /**
+     * Remove a followed mix and the tracks it brought in, unless something else claims them
+     * (a like, a download, another playlist, listening history; see [TrackDao.deleteUnclaimedTracks]).
+     */
     suspend fun unfollow(playlistId: Long) {
         val playlist = playlistDao.getById(playlistId)?.toDomain() ?: return
+        val memberIds = playlistDao.getTracksForPlaylist(playlistId).map { it.id }
         sharedMixDao.delete(playlistId)
         musicRepository.removePlaylist(playlist)
+        trackDao.deleteUnclaimedTracks(memberIds)
     }
 
     /** "Download this mix" is the playlist's sync_enabled (spec §6); enabling also starts downloading now. */
@@ -205,7 +216,8 @@ class SharedMixRepository @Inject constructor(
                 if (v.value <= row.version) {
                     sharedMixDao.markChecked(row.playlistId, missingCount = 0, lastCheckedAt = now); FollowCheck.UpToDate
                 } else when (val d = api.get(row.shareId)) {
-                    is ShareResult.Ok -> { applyUpdate(row, d.value, now); FollowCheck.Updated }
+                    // A newer format this build can't read is never applied; keep the copy we have.
+                    is ShareResult.Ok -> if (d.value.v > 1) FollowCheck.Unreachable else { applyUpdate(row, d.value, now); FollowCheck.Updated }
                     ShareResult.Gone -> removed(row)
                     else -> FollowCheck.Unreachable
                 }

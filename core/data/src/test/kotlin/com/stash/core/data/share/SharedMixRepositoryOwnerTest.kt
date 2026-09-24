@@ -35,10 +35,10 @@ class SharedMixRepositoryOwnerTest {
             .allowMainThreadQueries().build()
         server = MockWebServer().also { it.start() }
         val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
-        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api)
+        repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api, ApplicationProvider.getApplicationContext())
         playlistId = db.playlistDao().insert(PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "custom_1"))
-        val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://img/1.jpg", source = MusicSource.SPOTIFY))
-        val t2 = db.trackDao().insert(TrackEntity(title = "Two", artist = "B", source = MusicSource.YOUTUBE, youtubeId = "y2"))
+        val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://i.scdn.co/image/1", source = MusicSource.SPOTIFY))
+        val t2 = db.trackDao().insert(TrackEntity(title = "Two", artist = "B", source = MusicSource.YOUTUBE, youtubeId = "y2", albumArtUrl = "https://evil.example/2.jpg"))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t1, position = 0))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId, t2, position = 1))
     }
@@ -51,7 +51,8 @@ class SharedMixRepositoryOwnerTest {
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"name\":\"Sleep\"")
         assertThat(body).contains("\"t\":\"One\"")
-        assertThat(body).contains("\"covers\":[\"https://img/1.jpg\"]")
+        assertThat(body).contains("\"covers\":[\"https://i.scdn.co/image/1\"]")
+        assertThat(body).doesNotContain("evil.example") // off-list cover hosts never leave the phone
         val row = db.sharedMixDao().forPlaylist(playlistId)!!
         assertThat(row.role).isEqualTo(SharedMixEntity.ROLE_OWNER)
         assertThat(row.editKey).hasLength(43)
