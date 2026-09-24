@@ -104,7 +104,7 @@ class NowPlayingLyricsExportTest {
             coVerify(exactly = 0) { lyricsRepository.get(84L) }
 
             release.complete(Unit)
-            assertEquals("Lyrics saved with the song file for ‘Song A’.", awaitItem())
+            assertEquals("Lyrics saved with the song file for 'Song A'.", awaitItem())
             assertEquals(null, viewModel.exportingLyricsTrackId.first { it == null })
             cancelAndIgnoreRemainingEvents()
         }
