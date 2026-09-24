@@ -6,10 +6,12 @@ import com.stash.core.data.prefs.LyricsPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.LyricsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Backs the "Lyrics" section on the Playback settings screen. Kept separate from [SettingsViewModel]. */
@@ -24,6 +26,10 @@ class LyricsSettingsViewModel @Inject constructor(
 
     /** Switching to LRC_ONLY wipes stored TTML and queues affected tracks for re-fetch — see [LyricsRepository.setSourcePreference]. */
     fun setSourcePreference(preference: LyricsSourcePreference) {
-        viewModelScope.launch { lyricsRepository.setSourcePreference(preference) }
+        // NonCancellable: the LRC-only cleanup (sidecar deletes, TTML wipe, then the pref write) must
+        // finish even if the user leaves Settings and viewModelScope is cancelled mid-way.
+        viewModelScope.launch {
+            withContext(NonCancellable) { lyricsRepository.setSourcePreference(preference) }
+        }
     }
 }
