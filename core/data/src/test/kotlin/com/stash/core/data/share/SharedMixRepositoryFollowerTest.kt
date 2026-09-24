@@ -167,6 +167,8 @@ class SharedMixRepositoryFollowerTest {
         val id = repo.follow(doc(1, "A", "B", "Liked"))
         val ids = db.playlistDao().getTracksForPlaylist(id).associate { it.title to it.id }
         db.openHelper.writableDatabase.execSQL("UPDATE tracks SET stash_liked_at = 1 WHERE id = ${ids["Liked"]}")
+        // Every sync snapshots all memberships for "Undo last sync"; that must not count as a claim (device-found).
+        db.openHelper.writableDatabase.execSQL("INSERT INTO sync_undo_memberships (sync_id, playlist_id, track_id, position, added_at, locally_added) SELECT 1, playlist_id, track_id, position, added_at, locally_added FROM playlist_tracks")
         server.enqueue(MockResponse().setBody("""{"version":2}"""))
         server.enqueue(MockResponse().setBody(docJson(doc(2, "A", "C"))))
         assertThat(repo.checkForUpdate(db.sharedMixDao().forPlaylist(id)!!, now = 1L)).isEqualTo(FollowCheck.Updated)

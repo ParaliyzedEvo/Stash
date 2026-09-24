@@ -1550,8 +1550,10 @@ interface TrackDao {
      * Kept: downloaded, liked (Stash/Spotify/YouTube), in any other active playlist, or referenced
      * by history or pending work. Every FK to tracks is CASCADE, so each table whose rows matter is
      * excluded here: listening_events (and listen_submissions under it), track_skip_events,
-     * in-flight download_queue / flac_upgrade_queue rows, plus the FK-less discovery_queue and
-     * sync_undo_memberships. lyrics and track_tags are re-fetchable caches and cascade with the track.
+     * in-flight download_queue / flac_upgrade_queue rows, plus the FK-less discovery_queue.
+     * sync_undo_memberships is deliberately NOT a claim: every sync snapshots every membership, so it
+     * would keep every song forever, and SyncUndoDao.restoreMemberships already skips deleted tracks.
+     * lyrics and track_tags are re-fetchable caches and cascade with the track.
      */
     @Query(
         """
@@ -1565,7 +1567,6 @@ interface TrackDao {
           AND id NOT IN (SELECT track_id FROM download_queue WHERE status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS'))
           AND id NOT IN (SELECT track_id FROM flac_upgrade_queue)
           AND id NOT IN (SELECT track_id FROM discovery_queue WHERE track_id IS NOT NULL)
-          AND id NOT IN (SELECT track_id FROM sync_undo_memberships)
         """
     )
     suspend fun deleteUnclaimedAmong(ids: List<Long>): Int
