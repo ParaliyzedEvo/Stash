@@ -349,6 +349,11 @@ interface PlaylistDao {
               -- never auto-download (#368), so without this arm a radio sharing no
               -- track with the user's own playlists could never reach Home.
               OR p.pinned_to_home_at IS NOT NULL
+              -- Followed shared mix (spec §6): the user chose it, so it shows even with Download off.
+              OR p.source_id LIKE 'share:%'
+              -- A playlist the user made (createPlaylist, incl. a saved copy of a shared mix)
+              -- shows in Library with downloads off. Android Auto filters these back out.
+              OR p.source_id LIKE 'custom_%'
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
@@ -693,6 +698,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET sync_enabled = 0 WHERE type = 'DAILY_MIX' AND sync_enabled = 1")
     suspend fun disableLegacyDailyMixSync(): Int
 
+    /** The followed mix's "Download this mix" switch (spec §6): sync_enabled only, no Home pin. */
+    @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
+    suspend fun setSyncEnabled(playlistId: Long, enabled: Boolean)
+
     /**
      * One-shot data migration: hide every YouTube playlist that currently
      * has zero linked tracks. Cleans up stale "My Mix N" rows left over
@@ -789,7 +798,13 @@ interface PlaylistDao {
     suspend fun getNextPosition(playlistId: Long): Int
 
     /** All user-created custom playlists (source = BOTH means local). */
-    @Query("SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1 ORDER BY name ASC")
+    @Query(
+        """
+        SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1
+          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
+        ORDER BY name ASC
+        """
+    )
     fun getUserCreatedPlaylists(): Flow<List<PlaylistEntity>>
 
     /**
@@ -815,6 +830,8 @@ interface PlaylistDao {
         SELECT * FROM playlists
         WHERE is_active = 1
           AND type IN ('CUSTOM')
+          -- An active followed shared mix is read-only (spec §6).
+          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
           AND (
               source = 'BOTH'
               OR sync_enabled = 1

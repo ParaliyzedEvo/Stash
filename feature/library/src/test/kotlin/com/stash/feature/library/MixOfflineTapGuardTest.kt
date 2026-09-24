@@ -283,6 +283,7 @@ class MixOfflineTapGuardTest {
     ): PlaylistDetailViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getTracksByPlaylist(playlistId) } doReturn flowOf(tracks)
+            on { observePlaylist(any()) } doReturn flowOf(null)
             onBlocking { getPlaylistWithTracks(playlistId) } doReturn playlist
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         }
@@ -300,6 +301,9 @@ class MixOfflineTapGuardTest {
             },
             discoveryQueueDao = mock {
                 on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
+            },
+            sharedMixRepository = mock {
+                on { observe(any()) } doReturn flowOf(null)
             },
         )
     }

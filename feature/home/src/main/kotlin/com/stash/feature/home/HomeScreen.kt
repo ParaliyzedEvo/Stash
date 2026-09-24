@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -169,6 +170,7 @@ fun HomeScreen(
     // Task 7 wires the actual mix-browse destination; today a no-op from the host.
     onSeeAllMixes: (MixRail) -> Unit = {},
     onReportIssue: () -> Unit = {},
+    onShareMix: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
@@ -812,6 +814,14 @@ fun HomeScreen(
                     label = "Open",
                     onClick = {
                         openMix(id)
+                        actionSheetMixId = null
+                    },
+                )
+                MixActionRow(
+                    icon = Icons.Default.Share,
+                    label = "Share mix",
+                    onClick = {
+                        onShareMix(id)
                         actionSheetMixId = null
                     },
                 )

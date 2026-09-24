@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -102,7 +103,26 @@ class LibraryViewModel @Inject constructor(
     private val libraryPreferencesStore: LibraryPreferencesStore,
     private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
     private val artistImageDao: ArtistImageDao,
+    private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
 ) : ViewModel() {
+
+    /** Active follows are read-only: the long-press sheet offers Unfollow in place of edits. */
+    val followedPlaylistIds: StateFlow<Set<Long>> = sharedMixRepository.observeActiveFollowedIds()
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun unfollowPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            try {
+                sharedMixRepository.unfollow(playlist.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "unfollow ${playlist.id} failed", e)
+                _userMessages.tryEmit("Couldn't unfollow this mix. Try again.")
+            }
+        }
+    }
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
     val localImportState: StateFlow<LocalImportState> = localImportCoordinator.state

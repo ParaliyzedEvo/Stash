@@ -14,6 +14,7 @@ import androidx.core.content.IntentCompat
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.model.ThemeMode
+import com.stash.core.model.share.ShareLinks
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
@@ -25,8 +26,11 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     companion object {
-        /** [pendingDeepLink] target for an incoming stash://track share link. */
-        const val DEEP_LINK_SHARED_TRACK = "shared_track"
+        /** [pendingDeepLink] prefix for a shared-track link; the raw link follows. */
+        const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
+
+        /** [pendingDeepLink] prefix for a shared-mix link; the share id follows. */
+        const val DEEP_LINK_SHARED_MIX_PREFIX = "shared_mix:"
     }
 
     @Inject
@@ -34,9 +38,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
-
-    @Inject
-    lateinit var sharedTrackLinkHolder: com.stash.core.data.share.SharedTrackLinkHolder
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.
@@ -71,9 +72,15 @@ class MainActivity : ComponentActivity() {
         }
 
         // Handle the initial intent (share target cold-start path,
-        // notification deep-link cold-start path, etc).
-        handleShareIntent(intent)
-        handleDeepLinkIntent(intent)
+        // notification deep-link cold-start path, etc). Not on a restore
+        // (process death / config change) or a Recents relaunch: those
+        // replay the original intent, and the nav back stack is already restored.
+        val relaunch = savedInstanceState != null ||
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (!relaunch) {
+            handleShareIntent(intent)
+            handleDeepLinkIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -91,21 +98,20 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
 
-        // stash://track?t=<title>&a=<artist>[&s=..][&y=..] — a shared song
-        // link. Deposit a search query and route to the Search tab.
-        if (intent.action == Intent.ACTION_VIEW &&
-            intent.data?.scheme == "stash" && intent.data?.host == "track"
-        ) {
-            val data = intent.data ?: return
-            val title = data.getQueryParameter("t").orEmpty()
-            val artist = data.getQueryParameter("a").orEmpty()
-            val query = "$artist $title".trim()
-            if (query.isNotBlank()) {
-                sharedTrackLinkHolder.set(query)
-                pendingDeepLink.value = DEEP_LINK_SHARED_TRACK
+        // Shared mix / track links (https App Links, and legacy stash://track). Spec §6.
+        if (intent.action == Intent.ACTION_VIEW) {
+            val handled = when (val parsed = ShareLinks.parse(intent.data?.toString())) {
+                is ShareLinks.Parsed.Mix -> {
+                    pendingDeepLink.value = DEEP_LINK_SHARED_MIX_PREFIX + parsed.shareId
+                    true
+                }
+                is ShareLinks.Parsed.Track -> {
+                    pendingDeepLink.value = DEEP_LINK_SHARED_TRACK_PREFIX + ShareLinks.trackUrl(parsed.track) // bounded, normalised
+                    true
+                }
+                null -> false
             }
-            intent.data = null // don't reprocess on config change
-            return
+            if (handled) { intent.data = null; return } // don't reprocess on config change
         }
 
         val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)

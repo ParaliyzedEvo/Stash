@@ -75,6 +75,7 @@ fun StashNavHost(
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
+                onShareMix = { id -> navController.navigate(PlaylistDetailRoute(id, openShare = true)) },
                 // Liked card: the ViewModel queued the Liked focus; perform the
                 // canonical tab switch so Back + bottom-bar state behave exactly
                 // like tapping the Library tab — then pop any RESTORED detail
@@ -333,6 +334,21 @@ fun StashNavHost(
                 onBack = { navController.popBackStack() },
                 onSelectionModeChanged = onSelectionModeChanged,
             )
+        }
+
+        composable<SharedMixRoute> {
+            com.stash.feature.library.share.SharedMixScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                // Follow / Save a copy land on the new playlist; Back skips the mix screen.
+                onJoinedPlaylist = { id ->
+                    navController.navigate(PlaylistDetailRoute(id)) { popUpTo<SharedMixRoute> { inclusive = true } }
+                },
+            )
+        }
+
+        composable<SharedTrackRoute> {
+            com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
         }
 
         composable<ArtistDetailRoute> {

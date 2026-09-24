@@ -53,6 +53,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager,
     private val singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
+    private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -418,6 +419,9 @@ class MusicRepositoryImpl @Inject constructor(
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
         trackDao.observeByYoutubeId(youtubeId).map { it?.toDomain() }
 
+    override fun observePlaylist(id: Long): Flow<Playlist?> =
+        playlistDao.getByIdFlow(id).map { it?.toDomain() }
+
     override suspend fun getPlaylistWithTracks(id: Long): Playlist? {
         val result = playlistDao.getPlaylistWithTracks(id) ?: return null
         return result.playlist.toDomain().copy(
@@ -440,7 +444,7 @@ class MusicRepositoryImpl @Inject constructor(
         if (track.id > 0L) {
             val existing = trackDao.getById(track.id)
             if (existing != null) {
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return track.id
             }
         }
@@ -454,14 +458,14 @@ class MusicRepositoryImpl @Inject constructor(
         val youtubeId = track.youtubeId
         if (!youtubeId.isNullOrBlank()) {
             trackDao.findByYoutubeId(youtubeId)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return existing.id
             }
         }
         val spotifyUri = track.spotifyUri
         if (!spotifyUri.isNullOrBlank()) {
             trackDao.findBySpotifyUri(spotifyUri)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                backfillFrom(existing, track)
                 return existing.id
             }
         }
@@ -469,7 +473,9 @@ class MusicRepositoryImpl @Inject constructor(
         val cArtist = canonicalizeIdentity(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
-                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                // Fuzzy title/artist match: could be a different recording (radio edit vs album),
+                // and lossless trusts ISRC, so only duration is taken here.
+                backfillFrom(existing, track, trustIsrc = false)
                 return existing.id
             }
         }
@@ -485,10 +491,13 @@ class MusicRepositoryImpl @Inject constructor(
         )
     }
 
-    private suspend fun backfillDurationIfBetter(trackId: Long, existing: Long, incoming: Long) {
-        if (existing <= 0L && incoming > 0L) {
-            trackDao.backfillDurationIfMissing(trackId, incoming)
-        }
+    /**
+     * Fills a matched row's blanks from the incoming track. Album is deliberately not backfilled:
+     * without album_artist it would split the Albums tab's (album, album_artist) grouping.
+     */
+    private suspend fun backfillFrom(existing: com.stash.core.data.db.entity.TrackEntity, incoming: Track, trustIsrc: Boolean = true) {
+        if (existing.durationMs <= 0L && incoming.durationMs > 0L) trackDao.backfillDurationIfMissing(existing.id, incoming.durationMs)
+        if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
 
     /** Same normalization as [SearchDownloadCoordinator.canonicalize] — kept
@@ -607,7 +616,23 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removePlaylist(playlist: Playlist) {
+        takeDownSharedLinkIfOwned(playlist.id)
         playlistDao.delete(playlist.toEntity())
+    }
+
+    /**
+     * The shared_mixes row (and its edit key) cascades away with the playlist, so an owned, still
+     * active share must queue its server DELETE first or the link stays live forever. Followers
+     * never qualify: unfollowing must not take the owner's mix down.
+     */
+    private suspend fun takeDownSharedLinkIfOwned(playlistId: Long) {
+        val row = sharedMixDao.forPlaylist(playlistId) ?: return
+        val key = row.editKey ?: return
+        if (row.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER &&
+            row.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
+        ) {
+            com.stash.core.data.share.SharedMixUnshareWorker.enqueue(context, row.shareId, key)
+        }
     }
 
     override suspend fun updatePlaylistArtUrl(playlistId: Long, artUrl: String?) {
@@ -698,6 +723,9 @@ class MusicRepositoryImpl @Inject constructor(
         // or the Library card lies ("1 tracks" but the detail shows 4).
         val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
         playlistDao.updateTrackCount(playlistId, count)
+        if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
     }
 
     override suspend fun ensureDownloadsMixSeeded(): Long {
@@ -731,6 +759,9 @@ class MusicRepositoryImpl @Inject constructor(
         // or the Library card lies ("1 tracks" but the detail shows 4).
         val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
         playlistDao.updateTrackCount(playlistId, count)
+        if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
     }
 
     override fun getUserCreatedPlaylists(): Flow<List<com.stash.core.model.Playlist>> =
@@ -771,6 +802,10 @@ class MusicRepositoryImpl @Inject constructor(
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
     ): MusicRepository.CascadeRemovalSummary {
+        // Shared mixes (spec §5): at the top, before the early returns below. The job waits 30 s.
+        if (sharedMixDao.forPlaylist(fromPlaylistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
         // v0.9.15: explicit-block override. If the user ticked "Block this
         // track" on the delete dialog, that intent always wins — we tear
         // down the file + every cross-ref + insert the blocklist entry,
@@ -860,7 +895,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Finally remove the playlist itself. playlist_tracks rows for it
         // have already been handled per-track above; this just clears the
         // container row. Uses the existing remove path for consistency.
-        playlistDao.getById(playlistId)?.let { playlistDao.delete(it) }
+        playlistDao.getById(playlistId)?.let {
+            takeDownSharedLinkIfOwned(playlistId)
+            playlistDao.delete(it)
+        }
 
         return MusicRepository.CascadeRemovalSummary(
             deleted = deleted,

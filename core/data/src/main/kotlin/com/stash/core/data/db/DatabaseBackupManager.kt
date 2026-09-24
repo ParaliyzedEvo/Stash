@@ -692,6 +692,7 @@ class DatabaseBackupManager @Inject constructor(
             val backupTracks = backupDb.trackDao().getAllForIntegrityScan()
             val backupPlaylists = backupDb.playlistDao().getAllForBackupMerge()
             val backupRefs = backupDb.playlistDao().getAllCrossRefsForBackupMerge()
+            val backupShared = backupDb.sharedMixDao().getAll()
 
             var addedTracks = 0
             var likedTracks = 0
@@ -701,6 +702,7 @@ class DatabaseBackupManager @Inject constructor(
             database.withTransaction {
                 val trackDao = database.trackDao()
                 val playlistDao = database.playlistDao()
+                val sharedMixDao = database.sharedMixDao()
 
                 // ── 1. Tracks ────────────────────────────────────────────
                 // Identity indexes over the live library, built once so N
@@ -822,6 +824,14 @@ class DatabaseBackupManager @Inject constructor(
                     liveBySourceId.putIfAbsent(playlist.sourceId, newId)
                     playlistIdMap[playlist.id] = newId
                     addedPlaylists++
+                }
+
+                // ── 2b. Shared-mix links (spec §5: edit keys survive a backup) ──
+                for (row in backupShared) {
+                    val livePlaylistId = playlistIdMap[row.playlistId] ?: continue
+                    if (sharedMixDao.forPlaylist(livePlaylistId) != null) continue // live row wins
+                    if (sharedMixDao.byShareId(row.shareId) != null) continue      // already linked elsewhere
+                    sharedMixDao.insert(row.copy(playlistId = livePlaylistId))
                 }
 
                 // The BACKUP's history counts too: a playlist can be synced

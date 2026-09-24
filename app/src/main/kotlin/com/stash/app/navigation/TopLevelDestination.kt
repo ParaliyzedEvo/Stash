@@ -27,7 +27,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object SyncRoute
 @Serializable data object SettingsRoute
 @Serializable data object NowPlayingRoute
-@Serializable data class PlaylistDetailRoute(val playlistId: Long)
+@Serializable data class PlaylistDetailRoute(val playlistId: Long, val openShare: Boolean = false)
 @Serializable data class ArtistDetailRoute(val artistName: String)
 @Serializable data class AlbumDetailRoute(val albumName: String, val artistName: String)
 @Serializable data class LikedSongsDetailRoute(val source: String? = null)
@@ -46,6 +46,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object SettingsAppearanceRoute
 @Serializable data object SettingsAboutRoute
 @Serializable data class MixBuilderRoute(val recipeId: Long? = null)
+@Serializable data class SharedMixRoute(val shareId: String)
+@Serializable data class SharedTrackRoute(val link: String)
 
 @Serializable
 data class SearchArtistRoute(

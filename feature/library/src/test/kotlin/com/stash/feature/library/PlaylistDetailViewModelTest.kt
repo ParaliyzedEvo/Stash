@@ -25,8 +25,10 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -47,6 +49,103 @@ class PlaylistDetailViewModelTest {
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
+
+    @Test fun `an active follow exposes read-only state with the sharer's name`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(
+                com.stash.core.data.db.entity.SharedMixEntity(
+                    1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient", sharedBy = "Rawn",
+                ),
+            )
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        backgroundScope.launch { vm.follow.collect {} }
+        runCurrent()
+        val f = checkNotNull(vm.follow.value)
+        assertEquals(true, f.readOnly)
+        assertEquals("Rawn", f.sharedBy)
+    }
+
+    @Test fun `a follow whose owner stopped sharing is an ordinary editable playlist`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(
+                com.stash.core.data.db.entity.SharedMixEntity(
+                    1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient",
+                    status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED,
+                ),
+            )
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        backgroundScope.launch { vm.follow.collect {} }
+        runCurrent()
+        assertEquals(false, checkNotNull(vm.follow.value).readOnly)
+    }
+
+    @Test fun `a rename in the database reaches the header`() = runTest {
+        val live = MutableStateFlow<com.stash.core.model.Playlist?>(null)
+        val music = musicRepoMock().stub {
+            on { observePlaylist(any()) } doReturn live
+            onBlocking { getPlaylistWithTracks(1L) } doReturn
+                com.stash.core.model.Playlist(id = 1L, name = "Ambient", source = com.stash.core.model.MusicSource.BOTH)
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.uiState.collect {} }
+        runCurrent()
+        assertEquals("Ambient", vm.uiState.value.playlist?.name)
+        live.value = com.stash.core.model.Playlist(id = 1L, name = "Sleep", source = com.stash.core.model.MusicSource.BOTH, syncEnabled = true)
+        runCurrent()
+        assertEquals("Sleep", vm.uiState.value.playlist?.name)
+        assertEquals(true, vm.uiState.value.playlist?.syncEnabled)
+    }
+
+    @Test fun `the stopped-sharing notice shows once when the follow flips while the screen is open`() = runTest {
+        val row = MutableStateFlow(
+            com.stash.core.data.db.entity.SharedMixEntity(1, "Kx7Qa2pL", com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER, name = "Ambient"),
+        )
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn row
+            onBlocking { consumeRemovedNotice(1L) } doReturn "Rawn stopped sharing this mix. You keep your copy."
+        }
+        val vm = buildVm(sharedMixRepository = shared)
+        val messages = collectMessages(vm)
+        assertEquals(emptyList<String>(), messages)
+        val removed = row.value.copy(status = com.stash.core.data.db.entity.SharedMixEntity.STATUS_REMOVED, noticePending = true)
+        row.value = removed
+        runCurrent()
+        row.value = removed.copy(missingCount = 1) // an unrelated re-emit with the flag still set
+        runCurrent()
+        assertEquals(listOf("Rawn stopped sharing this mix. You keep your copy."), messages)
+        org.mockito.kotlin.verifyBlocking(shared, org.mockito.kotlin.times(1)) { consumeRemovedNotice(1L) }
+    }
+
+    @Test fun `turning Download this mix on writes it through the repository`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
+        val vm = buildVm(sharedMixRepository = shared)
+        vm.setFollowDownload(true)
+        runCurrent()
+        org.mockito.kotlin.verifyBlocking(shared) { setDownload(1L, true) }
+    }
+
+    @Test fun `unfollow runs onDone only when it succeeds`() = runTest {
+        val shared = mock<com.stash.core.data.share.SharedMixRepository> { on { observe(any()) } doReturn flowOf(null) }
+        val vm = buildVm(sharedMixRepository = shared)
+        var done = 0
+        vm.unfollow { done++ }
+        runCurrent()
+        assertEquals(1, done)
+        org.mockito.kotlin.verifyBlocking(shared) { unfollow(1L) }
+
+        val failing = mock<com.stash.core.data.share.SharedMixRepository> {
+            on { observe(any()) } doReturn flowOf(null)
+            onBlocking { unfollow(any()) } doThrow RuntimeException("db")
+        }
+        val vm2 = buildVm(sharedMixRepository = failing)
+        val messages = collectMessages(vm2)
+        vm2.unfollow { done++ }
+        runCurrent()
+        assertEquals(1, done)
+        assertEquals(listOf("Couldn't unfollow this mix. Try again."), messages)
+    }
 
     @Test
     fun playSelectedNext_loops_addNext_per_track() = runTest {
@@ -278,6 +377,7 @@ class PlaylistDetailViewModelTest {
 
     private fun musicRepoMock(): MusicRepository = mock {
         on { getTracksByPlaylist(any()) } doReturn flowOf(emptyList())
+        on { observePlaylist(any()) } doReturn flowOf(null)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true
         onBlocking {
@@ -309,6 +409,9 @@ class PlaylistDetailViewModelTest {
             on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
         },
         savedStateHandle: SavedStateHandle = SavedStateHandle(mapOf("playlistId" to 1L)),
+        sharedMixRepository: com.stash.core.data.share.SharedMixRepository = mock {
+            on { observe(any()) } doReturn flowOf(null)
+        },
     ): PlaylistDetailViewModel = PlaylistDetailViewModel(
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
@@ -318,5 +421,6 @@ class PlaylistDetailViewModelTest {
         connectivityMonitor = connectivityMonitor,
         recipeDao = recipeDao,
         discoveryQueueDao = discoveryQueueDao,
+        sharedMixRepository = sharedMixRepository,
     )
 }
