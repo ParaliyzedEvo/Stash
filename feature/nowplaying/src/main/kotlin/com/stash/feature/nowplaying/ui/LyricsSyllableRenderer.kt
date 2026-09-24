@@ -605,7 +605,7 @@ private suspend fun frameLoop(tick: (Float) -> Boolean) {
     }
 }
 
-private const val BLUR_PER_LINE = 0.6f
-private const val BLUR_MAX = 3.0f   
+private const val BLUR_PER_LINE = 0.7f
+private const val BLUR_MAX = 4.2f   
 private const val SCROLL_GRACE_MS = 5_000L
 private const val SCROLL_OFFSET_PX = -200
