@@ -30,16 +30,13 @@ Stash has two modes. They decide what a sync actually does.
 
 ## Lossless
 
-**Stash ships no shared user accounts.** There's no bundled Qobuz account and no shared token pool — nothing in the APK that plays music on someone else's subscription. The official build does carry ARCOD's operator integration key (which is what makes ARCOD reachable at all, and still requires you to connect your own ARCOD account) and Last.fm API keys. FLAC comes from a source *you* own, and you pick which:
+**Stash ships no shared user accounts.** There's no bundled Qobuz account and no shared token pool — nothing in the APK that plays music on someone else's subscription. The official build does carry Last.fm API keys. FLAC comes from a source *you* own, and you pick which:
 
 - **Your own Qobuz account** — connect it in Settings › Audio. Connecting asks for your Qobuz email and password, which are sent once to Qobuz to mint a token; Stash stores the token, not the password. It then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
 - **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field and Stash routes through it.
 - **Stash's own relay** — the official release build fetches a signed config at each cold start that lists `stash-relay.rawnaldclark.workers.dev`, a relay the project runs on a few paid Qobuz accounts. It hands your phone a short-lived Qobuz CDN link for the track you tapped; the audio comes from Qobuz's CDN, never through the relay. It is sized as a bridge, not a main path: connect your own account and your phone stops using it. The relay hostname is not in the APK — a plain source checkout has no config URL, so a Stash you build yourself has this path switched off entirely.
-- **[ARCOD](https://arcod.xyz)** — connect an ARCOD account as a second source. Enabled in the official release APK; a build you make yourself has no ARCOD key and skips it entirely.
 
 Connect none of them and Stash still works — but it's lossless only if the build itself carries a relay config, which is the one path that needs nothing from you. Otherwise playback and downloads fall back to AAC or Opus, and Home tells you so instead of pretending.
-
-These sources are somebody else's infrastructure, mostly run solo and mostly free. If Stash earns a spot on your phone, send a little of that their way: a thank-you, a tip, whatever you've got. We stand on their shoulders. 🙏
 
 ---
 
@@ -76,7 +73,7 @@ These sources are somebody else's infrastructure, mostly run solo and mostly fre
 
 ## What Stash talks to
 
-Stash has no account server, but it isn't a two-service app either. Everything the official release APK can reach, and what for. A build you make yourself from a plain checkout reaches strictly less: it has no Last.fm keys or proxy, no ARCOD key, and no relay config.
+Stash has no account server, but it isn't a two-service app either. Everything the official release APK can reach, and what for. A build you make yourself from a plain checkout reaches strictly less: it has no Last.fm keys or proxy and no relay config.
 
 - **Spotify** (`accounts.`, `open.`, `api-partner.`, `api.spotify.com`, `www.spotify.com`, `clienttoken.spotify.com`) — login, library sync, likes and history mirroring
 - **Google reCAPTCHA** (`www.google.com`, `www.gstatic.com`) — loaded by Spotify's own login page inside the sign-in window. Stash never calls them; Spotify's page does.
@@ -90,8 +87,6 @@ Stash has no account server, but it isn't a two-service app either. Everything t
 - **Qobuz — lossless** (`www.qobuz.com`) — FLAC streams and downloads, only once you connect your own account
 - **`stash-relay.rawnaldclark.workers.dev`** — the project's lossless relay, reached only from the official release build and only when no account of your own is connected. It is sent the Qobuz track id and format of what you're playing, a random per-install id used for rate limiting, and nothing else — so this host learns what an anonymous install listens to. No credential ever crosses it. Or the endpoint you configure yourself, same contract.
 - **`stash-tipjar.rawnaldclark.workers.dev/lossless.json`** — the signed relay config and its `.sig`, fetched at every cold start and every 6 hours after by the official release build. This URL *is* in the APK; it is fetched with nothing of yours connected, like the tip jar list on the same host. A plain checkout has no config URL and skips it.
-- **[ARCOD](https://arcod.xyz)** (`api.arcod.xyz`, plus ARCOD's own Supabase project for token refresh) — lossless, only once you connect an ARCOD account
-- **`arcod.xyz`** — ARCOD's older download-job API and the account-connect window, alongside `api.arcod.xyz`
 - **JioSaavn** (`www.jiosaavn.com`, `aac.saavncdn.com`) — the AAC 320 fallback when nothing lossless matched
 - **LRCLIB** (`lrclib.net`) — synced lyrics
 - **Last.fm** (`ws.audioscrobbler.com`) — optional scrobbling, plus artist bios and images. In official release builds the read lookups route through `stash-lastfm-proxy.rawnaldclark.workers.dev`, a caching Worker the project runs: it sees the artist or track being looked up, never your account.
@@ -100,6 +95,7 @@ Stash has no account server, but it isn't a two-service app either. Everything t
 - **MusicBrainz** (`musicbrainz.org`) — artist metadata
 - **GitHub** (`api.github.com`) — the update check
 - **`stash-tipjar.rawnaldclark.workers.dev`** — the public supporters list behind the Home supporter pill. Fetch only; it's told nothing about you.
+- **`stash-share.rawnaldclark.workers.dev`** — shared mixes, only when you share, open or follow one. Sharing a mix sends its name, its songs (title, artist and, when known, album, length, ISRC and Spotify/YouTube IDs), up to four album-art links and, if you choose, a display name; editing it sends the new version, and deleting it sends a delete that takes the link down. Opening or following a mix reads it back; followed mixes are re-checked after syncs and on app start at most every 6 hours. Song links send nothing: Stash reads them on your phone. Nothing about your account, device or listening is sent. The Worker uses your IP address to rate-limit and doesn't store it. Anyone with a mix's link can read it; links can't be guessed and nothing lists them.
 - **Album art CDNs** — `i.scdn.co`, `lh3.googleusercontent.com`, `yt3.googleusercontent.com`, `yt3.ggpht.com`, `i.ytimg.com`, `static.qobuz.com`, `c.saavncdn.com`, and whichever CDN the source that matched a track uses
 
 Four of these run without being asked, whether or not you stream anything: Stash warms its connection to `music.youtube.com` at launch, checks `api.github.com` for a new Stash release on every cold start and again daily, checks for a new yt-dlp once a day, and — in a release build carrying a relay config — fetches that config at launch and every 6 hours.

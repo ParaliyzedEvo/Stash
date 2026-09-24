@@ -87,6 +87,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -178,7 +179,6 @@ fun LibraryScreen(
     var showBatchSave by remember { mutableStateOf(false) }
     var showBatchDelete by remember { mutableStateOf(false) }
     var showFlacConfirm by remember { mutableStateOf(false) }
-    var trackToSave by remember { mutableStateOf<Track?>(null) }
 
     // Snackbar for the batch roll-up summaries.
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -193,6 +193,7 @@ fun LibraryScreen(
     }
     
 
+    val followedPlaylistIds by viewModel.followedPlaylistIds.collectAsStateWithLifecycle()
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
             state = state,
@@ -212,6 +213,8 @@ fun LibraryScreen(
             onAddPlaylistToQueue = viewModel::addPlaylistToQueue,
             onRemovePlaylist = viewModel::removePlaylist,
             onDeletePlaylist = viewModel::deletePlaylist,
+            followedPlaylistIds = followedPlaylistIds,
+            onUnfollowPlaylist = viewModel::unfollowPlaylist,
             onSetPlaylistImage = viewModel::setPlaylistImage,
             onRemovePlaylistImage = viewModel::removePlaylistImage,
             onTogglePlaylistPinned = viewModel::togglePlaylistPinned,
@@ -464,6 +467,8 @@ private fun LibraryContent(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    followedPlaylistIds: Set<Long> = emptySet(),
+    onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
@@ -661,6 +666,8 @@ private fun LibraryContent(
                         onAddPlaylistToQueue = onAddPlaylistToQueue,
                         onRemovePlaylist = onRemovePlaylist,
                         onDeletePlaylist = onDeletePlaylist,
+                        followedPlaylistIds = followedPlaylistIds,
+                        onUnfollowPlaylist = onUnfollowPlaylist,
                         onSetPlaylistImage = onSetPlaylistImage,
                         onRemovePlaylistImage = onRemovePlaylistImage,
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
@@ -1097,6 +1104,8 @@ private fun PlaylistsGrid(
     onAddPlaylistToQueue: (Playlist) -> Unit,
     onRemovePlaylist: (Playlist) -> Unit,
     onDeletePlaylist: (Playlist, Boolean) -> Unit,
+    followedPlaylistIds: Set<Long> = emptySet(),
+    onUnfollowPlaylist: (Playlist) -> Unit = {},
     onSetPlaylistImage: (Long, Uri) -> Unit,
     onRemovePlaylistImage: (Long) -> Unit,
     onTogglePlaylistPinned: (Playlist) -> Unit,
@@ -1105,6 +1114,9 @@ private fun PlaylistsGrid(
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist whose share sheet is open.
+    // Held as an id so the sheet survives rotation; the Playlist is looked up from the list shown.
+    var sharePlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     // Playlist awaiting image picker result.
@@ -1313,8 +1325,18 @@ private fun PlaylistsGrid(
                     selectedPlaylist = null
                 },
             )
+            BottomSheetActionRow(
+                icon = Icons.Default.Share,
+                label = "Share mix",
+                onClick = {
+                    sharePlaylistId = playlist.id
+                    selectedPlaylist = null
+                },
+            )
+            // An active follow is read-only (spec §6): no image edits, and Unfollow replaces Remove/Delete.
+            val followed = playlist.id in followedPlaylistIds
             // Image options — only for custom playlists
-            if (playlist.type == PlaylistType.CUSTOM) {
+            if (playlist.type == PlaylistType.CUSTOM && !followed) {
                 BottomSheetActionRow(
                     icon = Icons.Default.Image,
                     label = if (playlist.artUrl != null) "Change Image" else "Add Image",
@@ -1340,26 +1362,48 @@ private fun PlaylistsGrid(
                 }
             }
 
-            BottomSheetActionRow(
-                icon = Icons.Default.RemoveCircleOutline,
-                label = "Remove Playlist",
-                onClick = {
-                    onRemovePlaylist(playlist)
-                    selectedPlaylist = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Delete,
-                label = "Delete Playlist & Songs",
-                tint = MaterialTheme.colorScheme.error,
-                onClick = {
-                    playlistToDelete = playlist
-                    selectedPlaylist = null
-                },
-            )
+            if (followed) {
+                // Unfollow removes the playlist (and can take its downloads): second tap confirms.
+                var confirmUnfollow by remember(playlist.id) { mutableStateOf(false) }
+                BottomSheetActionRow(
+                    icon = Icons.Default.RemoveCircleOutline,
+                    label = if (confirmUnfollow) "Tap again to unfollow" else "Unfollow",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        if (confirmUnfollow) {
+                            onUnfollowPlaylist(playlist)
+                            selectedPlaylist = null
+                        } else {
+                            confirmUnfollow = true
+                        }
+                    },
+                )
+            } else {
+                BottomSheetActionRow(
+                    icon = Icons.Default.RemoveCircleOutline,
+                    label = "Remove Playlist",
+                    onClick = {
+                        onRemovePlaylist(playlist)
+                        selectedPlaylist = null
+                    },
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Delete,
+                    label = "Delete Playlist & Songs",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        playlistToDelete = playlist
+                        selectedPlaylist = null
+                    },
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    sharePlaylistId?.let { id -> playlists.firstOrNull { it.id == id } }?.let {
+        com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylistId = null })
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────
@@ -1522,6 +1566,22 @@ private fun TracksTab(
             // Bottom padding for gesture navigation inset
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // ── Save to Playlist sheet (single-track) ───────────────────────────
+    trackToSave?.let { track ->
+        com.stash.core.ui.components.SaveToPlaylistSheet(
+            playlists = userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                onSaveToPlaylist(track.id, playlistId)
+                trackToSave = null
+            },
+            onCreatePlaylist = { name ->
+                onCreatePlaylistWithTrack(name, track.id)
+                trackToSave = null
+            },
+            onDismiss = { trackToSave = null },
+        )
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────

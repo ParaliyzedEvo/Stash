@@ -1493,6 +1493,12 @@ class StashPlaybackService : MediaLibraryService() {
                         // driving — worse UX than not seeing them at all. Revisit
                         // when streaming-aware Auto support lands.
                         val visible = playlistDao.getAllVisible(includeStreamable = false).first()
+                            // getAllVisible always shows the user's own playlists (Library); here one
+                            // with downloads off still needs a downloaded track, as before.
+                            .filter { p ->
+                                !p.sourceId.startsWith("custom_") || p.syncEnabled ||
+                                    playlistDao.getTracksForPlaylist(p.id).any { it.isDownloaded }
+                            }
                         // ONE "Liked Songs" row for every like source (likedTracksForAuto).
                         val likedCount = if (visible.any { it.isLikedPlaylist() }) likedTracksForAuto().size else 0
                         val likedItem = if (likedCount == 0) null else MediaItem.Builder()

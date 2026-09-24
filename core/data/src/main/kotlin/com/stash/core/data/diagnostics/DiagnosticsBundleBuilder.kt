@@ -5,25 +5,39 @@ import android.net.Uri
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SourceAccountEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncStepResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Assembles a single, self-contained diagnostics bundle for the user to share
  * when reporting a problem. Pulls a snapshot from every relevant subsystem
- * (auth, sync history, downloads, blocklist, crash reports, logs), assembles
- * them into a plain-text report, then runs the WHOLE thing through
- * [DiagnosticsRedactor] as a final secret-scrubbing pass.
+ * (auth, sync history, downloads, blocklist, crash reports, logs, plus every
+ * [DiagnosticsContributor] bound by another module), assembles them into a
+ * plain-text report, then runs the WHOLE thing through [DiagnosticsRedactor]
+ * as a final secret-scrubbing pass.
+ *
+ * What the user shares is a ZIP: `report.txt` (the same text the preview shows,
+ * with a short log tail inline) plus the full rolling log capture and the
+ * recent crash files, each redacted on the way in. A text-only bundle capped
+ * at 1,500 log lines covered a couple of minutes under load — one noisy tag
+ * with stack traces ate most of it, and a sync that ran ten minutes before the
+ * report was already gone.
  *
  * PRIVACY: auth is reported as connected/not-connected booleans plus
  * connection timestamps — never tokens, emails, display names, or avatar URLs.
@@ -42,16 +56,20 @@ class DiagnosticsBundleBuilder @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackBlocklistDao: TrackBlocklistDao,
     private val sourceAccountDao: SourceAccountDao,
+    private val playlistDao: PlaylistDao,
+    private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
     private val crashFileStore: CrashFileStore,
     private val logcatCapture: LogcatCapture,
+    private val contributors: Set<@JvmSuppressWildcards DiagnosticsContributor>,
 ) {
 
-    /** A built bundle: the redacted report text, the on-disk file, and a shareable URI. */
+    /** A built bundle: the redacted report text, the on-disk zip, a shareable URI and its MIME type. */
     data class DiagnosticsBundle(
         val text: String,
         val file: File,
         val contentUri: Uri,
+        val mimeType: String,
     )
 
     /**
@@ -59,16 +77,27 @@ class DiagnosticsBundleBuilder @Inject constructor(
      * independently fault-isolated; the final pass redacts the assembled text.
      */
     internal suspend fun buildText(): String {
-        val sections = listOf(
-            section("Header") { crashFileStore.deviceMetadataBlock() },
-            section("Connection") { connectionSection() },
-            section("Recent sync history") { syncHistorySection() },
-            section("Downloads") { downloadsSection() },
-            section("Counts") { countsSection() },
-            section("Recent crash reports") { crashReportsSection() },
-            section("Process exit reasons") { exitReasonsSection() },
-            section("Recent logs") { "== Recent logs ==\n" + logcatCapture.recentLogs(1500) },
-        )
+        val sections = buildList {
+            add(section("Header") { crashFileStore.deviceMetadataBlock() })
+            add(section("Connection") { connectionSection() })
+            add(section("Library") { librarySection() })
+            add(section("Recent sync history") { syncHistorySection() })
+            add(section("Downloads") { downloadsSection() })
+            add(section("Counts") { countsSection() })
+            // Sections owned by modules this one cannot see. Sorted by title so
+            // the report reads in the same order on every device.
+            contributors.sortedBy { it.title }.forEach { c ->
+                add(section(c.title) { "== ${c.title} ==\n" + c.section() })
+            }
+            add(section("Recent crash reports") { crashReportsSection() })
+            add(section("Process exit reasons") { exitReasonsSection() })
+            add(
+                section("Recent logs") {
+                    "== Recent logs (last $INLINE_LOG_LINES lines; the shared file carries the full capture) ==\n" +
+                        logcatCapture.recentLogs(INLINE_LOG_LINES)
+                },
+            )
+        }
         val assembled = sections.joinToString("\n\n")
         return DiagnosticsRedactor.redact(assembled)
     }
@@ -222,6 +251,23 @@ class DiagnosticsBundleBuilder @Inject constructor(
         }
     }
 
+    // ── Library: what sync has built, as counts (never playlist names) ─────
+
+    private suspend fun librarySection(): String {
+        val t = trackDao.diagnosticsTotals()
+        val rows = playlistDao.diagnosticsCounts()
+        return buildString {
+            appendLine("== Library ==")
+            appendLine("Tracks: ${t.total} · downloaded ${t.downloaded} · file missing ${t.missingFiles}")
+            appendLine("Active playlists by source/type (total · switched on · never synced · no tracks linked):")
+            if (rows.isEmpty()) appendLine("  none")
+            rows.forEach {
+                appendLine("  ${it.source}/${it.type}: ${it.total} · on ${it.switchedOn} · never synced ${it.neverSynced} · empty ${it.empty}")
+            }
+            append("Inactive playlists: ${playlistDao.inactiveCount()}")
+        }
+    }
+
     // ── Section 5: Counts ───────────────────────────────────────────────────
 
     private suspend fun countsSection(): String {
@@ -253,18 +299,46 @@ class DiagnosticsBundleBuilder @Inject constructor(
     // ── Public entry point ──────────────────────────────────────────────────
 
     /**
-     * Build the bundle and persist it to a single rotating file under
-     * `cacheDir/diagnostics`, deleting any older `stash-diagnostics-*.txt`
-     * first so only the newest remains. Returns a shareable [DiagnosticsBundle].
+     * Build the bundle and persist it as a single rotating zip under
+     * `cacheDir/diagnostics` (older `stash-diagnostics-*` files, zip or the
+     * pre-zip `.txt`, are deleted first so only the newest remains):
+     *
+     *  - `report.txt`        — the redacted report, exactly what the preview shows
+     *  - `logs/<file>.txt`   — the whole rolling logcat capture, redacted per file
+     *  - `crashes/<file>.txt`— the newest [MAX_CRASH_FILES] crash reports, redacted
+     *
+     * A file that cannot be read is skipped, not fatal: the report is the part
+     * that must always ship. Returns a shareable [DiagnosticsBundle].
      */
     suspend fun build(): DiagnosticsBundle {
         val text = buildText()
         val dir = File(context.cacheDir, "diagnostics").apply { mkdirs() }
-        dir.listFiles { f -> f.isFile && f.name.startsWith("stash-diagnostics-") && f.name.endsWith(".txt") }
+        dir.listFiles { f -> f.isFile && f.name.startsWith("stash-diagnostics-") }
             ?.forEach { runCatching { it.delete() } }
-        val file = File(dir, "stash-diagnostics-${System.currentTimeMillis()}.txt")
-        file.writeText(text)
-        val uri = crashFileStore.shareUriFor(file)
-        return DiagnosticsBundle(text = text, file = file, contentUri = uri)
+        val zip = File(dir, "stash-diagnostics-${System.currentTimeMillis()}.zip")
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(zip))).use { out ->
+            out.entry("report.txt", text)
+            logcatCapture.logFiles().forEach { f ->
+                runCatching { out.entry("logs/${f.name}", DiagnosticsRedactor.redact(f.readText())) }
+            }
+            crashFileStore.allCrashFiles().take(MAX_CRASH_FILES).forEach { f ->
+                runCatching { out.entry("crashes/${f.name}", DiagnosticsRedactor.redact(f.readText())) }
+            }
+        }
+        val uri = crashFileStore.shareUriFor(zip)
+        return DiagnosticsBundle(text = text, file = zip, contentUri = uri, mimeType = ZIP_MIME)
+    }
+
+    private fun ZipOutputStream.entry(name: String, content: String) {
+        putNextEntry(ZipEntry(name))
+        write(content.toByteArray())
+        closeEntry()
+    }
+
+    companion object {
+        /** Log lines kept inline in `report.txt`; the zip carries the full capture. */
+        internal const val INLINE_LOG_LINES = 400
+        private const val MAX_CRASH_FILES = 5
+        const val ZIP_MIME = "application/zip"
     }
 }

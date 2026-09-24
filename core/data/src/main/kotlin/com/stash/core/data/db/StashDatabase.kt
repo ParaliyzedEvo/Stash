@@ -18,6 +18,7 @@ import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.LyricsDao
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
+import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.dao.SourceAccountDao
 import com.stash.core.data.db.dao.SpotifyResolutionDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
@@ -42,6 +43,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
+import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.SourceAccountEntity
 import com.stash.core.data.db.entity.SpotifyResolutionEntity
 import com.stash.core.data.db.entity.StashMixRecipeEntity
@@ -94,8 +96,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
         ArtistImageEntity::class,
+        SharedMixEntity::class,
     ],
-    version = 49,
+    version = 50,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -140,6 +143,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun listenSubmissionDao(): ListenSubmissionDao
 
     abstract fun syncUndoDao(): SyncUndoDao
+
+    abstract fun sharedMixDao(): SharedMixDao
 
 
     companion object {
@@ -1176,6 +1181,37 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v47 -> v48: shared mixes (spec docs/superpowers/specs/2026-09-23-shared-mixes-design.md §5).
+         * One row per playlist that this phone shares (OWNER) or follows (FOLLOWER). Additive.
+         */
+        val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shared_mixes` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `share_id` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `edit_key` TEXT,
+                        `name` TEXT NOT NULL,
+                        `version` INTEGER NOT NULL,
+                        `content_hash` TEXT NOT NULL,
+                        `auto_update` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `shared_by` TEXT,
+                        `missing_count` INTEGER NOT NULL,
+                        `notice_pending` INTEGER NOT NULL,
+                        `last_checked_at` INTEGER,
+                        PRIMARY KEY(`playlist_id`),
+                        FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_shared_mixes_share_id` ON `shared_mixes` (`share_id`)")
+            }
+        }
+
+        /**
          * v40 → v41: un-stamp every loudness measurement that stored the
          * ebur128 gating floor (-70.0 LUFS).
          *
@@ -1278,13 +1314,13 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v47 -> v48: word-synced lyrics. `lyrics.ttml` is the raw Apple-style TTML (source of
+         * v48 -> v49: word-synced lyrics. `lyrics.ttml` is the raw Apple-style TTML (source of
          * truth for the syllable renderer; `synced_lrc` is derived from it so every LRC consumer
          * keeps working). `ttml_checked_at` is the upgrade backfill's "asked, Apple has nothing"
          * stamp: NULL = never tried, so the worker terminates instead of re-polling misses.
          * Purely additive.
          */
-        val MIGRATION_47_48 = object : Migration(47, 48) {
+        val MIGRATION_48_49 = object : Migration(48, 49) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE lyrics ADD COLUMN ttml TEXT")
                 db.execSQL("ALTER TABLE lyrics ADD COLUMN ttml_checked_at INTEGER")
@@ -1292,10 +1328,10 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v48 -> v49: per-track lyrics sync offset (`lyrics.sync_offset_ms`, signed milliseconds,
+         * v49 -> v50: per-track lyrics sync offset (`lyrics.sync_offset_ms`, signed milliseconds,
          * default 0). Positive delays lyrics, negative shows them earlier. Purely additive.
          */
-        val MIGRATION_48_49 = object : Migration(48, 49) {
+        val MIGRATION_49_50 = object : Migration(49, 50) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE lyrics ADD COLUMN sync_offset_ms INTEGER NOT NULL DEFAULT 0")
             }
@@ -1363,6 +1399,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_46_47,
                 MIGRATION_47_48,
                 MIGRATION_48_49,
+                MIGRATION_49_50,
             )
         }
     }

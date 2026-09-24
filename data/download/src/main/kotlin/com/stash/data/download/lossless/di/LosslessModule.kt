@@ -1,9 +1,13 @@
 package com.stash.data.download.lossless.di
 
+import com.stash.core.data.diagnostics.DiagnosticsContributor
 import com.stash.data.download.lossless.LosslessSource
+import com.stash.data.download.lossless.diagnostics.LosslessDiagnosticsContributor
+import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.IntoSet
 import dagger.multibindings.Multibinds
 
 /**
@@ -25,4 +29,9 @@ abstract class LosslessModule {
     /** Empty default set so injecting `Set<LosslessSource>` always works. */
     @Multibinds
     abstract fun losslessSources(): Set<LosslessSource>
+
+    /** The diagnostics bundle's "Lossless" section: mode, routing, relay answers, reachability. */
+    @Binds
+    @IntoSet
+    abstract fun losslessDiagnostics(impl: LosslessDiagnosticsContributor): DiagnosticsContributor
 }

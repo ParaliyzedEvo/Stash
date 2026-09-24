@@ -26,9 +26,7 @@ import kotlinx.coroutines.sync.withLock
 data class QbdlxLoginCredential(val token: String, val appId: String, val appSecret: String)
 
 /**
- * Its own preferences DataStore (mirrors
- * [com.stash.data.download.lossless.arcod.ArcodCredentialStore]) so the qbdlx
- * token state lives apart from the cross-source
+ * Its own preferences DataStore so the qbdlx token state lives apart from the cross-source
  * [com.stash.data.download.lossless.LosslessSourcePreferences] schema.
  */
 private val Context.qbdlxCredentialsDataStore: DataStore<Preferences> by preferencesDataStore(

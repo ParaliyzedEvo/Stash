@@ -274,7 +274,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 .distinctUntilChanged()
                 .collect { idx ->
                     // Quality layer: upgrade the immediate next-up via the full
-                    // chain (qbdlx/arcod FLAC) so the common auto-advance never
+                    // chain (qbdlx FLAC) so the common auto-advance never
                     // falls back to the cold LazyResolvingDataSource path.
                     prefetchNextTrack()
                 }
@@ -440,8 +440,7 @@ class PlayerRepositoryImpl @Inject constructor(
     /**
      * Track ids with a next-up prefetch resolve currently in flight. Dedups
      * the three prefetchNextTrack call sites so a single advance can't fan out
-     * concurrent identical resolves (quota-burns a job-based source like
-     * arcod). A [java.util.concurrent.ConcurrentHashMap]-backed set so adds are
+     * concurrent identical resolves (each spends lossless quota). A [java.util.concurrent.ConcurrentHashMap]-backed set so adds are
      * atomic across the resolves running on the scope's dispatcher.
      */
     private val prefetchInFlight: MutableSet<Long> =
@@ -758,9 +757,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // explicit kick can fire for the same next-up, and
         // the fresh-cache check above can't dedup CONCURRENT resolves of the
         // same next-up (none has cached yet). Without this guard a single
-        // advance fans out up to 3 identical resolves — for a slow, job-based,
-        // 50/hr-capped source like arcod that's 3 render jobs and 3× the quota
-        // burn (verified on-device 2026-06-21). Claim the id; a racing call for
+        // advance fans out up to 3 identical resolves — 3× the quota burn on a
+        // capped lossless source (verified on-device 2026-06-21). Claim the id; a racing call for
         // the same next-up returns immediately and lets the winner cache it.
         if (!prefetchInFlight.add(next.id)) return
 
@@ -1960,7 +1958,7 @@ class PlayerRepositoryImpl @Inject constructor(
                         // the prefetch upgrades a slot, refreshControllerMediaItem
                         // bakes the real URL into the MediaItem URI and the cache
                         // is never consulted — YouTube slots then self-heal via
-                        // RefreshingDataSource, while qbdlx/arcod slots get
+                        // RefreshingDataSource, while qbdlx slots get
                         // nothing. Closing that is a separate change.
                         StreamErrorCascadeGuard.Verdict.RetrySameItem -> {
                             current?.mediaMetadata?.extras

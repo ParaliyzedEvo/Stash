@@ -38,4 +38,5 @@ dependencies {
     // Matches the test harness in :feature:search — see SearchViewModelTest.
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
 }

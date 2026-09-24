@@ -9,12 +9,14 @@
  *   anything else: base cools 5 min. Never 200 with an error body.
  *
  * Endpoints:
- *   GET /v1/qobuz/file?track_id=&format_id=   signed (X-Stash-Install/-Ts/-Auth), X-Stash-Version: 1
+ *   GET /v1/qobuz/file?track_id=&format_id=   signed (X-Stash-Install/-Ts/-Auth), X-Stash-Version: 1,
+ *                                             optional X-Stash-Purpose: stream | download
  *   GET /v1/status                            reachability probe for the Settings "Test" button
  *
  * State: D1 (accounts' rotation state, the shared mint cache, daily quotas).
  * Secrets: RELAY_KEY, RELAY_KEY_PREV (optional), QOBUZ_ACCOUNTS. Deploy: see README.md.
  */
+import { createHmac } from "node:crypto";
 import { verifyMint } from "./auth.js";
 import { mintFromQobuz } from "./qobuz.js";
 import {
@@ -77,9 +79,20 @@ async function mint(request, url, env, fetchImpl, nowSec) {
     const caps = vars(env);
     // Exhaustion is 503, never 404 (spec §5.5). Read-then-bump can overshoot by a few under
     // concurrency; that is harmless and saves a write on every rejected request.
-    if ((await readQuota(env.DB, day, "global")) >= caps.global) {
+    const used = await readQuota(env.DB, day, "global");
+    if (used >= caps.global) {
         console.log(`503 global daily cap ${caps.global} reached`);
         return json({ error: "busy" }, 503, { "Retry-After": "600" });
+    }
+    // Streams first. A download can wait and a listener cannot, so a download is only served
+    // while the day's usage is at or behind a straight pace line (plus a little headroom) —
+    // the pool then lasts to midnight UTC for the people pressing play, and downloads take
+    // whatever the pace leaves. Unlabelled requests (older apps) count as streams. 429 +
+    // "paced" is only ever sent to a client that labelled the request, so it knows not to cool
+    // the relay; it retries after Retry-After. No quota, no Qobuz call.
+    if (h("X-Stash-Purpose") === "download") {
+        const wait = pacedWaitSec(used, caps, nowSec);
+        if (wait > 0) return json({ error: "paced" }, 429, { "Retry-After": String(wait) });
     }
     if ((await readQuota(env.DB, day, "i:" + install)) >= caps.install) {
         return json({ error: "rate_limited" }, 429, { "Retry-After": "3600" });
@@ -100,9 +113,9 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         // Country/colo: the Worker runs — and calls Qobuz from — the colo nearest the phone, so
         // if Qobuz applies rights by calling IP, refusals will follow the colo, not the account.
         const cf = request.cf || {};
-        console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} cc=${cf.country || "?"} colo=${cf.colo || "?"} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
+        console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} purpose=${h("X-Stash-Purpose") || "-"} cc=${cf.country || "?"} colo=${cf.colo || "?"} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
         if (r.kind === "ok" || r.kind === "locked") {
-            const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install)];
+            const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install, ipTag(env, h("CF-Connecting-IP")))];
             if (r.kind === "ok" && r.etsp) writes.push(putCachedStmt(env.DB, trackId, formatId, r)); // no etsp → serve once, never cache
             await env.DB.batch(writes);
             return r.kind === "ok" ? ok(r.url, r.formatId, r.bitDepth, r.sampleRateHz, "MISS") : json({ error: "not_available" }, 404);
@@ -113,6 +126,28 @@ async function mint(request, url, env, fetchImpl, nowSec) {
     return json({ error: "busy" }, 503, { "Retry-After": "60" });
 }
 
+/**
+ * Seconds until a download may be served: 0 when `used` is at or under the pace line
+ * `global × (fraction of the UTC day elapsed + headroom)`, else the time the line takes to
+ * reach `used`, plus a minute. Never past midnight: the global cap (checked first) keeps
+ * `used` under `global`, so the line always gets there today.
+ */
+export function pacedWaitSec(used, caps, nowSec) {
+    const elapsed = nowSec % 86400;
+    const reachedAt = (used / caps.global - caps.paceHeadroomPct / 100) * 86400;
+    return reachedAt <= elapsed ? 0 : Math.ceil(reachedAt - elapsed) + 60;
+}
+
+/**
+ * A short salted hash of the caller's IP for the abuse report (many installs behind one IP is
+ * how a scraper rotating install ids shows up), or null when IP_SALT is unset. The salt is a
+ * Worker secret, never the relay key: that key is public, and with it the whole IPv4 space
+ * would reverse in minutes.
+ */
+function ipTag(env, ip) {
+    return env.IP_SALT && ip ? createHmac("sha256", env.IP_SALT).update(ip).digest("hex").slice(0, 16) : null;
+}
+
 function vars(env) {
     const n = (v, d) => (Number.parseInt(v, 10) > 0 ? Number.parseInt(v, 10) : d);
     return {
@@ -120,6 +155,8 @@ function vars(env) {
         install: n(env.INSTALL_DAILY_CAP, 100),
         hourly: n(env.ACCOUNT_HOURLY_CAP, 20),
         daily: n(env.ACCOUNT_DAILY_CAP, 200),
+        // "0" is a legitimate headroom, so read it without n()'s > 0 rule.
+        paceHeadroomPct: Number.isFinite(Number.parseInt(env.DOWNLOAD_PACE_HEADROOM_PCT, 10)) ? Number.parseInt(env.DOWNLOAD_PACE_HEADROOM_PCT, 10) : 10,
     };
 }
 

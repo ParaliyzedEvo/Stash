@@ -57,7 +57,8 @@ class LibraryViewModelLikedOrderTest {
     // Spotify likes, playlist-position order: Apple then Mango.
     private val apple = Track(id = 2L, title = "Apple", artist = "B", dateAdded = 2_000L, spotifySavedAt = 3_000L)
     private val mango = Track(id = 3L, title = "Mango", artist = "C", dateAdded = 4_000L, spotifySavedAt = 4_500L)
-    // No like timestamp at all (older row): the library add date stands in.
+    // No like timestamp at all (a synced like): keeps its incoming position order, after
+    // the stamped likes. dateAdded is download time, so it must NOT decide the order.
     private val plum = Track(id = 4L, title = "Plum", artist = "D", dateAdded = 6_000L)
 
     @Test fun recent_means_recently_liked_across_sources() = runTest {
@@ -65,8 +66,21 @@ class LibraryViewModelLikedOrderTest {
 
         val ids = vm.likedTracks.first { it.size == 4 }.map { it.id }
 
-        // Plum 6000 (add date fallback) > Zebra 5000 > Mango 4500 > Apple 3000
-        assertThat(ids).containsExactly(4L, 1L, 3L, 2L).inOrder()
+        // Stamped likes first, newest like on top: Zebra 5000 > Mango 4500 > Apple 3000.
+        // Plum has no like timestamp, so it follows in incoming order despite dateAdded 6000.
+        assertThat(ids).containsExactly(1L, 3L, 2L, 4L).inOrder()
+    }
+
+    @Test fun synced_likes_without_timestamps_keep_incoming_order() {
+        // Spotify position order, newest-saved first. dateAdded is download time and is
+        // deliberately out of order here — it must not reorder anything.
+        val a = Track(id = 10L, title = "A", artist = "X", dateAdded = 9_000L)
+        val b = Track(id = 11L, title = "B", artist = "X", dateAdded = 1_000L)
+        val c = Track(id = 12L, title = "C", artist = "X", dateAdded = 5_000L)
+
+        val ids = sortLikedTracks(listOf(a, b, c), SortOrder.RECENT).map { it.id }
+
+        assertThat(ids).containsExactly(10L, 11L, 12L).inOrder()
     }
 
     @Test fun the_sort_control_applies_to_the_liked_tab() = runTest {
@@ -111,6 +125,7 @@ class LibraryViewModelLikedOrderTest {
             },
             libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
             artistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
+            sharedMixRepository = org.mockito.kotlin.mock { on { observeActiveFollowedIds() }.thenReturn(kotlinx.coroutines.flow.flowOf(emptyList())) },
         )
     }
 }

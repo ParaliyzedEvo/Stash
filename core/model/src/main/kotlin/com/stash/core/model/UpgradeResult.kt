@@ -22,4 +22,11 @@ sealed interface UpgradeResult {
      * without leaking implementation detail to the snackbar.
      */
     data object Error : UpgradeResult
+
+    /**
+     * The relay asked this upgrade to wait: the day's pool is ahead of pace and
+     * streams come first. Only a background sweep (`sweep = true`) is ever paced;
+     * the track is fine — try again later.
+     */
+    data object Paced : UpgradeResult
 }

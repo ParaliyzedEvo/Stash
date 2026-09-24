@@ -5,7 +5,9 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.relay.LosslessRelayClient
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +31,9 @@ import kotlinx.coroutines.flow.onEach
  *     recovered, or user pasted a different value than the rejected one).
  *  3. [AggregatorRateLimiter.circuitResetEvents] emits any source id
  *     (kennyy outage cleared, or user manually reset the breaker).
+ *  4. [LosslessRelayClient.pacedEvents]: the relay asked a download to wait
+ *     (streams first). Enqueued with that wait as its initial delay; the
+ *     worker then retries on WorkManager's backoff while the pool stays paced.
  *
  * No periodic polling — these signals cover every state transition
  * that matters. Worker is enqueued under a unique work name with
@@ -49,6 +54,7 @@ class LosslessRetryScheduler @Inject constructor(
     losslessPrefs: LosslessSourcePreferences,
     qobuzSource: QobuzSource,
     rateLimiter: AggregatorRateLimiter,
+    private val relayClient: LosslessRelayClient,
 ) {
 
     /**
@@ -121,10 +127,18 @@ class LosslessRetryScheduler @Inject constructor(
         rateLimiterRef.circuitResetEvents
             .onEach { enqueue() }
             .launchIn(scope)
+
+        // 4. The relay paced a download. KEEP: while a sweep is already waiting or
+        // running, it covers this track too.
+        relayClient.pacedEvents
+            .onEach { waitSec -> enqueue(initialDelaySec = waitSec) }
+            .launchIn(scope)
     }
 
-    private fun enqueue() {
-        val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>().build()
+    private fun enqueue(initialDelaySec: Long = 0) {
+        val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>()
+            .setInitialDelay(initialDelaySec, TimeUnit.SECONDS)
+            .build()
         workManagerProvider().enqueueUniqueWork(
             LosslessRetryWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.KEEP,

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 48,
-    "identityHash": "e8909951f4bac68604c97c33407d84a9",
+    "identityHash": "7c74e936f6f04c84e5263fddb49c627a",
     "entities": [
       {
         "tableName": "tracks",
@@ -1712,7 +1712,7 @@
       },
       {
         "tableName": "lyrics",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `plain_text` TEXT, `synced_lrc` TEXT, `instrumental` INTEGER NOT NULL, `language` TEXT, `source` TEXT NOT NULL, `source_lyrics_id` TEXT, `fetched_at` INTEGER NOT NULL, `ttml` TEXT, `ttml_checked_at` INTEGER, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `plain_text` TEXT, `synced_lrc` TEXT, `instrumental` INTEGER NOT NULL, `language` TEXT, `source` TEXT NOT NULL, `source_lyrics_id` TEXT, `fetched_at` INTEGER NOT NULL, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -1757,16 +1757,6 @@
             "columnName": "fetched_at",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "ttml",
-            "columnName": "ttml",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "ttmlCheckedAt",
-            "columnName": "ttml_checked_at",
-            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -2180,11 +2170,122 @@
             "artist_name"
           ]
         }
+      },
+      {
+        "tableName": "shared_mixes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`playlist_id` INTEGER NOT NULL, `share_id` TEXT NOT NULL, `role` TEXT NOT NULL, `edit_key` TEXT, `name` TEXT NOT NULL, `version` INTEGER NOT NULL, `content_hash` TEXT NOT NULL, `auto_update` INTEGER NOT NULL, `status` TEXT NOT NULL, `shared_by` TEXT, `missing_count` INTEGER NOT NULL, `notice_pending` INTEGER NOT NULL, `last_checked_at` INTEGER, PRIMARY KEY(`playlist_id`), FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "playlistId",
+            "columnName": "playlist_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shareId",
+            "columnName": "share_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "editKey",
+            "columnName": "edit_key",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "content_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoUpdate",
+            "columnName": "auto_update",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sharedBy",
+            "columnName": "shared_by",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "missingCount",
+            "columnName": "missing_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noticePending",
+            "columnName": "notice_pending",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastCheckedAt",
+            "columnName": "last_checked_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "playlist_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_shared_mixes_share_id",
+            "unique": true,
+            "columnNames": [
+              "share_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_shared_mixes_share_id` ON `${TABLE_NAME}` (`share_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlists",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "playlist_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e8909951f4bac68604c97c33407d84a9')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7c74e936f6f04c84e5263fddb49c627a')"
     ]
   }
 }

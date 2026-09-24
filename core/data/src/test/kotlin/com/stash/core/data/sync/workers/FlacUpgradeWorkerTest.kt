@@ -68,7 +68,7 @@ class FlacUpgradeWorkerTest {
     ): LosslessUpgrader {
         val queue = ArrayDeque(results.toList())
         return object : LosslessUpgrader {
-            override suspend fun upgradeToLossless(track: Track): UpgradeResult {
+            override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult {
                 upgradeCalls?.incrementAndGet()
                 return queue.removeFirst()
             }
@@ -115,6 +115,23 @@ class FlacUpgradeWorkerTest {
         verify { syncNotificationManager.showFlacUpgradeSummary(upgraded = 1, noMatch = 1, failed = 1) }
     }
 
+    @Test fun `a paced sweep stops, leaves the rest pending, and retries later`() = runBlocking {
+        val ids = seedTracks(3)
+        db.flacUpgradeQueueDao().startBatch(ids)
+        val dao = db.flacUpgradeQueueDao()
+        val calls = AtomicInteger()
+
+        val result = buildWorker(
+            upgraderReturning(UpgradeResult.Upgraded, UpgradeResult.Paced, UpgradeResult.Upgraded, upgradeCalls = calls),
+        ).doWork()
+
+        assertEquals(ListenableWorker.Result.retry(), result)
+        assertEquals(2, calls.get()) // the third row was never tried
+        assertEquals(1, dao.countByStatus(FlacUpgradeStatus.DONE))
+        assertEquals(2, dao.countByStatus(FlacUpgradeStatus.PENDING))
+        assertEquals(0, dao.countByStatus(FlacUpgradeStatus.NO_MATCH))
+    }
+
     @Test fun `rows whose track vanished are skipped, the rest still process`() = runBlocking {
         val ids = seedTracks(2)
         db.flacUpgradeQueueDao().startBatch(ids)
@@ -132,7 +149,7 @@ class FlacUpgradeWorkerTest {
 
     @Test fun `empty queue succeeds immediately without touching the upgrader`() = runBlocking {
         val untouchable = object : LosslessUpgrader {
-            override suspend fun upgradeToLossless(track: Track): UpgradeResult =
+            override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult =
                 error("upgrader must not be called for an empty queue")
 
             override suspend fun isLosslessEnabled(): Boolean = true

@@ -5,6 +5,9 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import com.stash.data.download.lossless.qobuz.QobuzSource
+import com.stash.data.download.lossless.relay.LosslessRelayClient
+import io.mockk.slot
+import java.util.concurrent.TimeUnit
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -62,6 +65,10 @@ class LosslessRetrySchedulerTest {
     private val rateLimiter: AggregatorRateLimiter = mockk {
         every { circuitResetEvents } returns resetEvents
     }
+    private val pacedEvents = MutableSharedFlow<Long>(extraBufferCapacity = 8)
+    private val relayClient: LosslessRelayClient = mockk {
+        every { pacedEvents } returns this@LosslessRetrySchedulerTest.pacedEvents
+    }
 
     private fun newSubject(scope: kotlinx.coroutines.CoroutineScope): LosslessRetryScheduler {
         val subject = LosslessRetryScheduler(
@@ -69,6 +76,7 @@ class LosslessRetrySchedulerTest {
             losslessPrefs = losslessPrefs,
             qobuzSource = qobuzSource,
             rateLimiter = rateLimiter,
+            relayClient = relayClient,
         )
         subject.scope = scope
         subject.workManagerProvider = { workManager }
@@ -137,5 +145,19 @@ class LosslessRetrySchedulerTest {
                 any<OneTimeWorkRequest>(),
             )
         }
+    }
+
+    @Test
+    fun `a paced download enqueues the sweep delayed by the relay's wait`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+        val request = slot<OneTimeWorkRequest>()
+        every {
+            workManager.enqueueUniqueWork(LosslessRetryWorker.UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP, capture(request))
+        } returns mockk(relaxed = true)
+
+        pacedEvents.emit(7980)
+        advanceUntilIdle()
+
+        org.junit.Assert.assertEquals(TimeUnit.SECONDS.toMillis(7980), request.captured.workSpec.initialDelay)
     }
 }

@@ -244,6 +244,10 @@ class DiffWorker @AssistedInject constructor(
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
             var newTrackCount = 0
             var playlistsDiffed = 0
+            // For the one summary line below: the per-playlist skip lines are
+            // debug-level and scattered, and "why is my playlist empty" starts here.
+            var skippedSwitchedOff = 0
+            var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
                 // Pick the mode for this specific playlist's source so a
@@ -278,6 +282,7 @@ class DiffWorker @AssistedInject constructor(
                     !streamingMode
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
+                    skippedSwitchedOff++
                     continue
                 }
 
@@ -288,6 +293,7 @@ class DiffWorker @AssistedInject constructor(
                     localSnapshotId == playlistSnapshot.snapshotId
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' unchanged, skipping")
+                    skippedUnchanged++
                     continue
                 }
 
@@ -378,6 +384,13 @@ class DiffWorker @AssistedInject constructor(
             if (cleaned > 0) {
                 Log.i(TAG, "Cleaned $cleaned orphaned track(s) after diff")
             }
+
+            Log.i(
+                TAG,
+                "diff summary: ${playlistSnapshots.size} fetched, $skippedSwitchedOff skipped (switched off), " +
+                    "$skippedUnchanged skipped (unchanged snapshot), $newTrackCount new tracks, " +
+                    "streamingMode=$streamingMode",
+            )
 
             // Update sync history with counts.
             syncHistoryDao.updateCounts(

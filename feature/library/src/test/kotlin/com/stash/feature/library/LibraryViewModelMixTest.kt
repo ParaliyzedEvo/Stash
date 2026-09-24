@@ -154,5 +154,6 @@ class LibraryViewModelMixTest {
         libraryPreferencesStore = libraryPreferencesStore,
         libraryDeepLinkController = com.stash.core.data.navigation.LibraryDeepLinkController(),
         artistImageDao = artistImageDao,
+        sharedMixRepository = org.mockito.kotlin.mock { on { observeActiveFollowedIds() }.thenReturn(kotlinx.coroutines.flow.flowOf(emptyList())) },
     )
 }

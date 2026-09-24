@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -168,6 +169,8 @@ fun HomeScreen(
     onNavigateToMixBuilder: (Long?) -> Unit = {},
     // Task 7 wires the actual mix-browse destination; today a no-op from the host.
     onSeeAllMixes: (MixRail) -> Unit = {},
+    onReportIssue: () -> Unit = {},
+    onShareMix: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
@@ -297,7 +300,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Open a bug or feature request on GitHub",
+                                        text = "Grab diagnostics, then open GitHub",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -312,7 +315,10 @@ fun HomeScreen(
                             },
                             onClick = {
                                 showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_ISSUE_URL) }
+                                // The diagnostics preview first (Share / Copy), with
+                                // the GitHub link at its foot — a bug filed with the
+                                // report attached is one nobody has to ask about.
+                                onReportIssue()
                             },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -391,9 +397,6 @@ fun HomeScreen(
                     .padding(bottom = 12.dp),
             )
         }
-
-        // ── Powered-by-ARCOD strip: removed 2026-07-01 while ARCOD is parked
-        // (host down for us). PartnerStrip + ArcodPartner kept for re-enabling.
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
@@ -814,6 +817,14 @@ fun HomeScreen(
                         actionSheetMixId = null
                     },
                 )
+                MixActionRow(
+                    icon = Icons.Default.Share,
+                    label = "Share mix",
+                    onClick = {
+                        onShareMix(id)
+                        actionSheetMixId = null
+                    },
+                )
                 Spacer(Modifier.height(12.dp))
             }
         }
@@ -1033,11 +1044,10 @@ private fun LosslessConnectBanner(
  *
  * The two surfaces agree on the states that matter, but they are NOT the same
  * predicate, deliberately: Home keys on `LosslessAvailability.anyUserOwned`
- * (BYO login || custom endpoint || ARCOD) so a dead PUBLIC relay cannot hide
- * the "connect your own account" offer — that outage is what the banner is
- * for. Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
- * endpoint || a config relay), which counts relays and excludes ARCOD, and its
- * call sites re-add `&& !arcodConnected`. So they diverge on exactly one case:
+ * (BYO login || custom endpoint) so a dead PUBLIC relay cannot hide the
+ * "connect your own account" offer — that outage is what the banner is for.
+ * Settings keys on `qbdlxExpired` (!qbdlxEnabled: BYO login || custom
+ * endpoint || a config relay), which counts relays. So they diverge on exactly one case:
  * a user with nothing but a public config relay still gets this banner, and
  * should — Home asks "is there anything of yours to connect?", Settings asks
  * "is what you configured still a path?".
@@ -1110,7 +1120,6 @@ private data class Supporter(
 // v0.9.13: report-an-issue link shown as a wrench icon next to the
 // wordmark on Home. Tap → GitHub new-issue form so users can file
 // bugs without leaving the project. Edit when the repo URL changes.
-private const val STASH_ISSUE_URL = "https://github.com/rawnaldclark/Stash/issues/new"
 
 // v0.9.38+: Discord invite shown as a chat-bubble icon (blurple-tinted)
 // to the left of the wrench. Tap → opens the invite in the default

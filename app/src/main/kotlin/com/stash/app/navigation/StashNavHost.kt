@@ -71,11 +71,11 @@ fun StashNavHost(
                 },
                 // Home's lossless-offline banner routes through onNavigateToSettings
                 // (Settings › Audio), where every lossless path — your Qobuz account,
-                // a relay endpoint, ARCOD — is set up. ArcodConnectRoute is reached
-                // from there, not from Home.
+                // a relay endpoint — is set up.
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
+                onShareMix = { id -> navController.navigate(PlaylistDetailRoute(id, openShare = true)) },
                 // Liked card: the ViewModel queued the Liked focus; perform the
                 // canonical tab switch so Back + bottom-bar state behave exactly
                 // like tapping the Library tab — then pop any RESTORED detail
@@ -110,6 +110,8 @@ fun StashNavHost(
                 onSeeAllMixes = { rail ->
                     navController.navigate(MixBrowseRoute(rail.name))
                 },
+                // Report an issue = diagnostics preview first, GitHub from there.
+                onReportIssue = { navController.navigate(DiagnosticsPreviewRoute) },
             )
         }
         composable<PlaylistBrowseRoute> {
@@ -244,7 +246,6 @@ fun StashNavHost(
                 onBack = { navController.popBackStack() },
                 onNavigateToEqualizer = { navController.navigate(EqualizerRoute) },
                 onNavigateToSquidWtfCaptcha = { navController.navigate(SquidWtfCaptchaRoute) },
-                onNavigateToArcodConnect = { navController.navigate(ArcodConnectRoute) },
                 viewModel = viewModel,
             )
         }
@@ -304,21 +305,6 @@ fun StashNavHost(
             )
         }
 
-        composable<ArcodConnectRoute> { backStackEntry ->
-            // Reuse the Settings-scoped ViewModel so the harvested Supabase
-            // session writes to the same ArcodCredentialStore the source +
-            // interceptor read from, and survives this route's dispose.
-            val settingsEntry = remember(backStackEntry) {
-                navController.getBackStackEntry(SettingsRoute)
-            }
-            val viewModel: com.stash.feature.settings.SettingsViewModel =
-                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
-            com.stash.feature.settings.components.ArcodConnectScreen(
-                onConnected = viewModel::onArcodConnected,
-                onClose = { navController.popBackStack() },
-            )
-        }
-
         composable<EqualizerRoute> {
             EqualizerScreen(
                 onNavigateBack = { navController.popBackStack() },
@@ -348,6 +334,21 @@ fun StashNavHost(
                 onBack = { navController.popBackStack() },
                 onSelectionModeChanged = onSelectionModeChanged,
             )
+        }
+
+        composable<SharedMixRoute> {
+            com.stash.feature.library.share.SharedMixScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                // Follow / Save a copy land on the new playlist; Back skips the mix screen.
+                onJoinedPlaylist = { id ->
+                    navController.navigate(PlaylistDetailRoute(id)) { popUpTo<SharedMixRoute> { inclusive = true } }
+                },
+            )
+        }
+
+        composable<SharedTrackRoute> {
+            com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
         }
 
         composable<ArtistDetailRoute> {

@@ -90,6 +90,10 @@ class LosslessConfigFetcher @Inject constructor(
     /** The current relay access key from the applied config; null when unsigned. */
     val relayKey: StateFlow<String?> = _relayKey.asStateFlow()
 
+    private val _updatedAt = MutableStateFlow(0L)
+    /** `updated_at` (unix seconds) of the applied config; 0 until one is loaded. For the diagnostics bundle. */
+    val updatedAt: StateFlow<Long> = _updatedAt.asStateFlow()
+
     private val installIdKey = stringPreferencesKey("install_id")
 
     /**
@@ -113,7 +117,7 @@ class LosslessConfigFetcher @Inject constructor(
      */
     suspend fun loadCached() {
         val cached = readCache() ?: return
-        parse(cached)?.let { _relays.value = it.relays; _relayKey.value = it.relayKey }
+        parse(cached)?.let { _relays.value = it.relays; _relayKey.value = it.relayKey; _updatedAt.value = it.updatedAt }
     }
 
     /** Fetch + verify + apply. Returns true only when a fresh, valid config was applied. Never throws. */
@@ -138,6 +142,7 @@ class LosslessConfigFetcher @Inject constructor(
         }
         _relays.value = fresh.relays
         _relayKey.value = fresh.relayKey
+        _updatedAt.value = fresh.updatedAt
         ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
         Log.i(TAG, "lossless config applied: ${fresh.relays.size} relay(s)")
         true

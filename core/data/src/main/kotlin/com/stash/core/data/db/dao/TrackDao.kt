@@ -287,7 +287,7 @@ interface TrackDao {
     * sweep, which runs every sync regardless of REFRESH/ACCUMULATE — the mode
     * governs library membership, not audio quality. Only 'flac' is checked
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
-    * because Stash's lossless sources (Qobuz, Arcod) only ever deliver FLAC;
+    * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
     */
     @Query(
@@ -1545,6 +1545,37 @@ interface TrackDao {
         return orphans
     }
 
+    /**
+     * Shared mixes: after an unfollow, delete the tracks among [ids] that nothing else claims.
+     * Kept: downloaded, liked (Stash/Spotify/YouTube), in any other active playlist, or referenced
+     * by history or pending work. Every FK to tracks is CASCADE, so each table whose rows matter is
+     * excluded here: listening_events (and listen_submissions under it), track_skip_events,
+     * in-flight download_queue / flac_upgrade_queue rows, plus the FK-less discovery_queue.
+     * sync_undo_memberships is deliberately NOT a claim: every sync snapshots every membership, so it
+     * would keep every song forever, and SyncUndoDao.restoreMemberships already skips deleted tracks.
+     * lyrics and track_tags are re-fetchable caches and cascade with the track.
+     */
+    @Query(
+        """
+        DELETE FROM tracks
+        WHERE id IN (:ids)
+          AND is_downloaded = 0
+          AND stash_liked_at IS NULL AND spotify_saved_at IS NULL AND ytmusic_saved_at IS NULL
+          AND id NOT IN (SELECT track_id FROM playlist_tracks WHERE removed_at IS NULL)
+          AND id NOT IN (SELECT track_id FROM listening_events)
+          AND id NOT IN (SELECT track_id FROM track_skip_events)
+          AND id NOT IN (SELECT track_id FROM download_queue WHERE status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS'))
+          AND id NOT IN (SELECT track_id FROM flac_upgrade_queue)
+          AND id NOT IN (SELECT track_id FROM discovery_queue WHERE track_id IS NOT NULL)
+        """
+    )
+    suspend fun deleteUnclaimedAmong(ids: List<Long>): Int
+
+    /** [deleteUnclaimedAmong] in bind-limit-safe chunks, in one transaction. */
+    @Transaction
+    suspend fun deleteUnclaimedTracks(ids: List<Long>): Int =
+        ids.chunked(500).sumOf { deleteUnclaimedAmong(it) }
+
     // ── Full-text search ────────────────────────────────────────────────
 
     /**
@@ -1787,6 +1818,10 @@ interface TrackDao {
      */
     @Query("UPDATE tracks SET duration_ms = :durationMs WHERE id = :trackId AND duration_ms <= 0")
     suspend fun backfillDurationIfMissing(trackId: Long, durationMs: Long)
+
+    /** Shared-mix descriptors carry ISRC; a matched library row without one gains it (lossless matches by ISRC). */
+    @Query("UPDATE tracks SET isrc = :isrc WHERE id = :trackId AND (isrc IS NULL OR isrc = '')")
+    suspend fun backfillIsrcIfMissing(trackId: Long, isrc: String)
 
     /**
      * Set the cached canonical ATV/OMV video id for this track. Called once
@@ -2359,4 +2394,18 @@ interface TrackDao {
         """
     )
     suspend fun countOtherPlaylistsClaimingTrack(trackId: Long, excludePlaylistId: Long): Int
+
+    /** Diagnostics: one line of library totals. */
+    @Query(
+        """
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(is_downloaded), 0) AS downloaded,
+               COALESCE(SUM(download_missing_at IS NOT NULL), 0) AS missingFiles
+        FROM tracks
+        """
+    )
+    suspend fun diagnosticsTotals(): TrackDiagnosticsTotals
 }
+
+/** Library totals for the diagnostics bundle. [missingFiles] = downloaded rows whose file is gone. */
+data class TrackDiagnosticsTotals(val total: Int, val downloaded: Int, val missingFiles: Int)

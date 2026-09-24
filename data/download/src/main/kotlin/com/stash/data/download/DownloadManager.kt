@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
+import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -55,7 +57,8 @@ sealed class TrackDownloadResult {
 
     /**
      * v0.9.17+: lossless registry returned null and the user opted out
-     * of yt-dlp fallback. The track stays in the queue under
+     * of yt-dlp fallback — or the relay paced this download (streams come
+     * first; it waits for FLAC whatever the fallback setting). The track stays in the queue under
      * DownloadStatus.WAITING_FOR_LOSSLESS until LosslessRetryWorker
      * re-resolves successfully.
      */
@@ -215,8 +218,17 @@ class DownloadManager @Inject constructor(
         // fallback is off, per v0.9.17 strict-FLAC).
         val forceLossless = isStashMixTrack(track.id)
         if (forceLossless || losslessPrefs.enabledNow()) {
-            val losslessResult = tryLosslessDownload(track, forced = forceLossless)
+            val purpose = LosslessDownloadPurpose()
+            val losslessResult = withContext(purpose) { tryLosslessDownload(track, forced = forceLossless) }
             if (losslessResult != null) return losslessResult
+            // The relay paced this download: the pool is ahead of the day's pace and streams come
+            // first. FLAC is coming for this track, just later — so wait for it even when the YouTube
+            // fallback is on; a lossy copy taken now would stay lossy. (Stash Mix tracks keep their
+            // exemption below: a rotating mix must not empty out while it waits.)
+            if (purpose.pacedRetryAfterSec != null && !forceLossless) {
+                Log.i(TAG, "deferring '${track.artist} - ${track.title}': relay paced downloads for ${purpose.pacedRetryAfterSec}s")
+                return TrackDownloadResult.Deferred
+            }
             // strict-FLAC: lossless returned null AND yt-dlp fallback is off,
             // so defer instead of pulling a lossy opus/m4a from the YouTube
             // path. Applies to EVERY track — including genuinely YouTube-
@@ -525,6 +537,9 @@ class DownloadManager @Inject constructor(
         repeat(MAX_LOSSLESS_FAILOVER_ATTEMPTS) {
         val match: SourceResult = runCatching { losslessRegistry.resolve(query) }
             .onFailure { e ->
+                // A stop lands here more than anywhere (the resolve is the long network
+                // wait). Swallowing it ran the lossy fallbacks for a cancelled download.
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "lossless registry threw for '${track.artist} - ${track.title}'", e)
             }
             .getOrNull() ?: return null

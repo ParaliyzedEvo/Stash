@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +47,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -57,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,6 +111,9 @@ fun PlaylistDetailScreen(
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
     val buildState by viewModel.buildState.collectAsStateWithLifecycle()
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
+    // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
+    val follow by viewModel.follow.collectAsStateWithLifecycle()
+    val readOnly = follow?.readOnly == true
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -115,6 +121,7 @@ fun PlaylistDetailScreen(
     var trackToShare by remember { mutableStateOf<Track?>(null) }
     var trackToSave by remember { mutableStateOf<Track?>(null) }
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
+    var showShareSheet by rememberSaveable { mutableStateOf(viewModel.openShare) }
     val sheetState = rememberModalBottomSheetState()
 
     // Multi-select state. `isActive` (non-empty selection) drives the contextual
@@ -176,12 +183,32 @@ fun PlaylistDetailScreen(
                         onPlayAll = { viewModel.playAll() },
                         onShuffle = { viewModel.shuffleAll() },
                         onToggleSearch = { viewModel.toggleSearch() },
+                        onShare = { showShareSheet = true },
+                        readOnly = readOnly,
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
                     )
+                }
+
+                // ── Followed mix: sharer, Download this mix, Unfollow ───
+                follow?.takeIf { it.readOnly }?.let { f ->
+                    item(key = "follow") {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text("Following · from ${f.sharedBy ?: "a friend"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Download this mix", Modifier.weight(1f))
+                                Switch(checked = f.downloadOn, onCheckedChange = { viewModel.setFollowDownload(it) })
+                            }
+                            // Unfollow removes the playlist (and can take its downloads): second tap confirms.
+                            var confirmUnfollow by remember { mutableStateOf(false) }
+                            TextButton(onClick = { if (confirmUnfollow) viewModel.unfollow(onBack) else confirmUnfollow = true }) {
+                                Text(if (confirmUnfollow) "Tap again to unfollow" else "Unfollow", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
                 }
 
                 // ── Search filter bar ───────────────────────────────────
@@ -311,7 +338,7 @@ fun PlaylistDetailScreen(
 
         // Action order: Delete must stay within the first four (visible) and
         // Play next collapses into the ⋮ overflow as the least-used action.
-        val selectionActions = listOf(
+        val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
             },
@@ -327,7 +354,7 @@ fun PlaylistDetailScreen(
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            if (readOnly) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
                 showBatchDelete = true
             },
             SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
@@ -363,14 +390,14 @@ fun PlaylistDetailScreen(
                     trackToSave = it
                     selectedTrack = null
                 },
-                onDelete = {
+                onDelete = { t: Track ->
                     // Hand off to the confirmation dialog so the user can
                     // choose "delete only" vs "delete and block future
                     // syncs". Closing the sheet here prevents it from
                     // lingering behind the dialog.
-                    trackToDelete = it
+                    trackToDelete = t
                     selectedTrack = null
-                },
+                }.takeUnless { readOnly },
                 onDownload = {
                     viewModel.queueDownload(it.id)
                     selectedTrack = null
@@ -382,6 +409,11 @@ fun PlaylistDetailScreen(
                 onShare = { trackToShare = it; selectedTrack = null },
             )
         }
+    }
+
+    // ── Share mix sheet ──
+    if (showShareSheet) state.playlist?.let { p ->
+        com.stash.feature.library.share.ShareMixSheet(p.id, p.name, p.trackCount, onDismiss = { showShareSheet = false })
     }
 
     // ── Share links sheet ──────────────────────────────────────────────────
@@ -596,6 +628,8 @@ private fun PlaylistHeader(
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
+    onShare: () -> Unit,
+    readOnly: Boolean,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -794,7 +828,23 @@ private fun PlaylistHeader(
                     )
                 }
 
-                if (playlist.type == PlaylistType.CUSTOM) {
+                IconButton(
+                    onClick = onShare,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = extendedColors.glassBackground,
+                            shape = RoundedCornerShape(12.dp),
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share mix",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                if (playlist.type == PlaylistType.CUSTOM && !readOnly) {
                     IconButton(
                         onClick = onSetImage,
                         modifier = Modifier

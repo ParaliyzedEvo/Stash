@@ -35,7 +35,6 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
-import org.mockito.kotlin.never
 import org.mockito.kotlin.verifyBlocking
 
 /**
@@ -214,7 +213,7 @@ class HomeViewModelTest {
     }
 
     /**
-     * The regression this rewrite fixes: the old ARCOD-only check told a user
+     * The regression this rewrite fixes: the old single-source check told a user
      * with their own Qobuz account connected to go connect a lossless source
      * they already have.
      */
@@ -268,7 +267,7 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `dismissLosslessOffline writes its own key, not the old ARCOD one`() = runTest {
+    fun `dismissLosslessOffline writes its key`() = runTest {
         val prefs = losslessPrefsMock(losslessEnabled = true)
         val vm = buildVm(losslessPrefs = prefs)
 
@@ -276,7 +275,6 @@ class HomeViewModelTest {
         runCurrent()
 
         verifyBlocking(prefs) { setLosslessOfflineDismissed(true) }
-        verifyBlocking(prefs, never()) { setArcodRescueDismissed(any()) }
     }
 
     // ------------------------------------------------------------------

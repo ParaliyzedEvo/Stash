@@ -43,19 +43,12 @@ class LosslessSourceRegistry @Inject constructor(
         // protect).
         val ordered = if (streamingPreference.isForceQbdlxOnly()) {
             orderedSources().filter { it.id == "qbdlx_qobuz" }
-        } else if (streamingPreference.isForceArcodOnly()) {
-            orderedSources().filter { it.id == "arcod" }
         } else {
-            // Normal chain skips (a) parked (host-down) sources and (b) ARCOD
-            // on a build without the private integration key — a keyless ARCOD
-            // can only 403, so skipping it here avoids a wasted HTTP round-trip
-            // / rate-limit spend per resolve() call. qbdlx has no build gate; it
-            // self-gates on LosslessAvailability. Force-X toggles above bypass
-            // both filters so a manual test can still reach a parked/unconfigured
-            // source on demand, and orderedSources()/Settings still list them.
-            orderedSources()
-                .filterNot { it.id in PARKED_SOURCE_IDS }
-                .filterNot { it.id == "arcod" && !com.stash.data.download.BuildConfig.ARCOD_CONFIGURED }
+            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
+            // LosslessAvailability. The force toggle above bypasses the filter so
+            // a manual test can still reach a source on demand, and
+            // orderedSources()/Settings still list them.
+            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
         }
         val minQuality = prefs.minQualityNow()
 
@@ -67,6 +60,9 @@ class LosslessSourceRegistry @Inject constructor(
             if (!source.isEnabled()) continue
             val result = runCatching { source.resolve(query, bypassRateLimit) }
                 .onFailure { e ->
+                    // A cancelled caller is not a failing source: rethrow, or the
+                    // chain carries on (and the download falls to lossy) after a stop.
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     // resolve() should never throw — it should catch and
                     // return null. Defensive log so an unexpected throw
                     // from one source doesn't break the chain for others.
@@ -137,23 +133,12 @@ class LosslessSourceRegistry @Inject constructor(
          * Lossless sources parked out of the NORMAL resolve chain because their
          * upstreams are down for us (2026-07-01): qobuz.squid.wtf needs a
          * captcha we can't solve headless, and kennyy.com.br is health-down.
-         * (arcod.xyz was parked here too for the same reason and is not any
-         * more — see the note below the set.) Their code + Hilt bindings stay
+         * Their code + Hilt bindings stay
          * intact — re-enabling a source is just removing its id here (and
          * uncommenting the matching line in
          * [com.stash.core.media.streaming.StreamSourceRegistry] for streaming).
          * Force-X test toggles and the Settings source list still reach them.
          */
-        // arcod UNPARKED 2026-08-01: the operator rebuilt the VPS, rotated the
-        // integration key and moved us to the /v2/stash routes — verified live
-        // (search 200 + stream returns audio/flac, fLaC-magic byte-checked). It
-        // self-gates on the user having connected an account and on the build
-        // carrying the key, so an unconfigured build still skips it.
-        // Re-probed 2026-08-31: POST https://arcod.xyz/api/v2/downloads answers
-        // 401 {"error":"Authentication required"} — a healthy authed API, not a
-        // dead host. (The legacy api.arcod.xyz host does return 403; it is not
-        // the base URL ArcodClient uses.) Still live; do not re-park on the
-        // strength of the older comment above.
         val PARKED_SOURCE_IDS = setOf("squid_qobuz", "kennyy_qobuz")
     }
 }

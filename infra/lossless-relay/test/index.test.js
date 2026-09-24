@@ -23,8 +23,9 @@ function env(over = {}) {
     };
 }
 
-function mintReq(trackId, formatId, { key = KEY, install = "install-0001", ts = NOW, signed = true, version = "1" } = {}) {
+function mintReq(trackId, formatId, { key = KEY, install = "install-0001", ts = NOW, signed = true, version = "1", purpose } = {}) {
     const h = { "X-Stash-Version": version, Accept: "application/json", "CF-Connecting-IP": "203.0.113.9" };
+    if (purpose) h["X-Stash-Purpose"] = purpose;
     if (signed) {
         h["X-Stash-Install"] = install;
         h["X-Stash-Ts"] = String(ts);
@@ -152,4 +153,76 @@ test("a URL without etsp is served but never cached", async () => {
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).headers.get("X-Stash-Cache"), "MISS");
     assert.equal(q.calls.length, 2);
+});
+
+// ── Streams first: downloads only take what the day's pace can spare ─────────────────────────
+// NOW is 17:00 UTC (17/24 of the day); with the default 10% headroom the pace line sits at
+// ~80.8% of the global cap, so 600 × 0.808 ≈ 485 used is where downloads start waiting.
+
+async function withGlobalUsed(e, n) {
+    for (let i = 0; i < n; i++) await e.DB.batch([bumpQuotaStmt(e.DB, "2026-09-01", "global")]);
+}
+
+test("a download ahead of the day's pace waits: 429 paced with a Retry-After, no Qobuz call, no quota", async () => {
+    const q = qobuz([200, GOOD]);
+    const e = env({ GLOBAL_DAILY_CAP: "100" }); // pace line at 17:00 ≈ 80.8
+    await withGlobalUsed(e, 90);
+    const r = await handle(mintReq(42, 27, { purpose: "download" }), e, q, NOW);
+    assert.equal(r.status, 429);
+    assert.deepEqual(await r.json(), { error: "paced" });
+    // 90/100 − 0.10 = 0.80 of the day = 19:12 UTC; from 17:00 that is 7920 s, plus a minute.
+    assert.equal(r.headers.get("Retry-After"), "7980");
+    assert.equal(q.calls.length, 0);
+    assert.equal(await e.DB.prepare("SELECT n FROM quota WHERE key = 'i:install-0001'").first(), null);
+});
+
+test("a download behind the pace is served; a stream ahead of the pace is served too", async () => {
+    const e = env({ GLOBAL_DAILY_CAP: "100" });
+    await withGlobalUsed(e, 70);
+    assert.equal((await handle(mintReq(42, 27, { purpose: "download" }), e, qobuz([200, GOOD]), NOW)).status, 200);
+    const busy = env({ GLOBAL_DAILY_CAP: "100" });
+    await withGlobalUsed(busy, 90);
+    assert.equal((await handle(mintReq(42, 27, { purpose: "stream" }), busy, qobuz([200, GOOD]), NOW)).status, 200);
+    assert.equal((await handle(mintReq(43, 27), busy, qobuz([200, GOOD]), NOW)).status, 200); // no label = stream (old clients)
+});
+
+test("a paced download still gets a cached URL: a HIT costs nothing", async () => {
+    const e = env({ GLOBAL_DAILY_CAP: "100" });
+    assert.equal((await handle(mintReq(42, 27), e, qobuz([200, GOOD]), NOW)).status, 200); // a stream warms the cache
+    await withGlobalUsed(e, 90);
+    const r = await handle(mintReq(42, 27, { purpose: "download" }), e, qobuz(), NOW);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("X-Stash-Cache"), "HIT");
+});
+
+test("the wait runs until the pace line reaches today's usage; a full pool is still 503", async () => {
+    const e = env({ GLOBAL_DAILY_CAP: "100", DOWNLOAD_PACE_HEADROOM_PCT: "0" });
+    await withGlobalUsed(e, 99); // 99% of the cap at 17:00: the line reaches it at 23:45:36 — still today
+    assert.equal((await handle(mintReq(42, 27, { purpose: "download" }), e, qobuz(), NOW)).headers.get("Retry-After"), String(24336 + 60));
+    const full = env({ GLOBAL_DAILY_CAP: "100", DOWNLOAD_PACE_HEADROOM_PCT: "0" });
+    await withGlobalUsed(full, 100); // the global cap answers first (503) — pacing never masks it
+    assert.equal((await handle(mintReq(42, 27, { purpose: "download" }), full, qobuz(), NOW)).status, 503);
+});
+
+// ── Visibility: a salted hash of the caller's IP rides on the install's quota row ─────────
+function quotaRows(e) {
+    return e.DB.raw.prepare("SELECT key, n, ip FROM quota WHERE key LIKE 'i:%' ORDER BY key").all().map((r) => ({ ...r }));
+}
+
+test("with IP_SALT set, each install's quota row carries the same short hash for the same IP; no extra rows", async () => {
+    const e = env({ IP_SALT: "salt-1" });
+    await handle(mintReq(42, 27, { install: "install-aaaa" }), e, qobuz([200, GOOD]), NOW);
+    await handle(mintReq(43, 27, { install: "install-bbbb" }), e, qobuz([200, GOOD]), NOW);
+    const rows = quotaRows(e);
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].ip, /^[0-9a-f]{16}$/);
+    assert.equal(rows[0].ip, rows[1].ip); // two installs, one IP → visible as a pair
+    assert.notEqual(rows[0].ip, "203.0.113.9"); // never the raw address
+    assert.equal(e.DB.raw.prepare("SELECT COUNT(*) AS c FROM quota").get().c, 3); // global + 2 installs, as before
+});
+
+test("without IP_SALT nothing about the IP is stored", async () => {
+    const e = env();
+    await handle(mintReq(42, 27), e, qobuz([200, GOOD]), NOW);
+    assert.equal(quotaRows(e)[0].ip, null);
 });

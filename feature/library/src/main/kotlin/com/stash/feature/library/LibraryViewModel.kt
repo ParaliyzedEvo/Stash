@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -102,7 +103,26 @@ class LibraryViewModel @Inject constructor(
     private val libraryPreferencesStore: LibraryPreferencesStore,
     private val libraryDeepLinkController: com.stash.core.data.navigation.LibraryDeepLinkController,
     private val artistImageDao: ArtistImageDao,
+    private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
 ) : ViewModel() {
+
+    /** Active follows are read-only: the long-press sheet offers Unfollow in place of edits. */
+    val followedPlaylistIds: StateFlow<Set<Long>> = sharedMixRepository.observeActiveFollowedIds()
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun unfollowPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            try {
+                sharedMixRepository.unfollow(playlist.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "unfollow ${playlist.id} failed", e)
+                _userMessages.tryEmit("Couldn't unfollow this mix. Try again.")
+            }
+        }
+    }
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
     val localImportState: StateFlow<LocalImportState> = localImportCoordinator.state
@@ -1024,14 +1044,20 @@ class LibraryViewModel @Inject constructor(
  * like timestamps. The other orders mirror the Songs tab.
  */
 internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track> = when (order) {
-    SortOrder.RECENT -> tracks.sortedByDescending { it.likedAtOrAdded() }
+    SortOrder.RECENT -> {
+        // Tracks with a real like timestamp first, newest like on top. Synced likes
+        // carry none (dateAdded is download time, which scrambles them by album), so
+        // they keep the incoming order = sync position = Spotify's newest-first.
+        val (stamped, synced) = tracks.partition { it.likedAtOrNull() != null }
+        stamped.sortedByDescending { it.likedAtOrNull() } + synced
+    }
     SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
     SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
     SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
 }
 
-private fun Track.likedAtOrAdded(): Long =
-    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull() ?: dateAdded
+private fun Track.likedAtOrNull(): Long? =
+    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
 
 private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
