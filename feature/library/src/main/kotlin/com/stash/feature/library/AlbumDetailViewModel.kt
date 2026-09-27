@@ -299,21 +299,14 @@ class AlbumDetailViewModel @Inject constructor(
     /** Add each of [trackIds] to the playlist identified by [playlistId]. */
     fun saveSelectedToPlaylist(trackIds: List<Long>, playlistId: Long) {
         viewModelScope.launch {
-            trackIds.forEach { id ->
-                runCatching { musicRepository.addTrackToPlaylist(id, playlistId) }
-                    .onFailure { e -> if (e is CancellationException) throw e }
-            }
+            musicRepository.addTracksToPlaylist(trackIds, playlistId)
         }
     }
 
     /** Create a new playlist and add the whole batch of [trackIds] to it. */
     fun createPlaylistAndAddTracks(name: String, trackIds: List<Long>) {
         viewModelScope.launch {
-            val id = musicRepository.createPlaylist(name)
-            trackIds.forEach { trackId ->
-                runCatching { musicRepository.addTrackToPlaylist(trackId, id) }
-                    .onFailure { e -> if (e is CancellationException) throw e }
-            }
+            musicRepository.createPlaylistWithTracks(name, trackIds)
         }
     }
 

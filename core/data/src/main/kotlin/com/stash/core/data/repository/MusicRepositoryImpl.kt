@@ -19,6 +19,7 @@ import com.stash.core.model.share.toTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.core.net.toUri
 
@@ -755,6 +757,20 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long) {
+        // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
+        withContext(NonCancellable) {
+            trackIds.forEach { id ->
+                runCatching { addTrackToPlaylist(id, playlistId) }.onFailure { e ->
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e)
+                }
+            }
+        }
+    }
+
+    override suspend fun createPlaylistWithTracks(name: String, trackIds: List<Long>): Long =
+        withContext(NonCancellable) { createPlaylist(name).also { addTracksToPlaylist(trackIds, it) } }
+
     override suspend fun ensureDownloadsMixSeeded(): Long {
         return playlistDao.ensurePlaylist(downloadsMixEntity())
     }
@@ -825,6 +841,18 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Blacklist + cascade deletion ────────────────────────────────────
 
     override suspend fun removeTrackFromPlaylistAndMaybeDelete(
+        trackId: Long,
+        fromPlaylistId: Long,
+        alsoBlacklist: Boolean,
+    ): MusicRepository.CascadeRemovalSummary =
+        removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
+            // Every path detaches the track, so the Library card's count must follow.
+            // ponytail: a block also detaches it from other playlists; those keep a stale count until their next recount.
+            val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
+            playlistDao.updateTrackCount(fromPlaylistId, count)
+        }
+
+    private suspend fun removeAndMaybeDelete(
         trackId: Long,
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
@@ -908,7 +936,8 @@ class MusicRepositoryImpl @Inject constructor(
         var blacklisted = 0
 
         for (id in trackIds) {
-            val result = removeTrackFromPlaylistAndMaybeDelete(
+            // The playlist is deleted below, so skip the per-track recount.
+            val result = removeAndMaybeDelete(
                 trackId = id,
                 fromPlaylistId = playlistId,
                 alsoBlacklist = alsoBlacklist,

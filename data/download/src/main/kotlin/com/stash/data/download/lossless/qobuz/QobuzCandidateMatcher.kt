@@ -25,7 +25,14 @@ object QobuzCandidateMatcher {
      * penalty that downweights mismatched cuts (live, extended,
      * edits) without hard-rejecting them.
      *
+     * #502: a candidate that names a version the query doesn't (a remix,
+     * live take, cover...) is scaled by [VERSION_PENALTY], or only by
+     * [VERSION_TIEBREAK] when its length confirms the match. Qobuz keeps the
+     * version out of the title and [normalize] drops brackets, so the title
+     * score alone can't tell them apart.
+     *
      * @param candDurationSec candidate duration in SECONDS (Qobuz's unit).
+     * @param candVersion Qobuz's separate `version` field, when known.
      */
     fun confidence(
         query: TrackQuery,
@@ -34,6 +41,7 @@ object QobuzCandidateMatcher {
         candIsrc: String?,
         candDurationSec: Int,
         candStreamable: Boolean,
+        candVersion: String? = null,
     ): Float {
         if (!candStreamable) return 0f
 
@@ -76,8 +84,64 @@ object QobuzCandidateMatcher {
             }
         }
 
-        return (titleSim * artistSim * durationFactor)
+        // Only the candidate's bracketed/dashed parts and version field count, so
+        // "Piano Man" itself isn't a piano version. The query's album counts too,
+        // so a track off a live album can still take a live candidate.
+        val candVersionWords = versionWords(
+            BRACKETED.findAll(candTitle).joinToString(" ") { it.value } + " " +
+                DASHED.find(candTitle)?.value.orEmpty() + " " + candVersion.orEmpty(),
+        )
+        val extraVersion = candVersionWords - versionWords(query.title + " " + query.album.orEmpty())
+        // A length within 5% says it's the recording the user has (e.g. a live album
+        // whose titles don't say "live"), so the version only breaks ties.
+        val durationConfirms = (query.durationMs ?: 0L) > 0 && candDurationSec > 0 && durationFactor == 1.0f
+        val versionFactor = when {
+            extraVersion.isEmpty() -> 1.0f
+            durationConfirms -> VERSION_TIEBREAK
+            else -> VERSION_PENALTY
+        }
+
+        val base = titleSim * artistSim * durationFactor
+        if (base >= MIN_CONFIDENCE && base * versionFactor < MIN_CONFIDENCE) {
+            android.util.Log.d(
+                "QobuzMatcher",
+                "version_penalty dropped '$candTitle' (version='${candVersion.orEmpty()}', $extraVersion) " +
+                    "for '${query.artist} - ${query.title}'",
+            )
+        }
+        return base * versionFactor
     }
+
+    /** Scales a candidate that names a version the query doesn't. 1.0 x 0.4 falls under [MIN_CONFIDENCE]. */
+    private const val VERSION_PENALTY = 0.4f
+
+    /** The same, when the length confirms the match: an unversioned twin still wins, and so does an ISRC match (0.95). */
+    private const val VERSION_TIEBREAK = 0.9f
+
+    private val BRACKETED = Regex("\\([^)]*\\)|\\[[^]]*\\]")
+    private val DASHED = Regex("\\s[-\u2013\u2014]\\s.*")
+    // A year, stereo, mono, single... mix is the same song, often a remaster reissue.
+    private val SAME_SONG_MIX =
+        Regex("\\b(\\d{4}|stereo|mono|single|radio|album|original|remaster|remastered)\\s+mix\\b")
+
+    // Whole words only, so "Alive" is not "live". "Edit" is left out: radio edits are fine.
+    private val VERSION_WORDS = Regex(
+        "\\b(remix|mix|live|cover|karaoke|instrumental|lofi|lo-fi|lo fi|piano|acoustic|" +
+            "orchestral|sped up|sped|slowed|nightcore|demo)\\b",
+    )
+
+    /** The version words [text] names, folded so "remix"/"mix", "lo-fi"/"lofi" and "sped up"/"sped" compare equal. */
+    internal fun versionWords(text: String): Set<String> =
+        VERSION_WORDS.findAll(SAME_SONG_MIX.replace(text.lowercase(), " "))
+            .map {
+                when (it.value) {
+                    "remix" -> "mix"
+                    "lo-fi", "lo fi" -> "lofi"
+                    "sped up" -> "sped"
+                    else -> it.value
+                }
+            }
+            .toSet()
 
     // ── Pure-function helpers ────────────────────────────────────────────
 
