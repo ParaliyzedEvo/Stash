@@ -4,11 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Stores shared Stash mixes (one JSON document per mix in KV) and serves their preview pages.",
+  "engines": {
+    "node": ">=24.2"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "test": "node --no-warnings --test test/*.test.js"
+    "test": "node --no-warnings --test test/*.test.js",
+    "community": "node scripts/community.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.135.0"

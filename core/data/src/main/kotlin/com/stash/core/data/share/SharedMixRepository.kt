@@ -19,6 +19,7 @@ import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.share.toSharedTrack
+import com.stash.core.model.share.toSharedTrackWithArt
 import com.stash.core.model.share.toTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.SecureRandom
@@ -31,6 +32,20 @@ enum class FollowCheck { UpToDate, Updated, Removed, Unreachable }
 
 /** Only [Failed] is retried by the publish worker. */
 enum class PublishOutcome { Unchanged, Published, Removed, Forbidden, Rejected, Failed }
+
+/** Clips a descriptor to the Worker's limits (worker src/validate.js), so one odd row can't fail a whole mix or post. */
+internal fun SharedTrack.withinLimits() = copy(
+    title = title.cut(500),
+    artist = artist.cut(500),
+    album = album?.cut(500),
+    isrc = isrc?.takeIf { it.length <= 20 },
+    spotifyId = spotifyId?.takeIf { it.length <= 40 },
+    youtubeId = youtubeId?.takeIf { it.length <= 20 },
+    artUrl = artUrl?.takeIf { it.length <= 1000 },
+)
+
+/** [take] that never ends on half an emoji: UTF-8 would send the lone half as "?". */
+internal fun String.cut(n: Int) = take(n).let { if (it.isNotEmpty() && it.length == n && it.last().isHighSurrogate()) it.dropLast(1) else it }
 
 /** Every share and follow operation (spec §5-6). */
 @Singleton
@@ -55,26 +70,18 @@ class SharedMixRepository @Inject constructor(
      * Build the document from the playlist's live members, in order (removed ones excluded).
      * Every field is clipped to the Worker's limits (worker src/validate.js) so one odd library
      * row can never make the whole mix unpublishable.
+     * [withArt] keeps each song's cover link (Community posts; a shared mix never sends it).
      */
-    suspend fun buildDocument(playlistId: Long, name: String, sharedBy: String?): SharedMixDocument {
+    suspend fun buildDocument(playlistId: Long, name: String, sharedBy: String?, withArt: Boolean = false): SharedMixDocument {
         // Untagged local files are kept: toSharedTrack() gives them placeholder title/artist.
         val tracks = playlistDao.getTracksForPlaylist(playlistId).map { it.toDomain() }
         return SharedMixDocument(
-            name = name.trim().take(100),
-            sharedBy = sharedBy?.trim()?.take(40)?.ifBlank { null },
+            name = name.trim().cut(100),
+            sharedBy = sharedBy?.trim()?.cut(40)?.ifBlank { null },
             covers = tracks.mapNotNull { it.albumArtUrl?.takeIf { u -> u.length <= 1000 && ShareConfig.isAllowedCover(u) } }.distinct().take(4),
-            tracks = tracks.take(MAX_TRACKS).map { it.toSharedTrack().withinLimits() },
+            tracks = tracks.take(MAX_TRACKS).map { (if (withArt) it.toSharedTrackWithArt() else it.toSharedTrack()).withinLimits() },
         )
     }
-
-    private fun SharedTrack.withinLimits() = copy(
-        title = title.take(500),
-        artist = artist.take(500),
-        album = album?.take(500),
-        isrc = isrc?.takeIf { it.length <= 20 },
-        spotifyId = spotifyId?.takeIf { it.length <= 40 },
-        youtubeId = youtubeId?.takeIf { it.length <= 20 },
-    )
 
     /** Create a link for [playlistId]; returns the https URL. */
     suspend fun share(playlistId: Long, name: String, sharedBy: String?, autoUpdate: Boolean): ShareResult<String> {

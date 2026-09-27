@@ -110,4 +110,14 @@ class SharedMixRepositoryOwnerTest {
         assertThat(server.takeRequest().method).isEqualTo("DELETE")
         assertThat(db.sharedMixDao().forPlaylist(playlistId)).isNull()
     }
+
+    @Test fun `buildDocument withArt keeps each song's allowed art link, and the default leaves art out`() = runBlocking {
+        assertThat(repo.buildDocument(playlistId, "Ambient", null).tracks.map { it.artUrl }).containsExactly(null, null)
+        assertThat(repo.buildDocument(playlistId, "Ambient", null, withArt = true).tracks.map { it.artUrl })
+            .containsExactly("https://i.scdn.co/image/1", null).inOrder()
+    }
+
+    @Test fun `buildDocument cuts the shared-by name to 40 without splitting an emoji`() = runBlocking {
+        assertThat(repo.buildDocument(playlistId, "Ambient", sharedBy = "n".repeat(39) + "🎧").sharedBy).isEqualTo("n".repeat(39))
+    }
 }

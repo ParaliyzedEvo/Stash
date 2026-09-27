@@ -22,8 +22,8 @@ data class SharedTrack(
     /** Listen Together only: the member id of whoever added the song. Never set for shared mixes (null is left out). */
     @SerialName("by") val addedBy: String? = null,
     /**
-     * Listen Together only: the cover the adder's phone shows, an https link on [ShareConfig.COVER_HOSTS]
-     * (the room drops any other). Never set for shared mixes.
+     * Listen Together and Community: the cover the sender's phone shows, an https link on
+     * [ShareConfig.COVER_HOSTS] (the Worker drops any other). Never set for shared mix links.
      */
     @SerialName("art") val artUrl: String? = null,
 )
@@ -51,6 +51,13 @@ fun Track.toSharedTrack(): SharedTrack = SharedTrack(
     spotifyId = spotifyTrackId(spotifyUri),
     youtubeId = youtubeId.clean(),
 )
+
+/**
+ * [toSharedTrack] plus the cover this phone shows, when it's an https link on [ShareConfig.COVER_HOSTS].
+ * Listen Together and Community send it so other phones show the same art (a local art path never leaves).
+ */
+fun Track.toSharedTrackWithArt(): SharedTrack =
+    toSharedTrack().copy(artUrl = albumArtUrl?.takeIf(ShareConfig::isAllowedCover))
 
 /**
  * A received descriptor as a new, stream-only library track. Always [MusicSource.BOTH]

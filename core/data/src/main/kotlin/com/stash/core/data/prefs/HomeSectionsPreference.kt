@@ -13,7 +13,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,7 +29,10 @@ enum class HomeSection(val key: String) {
     TOP_ALBUMS("top_albums"),
     MADE_FOR_YOU("made_for_you"),
     RADIOS("radios"),
-    MOOD_DECADES("mood_decades");
+    MOOD_DECADES("mood_decades"),
+
+    /** Stash Community (spec 2026-09-26 §3). Has its own switch, off by default: see [HomeSectionsPreference.communityOn]. */
+    COMMUNITY("community");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
@@ -48,8 +50,22 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     return known + HomeSection.entries.filter { it !in known }
 }
 
-/** Dedicated DataStore for Home section order + visibility. */
-private val Context.homeSectionsDataStore: DataStore<Preferences> by preferencesDataStore(
+/** Home before the preference loads, and when it can't be read: every section but Community, which is opt-in. */
+val DEFAULT_HOME_SECTIONS: List<HomeSection> = HomeSection.entries - HomeSection.COMMUNITY
+
+/**
+ * What Home renders: [order] minus [hidden], and minus COMMUNITY unless [communityOn]. Community has its own
+ * switch, off by default (spec 2026-09-26 §3), because a section new in an update is otherwise shown.
+ */
+fun visibleHomeSections(order: List<HomeSection>, hidden: Set<HomeSection>, communityOn: Boolean): List<HomeSection> =
+    order.filter { it !in hidden && (communityOn || it != HomeSection.COMMUNITY) }
+
+/** [order] with COMMUNITY first: where it lands the first time it's turned on, under the Discover hero. */
+fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> =
+    listOf(HomeSection.COMMUNITY) + (order - HomeSection.COMMUNITY)
+
+/** Dedicated DataStore for Home section order + visibility. Internal so tests can clear it. */
+internal val Context.homeSectionsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "home_sections_preference",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
@@ -68,6 +84,7 @@ class HomeSectionsPreference @Inject constructor(
     private val orderKey = stringPreferencesKey("home_sections_order")
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
+    private val communityOnKey = booleanPreferencesKey("community_on")
 
     /**
      * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
@@ -85,10 +102,15 @@ class HomeSectionsPreference @Inject constructor(
         prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
     }.distinctUntilChanged().catch { emit(emptySet()) }
 
+    /** Community's own switch (spec 2026-09-26 §3): off until turned on in Settings ▸ Home layout. */
+    val communityOn: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
+        prefs[communityOnKey] ?: false
+    }.distinctUntilChanged().catch { emit(false) }
+
     /**
-     * What Home actually renders: [order] minus [hidden].
+     * What Home actually renders: [order] minus [hidden], and minus Community while its switch is off.
      *
-     * All four flows here are deduped (the store re-emits on every unrelated
+     * All five flows here are deduped (the store re-emits on every unrelated
      * write) and catch to the same default the `map` already uses: they feed
      * `HomeViewModel`'s and `SettingsViewModel`'s `combine` directly, and a
      * DataStore IOException that terminated the chain would leave those screens
@@ -98,23 +120,21 @@ class HomeSectionsPreference @Inject constructor(
      */
     val visibleSections: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         val hiddenSet = prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
-        resolveHomeSectionOrder(prefs[orderKey].toKeys()).filter { it !in hiddenSet }
-    }.distinctUntilChanged().catch { emit(resolveHomeSectionOrder(emptyList())) }
-
-    suspend fun setOrder(order: List<HomeSection>) {
-        context.homeSectionsDataStore.edit { prefs ->
-            prefs[orderKey] = order.joinToString(",") { it.key }
-        }
-    }
+        visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, prefs[communityOnKey] ?: false)
+    }.distinctUntilChanged().catch { emit(DEFAULT_HOME_SECTIONS) }
 
     /** Swap [section] one slot up or down in the full order. */
     suspend fun move(section: HomeSection, up: Boolean) {
-        val current = order.first().toMutableList()
-        val idx = current.indexOf(section)
-        val target = if (up) idx - 1 else idx + 1
-        if (idx < 0 || target !in current.indices) return
-        current[idx] = current[target].also { current[target] = current[idx] }
-        setOrder(current)
+        context.homeSectionsDataStore.edit { prefs ->
+            val current = resolveHomeSectionOrder(prefs[orderKey].toKeys()).toMutableList()
+            val idx = current.indexOf(section)
+            val target = if (up) idx - 1 else idx + 1
+            if (idx < 0 || target !in current.indices) return@edit
+            current[idx] = current[target].also { current[target] = current[idx] }
+            prefs[orderKey] = current.joinToString(",") { it.key }
+            // Placed by hand before it was ever on: keep that spot when it's turned on.
+            if (section == HomeSection.COMMUNITY && prefs[communityOnKey] == null) prefs[communityOnKey] = false
+        }
     }
 
     suspend fun setHidden(section: HomeSection, hide: Boolean) {
@@ -127,6 +147,16 @@ class HomeSectionsPreference @Inject constructor(
 
     suspend fun setShowLikedOnHome(shown: Boolean) {
         context.homeSectionsDataStore.edit { prefs -> prefs[showLikedKey] = shown }
+    }
+
+    /** Community's switch. The first time it's turned on, it moves to the top of the order. */
+    suspend fun setCommunityOn(on: Boolean) {
+        context.homeSectionsDataStore.edit { prefs ->
+            if (on && prefs[communityOnKey] == null) {
+                prefs[orderKey] = withCommunityFirst(resolveHomeSectionOrder(prefs[orderKey].toKeys())).joinToString(",") { it.key }
+            }
+            prefs[communityOnKey] = on
+        }
     }
 
     private fun String?.toKeys(): List<String> =

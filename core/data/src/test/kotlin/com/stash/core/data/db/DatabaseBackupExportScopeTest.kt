@@ -2,6 +2,7 @@ package com.stash.core.data.db
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -125,6 +126,30 @@ class DatabaseBackupExportScopeTest {
             val names = zip.entries().toList().map { it.name }
             assertTrue("manifest is always present", "manifest.json" in names)
             assertTrue("no library in a settings-only archive", names.none { it == "stash.db" })
+        }
+    }
+
+    @Test fun `settings leave out the Community key and DataStore's leftover copy of it`() = runTest {
+        val theme = context.preferencesDataStoreFile("theme_preferences")
+        val key = context.preferencesDataStoreFile("community_preference")
+        val leftover = File(key.path + ".tmp") // DataStore's scratch file, left behind if a write is cut short
+        theme.parentFile?.mkdirs()
+        theme.writeText("theme")
+        key.writeText("key")
+        leftover.writeText("key")
+        try {
+            manager.exportDatabase(Uri.fromFile(out), BackupExportScope.SETTINGS_ONLY).getOrThrow()
+
+            ZipFile(out).use { zip ->
+                val names = zip.entries().toList().map { it.name }
+                assertTrue("other settings still ride along", "datastore/theme_preferences.preferences_pb" in names)
+                assertTrue("the Community key must not", "datastore/community_preference.preferences_pb" !in names)
+                assertTrue("nor its leftover copy", "datastore/community_preference.preferences_pb.tmp" !in names)
+            }
+        } finally {
+            theme.delete()
+            key.delete()
+            leftover.delete()
         }
     }
 

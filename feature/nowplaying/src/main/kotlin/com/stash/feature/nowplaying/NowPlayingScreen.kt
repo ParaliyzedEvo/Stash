@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -807,11 +808,13 @@ fun NowPlayingScreen(
     }
 
     if (showOptionsSheet && track != null) {
+        val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
         NowPlayingOptionsSheet(
             isDownloaded = track.isDownloaded,
             onSaveClick = { showSaveSheet = true },
             onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
             onShareClick = viewModel::onShareCurrent,
+            onPostToCommunity = postToCommunity?.let { post -> { post(com.stash.core.model.community.PostTarget.Song(track)) } },
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
             together = togetherState,
@@ -829,7 +832,7 @@ fun NowPlayingScreen(
 
 /**
  * Top bar: dismiss, radio toggle, a "more" kebab that opens
- * [NowPlayingOptionsSheet] (Save / Download / Share / View Album / Flag), and a
+ * [NowPlayingOptionsSheet] (the current track's actions), and a
  * dedicated Queue button pinned to the far-right edge.
  *
  * @param onDismiss    Callback when the down-arrow is tapped.
@@ -1229,7 +1232,7 @@ private fun QualityLine(
 
 /**
  * Premium track options bottom sheet, opened via the [TopBar]'s "more"
- * kebab icon. Consolidates Save / Download / Share / View Album / Flag. Queue
+ * kebab icon. Consolidates the current track's actions. Queue
  * is NOT here — it has its own permanent icon at the TopBar's far right, next
  * to Dismiss and Radio.
  */
@@ -1240,6 +1243,7 @@ private fun NowPlayingOptionsSheet(
     onSaveClick: () -> Unit,
     onDownloadTap: () -> Unit,
     onShareClick: () -> Unit,
+    onPostToCommunity: (() -> Unit)?,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
     together: ListenTogetherState,
@@ -1301,6 +1305,16 @@ private fun NowPlayingOptionsSheet(
                     onDismiss()
                 }
             )
+
+            // Post to Community (only while Community is on)
+            if (onPostToCommunity != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                SheetOptionRow(
+                    icon = Icons.Default.Public,
+                    label = "Post to Community",
+                    onClick = { onPostToCommunity(); onDismiss() },
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

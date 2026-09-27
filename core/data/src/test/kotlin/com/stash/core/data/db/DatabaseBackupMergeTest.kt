@@ -2,6 +2,7 @@ package com.stash.core.data.db
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
@@ -512,6 +513,40 @@ class DatabaseBackupMergeTest {
 
         assertTrue(result.isFailure)
         assertEquals(1, live.trackDao().getAllForIntegrityScan().size)
+    }
+
+    @Test
+    fun `a settings restore keeps this phone's Community key, whatever an older archive holds`() = runTest {
+        // Archives from before exports left the key out still carry it. Installing it would make this
+        // phone and the one that made the archive a single Community identity.
+        val zipFile = File(tmpDir, "old-settings.zip")
+        ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write("""{"dbSchemaVersion":1,"exportTimestamp":1,"scope":"SETTINGS_ONLY"}""".toByteArray())
+            zip.closeEntry()
+            for (name in listOf("theme_preferences.preferences_pb", "community_preference.preferences_pb", "community_preference.preferences_pb.tmp")) {
+                zip.putNextEntry(ZipEntry("datastore/$name"))
+                zip.write(name.toByteArray())
+                zip.closeEntry()
+            }
+        }
+        val theme = context.preferencesDataStoreFile("theme_preferences")
+        val key = context.preferencesDataStoreFile("community_preference")
+        val leftover = File(key.path + ".tmp")
+        key.parentFile?.mkdirs()
+        key.writeText("this phone's key")
+        try {
+            val result = manager.importDatabase(Uri.fromFile(zipFile), BackupImportScope.SETTINGS_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            assertEquals("theme_preferences.preferences_pb", theme.readText())
+            assertEquals("this phone's key", key.readText())
+            assertFalse("DataStore's leftover copy of the key stays out too", leftover.exists())
+        } finally {
+            theme.delete()
+            key.delete()
+            leftover.delete()
+        }
     }
 
     @Test
