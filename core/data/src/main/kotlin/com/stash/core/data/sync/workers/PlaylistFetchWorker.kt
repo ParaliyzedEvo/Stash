@@ -178,6 +178,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
     companion object {
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_YOUTUBE_INVENTORY_COMPLETE = "youtube_inventory_complete"
+
+        /** Input: the [SyncTrigger] name of what started this sync; absent = MANUAL. */
+        const val KEY_TRIGGER = "sync_trigger"
         private const val TAG = "StashSync"
         /** Cap on concurrent in-flight YT browse calls during a sync. */
         private const val MAX_PARALLEL_YT_FETCHES = 3
@@ -253,10 +256,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        // Step 1: Create a sync history record.
+        // Step 1: Create a sync history record. Only one sync runs at a time, so a
+        // row still open now belongs to a chain that was replaced while paused
+        // between steps: close it as interrupted, not "Running" until the next launch.
+        syncHistoryDao.resetStaleSyncs()
         val syncEntry = SyncHistoryEntity(
             status = SyncState.AUTHENTICATING,
-            trigger = SyncTrigger.MANUAL,
+            // SyncScheduler says what started the sync; a chain queued before it did counts as MANUAL.
+            trigger = inputData.getString(KEY_TRIGGER)?.let { SyncTrigger.valueOf(it) } ?: SyncTrigger.MANUAL,
             streamingMode = streamingPreference.current(),
             startedAt = Instant.now(),
         )

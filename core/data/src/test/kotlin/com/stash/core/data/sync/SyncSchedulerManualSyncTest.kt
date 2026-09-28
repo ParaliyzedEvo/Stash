@@ -8,6 +8,7 @@ import androidx.work.impl.WorkManagerImpl
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.stash.core.data.sync.workers.DiffWorker
 import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -43,7 +44,9 @@ class SyncSchedulerManualSyncTest {
         scheduler.triggerManualSync()
         assertTrue(diffStepInput().getBoolean(DiffWorker.KEY_MANUAL_SYNC, false))
 
-        scheduler.scheduleDailySync(hour = 6, minute = 0) // replaces the manual chain
+        // A scheduled sync never starts over another one (#520), so the manual chain goes first.
+        scheduler.cancelSync()
+        runBlocking { scheduler.startScheduledSync(wifiOnly = false) }
         assertFalse(diffStepInput().getBoolean(DiffWorker.KEY_MANUAL_SYNC, true))
     }
 
