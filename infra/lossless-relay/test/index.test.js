@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { fakeD1 } from "./fake-d1.js";
-import worker, { handle } from "../src/index.js";
+import worker, { handle, refusalNamesTrack } from "../src/index.js";
 import { bumpQuotaStmt } from "../src/db.js";
 
 const NOW = 1788282000; // 2026-09-01T17:00:00Z
@@ -114,12 +114,116 @@ test("a dead account is retired and the next one serves the same request", async
     assert.deepEqual(await e.DB.prepare("SELECT state, dead_reason FROM accounts WHERE label = 'a'").first(), { state: "dead", dead_reason: "401" });
 });
 
+const RIGHTS_LOCK = { format_id: 7, restrictions: [{ code: "SampleRestrictedByRightHolders" }] }; // live 2026-09-27
+
 test("region lock → 404, never cached, quota spent", async () => {
-    const e = env(); const q = qobuz([200, { format_id: 7 }], [200, { format_id: 7 }]);
+    const e = env(); const q = qobuz([200, RIGHTS_LOCK], [200, RIGHTS_LOCK]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
     assert.equal(q.calls.length, 2);
     assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 2);
+});
+
+test("a refusal that names the track is a 404 at once: no second account is asked", async () => {
+    const e = env(); const q = qobuz([200, RIGHTS_LOCK], [200, GOOD]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 1);
+});
+
+test("a refusal with no track-level code is cross-checked: another account serves it and the refuser cools, never dies", async () => {
+    const e = env(); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD]);
+    const r = await handle(mintReq(42, 27), e, q, NOW);
+    assert.equal(r.status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b"]);
+    const a = await e.DB.prepare("SELECT state, cooling_until FROM accounts WHERE label = 'a'").first();
+    assert.equal(a.state, "live");
+    assert.equal(a.cooling_until, NOW + 3600);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("both accounts refusing with no code → 404 as before, quota spent once, nobody cooled", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [200, { format_id: 7 }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 2);
+    assert.equal((await e.DB.prepare("SELECT COUNT(*) AS n FROM accounts WHERE cooling_until > 0").first()).n, 0);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("a codeless refusal then a transient failure still answers 404, not 503: quota once, the failing account cools 300 s", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [500, ""]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'b'").first()).cooling_until, NOW + 300);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'a'").first()).cooling_until, 0);
+});
+
+test("a codeless refusal from the only account: no second call to it, 404 with quota once, not cooled", async () => {
+    const e = env({ QOBUZ_ACCOUNTS: JSON.stringify([ACCOUNTS[0]]) }); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal(q.calls.length, 1);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'a'").first()).cooling_until, 0);
+});
+
+test("a codeless refusal, then a dead second account: the dead one is retired, the answer is 404 with quota once", async () => {
+    const e = env(); const q = qobuz([200, { format_id: 7 }], [401, {}]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT state FROM accounts WHERE label = 'b'").first()).state, "dead");
+    assert.equal((await e.DB.prepare("SELECT state FROM accounts WHERE label = 'a'").first()).state, "live");
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("the account cooled by a cross-check sits out the next miss", async () => {
+    const e = env(); const q = qobuz([200, { ...GOOD, sample: true }], [200, GOOD], [200, { ...GOOD, url: "https://cdn.example/g.flac?etsp=" + (NOW + 3599) }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
+    assert.equal((await handle(mintReq(43, 27), e, q, NOW + 60)).status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-b", "tok-b"]);
+});
+
+/** A fake Qobuz that answers by account: tokens in `expired` get a bare preview, the rest a full URL. */
+function qobuzByToken(expired) {
+    const calls = [];
+    const f = async (url, init) => {
+        calls.push({ url: String(url), init });
+        const tok = init.headers["X-User-Auth-Token"];
+        const body = expired.has(tok) ? { ...GOOD, sample: true } : { ...GOOD, url: `https://cdn.example/${calls.length}.flac?etsp=${NOW + 3599}` };
+        return new Response(JSON.stringify(body), { status: 200 });
+    };
+    f.calls = calls;
+    return f;
+}
+
+test("an account removed from the secret is never picked, though its D1 row lingers", async () => {
+    const e = env(); const q = qobuz([200, GOOD], [200, { ...GOOD, url: "https://cdn.example/g.flac?etsp=" + (NOW + 3599) }]);
+    assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200); // rows for a and b now exist; a served
+    e.QOBUZ_ACCOUNTS = JSON.stringify([ACCOUNTS[0]]); // operator drops b from the secret; b's row stays, and b is next in LRU
+    assert.equal((await handle(mintReq(43, 27), e, q, NOW + 60)).status, 200);
+    assert.deepEqual(q.calls.map((c) => c.init.headers["X-User-Auth-Token"]), ["tok-a", "tok-a"]);
+});
+
+test("rotation with half the pool expired: both expired accounts end up cooled and the listener gets FLAC", async () => {
+    const four = ["a", "b", "c", "d"].map((l) => ({ label: l, token: "tok-" + l, app_id: "111111111", app_secret: "s-" + l }));
+    const e = env({ QOBUZ_ACCOUNTS: JSON.stringify(four) }); const q = qobuzByToken(new Set(["tok-a", "tok-b"]));
+    const statuses = [];
+    for (let i = 0; i < 20; i++) statuses.push((await handle(mintReq(100 + i, 27), e, q, NOW + i * 10)).status);
+    // Cold start: every last_used_at is 0, so the very first miss may pair the two expired accounts.
+    assert.ok(statuses.filter((s) => s === 404).length <= 1, String(statuses));
+    assert.deepEqual(statuses.slice(-15), Array(15).fill(200));
+    for (const l of ["a", "b"]) {
+        const row = await e.DB.prepare("SELECT state, cooling_until FROM accounts WHERE label = ?1").bind(l).first();
+        assert.equal(row.state, "live", l);
+        assert.ok(row.cooling_until > NOW, l);
+    }
+});
+
+test("refusalNamesTrack: catalog miss and Track/Sample/Format codes name the track; bare refusals and User codes don't", () => {
+    for (const r of ["404", "no_url SampleRestrictedByRightHolders", "sample TrackRestrictedByRightHolders", "fmt_5 FormatRestrictedByFormatAvailability"]) {
+        assert.equal(refusalNamesTrack(r), true, r);
+    }
+    // UserUncredentialed: a weak account answering previews (device, 2026-07-04); a User code wins over a Format one.
+    for (const r of ["sample", "no_url", "fmt_5", "sample UserUncredentialed", "sample UserUncredentialed,FormatRestrictedByFormatAvailability", undefined]) {
+        assert.equal(refusalNamesTrack(r), false, String(r));
+    }
 });
 
 test("every account failing transiently → 503 with Retry-After after at most two attempts; both cool; the next request is a 503 with no Qobuz call", async () => {

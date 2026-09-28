@@ -21,7 +21,7 @@ import { verifyMint } from "./auth.js";
 import { mintFromQobuz } from "./qobuz.js";
 import {
     getCached, putCachedStmt, readQuota, bumpQuotaStmt,
-    selectAccount, ensureAccounts, coolAccount, killAccount, prune, dayKey,
+    selectAccount, ensureAccounts, coolAccount, coolAccountStmt, killAccount, prune, dayKey,
 } from "./db.js";
 
 /** The lossless formats the client asks for (LosslessQualityTier → 6 / 7 / 27). Data Saver's 5 (MP3 320) is answered 404 below. */
@@ -30,6 +30,21 @@ const LOSSLESS_FORMATS = new Set([6, 7, 27]);
 const TRANSIENT_COOL_S = 300;
 /** Two 3 s upstream attempts plus the D1 round trips fit inside the client's 8 s budget (spec §1). */
 const MAX_ATTEMPTS = 2;
+/** An account that refused a track another account then served sits out this long (never killed: see below). */
+const REFUSAL_COOL_S = 3600;
+
+/**
+ * A refusal that names the track (Qobuz's 404 catalog miss, or a Track…/Sample…/Format… restriction
+ * such as SampleRestrictedByRightHolders) is about the track, whichever account asks. One with no
+ * such code may be the account itself (an expired or limited subscription answering with previews),
+ * so the relay asks one more account before answering 404.
+ */
+export function refusalNamesTrack(reason) {
+    const r = reason || "";
+    // A User… code (e.g. UserUncredentialed, seen on a weak account 2026-07-04) is about the account
+    // even when a Format… code rides along with it.
+    return r === "404" || (!/\bUser/.test(r) && /\b(Track|Sample|Format)/.test(r));
+}
 /** Per D1 binding: the QOBUZ_ACCOUNTS value whose labels already have rows. One cheap batch per isolate. */
 const ensured = new WeakMap();
 
@@ -105,23 +120,39 @@ async function mint(request, url, env, fetchImpl, nowSec) {
         await ensureAccounts(env.DB, accounts.map((a) => a.label));
         ensured.set(env.DB, env.QOBUZ_ACCOUNTS);
     }
+    let refusedBy = null; // an account that refused this track without naming the track
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const label = await selectAccount(env.DB, nowSec, caps);
+        const label = await selectAccount(env.DB, nowSec, caps, refusedBy, accounts.map((a) => a.label));
         const account = accounts.find((a) => a.label === label);
-        if (!account) break; // nothing live under its caps (or a D1 label with no secret entry) → 503 below
+        if (!account) break; // nothing live under its caps → 503 below (or the 404 a refusal already earned)
         const r = await mintFromQobuz(fetchImpl, account, trackId, formatId, nowSec);
         // Country/colo: the Worker runs — and calls Qobuz from — the colo nearest the phone, so
         // if Qobuz applies rights by calling IP, refusals will follow the colo, not the account.
         const cf = request.cf || {};
         console.log(`mint track=${trackId} fmt=${formatId} acct=${label} install=${install.slice(0, 8)} purpose=${h("X-Stash-Purpose") || "-"} cc=${cf.country || "?"} colo=${cf.colo || "?"} -> ${r.kind}${r.reason ? " " + r.reason : ""}`);
+        if (r.kind === "locked" && !refusedBy && attempt + 1 < MAX_ATTEMPTS && !refusalNamesTrack(r.reason)) {
+            refusedBy = label;
+            continue;
+        }
         if (r.kind === "ok" || r.kind === "locked") {
             const writes = [bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install, ipTag(env, h("CF-Connecting-IP")))];
+            if (r.kind === "ok" && refusedBy) {
+                // Another account served what refusedBy would not: the refusal was about that account.
+                // Cool it, never kill it (a per-track signal must not retire an account, 2026-09-05).
+                console.log(`cross-check track=${trackId}: ${refusedBy} refused, ${label} served -> cooling ${refusedBy} ${REFUSAL_COOL_S}s`);
+                writes.push(coolAccountStmt(env.DB, refusedBy, nowSec + REFUSAL_COOL_S));
+            }
             if (r.kind === "ok" && r.etsp) writes.push(putCachedStmt(env.DB, trackId, formatId, r)); // no etsp → serve once, never cache
             await env.DB.batch(writes);
             return r.kind === "ok" ? ok(r.url, r.formatId, r.bitDepth, r.sampleRateHz, "MISS") : json({ error: "not_available" }, 404);
         }
         if (r.kind === "dead") await killAccount(env.DB, label, r.reason);
         else await coolAccount(env.DB, label, nowSec + TRANSIENT_COOL_S);
+    }
+    if (refusedBy) {
+        // The one refusal we got stands: answer it as before (404, quota spent) rather than 503.
+        await env.DB.batch([bumpQuotaStmt(env.DB, day, "global"), bumpQuotaStmt(env.DB, day, "i:" + install, ipTag(env, h("CF-Connecting-IP")))]);
+        return json({ error: "not_available" }, 404);
     }
     return json({ error: "busy" }, 503, { "Retry-After": "60" });
 }
