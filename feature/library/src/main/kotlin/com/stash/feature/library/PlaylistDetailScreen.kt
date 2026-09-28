@@ -118,6 +118,8 @@ fun PlaylistDetailScreen(
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val readOnly = follow?.readOnly == true
+    // The page's Download switch (#474); null on pages that have none.
+    val download by viewModel.download.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the ⋮ track menu.
@@ -197,10 +199,24 @@ fun PlaylistDetailScreen(
                     )
                 }
 
+                // ── Download switch (#474): the followed mix's row, for mixes and playlists ──
+                download?.let { on ->
+                    item(key = "download") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val label = if (state.playlist?.type == PlaylistType.DAILY_MIX) "Download this mix" else "Download this playlist"
+                            Text(label, Modifier.weight(1f))
+                            Switch(checked = on, onCheckedChange = { viewModel.setDownload(it) })
+                        }
+                    }
+                }
+
                 // ── Followed mix: sharer, Download this mix, Unfollow ───
                 follow?.takeIf { it.readOnly }?.let { f ->
                     item(key = "follow") {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = HeaderGutter, vertical = 8.dp)) {
                             Text("Following · from ${f.sharedBy ?: "a friend"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Download this mix", Modifier.weight(1f))
@@ -623,6 +639,9 @@ fun PlaylistDetailScreen(
 
 // ── Header composable ───────────────────────────────────────────────────────
 
+/** Side padding of the header's text, shared by the Download rows under it so they line up. */
+private val HeaderGutter = 20.dp
+
 /**
  * Displays the playlist artwork, title, metadata subtitle, and action buttons.
  * A gradient scrim overlays the bottom of the artwork for text readability.
@@ -722,7 +741,7 @@ private fun PlaylistHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = HeaderGutter),
         ) {
             // Playlist name
             Text(
