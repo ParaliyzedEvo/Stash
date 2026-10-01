@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">Add to Liked Songs</string>
-    <string name="notification_action_unlike">Remove from Liked Songs</string>
-    <string name="notification_action_repeat_off">Repeat Off</string>
-    <string name="notification_action_repeat_all">Repeat All</string>
-    <string name="notification_action_repeat_one">Repeat One</string>
-    <string name="notification_action_shuffle_on">Shuffle On</string>
-    <string name="notification_action_shuffle_off">Shuffle Off</string>
-    <string name="shuffle_play">Shuffle Play</string>
-    <string name="resuming_channel_name">Playback</string>
-    <string name="resuming_notification_title">Resuming…</string>
+    <string name="notification_action_like">좋아요 표시한 음악에 추가</string>
+    <string name="notification_action_unlike">좋아요 표시한 음악에서 제거</string>
+    <string name="notification_action_repeat_off">반복 끄기</string>
+    <string name="notification_action_repeat_all">모두 반복</string>
+    <string name="notification_action_repeat_one">한곡 반복</string>
+    <string name="notification_action_shuffle_on">셔플 켜기</string>
+    <string name="notification_action_shuffle_off">셔플 끄기</string>
+    <string name="shuffle_play">셔플 재생</string>
+    <string name="resuming_channel_name">재생</string>
+    <string name="resuming_notification_title">재개하는 중…</string>
 </resources>
