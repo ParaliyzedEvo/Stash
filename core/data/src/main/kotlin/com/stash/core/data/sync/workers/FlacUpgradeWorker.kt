@@ -60,6 +60,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
             return Result.success()
         }
 
+        val autoSweep = inputData.getBoolean(KEY_AUTO_SWEEP, false)
         val pending = queueDao.pendingTrackIds()
         if (pending.isEmpty()) return Result.success()
         val total = queueDao.countAll()
@@ -68,6 +69,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
         var upgraded = 0
         var noMatch = 0
         var failed = 0
+        var skipped = 0
         try {
             pending.forEachIndexed { index, trackId ->
                 val track = trackDao.getById(trackId)?.toDomain()
@@ -76,6 +78,14 @@ class FlacUpgradeWorker @AssistedInject constructor(
                     // dropped the row; the status write is a harmless no-op.
                     queueDao.setStatus(trackId, FlacUpgradeStatus.FAILED)
                     failed++
+                } else if (autoSweep && track.matchPickedAt != null) {
+                    // The user picked this song's audio after the sweep was
+                    // queued (#531). The upgrade would re-run the lossless
+                    // lookup that likely chose the wrong recording and write
+                    // it over their pick. A batch the user chose still runs.
+                    Log.i(TAG, "skipping track $trackId: the user picked its audio")
+                    queueDao.setStatus(trackId, FlacUpgradeStatus.NO_MATCH)
+                    skipped++
                 } else {
                     val status = when (losslessUpgrader.upgradeToLossless(track, sweep = true)) {
                         UpgradeResult.Upgraded -> { upgraded++; FlacUpgradeStatus.DONE }
@@ -108,7 +118,7 @@ class FlacUpgradeWorker @AssistedInject constructor(
         }
 
         syncNotificationManager.showFlacUpgradeSummary(
-            upgraded = upgraded, noMatch = noMatch, failed = failed,
+            upgraded = upgraded, noMatch = noMatch, failed = failed, skipped = skipped,
         )
         return Result.success(
             workDataOf(KEY_UPGRADED to upgraded, KEY_NO_MATCH to noMatch, KEY_FAILED to failed),

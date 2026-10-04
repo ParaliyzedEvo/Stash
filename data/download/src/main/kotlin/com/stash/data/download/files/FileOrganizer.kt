@@ -113,6 +113,59 @@ class FileOrganizer @Inject constructor(
         return File(getTrackDir(artist, album, layout), "${location.baseName}.$format")
     }
 
+    /**
+     * Where [commitDownload] would put this track right now, once per name
+     * suffix in [nameSuffixes] (null = the canonical name). For internal
+     * storage, the absolute path, whether or not a file is there yet. For a
+     * SAF tree, the URI of the document already at that spot, or null when
+     * the spot is empty: a SAF URI only exists once its document does. The
+     * folder is listed once for all the names; findFile per name re-lists it
+     * each time. The wrong-match swap asks this before saving, to keep the
+     * user's old file safe and to stay off a file another track uses (#531).
+     */
+    suspend fun plannedPaths(
+        artist: String,
+        album: String?,
+        title: String,
+        format: String,
+        trackId: Long?,
+        nameSuffixes: List<String?>,
+    ): List<String?> {
+        val location = resolveLocation(artist, album, title, trackId)
+        val names = nameSuffixes.map { fileNameFor(location, format, it) }
+        val externalTree = storagePreference.externalTreeUri.first()
+        if (externalTree == null) {
+            val dir = if (location.segments.isEmpty()) {
+                musicDir
+            } else {
+                File(musicDir, location.segments.joinToString("/"))
+            }
+            return names.map { File(dir, it).absolutePath }
+        }
+        val listing: Map<String, String> = runCatching {
+            var cursor = DocumentFile.fromTreeUri(context, externalTree) ?: return@runCatching emptyMap()
+            for (segment in location.segments) {
+                cursor = cursor.findFile(segment)?.takeIf { it.isDirectory } ?: return@runCatching emptyMap()
+            }
+            cursor.listFiles().mapNotNull { doc -> doc.name?.let { name -> name to doc.uri.toString() } }.toMap()
+        }.getOrDefault(emptyMap())
+        return names.map { listing[it] }
+    }
+
+    /**
+     * `<baseName>[-<suffix>].<format>`. A name suffix keeps a track's file
+     * apart from another track's at the same spot; it is slugged like every
+     * other path part.
+     */
+    private fun fileNameFor(
+        location: LibraryLayoutResolver.ResolvedLocation,
+        format: String,
+        nameSuffix: String?,
+    ): String {
+        val suffix = nameSuffix?.let(FileOrganizerSlugs::slugify)?.takeIf { it.isNotEmpty() }
+        return if (suffix == null) "${location.baseName}.$format" else "${location.baseName}-$suffix.$format"
+    }
+
     /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
     fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
 
@@ -168,6 +221,14 @@ class FileOrganizer @Inject constructor(
                     snapshot
                 } ?: return com.stash.core.data.library.FileExistenceResult(exists = true)
 
+                // The row's own document is still in the tree, so it exists as
+                // stored. A swap can give a track a distinct name when another
+                // track uses the canonical one (#531); the canonical lookup
+                // below would heal this row onto that other track's file.
+                if (filePath in snap.index.documentUris) {
+                    return com.stash.core.data.library.FileExistenceResult(exists = true)
+                }
+
                 val playlistName = if (snap.layout == LibraryLayout.PLAYLIST) {
                     runCatching { trackDao.getFirstPlaylistNameForTrack(trackId) }.getOrNull()
                 } else {
@@ -222,8 +283,9 @@ class FileOrganizer @Inject constructor(
 
         val byDirKey = LinkedHashMap<String, AlbumIndex>(256)
         val byFileName = HashMap<String, MutableList<DocumentFile>>(512)
-        indexTree(root, "", byDirKey, byFileName)
-        return SafIndex(byDirKey, byFileName)
+        val documentUris = HashSet<String>(512)
+        indexTree(root, "", byDirKey, byFileName, documentUris)
+        return SafIndex(byDirKey, byFileName, documentUris)
     }
 
     /** Recursive worker behind [buildSafIndex]. Depth is directory nesting (≤4 in practice). */
@@ -232,6 +294,7 @@ class FileOrganizer @Inject constructor(
         dirKey: String,
         byDirKey: MutableMap<String, AlbumIndex>,
         byFileName: MutableMap<String, MutableList<DocumentFile>>,
+        documentUris: MutableSet<String>,
     ) {
         val subDirs = ArrayList<DocumentFile>()
         val filesByName = LinkedHashMap<String, DocumentFile>()
@@ -242,12 +305,19 @@ class FileOrganizer @Inject constructor(
                 val name = child.name ?: continue
                 filesByName[name] = child
                 byFileName.getOrPut(name) { ArrayList(1) }.add(child)
+                documentUris += child.uri.toString()
             }
         }
         byDirKey[dirKey] = AlbumIndex(dir, filesByName)
         for (sub in subDirs) {
             val subName = sub.name ?: continue
-            indexTree(sub, if (dirKey.isEmpty()) subName else "$dirKey/$subName", byDirKey, byFileName)
+            indexTree(
+                sub,
+                if (dirKey.isEmpty()) subName else "$dirKey/$subName",
+                byDirKey,
+                byFileName,
+                documentUris,
+            )
         }
     }
 
@@ -307,6 +377,8 @@ class FileOrganizer @Inject constructor(
         val byDirKey: Map<String, AlbumIndex>,
         /** Whole-tree filename → every document carrying it (usually 1). */
         val byFileName: Map<String, List<DocumentFile>>,
+        /** Every file document's URI, so a row's stored URI can be found as is. */
+        val documentUris: Set<String> = emptySet(),
     )
 
     /** Pre-listed contents of a single directory. */
@@ -424,6 +496,8 @@ class FileOrganizer @Inject constructor(
      * The sub-destination inside the root follows the current [LibraryLayout]
      * (#198/#104); when the layout is Per-playlist and [trackId] is known,
      * the owning playlist is looked up so the file lands in its folder.
+     * [nameSuffix] gives the file a distinct name at that spot (see
+     * [plannedPaths]).
      */
     suspend fun commitDownload(
         tempFile: File,
@@ -432,6 +506,7 @@ class FileOrganizer @Inject constructor(
         title: String,
         format: String,
         trackId: Long? = null,
+        nameSuffix: String? = null,
     ): CommittedTrack {
         val size = tempFile.length()
         val externalTree = storagePreference.externalTreeUri.first()
@@ -442,13 +517,19 @@ class FileOrganizer @Inject constructor(
             } else {
                 File(musicDir, location.segments.joinToString("/")).also { it.mkdirs() }
             }
-            val finalFile = File(dir, "${location.baseName}.$format")
+            val finalFile = File(dir, fileNameFor(location, format, nameSuffix))
             tempFile.copyTo(finalFile, overwrite = true)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
             val location = resolveLocation(artist, album, title, trackId)
-            val safUriString = writeToSafTree(tempFile, externalTree, location, format)
+            val safUriString = writeToSafTree(
+                tempFile,
+                externalTree,
+                location,
+                fileNameFor(location, format, nameSuffix),
+                format,
+            )
             tempFile.delete()
             CommittedTrack(safUriString, size)
         }
@@ -465,6 +546,7 @@ class FileOrganizer @Inject constructor(
         tempFile: File,
         treeUri: Uri,
         location: LibraryLayoutResolver.ResolvedLocation,
+        filename: String,
         format: String,
     ): String {
         val root = DocumentFile.fromTreeUri(context, treeUri)
@@ -473,7 +555,6 @@ class FileOrganizer @Inject constructor(
         for (segment in location.segments) {
             cursor = cursor.findOrCreateDir(segment)
         }
-        val filename = "${location.baseName}.$format"
         // Overwrite: delete any existing file with the same name before creating.
         cursor.findFile(filename)?.delete()
         val target = cursor.createFile(mimeTypeFor(format), filename)

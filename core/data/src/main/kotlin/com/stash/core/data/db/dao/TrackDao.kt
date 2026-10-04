@@ -289,6 +289,11 @@ interface TrackDao {
     * against (not the full lossless codec set used by getFlacCount/-StorageBytes)
     * because Stash's lossless sources (Qobuz) only ever deliver FLAC;
     * ALAC/WAV/APE/etc. never appear from any source Stash downloads through.
+    *
+    * Leaves out songs whose audio the user picked themselves (#531,
+    * `match_picked_at`): the upgrade re-runs the lossless lookup, which is
+    * most likely what chose the wrong recording in the first place, and
+    * would write that FLAC over the user's pick.
     */
     @Query(
         """
@@ -300,6 +305,7 @@ interface TrackDao {
         WHERE t.is_downloaded = 1
         AND t.file_path IS NOT NULL
         AND LOWER(t.file_format) != 'flac'
+        AND t.match_picked_at IS NULL
         AND bl.canonical_key IS NULL
         """
     )
@@ -387,19 +393,39 @@ interface TrackDao {
     """)
     suspend fun getFirstPlaylistNameForTrack(trackId: Long): String?
 
-    /** Reverts tracks whose file no longer exists on disk back to
+    /** Reverts a track whose file no longer exists on disk back to
     *  "needs download" — clears is_downloaded, file_path, and the stale
-    *  size so LibrarySizeHolder's next walk doesn't count phantom bytes. */
+    *  size so LibrarySizeHolder's next walk doesn't count phantom bytes —
+    *  but only while it still points at [checkedPath], the path found
+    *  missing. A swap or download can record a new file between the check
+    *  and this write (#531 review), and resetting by id alone wiped it. */
     @Query("""
         UPDATE tracks
         SET is_downloaded = 0, file_path = NULL, file_size_bytes = 0,
             download_missing_at = :now
-        WHERE id IN (:ids)
+        WHERE id = :trackId AND file_path = :checkedPath
     """)
-    suspend fun resetMissingFilesRaw(ids: List<Long>, now: Long)
+    suspend fun resetMissingFile(trackId: Long, checkedPath: String, now: Long): Int
 
-    suspend fun resetMissingFiles(ids: List<Long>, now: Long = System.currentTimeMillis()) =
-        ids.chunkedForBindWrite { resetMissingFilesRaw(it, now) }
+    /**
+     * [resetMissingFile] for every checked track (id to the path found
+     * missing), in one transaction. Returns how many rows it reset: a track
+     * that moved to a new file meanwhile is skipped and not counted.
+     */
+    @Transaction
+    suspend fun resetMissingFiles(checked: Map<Long, String>, now: Long = System.currentTimeMillis()): Int {
+        var reset = 0
+        for ((trackId, checkedPath) in checked) reset += resetMissingFile(trackId, checkedPath, now)
+        return reset
+    }
+
+    /**
+     * Forgets that the user picked this track's audio in Failed Matches
+     * (#531): a FLAC upgrade they asked for replaced the pick, and a later
+     * re-download should get the FLAC again, not the picked video.
+     */
+    @Query("UPDATE tracks SET match_picked_at = NULL WHERE id = :trackId AND match_picked_at IS NOT NULL")
+    suspend fun clearMatchPick(trackId: Long)
 
     /**
      * How many tracks the library had downloaded and no longer has on disk.
@@ -791,6 +817,63 @@ interface TrackDao {
         downloadedAt: Long = System.currentTimeMillis(),
         sampleRateHz: Int? = null,
         bitsPerSample: Int? = null,
+    ): Int
+
+    /**
+     * The one write that finishes a wrong-match swap (#531): nothing about the
+     * track changes before it, so a failure or the app dying mid-swap leaves
+     * the track as it was. It sets the new video id, guarded like
+     * [updateYoutubeIdIfUnclaimed] so it can't take a video another track got
+     * meanwhile, and the replacement file with its format, bitrate, length
+     * (null [durationMs] keeps the row's) and quality columns written
+     * outright, nulls included: [markAsDownloaded]'s COALESCE would keep a
+     * replaced FLAC's 24-bit depth on lossy audio. Loudness is cleared so the
+     * background pass measures the new recording, [metadataEmbeddedAt] says
+     * whether Stash's tags were written, the wrong-match flag is cleared, and
+     * [TrackEntity.matchPickedAt] records that the user picked this audio.
+     *
+     * @return rows updated: 1, or 0 when another track has the video or the
+     *   track is gone (and nothing was written).
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET is_downloaded = 1,
+            file_path = :filePath,
+            file_size_bytes = :fileSizeBytes,
+            date_added = :downloadedAt,
+            download_missing_at = NULL,
+            sample_rate_hz = :sampleRateHz,
+            bits_per_sample = :bitsPerSample,
+            loudness_lufs = NULL,
+            true_peak_dbfs = NULL,
+            loudness_measured_at = NULL,
+            match_flagged = 0,
+            match_picked_at = :pickedAt,
+            youtube_id = :youtubeId,
+            file_format = :fileFormat,
+            quality_kbps = :qualityKbps,
+            duration_ms = COALESCE(:durationMs, duration_ms),
+            metadata_embedded_at = :metadataEmbeddedAt
+        WHERE id = :trackId
+          AND NOT EXISTS (
+              SELECT 1 FROM tracks WHERE youtube_id = :youtubeId AND id != :trackId
+          )
+        """
+    )
+    suspend fun completeSwap(
+        trackId: Long,
+        youtubeId: String,
+        filePath: String,
+        fileSizeBytes: Long,
+        fileFormat: String,
+        qualityKbps: Int,
+        sampleRateHz: Int?,
+        bitsPerSample: Int?,
+        durationMs: Long?,
+        metadataEmbeddedAt: Long?,
+        pickedAt: Long,
+        downloadedAt: Long,
     ): Int
 
     /**
@@ -1822,6 +1905,16 @@ interface TrackDao {
     )
     suspend fun updateYoutubeIdIfUnclaimed(trackId: Long, youtubeId: String): Int
 
+    /**
+     * How many OTHER tracks record [filePath] as their file. Two recordings of
+     * one song can share a file (Single-folder and Per-playlist layouts name
+     * files `<artist>-<title>`, and same or blank albums collide under
+     * Artist/Album), and a swap must never write over or delete a file another
+     * track still plays from (#531).
+     */
+    @Query("SELECT COUNT(*) FROM tracks WHERE file_path = :filePath AND id != :trackId")
+    suspend fun countOtherTracksWithFilePath(filePath: String, trackId: Long): Int
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId")
     suspend fun updateYoutubeId(trackId: Long, youtubeId: String)
 
@@ -2309,8 +2402,20 @@ interface TrackDao {
      * Playing overflow menu when the user realises the downloaded audio
      * doesn't match the Spotify metadata. Flagged tracks surface in the
      * Failed Matches screen so the resync flow can offer alternatives.
+     *
+     * Flagging also forgets that the user picked the audio
+     * ([TrackEntity.matchPickedAt], #531): they are saying the pick is wrong
+     * too, so resync treats its video as the wrong one again instead of
+     * offering it back. Unflagging keeps the pick.
      */
-    @Query("UPDATE tracks SET match_flagged = :flagged WHERE id = :trackId")
+    @Query(
+        """
+        UPDATE tracks
+        SET match_flagged = :flagged,
+            match_picked_at = CASE WHEN :flagged THEN NULL ELSE match_picked_at END
+        WHERE id = :trackId
+        """
+    )
     suspend fun updateMatchFlagged(trackId: Long, flagged: Boolean)
 
     /**
