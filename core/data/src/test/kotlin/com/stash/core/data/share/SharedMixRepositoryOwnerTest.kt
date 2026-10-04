@@ -34,7 +34,7 @@ class SharedMixRepositoryOwnerTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
             .allowMainThreadQueries().build()
         server = MockWebServer().also { it.start() }
-        val api = ShareApiClient(OkHttpClient()).apply { baseUrl = server.url("/").toString().removeSuffix("/") }
+        val api = ShareApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         repo = SharedMixRepository(db, db.sharedMixDao(), db.playlistDao(), db.trackDao(), mockk<MusicRepository>(relaxed = true), api, ApplicationProvider.getApplicationContext())
         playlistId = db.playlistDao().insert(PlaylistEntity(name = "Ambient", source = MusicSource.BOTH, sourceId = "custom_1"))
         val t1 = db.trackDao().insert(TrackEntity(title = "One", artist = "A", isrc = "I1", albumArtUrl = "https://i.scdn.co/image/1", source = MusicSource.SPOTIFY))
@@ -47,7 +47,7 @@ class SharedMixRepositoryOwnerTest {
     @Test fun `share creates the link and stores an OWNER row with key and hash`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"Kx7Qa2pL","version":1,"url":"u"}"""))
         val out = repo.share(playlistId, name = "Sleep", sharedBy = "Rawn", autoUpdate = true)
-        assertThat(out).isEqualTo(ShareResult.Ok("https://stash-share.rawnaldclark.workers.dev/m/Kx7Qa2pL"))
+        assertThat(out).isEqualTo(ShareResult.Ok("https://stashfm.app/m/Kx7Qa2pL"))
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"name\":\"Sleep\"")
         assertThat(body).contains("\"t\":\"One\"")
