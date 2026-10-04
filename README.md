@@ -1,6 +1,6 @@
 # Stash
 
-> **Your Spotify + YouTube Music library, on your phone. In FLAC, if you bring the source.**
+> **Your Spotify + YouTube Music library**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-purple)](#requirements)
