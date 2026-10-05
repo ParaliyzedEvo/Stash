@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">أَغَانٍ أعجبتني</string>
+    <string name="notification_action_unlike">إزالة من الأغاني المفضلة</string>
+    <string name="notification_action_repeat_off">إيقاف التكرار</string>
+    <string name="notification_action_repeat_all">تكرار الكل</string>
+    <string name="notification_action_repeat_one">تكرار الأغنية الحالية</string>
+    <string name="notification_action_shuffle_on">تفعيل التشغيل العشوائي</string>
+    <string name="notification_action_shuffle_off">إلغاء التشغيل العشوائي</string>
+    <string name="shuffle_play">تشغيل عشوائي</string>
+    <string name="resuming_channel_name">التشغيل</string>
+    <string name="resuming_notification_title">جاري الاستئناف…</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">Dodaj do polubionych utworów</string>
+    <string name="notification_action_unlike">Usuń z polubionych utworów</string>
+    <string name="notification_action_repeat_off">Wyłącz powtarzanie</string>
+    <string name="notification_action_repeat_all">Powtarzaj wszystkie</string>
+    <string name="notification_action_repeat_one">Powtarzaj aktualny</string>
+    <string name="notification_action_shuffle_on">Włącz odtwarzanie losowe</string>
+    <string name="notification_action_shuffle_off">Wyłącz odtwarzanie losowe</string>
+    <string name="shuffle_play">Odtwarzaj losowo</string>
+    <string name="resuming_channel_name">Odtwarzanie</string>
+    <string name="resuming_notification_title">Wznawianie…</string>
+</resources>
