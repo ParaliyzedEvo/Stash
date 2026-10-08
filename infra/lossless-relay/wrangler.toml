@@ -6,11 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 
 # Caps (spec §5.4, §6.2, §7). Strings: TOML vars reach the Worker as strings.
 [vars]
-GLOBAL_DAILY_CAP = "34667"     # raised ~33% on 2026-10-03
-INSTALL_DAILY_CAP = "500"      # lowered from 800 on 2026-10-08 by user decision
-ACCOUNT_HOURLY_CAP = "467"     # raised ~33% on 2026-10-03
-ACCOUNT_DAILY_CAP = "8000"     # raised ~33% on 2026-10-03
-DOWNLOAD_PACE_HEADROOM_PCT = "13" # raised ~33% on 2026-10-03; stream-first download pacing allowance
+GLOBAL_DAILY_CAP = "34667"     # 13×2000 was 26000; raised ~33% on 2026-10-03 after 6 seats were added on 09-22
+INSTALL_DAILY_CAP = "500"      # doubled 300→600 on 09-11; raised to 800 (~33%) on 10-03; lowered to 500 on 10-08
+ACCOUNT_HOURLY_CAP = "467"     # 350→467 (~33%) on 2026-10-03; 100/h failed for all 7 accounts on 09-19, then rose to 250
+ACCOUNT_DAILY_CAP = "8000"     # 6000→8000 (~33%) on 2026-10-03; originally doubled 1000→2000 on 09-08
+DOWNLOAD_PACE_HEADROOM_PCT = "13" # 10→13 (+30%) on 2026-10-03; streams first, downloads take what the pool can spare
 
 # Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
 [[d1_databases]]
@@ -23,7 +23,7 @@ migrations_dir = "migrations"
 [[ratelimits]]
 name = "MINT_RL"
 namespace_id = "1001"
-simple = { limit = 40, period = 60 } # raised ~33% on 2026-10-03
+simple = { limit = 40, period = 60 } # raised from 30 (+33%) on 2026-10-03
 
 # Hourly prune of expired mints and stale quota rows.
 [triggers]
@@ -33,3 +33,4 @@ crons = ["17 * * * *"]
 #   RELAY_KEY       hex HMAC key. The SAME value is published as `relay_key` in lossless.json.
 #   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
 #   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
+#   QOBUZ_ACCOUNTS_EXTRA  optional additive JSON array; lets the pool grow without replacing QOBUZ_ACCOUNTS.
