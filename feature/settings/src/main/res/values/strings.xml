@@ -28,4 +28,19 @@
     <string name="web_library_sent_title">Sent</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
     <string name="web_library_sent_body">Sent %2$s, %3$s and %4$s to %1$s. It asks there before adding anything.</string>
+        <!-- Settings > About -->
+    <string name="settings_about_title">About &amp; Help</string>
+    <string name="settings_diagnostics_section">Diagnostics</string>
+    <string name="settings_share_latest_crash">Share latest crash log</string>
+    <string name="settings_attach_most_recent_crash">Attach the most recent crash file...</string>
+    <string name="settings_no_recent_crashes">No recent crashes found</string>
+    <string name="settings_share_diagnostics_bundle">Share diagnostics bundle</string>
+    <string name="settings_bundle_recent_logs">Bundle recent logs and system info...</string>
+    <string name="settings_share_diagnostics">Share diagnostics</string>
+    <string name="settings_about_section">About</string>
+    <string name="settings_update_on_latest">You\'re on the latest version</string>
+    <string name="settings_update_available">Update available</string>
+    <string name="settings_update_check_failed">Couldn\'t check for updates</string>
+    <string name="settings_checking_updates">Checking...</string>
+    <string name="settings_check_updates">Check for updates</string>
 </resources>
