@@ -173,22 +173,23 @@ class PlayerRepositoryShuffleQueueTest {
     }
 
     /**
-     * ExoPlayer drops an inserted item at a random point of the shuffle walk, so a "Play next"
-     * could land behind the current song and never play. The repository sends the walk with the
-     * new item where the user asked.
-     */
+    * Under shuffle the repository no longer inserts itself: the service inserts the item and
+    * sets the shuffle order in one step (it can read the real order, a controller can't).
+    */
     @Test
-    fun `Play next under shuffle places the song right after the current one in the walk`() = runTest {
+    fun `Play next under shuffle hands the insert and the walk placement to the service`() = runTest {
         repo.addNext(track(9))
 
-        // Walk 2 → 0 → 3 → 1, track 3 (slot 2) playing; the song goes in at slot 3, so the old
-        // slot 3 becomes 4 and the new one follows slot 2 in the walk.
         verify(exactly = 1) {
             controller.sendCustomCommand(
-                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
-                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(2, 3, 0, 4, 1) },
+                match { it.customAction == StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED },
+                match {
+                    it.getInt(StashPlaybackService.EXTRA_PLAY_NEXT_AHEAD) == 0 &&
+                        it.getBundle(StashPlaybackService.EXTRA_PLAY_NEXT_ITEM) != null
+                },
             )
         }
+        verify(exactly = 0) { controller.addMediaItem(any<Int>(), any<MediaItem>()) }
     }
 
     @Test

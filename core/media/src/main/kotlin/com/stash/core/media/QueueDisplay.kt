@@ -131,14 +131,15 @@ internal object QueueDisplay {
    * change the MediaController's masking timeline answers an UNSHUFFLED order until the
    * session's real one arrives, and building on that would unshuffle the queue.
    */
-  fun walkWithInserted(walk: List<Int>, at: Int, count: Int, currentIndex: Int, afterCurrent: Boolean): List<Int>? {
+fun walkWithInserted(walk: List<Int>, at: Int, count: Int, currentIndex: Int, afterCurrent: Boolean, ahead: Int = 0): List<Int>? {
     if (walk.withIndex().all { (i, v) -> i == v }) return null
     val shifted = walk.map { if (it >= at) it + count else it }
     val inserted = (at until at + count).toList()
-    val pos = if (afterCurrent) walk.indexOf(currentIndex) else -1
-    if (pos < 0) return shifted + inserted
+    val cur = if (afterCurrent) walk.indexOf(currentIndex) else -1
+    if (cur < 0) return shifted + inserted
+    val pos = (cur + ahead).coerceAtMost(shifted.size - 1)
     return shifted.subList(0, pos + 1) + inserted + shifted.subList(pos + 1, shifted.size)
-  }
+}
 
   /**
    * The shuffle walk after [count] items were inserted at timeline index [at], with the new items

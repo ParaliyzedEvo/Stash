@@ -436,6 +436,11 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val radioGrowMutex = Mutex()
 
+    private val playHistory = ArrayDeque<String>()   // mediaIds of songs already played, most recent last
+    private var historyCurrentId: String? = null
+    private var goingBack = false
+    @Volatile private var playNextAhead = 0          // "Play next" songs still queued right after the current one
+
     /**
      * The LOGICAL playback queue — the user-intended track order. Since the
      * full-timeline migration (2026-07-04) the controller timeline mirrors
@@ -602,6 +607,22 @@ class PlayerRepositoryImpl @Inject constructor(
         cascadeGuard.onUserTransport()
         val controller = ensureController() ?: return
         if (inListenTogether) { controller.seekToPrevious(); return }
+        if (controller.currentPosition > 3_000) { controller.seekTo(0); return }  // delete this line if you want back to always jump a song
+
+        while (true) {
+            val id = playHistory.removeLastOrNull() ?: break
+            val idx = (0 until controller.mediaItemCount)
+                .firstOrNull { controller.getMediaItemAt(it).mediaId == id } ?: continue
+            val target = queueTrackAtTimelineIndex(controller, idx)
+            if (target == null || prepareExplicitTimelineTarget(controller, idx, target, reportUnavailable = false)) {
+                goingBack = true
+                controller.seekToDefaultPosition(idx)
+                return
+            }
+        }
+
+        // No history: under shuffle the walk's previous slot never played, so restart instead.
+        if (controller.shuffleModeEnabled) { controller.seekTo(0); return }
         if (!controller.hasPreviousMediaItem()) return
 
         // Do not enter a stale offline item and rely on forward-only error
@@ -751,6 +772,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // A paused restore must not inherit the session's playWhenReady = true: a later prepare (the
         // defensive one in onMediaItemTransition, a media button) would then start the music.
         if (!play) controller.playWhenReady = false
+        resetPlayHistory()
         controller.setMediaItems(items, startInPlayable, startPositionMs)
         // After Listen Together the user's queue comes back paused and unprepared, like the cold-start
         // ghost: nothing resolves until they press play (Media3 prepares an idle player on play).
@@ -1070,7 +1092,7 @@ class PlayerRepositoryImpl @Inject constructor(
             .setUri(resolved.url)
             .setMediaMetadata(refreshedMeta.build())
             .build()
-        controller.replaceMediaItem(timelineIndex, refreshed)
+        replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
         return true
     }
 
@@ -1174,6 +1196,7 @@ class PlayerRepositoryImpl @Inject constructor(
             // Fresh station (artist radio, song ⋮ menu on a non-playing row):
             // replace the queue and start from the top.
             currentQueueTracks = firstBatch
+            resetPlayHistory()
             controller.setMediaItems(firstBatch.map { it.toQueueMediaItem() }, 0, 0L)
             controller.prepare()
             controller.play()
@@ -1285,6 +1308,42 @@ class PlayerRepositoryImpl @Inject constructor(
         }.takeIf { it.size == count }
     }
 
+    private fun resetPlayHistory() {
+        playHistory.clear()
+        playNextAhead = 0
+        historyCurrentId = null
+    }
+
+    /** Records a song change into the history. Safe to call repeatedly; only a real change does anything. */
+    private fun noteCurrentItem(newId: String?, reason: Int?) {
+        Log.d("QueueHist", "note new=$newId prev=$historyCurrentId reason=$reason history=$playHistory")
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
+        val prev = historyCurrentId
+        if (newId == null || newId == prev) return
+        // prev == null right after a new queue was loaded, so nothing gets pushed.
+        if (!goingBack && prev != null) {
+            playHistory.addLast(prev)
+            if (playHistory.size > 100) playHistory.removeFirst()
+            playNextAhead = (playNextAhead - 1).coerceAtLeast(0)
+        }
+        goingBack = false
+        historyCurrentId = newId
+    }
+
+    /** replaceMediaItem, but under shuffle the play order is put back exactly as it was. */
+    private fun replaceMediaItemKeepingShuffle(controller: MediaController, index: Int, item: MediaItem) {
+        // Read BEFORE the replace. An identity walk means the controller's masking timeline
+        // isn't the real order yet; re-sending that would unshuffle the queue.
+        val walk = shuffleWalk(controller)?.takeUnless { w -> w.withIndex().all { (i, v) -> i == v } }
+        controller.replaceMediaItem(index, item)
+        if (walk != null) {
+            controller.sendCustomCommand(
+                SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+                Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, walk.toIntArray()) },
+            )
+        }
+    }
+
     /**
      * Under shuffle, ExoPlayer's DefaultShuffleOrder gives every inserted item a
      * uniformly random slot in the PLAY order (cloneAndInsert), whatever its
@@ -1303,9 +1362,10 @@ class PlayerRepositoryImpl @Inject constructor(
         count: Int,
         currentIndex: Int,
         afterCurrent: Boolean,
+        ahead: Int = 0,
     ) {
         walk ?: return
-        val order = QueueDisplay.walkWithInserted(walk, at, count, currentIndex, afterCurrent) ?: return
+        val order = QueueDisplay.walkWithInserted(walk, at, count, currentIndex, afterCurrent, ahead) ?: return
         controller.sendCustomCommand(
             SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
             Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, order.toIntArray()) },
@@ -1331,32 +1391,32 @@ class PlayerRepositoryImpl @Inject constructor(
         val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
-        // Mirror into the logical queue right after the playing track's
-        // logical position (falling back to append) so the queue sheet
-        // shows the Play-Next insert where it will actually play. Before the
-        // timeline insert: the controller reports that insert, and the queue
-        // published from it, during addMediaItem itself, and a paused player
-        // may send nothing afterwards to correct a stale one.
+        val ahead = if (wasEmpty) 0 else playNextAhead
         val currentId = controller.currentMediaItem?.mediaMetadata?.extras
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: -1L
         val logicalPos = currentQueueTracks.indexOfFirst { it.id == currentId }
         currentQueueTracks = when {
             wasEmpty -> listOf(queueTrack)
             logicalPos >= 0 -> currentQueueTracks.toMutableList()
-                .apply { add(logicalPos + 1, queueTrack) }
+                .apply { add((logicalPos + 1 + ahead).coerceAtMost(size), queueTrack) }
             else -> currentQueueTracks + queueTrack
         }
-        // Instant add: stream tracks enter as stash-resolve:// placeholders
-        // (resolved at play time), so the queue grows immediately instead of
-        // waiting out a slow resolve.
         val currentIndex = controller.currentMediaItemIndex
-        val insertIndex = currentIndex + 1
-        val walk = if (wasEmpty) null else shuffleWalk(controller)
-        controller.addMediaItem(insertIndex, queueItem)
-        placeInShuffleOrder(controller, walk, insertIndex, 1, currentIndex, afterCurrent = true)
-        // If the queue was empty, the user tapped "Play next" with nothing
-        // playing — they expect the song to actually start, not just sit
-        // silently in a queue they can't see. Prepare and play.
+        val insertIndex = if (controller.shuffleModeEnabled) currentIndex + 1
+            else (currentIndex + 1 + ahead).coerceAtMost(controller.mediaItemCount)
+        if (!wasEmpty && controller.shuffleModeEnabled) {
+            // The service inserts AND places it in the shuffle order in one step.
+            controller.sendCustomCommand(
+                SessionCommand(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED, Bundle.EMPTY),
+                Bundle().apply {
+                    putBundle(StashPlaybackService.EXTRA_PLAY_NEXT_ITEM, queueItem.toBundleIncludeLocalConfiguration())
+                    putInt(StashPlaybackService.EXTRA_PLAY_NEXT_AHEAD, ahead)
+                },
+            )
+        } else {
+            controller.addMediaItem(insertIndex, queueItem)
+        }
+        playNextAhead = ahead + 1
         if (wasEmpty) {
             controller.prepare()
             controller.play()
@@ -1503,7 +1563,7 @@ class PlayerRepositoryImpl @Inject constructor(
             }
             return false
         }
-        controller.replaceMediaItem(timelineIndex, target.toStreamPlaceholderMediaItem())
+        replaceMediaItemKeepingShuffle(controller, timelineIndex, target.toStreamPlaceholderMediaItem())
         return true
     }
 
@@ -2235,6 +2295,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioSession = null
         _radioSeedLabel.value = null
         val controller = ensureController() ?: return
+        resetPlayHistory()
         controller.setMediaItem(mediaItem)
         controller.prepare()
         controller.play()
@@ -2357,6 +2418,7 @@ class PlayerRepositoryImpl @Inject constructor(
     internal val playerListener = object : Player.Listener { // internal: test seam
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            noteCurrentItem(mediaItem?.mediaId, reason)
             val controller = controllerDeferred ?: return
             // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
             // where drift correction nudges the speed on purpose.
@@ -2686,7 +2748,7 @@ class PlayerRepositoryImpl @Inject constructor(
             isrc = track.isrc,
         )
         val replacement = failedItem.buildUpon().setUri(placeholder).build()
-        controller.replaceMediaItem(failedIndex, replacement)
+        replaceMediaItemKeepingShuffle(controller, failedIndex, replacement)
         controller.prepare()
         controller.play()
         return true
@@ -2942,6 +3004,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // NOT survive the session round-trip, so it can never self-disarm on the
         // read-back the way its KDoc originally assumed.
         maybeStampCurrentItemQuality(controller)
+        noteCurrentItem(controller.currentMediaItem?.mediaId, null)
 
         val currentItem = controller.currentMediaItem
         // Badge from the live resolve, not from extras that may not have stuck.
