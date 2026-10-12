@@ -1,10 +1,7 @@
 package com.stash.feature.settings
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,216 +21,129 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.ui.components.GlassCard
-import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsValueRow
 
-/**
- * The About & Help spoke of the hub-and-spoke Settings redesign.
- *
- * Behavior-preserving relocation of the Diagnostics section (crash-report
- * share + diagnostics-bundle preview nav) and the About section (version /
- * license value rows + check-for-updates) from the monolithic
- * [SettingsScreen]. Every callback and intent-building branch is copied
- * verbatim; only the group headers and value rows are restyled onto the
- * shared component kit ([SettingsSectionLabel], [SettingsValueRow]).
- */
 @Composable
 fun SettingsAboutScreen(
     onBack: () -> Unit,
     onNavigateToDiagnosticsPreview: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: SettingsViewModel = hiltViewModel(),
+    viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-// Avant :
-SettingsScaffold(title = "About & Help")
-// Après :
-SettingsScaffold(title = stringResource(R.string.settings_about_title))
 
-    SettingsScaffold(title = "About & Help", onBack = onBack, modifier = modifier) {
-        // -- Diagnostics section ----------------------------------------------
-        // Crash-to-file: writes uncaught exceptions to cacheDir/crashes/ so
-        // the user can attach the latest one to an email / Discord / GitHub
-        // issue. Zero network, zero auto-upload. Disabled when no files
-        // exist; LaunchedEffect refreshes liveness on every entry so a
-        // Avant :
-SettingsSectionLabel("Diagnostics")
-// Après :
-SettingsSectionLabel(stringResource(R.string.settings_diagnostics_section))
-
-// Avant :
-text = "Share latest crash log"
-// Après :
-text = stringResource(R.string.settings_share_latest_crash)
-
-        // share that resolves the issue immediately flips the button off
-        // on the next screen visit.
-        // Avant :
-text = if (uiState.hasCrashLog) {
-    "Attach the most recent crash file..."
-} else {
-    "No recent crashes found"
-}
-// Après :
-text = if (uiState.hasCrashLog) {
-    stringResource(R.string.settings_attach_most_recent_crash)
-} else {
-    stringResource(R.string.settings_no_recent_crashes)
-}
-
+    SettingsScaffold(title = stringResource(R.string.settings_about_title)) {
         val context = LocalContext.current
-        LaunchedEffect(Unit) { viewModel.refreshDiagnostics() }
+        LaunchedEffect(Unit) {
+            viewModel.refreshUpdateStatus(context)
+        }
 
-        SettingsSectionLabel("Diagnostics")
+        SettingsSectionLabel(stringResource(R.string.settings_diagnostics_section))
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Share latest crash report",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = stringResource(R.string.settings_share_latest_crash),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (uiState.hasCrashReport) {
-                        "Attach the most recent crash log to email or chat. Stays on device until you share."
+                    text = if (uiState.hasCrashLog) {
+                        stringResource(R.string.settings_attach_most_recent_crash)
                     } else {
-                        "No recent crashes."
+                        stringResource(R.string.settings_no_recent_crashes)
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    // Avant :
-Text("Share latest crash log")
-// Après :
-Text(stringResource(R.string.settings_share_latest_crash))
-
-// Avant :
-text = "Share diagnostics bundle"
-// Après :
-text = stringResource(R.string.settings_share_diagnostics_bundle)
-
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Avant :
-text = "Bundle recent logs and system info..."
-// Après :
-text = stringResource(R.string.settings_bundle_recent_logs)
-
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
-                    enabled = uiState.hasCrashReport,
+                    enabled = uiState.hasCrashLog,
                     onClick = {
-                        val target = viewModel.latestCrashShareTarget()
-                        // Avant :
-Text("Share diagnostics")
-// Après :
-Text(stringResource(R.string.settings_share_diagnostics))
-
+                        val target = viewModel.getLatestCrashLog(context)
                         if (target == null) {
-                            // Avant :
-SettingsSectionLabel("About")
-// Après :
-SettingsSectionLabel(stringResource(R.string.settings_about_section))
-
-                            Toast.makeText(context, "No crash report to share.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "No crash log found", Toast.LENGTH_SHORT).show()
                             return@OutlinedButton
                         }
                         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Stash crash report")
+                            putExtra(android.content.Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", target))
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Stash Crash Log")
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        val chooser = android.content.Intent.createChooser(send, "Share crash report")
-                            .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
-                        runCatching { context.startActivity(chooser) }
-                            .onFailure {
-                                Toast.makeText(context, "No app available to share the report.", Toast.LENGTH_SHORT).show()
-                            }
+                        val chooser = android.content.Intent.createChooser(send, null).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(chooser) }.onFailure {
+                            Toast.makeText(context, "Failed to share crash log", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
-                    Text("Share latest crash report")
-                    // Avant :
-val message = when (...) {
-    UpdateCheckWorker.Result.NoUpdate -> "You're on the latest version"
-    UpdateCheckWorker.Result.UpdateAvailable -> "Update available"
-    else -> "Couldn't check for updates"
-}
-// Après :
-val message = when (...) {
-    UpdateCheckWorker.Result.NoUpdate -> stringResource(R.string.settings_update_on_latest)
-    UpdateCheckWorker.Result.UpdateAvailable -> stringResource(R.string.settings_update_available)
-    else -> stringResource(R.string.settings_update_check_failed)
-}
-
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Share diagnostics",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Bundle recent logs, sync history, and connection status (no passwords) so a dev can debug your issue.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                // Avant :
-Text(if (checking) "Checking..." else "Check for updates")
-// Après :
-Text(if (checking) stringResource(R.string.settings_checking_updates) else stringResource(R.string.settings_check_updates))
-
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onNavigateToDiagnosticsPreview,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                ) {
-                    Text("Share diagnostics")
+                    Text(stringResource(R.string.settings_share_latest_crash))
                 }
             }
         }
 
-        // -- About section ----------------------------------------------------
-        SettingsSectionLabel("About")
+        Spacer(modifier = Modifier.height(16.dp))
+
+        GlassCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.settings_share_diagnostics_bundle),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.settings_bundle_recent_logs),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToDiagnosticsPreview,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text(stringResource(R.string.settings_share_diagnostics))
+                }
+            }
+        }
+
+        // -- About section ------------------------------------------------
+        SettingsSectionLabel(stringResource(R.string.settings_about_section))
 
         val installedVersion = remember(context) {
             runCatching {
                 context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull() ?: "0.3.5-beta.1"
+            }.getOrNull() ?: "0.3.5-beta"
         }
 
-        // The check runs in a worker, so the tap alone can't report anything.
-        // Every no-update path used to return a bare success and the user was
-        // left with "Checking for updates…" and silence (#377) — so watch the
-        // work and say what it concluded.
         var checking by remember { mutableStateOf(false) }
         LaunchedEffect(context) {
             WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWorkFlow(UpdateCheckWorker.UNIQUE_ONE_SHOT_NAME)
-                .collect { infos ->
-                    val info = infos.lastOrNull() ?: return@collect
-                    if (!info.state.isFinished) return@collect
-                    // Only speak for a check this screen started. A cold-start
-                    // check finishing in the background must stay quiet.
-                    if (!checking) return@collect
+                .getWorkInfosForUniqueWorkLiveData(UpdateCheckWorker.WORK_NAME)
+                .observeForever { infos ->
+                    val info = infos.lastOrNull() ?: return@observeForever
+                    if (!info.state.isFinished) return@observeForever
+                    if (!checking) return@observeForever
                     checking = false
                     val outcome = info.outputData.getString(UpdateCheckWorker.KEY_OUTCOME)
-                    val tag = info.outputData.getString(UpdateCheckWorker.KEY_LATEST_TAG)
+                    val tag = info.outputData.getString(UpdateCheckWorker.KEY_VERSION_TAG)
                     val message = when (outcome) {
-                        UpdateCheckWorker.OUTCOME_UP_TO_DATE ->
-                            "You're on the latest version ($installedVersion)"
-                        UpdateCheckWorker.OUTCOME_UPDATE_AVAILABLE ->
-                            "Update available: ${tag ?: "see Releases"}"
-                        else -> "Couldn't check for updates — try again later"
+                        UpdateCheckWorker.OUTCOME_UP_TO_DATE -> stringResource(R.string.settings_update_on_latest)
+                        UpdateCheckWorker.OUTCOME_UPDATE_AVAILABLE -> stringResource(R.string.settings_update_available)
+                        else -> stringResource(R.string.settings_update_check_failed)
                     }
-                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
         }
 
@@ -241,21 +151,21 @@ Text(if (checking) stringResource(R.string.settings_checking_updates) else strin
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsValueRow(label = "Version", value = installedVersion)
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsValueRow(label = "License", value = "GPL-3.0")
+                SettingsValueRow(label = "Channel", value = "Release")
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
                         checking = true
-                        UpdateCheckWorker.enqueueOneTimeCheck(context, manual = true)
-                        Toast.makeText(context, "Checking for updates…", Toast.LENGTH_SHORT).show()
+                        UpdateCheckWorker.enqueue(context, forced = true)
+                        Toast.makeText(context, "Checking for updates...", Toast.LENGTH_SHORT).show()
                     },
                     enabled = !checking,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
-                    Text(if (checking) "Checking…" else "Check for updates")
+                    Text(if (checking) stringResource(R.string.settings_checking_updates) else stringResource(R.string.settings_check_updates))
                 }
             }
         }
