@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +46,10 @@ fun SettingsAboutScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+// Avant :
+SettingsScaffold(title = "About & Help")
+// Après :
+SettingsScaffold(title = stringResource(R.string.settings_about_title))
 
     SettingsScaffold(title = "About & Help", onBack = onBack, modifier = modifier) {
         // -- Diagnostics section ----------------------------------------------
@@ -52,8 +57,31 @@ fun SettingsAboutScreen(
         // the user can attach the latest one to an email / Discord / GitHub
         // issue. Zero network, zero auto-upload. Disabled when no files
         // exist; LaunchedEffect refreshes liveness on every entry so a
+        // Avant :
+SettingsSectionLabel("Diagnostics")
+// Après :
+SettingsSectionLabel(stringResource(R.string.settings_diagnostics_section))
+
+// Avant :
+text = "Share latest crash log"
+// Après :
+text = stringResource(R.string.settings_share_latest_crash)
+
         // share that resolves the issue immediately flips the button off
         // on the next screen visit.
+        // Avant :
+text = if (uiState.hasCrashLog) {
+    "Attach the most recent crash file..."
+} else {
+    "No recent crashes found"
+}
+// Après :
+text = if (uiState.hasCrashLog) {
+    stringResource(R.string.settings_attach_most_recent_crash)
+} else {
+    stringResource(R.string.settings_no_recent_crashes)
+}
+
         val context = LocalContext.current
         LaunchedEffect(Unit) { viewModel.refreshDiagnostics() }
 
@@ -75,13 +103,38 @@ fun SettingsAboutScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Avant :
+Text("Share latest crash log")
+// Après :
+Text(stringResource(R.string.settings_share_latest_crash))
+
+// Avant :
+text = "Share diagnostics bundle"
+// Après :
+text = stringResource(R.string.settings_share_diagnostics_bundle)
+
                 )
+                // Avant :
+text = "Bundle recent logs and system info..."
+// Après :
+text = stringResource(R.string.settings_bundle_recent_logs)
+
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     enabled = uiState.hasCrashReport,
                     onClick = {
                         val target = viewModel.latestCrashShareTarget()
+                        // Avant :
+Text("Share diagnostics")
+// Après :
+Text(stringResource(R.string.settings_share_diagnostics))
+
                         if (target == null) {
+                            // Avant :
+SettingsSectionLabel("About")
+// Après :
+SettingsSectionLabel(stringResource(R.string.settings_about_section))
+
                             Toast.makeText(context, "No crash report to share.", Toast.LENGTH_SHORT).show()
                             return@OutlinedButton
                         }
@@ -104,6 +157,19 @@ fun SettingsAboutScreen(
                     ),
                 ) {
                     Text("Share latest crash report")
+                    // Avant :
+val message = when (...) {
+    UpdateCheckWorker.Result.NoUpdate -> "You're on the latest version"
+    UpdateCheckWorker.Result.UpdateAvailable -> "Update available"
+    else -> "Couldn't check for updates"
+}
+// Après :
+val message = when (...) {
+    UpdateCheckWorker.Result.NoUpdate -> stringResource(R.string.settings_update_on_latest)
+    UpdateCheckWorker.Result.UpdateAvailable -> stringResource(R.string.settings_update_available)
+    else -> stringResource(R.string.settings_update_check_failed)
+}
+
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -118,6 +184,11 @@ fun SettingsAboutScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Avant :
+Text(if (checking) "Checking..." else "Check for updates")
+// Après :
+Text(if (checking) stringResource(R.string.settings_checking_updates) else stringResource(R.string.settings_check_updates))
+
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = onNavigateToDiagnosticsPreview,
