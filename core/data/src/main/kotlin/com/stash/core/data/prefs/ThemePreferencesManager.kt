@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.model.ThemeMode
@@ -60,5 +61,24 @@ class ThemePreferencesManager @Inject constructor(
         context.themeDataStore.edit { prefs ->
             prefs[amoledKey] = enabled
         }
+    }
+
+    private val uiScaleKey = floatPreferencesKey("ui_scale")
+
+    /** Emits the UI scale multiplier, defaulting to 1.0 and clamped on read so a bad restore can't brick the layout. */
+    override val uiScale: Flow<Float> = context.themeDataStore.data.map { prefs ->
+        (prefs[uiScaleKey] ?: 1f).coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+    }
+
+    /** Persists the UI scale, clamped to the supported range. */
+    override suspend fun setUiScale(scale: Float) {
+        context.themeDataStore.edit { prefs ->
+            prefs[uiScaleKey] = scale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+        }
+    }
+
+    private companion object {
+        const val UI_SCALE_MIN = 0.8f
+        const val UI_SCALE_MAX = 1.6f
     }
 }

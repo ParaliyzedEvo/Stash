@@ -27,6 +27,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +52,7 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsSegmented
+import com.stash.feature.settings.components.SettingsSliderRow
 import com.stash.feature.settings.components.SettingsToggleRow
 
 /**
@@ -67,6 +71,9 @@ fun SettingsAppearanceScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val startTab by viewModel.startTab.collectAsStateWithLifecycle()
+    val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
+    // Dragging only moves the draft: committing live would resize the slider under the finger.
+    var draftScale by remember(uiScale) { mutableFloatStateOf(uiScale) }
 
     SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
         SettingsSectionLabel("Theme")
@@ -106,6 +113,20 @@ fun SettingsAppearanceScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
+        )
+
+        Spacer(Modifier.height(20.dp))
+        SettingsSectionLabel("Display size")
+
+        SettingsSliderRow(
+            title = "UI scale",
+            valueLabel = String.format(java.util.Locale.US, "%.2fx", draftScale),
+            subtitle = "Resizes text and layout across the whole app. Applies when you let go.",
+            value = draftScale,
+            onValueChange = { draftScale = Math.round(it * 100) / 100f },
+            onValueChangeFinished = { viewModel.onUiScaleChanged(draftScale) },
+            valueRange = 0.8f..1.6f,
+            steps = 0, // continuous; the draft snaps to 0.01 in onValueChange
         )
 
         Spacer(Modifier.height(20.dp))

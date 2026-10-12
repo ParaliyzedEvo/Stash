@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -69,6 +71,7 @@ class MainActivity : ComponentActivity() {
         private const val THEME_SNAPSHOT_PREFS = "theme_snapshot"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_AMOLED_DARK = "amoled_dark"
+        private const val KEY_UI_SCALE = "ui_scale"
     }
 
     @Inject
@@ -127,14 +130,17 @@ class MainActivity : ComponentActivity() {
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
             ?: ThemeMode.SYSTEM
         val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+        val initialUiScale = themeSnapshot.getFloat(KEY_UI_SCALE, 1f)
 
         setContent {
             val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
-            LaunchedEffect(themeMode, amoledDark) {
+            val uiScale by themePreference.uiScale.collectAsState(initial = initialUiScale)
+            LaunchedEffect(themeMode, amoledDark, uiScale) {
                 themeSnapshot.edit()
                     .putString(KEY_THEME_MODE, themeMode.name)
                     .putBoolean(KEY_AMOLED_DARK, amoledDark)
+                    .putFloat(KEY_UI_SCALE, uiScale)
                     .apply()
             }
             val systemDark = isSystemInDarkTheme()
@@ -177,8 +183,11 @@ class MainActivity : ComponentActivity() {
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
             // restored back stack always sits on the graph it was saved with.
             val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
+            val baseDensity = LocalDensity.current
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(
+                    // Scaling density (not just fontScale) resizes dp and sp together.
+                    LocalDensity provides Density(baseDensity.density * uiScale, baseDensity.fontScale),
                     LocalListenTogetherRole provides role,
                     LocalCreateTrackLink provides createTrackLink,
                 ) {
