@@ -10,4 +10,5 @@
     <string name="shuffle_play">Lecture aléatoire</string>
     <string name="resuming_channel_name">Lecture</string>
     <string name="resuming_notification_title">Reprise…</string>
+    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>
