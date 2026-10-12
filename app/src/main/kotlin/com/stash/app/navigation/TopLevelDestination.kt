@@ -1,10 +1,12 @@
 package com.stash.app.navigation
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -16,6 +18,7 @@ import kotlinx.serialization.Serializable
 enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val label: String, val route: Any) {
     HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
     LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
+    ALL_SONGS(Icons.Filled.AudioFile, Icons.Outlined.AudioFile, "All Songs", AllSongsRoute),
     SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
     SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
     SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
@@ -23,6 +26,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 
 @Serializable data object HomeRoute
 @Serializable data object LibraryRoute
+@Serializable data object AllSongsRoute
 @Serializable data object SearchRoute
 @Serializable data object SyncRoute
 @Serializable data object SettingsRoute
