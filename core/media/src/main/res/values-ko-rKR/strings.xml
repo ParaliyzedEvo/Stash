@@ -10,4 +10,5 @@
     <string name="shuffle_play">셔플 재생</string>
     <string name="resuming_channel_name">재생</string>
     <string name="resuming_notification_title">재개하는 중…</string>
+    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>
