@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -388,7 +389,13 @@ private fun StashBottomBar(
                     )
                 },
                 label = {
-                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall, color = ink)
+                    Text(
+                        text = dest.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = chrome.selectedTab.copy(alpha = 0.12f),
