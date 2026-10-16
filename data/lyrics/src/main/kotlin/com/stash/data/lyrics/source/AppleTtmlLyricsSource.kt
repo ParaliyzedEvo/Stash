@@ -10,6 +10,10 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Dns
+import okhttp3.dnsoverhttps.DnsOverHttps
+import java.net.Inet6Address
+import java.net.InetAddress
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
@@ -55,8 +59,35 @@ class AppleTtmlLyricsSource(
     override val displayName = "Apple Music (word-synced)"
 
     private val userAgent = "Stash/$appVersionName (Android)"
-    private val interactiveHttp = client.newBuilder().callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
-    private val backgroundHttp = client.newBuilder().callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
+    private val lyricsDns: Dns = object : Dns {
+        // Plain client on purpose: your shared `client` has interceptors you don't want on DNS lookups.
+        private val doh = DnsOverHttps.Builder()
+            .client(OkHttpClient())
+            .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+            .bootstrapDnsHosts(
+                InetAddress.getByName("1.1.1.1"),
+                InetAddress.getByName("1.0.0.1"),
+            )
+            .includeIPv6(false)
+            .build()
+
+        override fun lookup(hostname: String): List<InetAddress> {
+            val system = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrNull()
+            Log.d(TAG, "DNS system $hostname -> ${system?.joinToString { it.hostAddress ?: "?" }}")
+            val viaDoh = runCatching { doh.lookup(hostname) }.getOrNull()
+            Log.d(TAG, "DNS doh    $hostname -> ${viaDoh?.joinToString { it.hostAddress ?: "?" }}")
+            return (viaDoh?.takeIf { it.isNotEmpty() } ?: system.orEmpty())
+                .sortedBy { it is Inet6Address }   // v4 first
+                .ifEmpty { throw java.net.UnknownHostException(hostname) }
+        }
+    }
+
+    private val interactiveHttp = client.newBuilder()
+        .dns(lyricsDns)
+        .callTimeout(INTERACTIVE_TIMEOUT_S, TimeUnit.SECONDS).build()
+    private val backgroundHttp = client.newBuilder()
+        .dns(lyricsDns)
+        .callTimeout(BACKGROUND_TIMEOUT_S, TimeUnit.SECONDS).build()
 
     private var consecutiveTimeouts = 0
     private var skipUntilMs = 0L
