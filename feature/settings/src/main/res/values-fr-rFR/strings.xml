@@ -10,7 +10,7 @@
     <string name="web_library_export_done_body">%1$s, %2$s et %3$s ont été enregistrés. Ouvrez Stash sur le Web et importez ce fichier dans Paramètres › Votre bibliothèque.</string>
     <plurals name="web_library_export_likes">
         <item quantity="one">%d « J\'aime »</item>
-        <item quantity="other">%d likes</item>
+        <item quantity="other">%d « J\'aime »</item>
     </plurals>
     <plurals name="web_library_export_playlists">
         <item quantity="one">%d playlist</item>
@@ -23,27 +23,27 @@
     <string name="web_library_export_failed_title">Impossible d\'exporter</string>
     <string name="web_library_export_failed_body">Impossible d\'enregistrer le fichier. Réessayez ou choisissez un autre emplacement pour l\'enregistrer.</string>
     <string name="web_library_export_ok">OK</string>
-    <string name="web_library_import_button">Import from Stash on the web</string>
+    <string name="web_library_import_button">Importer depuis Stash sur le Web</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
-    <string name="web_library_sent_title">Sent</string>
+    <string name="web_library_sent_title">Envoyer</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
-    <string name="web_library_sent_body">Sent %2$s, %3$s and %4$s to %1$s. It asks there before adding anything.</string>
+    <string name="web_library_sent_body">J\'ai envoyé %2$s, %3$s et %4$s à %1$s. On me demande de le faire avant d\'ajouter quoi que ce soit.</string>
     <!-- Settings > About -->
-    <string name="settings_about_title">About &amp; Help</string>
+    <string name="settings_about_title">À propos &amp; Aide</string>
     <string name="settings_diagnostics_section">Diagnostics</string>
-    <string name="settings_share_latest_crash">Share latest crash report</string>
+    <string name="settings_share_latest_crash">Partager le dernier rapport d\'incident</string>
     <string name="settings_attach_most_recent_crash">Attach the most recent crash log to email or chat. Stays on device until you share.</string>
-    <string name="settings_no_recent_crashes">No recent crashes.</string>
-    <string name="settings_no_crash_report_toast">No crash report to share.</string>
+    <string name="settings_no_recent_crashes">Aucun incident récent.</string>
+    <string name="settings_no_crash_report_toast">Aucun rapport d\'incident à partager.</string>
     <string name="settings_crash_report_subject">Stash crash report</string>
     <string name="settings_share_crash_report_chooser">Share crash report</string>
     <string name="settings_no_app_share_report_toast">No app available to share the report.</string>
     <string name="settings_share_diagnostics_bundle">Share diagnostics</string>
     <string name="settings_bundle_recent_logs">Bundle recent logs, sync history, and connection status (no passwords) so a dev can debug your issue.</string>
-    <string name="settings_share_diagnostics">Share diagnostics</string>
-    <string name="settings_about_section">About</string>
+    <string name="settings_share_diagnostics">Partager les diagnostics</string>
+    <string name="settings_about_section">À propos</string>
     <string name="settings_update_on_latest">You\'re on the latest version (%1$s)</string>
-    <string name="settings_update_available">Update available: %1$s</string>
+    <string name="settings_update_available">Mise à jour disponible : %1$s</string>
     <string name="settings_update_see_releases">see Releases</string>
     <string name="settings_update_check_failed">Couldn\'t check for updates — try again later</string>
     <string name="settings_version_label">Version</string>
@@ -583,44 +583,44 @@
     <string name="settings_library_health_section_lyrics">Lyrics</string>
     <string name="settings_library_health_fetch_lyrics_title">Fetch lyrics</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">Queued, waiting for a suitable connection. Tap to start now on any network.</string>
-    <string name="settings_library_health_fetch_lyrics_idle_desc">Look up lyrics for downloaded tracks that are missing them. Keeps running in the background, so you can leave the app. A notification shows progress.</string>
-    <string name="settings_library_health_fetch_lyrics_button">Fetch lyrics</string>
-    <string name="settings_library_health_fetching_lyrics_progress">Fetching lyrics… %1$d / %2$d</string>
-    <string name="settings_library_health_fetching_lyrics">Fetching lyrics…</string>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Recherchez les paroles des morceaux téléchargés pour lesquels elles sont manquantes. L\'application continue de fonctionner en arrière-plan, vous pouvez donc la quitter. Une notification vous indique la progression.</string>
+    <string name="settings_library_health_fetch_lyrics_button">Récupérer les paroles</string>
+    <string name="settings_library_health_fetching_lyrics_progress">Récupération des paroles… %1$d / %2$d</string>
+    <string name="settings_library_health_fetching_lyrics">Récupération des paroles…</string>
     <plurals name="settings_library_health_lyrics_done_updated">
-        <item quantity="one">Done: %d track updated.</item>
-        <item quantity="other">Done: %d tracks updated.</item>
+        <item quantity="one">Terminé : %d titre mis à jour.</item>
+        <item quantity="other">Terminé : %d titres mis à jour.</item>
     </plurals>
-    <string name="settings_library_health_lyrics_done_nothing">Done: nothing needed updating.</string>
+    <string name="settings_library_health_lyrics_done_nothing">Terminé : aucune mise à jour n\'était nécessaire.</string>
     <plurals name="settings_library_health_lyrics_not_found">
-        <item quantity="one">No lyrics found for %d track.</item>
-        <item quantity="other">No lyrics found for %d tracks.</item>
+        <item quantity="one">Aucune parole n\'a été trouvée pour %d titre.</item>
+        <item quantity="other">Aucune parole n\'a été trouvée pour %d titres.</item>
     </plurals>
     <string name="settings_library_health_lyrics_bailed">Stopped early: the lyrics service isn\'t responding. Try again in a bit.</string>
     <string name="settings_library_health_fetch_again_button">Fetch again</string>
     <!-- Settings > Equalizer -->
-    <string name="settings_equalizer_loudness_first_run_message">Loudness normalization is on. Tracks will sound more consistent as your library is measured in the background.</string>
-    <string name="settings_equalizer_bit_perfect_bypassed">Bypassed: bit-perfect output is on, so your DAC gets the music untouched. Switch Hi-Res output to \"Match USB DAC\" in Audio &amp; Quality to use the EQ.</string>
-    <string name="settings_equalizer_section_5band_eq">5-Band EQ</string>
-    <string name="settings_equalizer_section_bass_boost">Bass Boost</string>
-    <string name="settings_equalizer_section_loudness">Loudness Normalization</string>
-    <string name="settings_equalizer_loudness_desc">Plays every track at a consistent volume.</string>
+    <string name="settings_equalizer_loudness_first_run_message">La normalisation du volume est activée. Le son des morceaux sera plus homogène à mesure que votre bibliothèque sera analysée en arrière-plan.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Désactivé : la sortie bit-perfect est activée, votre DAC reçoit donc le signal audio sans altération. Pour utiliser l’égaliseur, basculez la sortie haute résolution sur « Correspondance avec le DAC USB » dans Audio &amp; Qualité.</string>
+    <string name="settings_equalizer_section_5band_eq">Égaliseur à 5 bandes</string>
+    <string name="settings_equalizer_section_bass_boost">Amplification des Basses</string>
+    <string name="settings_equalizer_section_loudness">Normalisation du Volume</string>
+    <string name="settings_equalizer_loudness_desc">Lit chaque morceau à un volume constant.</string>
     <plurals name="settings_equalizer_loudness_backfill_progress">
         <item quantity="one">%1$d of %2$d track</item>
         <item quantity="other">%1$d of %2$d tracks</item>
     </plurals>
-    <string name="settings_equalizer_loudness_charging_hint">Continues automatically while charging.</string>
-    <string name="settings_equalizer_section_preamp">Pre-amp</string>
-    <string name="settings_equalizer_save_preset">Save preset</string>
-    <string name="settings_equalizer_save">Save</string>
-    <string name="settings_equalizer_preset_flat">Flat</string>
-    <string name="settings_equalizer_preset_bass_boost">Bass Boost</string>
-    <string name="settings_equalizer_preset_treble_boost">Treble Boost</string>
+    <string name="settings_equalizer_loudness_charging_hint">La lecture se poursuit automatiquement pendant la recharge.</string>
+    <string name="settings_equalizer_section_preamp">Préamplificateur</string>
+    <string name="settings_equalizer_save_preset">Enregistrer le préréglage</string>
+    <string name="settings_equalizer_save">Enregistrer</string>
+    <string name="settings_equalizer_preset_flat">Plat</string>
+    <string name="settings_equalizer_preset_bass_boost">Amplification des Basses</string>
+    <string name="settings_equalizer_preset_treble_boost">Amplification des Aigus</string>
     <string name="settings_equalizer_preset_vocal">Vocal</string>
     <string name="settings_equalizer_preset_rock">Rock</string>
     <string name="settings_equalizer_preset_pop">Pop</string>
     <string name="settings_equalizer_preset_jazz">Jazz</string>
-    <string name="settings_equalizer_preset_classical">Classical</string>
-    <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
-    <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_equalizer_preset_classical">Classique</string>
+    <string name="settings_equalizer_save_preset_dialog_title">Enregistrer le préréglage</string>
+    <string name="settings_equalizer_preset_name_label">Nom du préréglage</string>
 </resources>
