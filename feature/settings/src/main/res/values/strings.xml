@@ -359,4 +359,178 @@
     <string name="settings_lyrics_lrc_only">LRC only</string>
     <string name="settings_lyrics_lrc_only_desc">Word-synced lyrics are off. Switching back doesn\'t re-fetch anything right away — tracks pick up Apple Music\'s word-synced lyrics the next time they\'re fetched (a new release\'s automatic pass, or \"Fetch lyrics\" in Library Health).</string>
     <string name="settings_lyrics_apple_music_desc">Prefers Apple Music\'s word-synced lyrics. Switching to LRC only removes any stored word-synced lyrics and re-fetches from line-synced sources — use \"Fetch lyrics\" in Library Health to run it now.</string>
+
+    <!-- Settings > Library & Storage -->
+    <string name="settings_storage_section">Storage</string>
+    <string name="settings_downloads_section">Downloads</string>
+    <string name="settings_library_section">Library</string>
+
+    <string name="settings_download_recommendations_title">Run recommendations when</string>
+    <string name="settings_download_mode_wifi_charging_label">Wi-Fi + charging</string>
+    <string name="settings_download_mode_wifi_charging_desc">Most conservative. Downloads only when on Wi-Fi and plugged in.</string>
+    <string name="settings_download_mode_wifi_any_label">Wi-Fi any time</string>
+    <string name="settings_download_mode_wifi_any_desc">Downloads over Wi-Fi even without a charger.</string>
+    <string name="settings_download_mode_any_network_label">Any network</string>
+    <string name="settings_download_mode_any_network_desc">Downloads over cellular too. Uses mobile data.</string>
+
+    <string name="settings_stash_mixes_title">Stash Mixes (beta)</string>
+    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background.</string>
+    <string name="settings_stash_mixes_subtitle_disabled">Auto-generated mix playlists are hidden. Background discovery downloads are off.</string>
+    <string name="settings_qobuz_discovery_title">Qobuz discovery on Home</string>
+    <string name="settings_qobuz_discovery_subtitle_enabled">New Releases, Qobuz Playlists, and Top Albums show on Home.</string>
+    <string name="settings_qobuz_discovery_subtitle_disabled">Home keeps only your mixes and imported music.</string>
+
+    <string name="settings_library_health_title">Library Health</string>
+    <string name="settings_listening_history_title">Listening history</string>
+    <string name="settings_listening_history_paused_subtitle">Paused: new listens aren\'t saved</string>
+    <string name="settings_listening_history_active_subtitle">Pause or clear what this phone remembers</string>
+    <string name="settings_web_link_nav_title">Link Stash on the web</string>
+    <string name="settings_web_link_nav_subtitle">Pick up where you left off, mirror, send your library</string>
+
+    <string name="settings_storage_external_folder_fallback">External folder</string>
+    <string name="settings_backup_status_exporting_title">Exporting Database</string>
+    <string name="settings_backup_status_importing_title">Importing Backup</string>
+    <string name="settings_backup_status_success_title">Success</string>
+    <string name="settings_backup_status_error_title">Error</string>
+    <string name="settings_backup_status_processing">Processing…</string>
+    <string name="settings_backup_status_ok">OK</string>
+
+    <string name="settings_backup_export_dialog_title">Export Backup</string>
+    <string name="settings_backup_export_dialog_subtitle">Choose what this backup should contain:</string>
+    <string name="settings_backup_export_scope_likes_only_label">Liked songs only</string>
+    <string name="settings_backup_export_scope_likes_only_desc">Everything you liked, and nothing else. Small file.</string>
+    <string name="settings_backup_export_scope_everything_label">Everything</string>
+    <string name="settings_backup_export_scope_everything_desc">Library and settings. Logins can\'t be restored either way.</string>
+    <string name="settings_backup_export_scope_library_only_label">Library only</string>
+    <string name="settings_backup_export_scope_library_only_desc">Songs, playlists and history. Settings are left out.</string>
+    <string name="settings_backup_export_scope_settings_only_label">Settings only</string>
+    <string name="settings_backup_export_scope_settings_only_desc">Preferences with no library attached.</string>
+    <string name="settings_backup_export_choose_file_button">Choose file</string>
+
+    <string name="settings_backup_import_dialog_title">Import Backup</string>
+    <string name="settings_backup_import_dialog_subtitle">Choose what this backup should restore:</string>
+    <string name="settings_backup_import_scope_merge_label">Merge into library</string>
+    <string name="settings_backup_import_scope_merge_desc">Adds missing songs and playlists from the backup. Nothing is deleted or replaced; settings stay untouched.</string>
+    <string name="settings_backup_import_scope_merge_confirm">Merge</string>
+    <string name="settings_backup_import_scope_replace_library_label">Replace library only</string>
+    <string name="settings_backup_import_scope_replace_library_desc">Restores the backup\'s library. Your current settings are kept.</string>
+    <string name="settings_backup_import_scope_replace_library_confirm">Replace Library</string>
+    <string name="settings_backup_import_scope_restore_settings_label">Restore settings only</string>
+    <string name="settings_backup_import_scope_restore_settings_desc">Restores settings from the backup. Your current library is kept.</string>
+    <string name="settings_backup_import_scope_restore_settings_confirm">Restore Settings</string>
+    <string name="settings_backup_import_scope_replace_everything_label">Replace everything</string>
+    <string name="settings_backup_import_scope_replace_everything_desc">Full restore exactly as backed up — replaces your entire library AND all settings.</string>
+    <string name="settings_backup_import_scope_replace_everything_confirm">Overwrite All</string>
+    <string name="settings_backup_import_destructive_warning">This cannot be undone.</string>
+
+    <string name="settings_storage_backup_title">Backup</string>
+    <string name="settings_storage_backup_subtitle">Export settings and database or import from a previous backup.</string>
+    <string name="settings_storage_export_backup_button">Export Backup</string>
+    <string name="settings_storage_import_backup_button">Import Backup</string>
+
+    <string name="settings_storage_total_tracks_label">Total tracks</string>
+    <string name="settings_storage_used_label">Storage used</string>
+    <string name="settings_storage_download_location_label">Download location</string>
+    <string name="settings_storage_location_internal">Internal (app-private)</string>
+    <string name="settings_storage_location_external_unknown">External folder (SD card / USB)</string>
+    <string name="settings_storage_location_external_desc">Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB.</string>
+    <string name="settings_storage_change_folder_button">Change folder</string>
+    <string name="settings_storage_pick_folder_button">Pick SD / folder</string>
+    <string name="settings_storage_use_internal_button">Use internal</string>
+    <string name="settings_storage_new_downloads_location_note">New downloads go to the selected location.</string>
+
+    <string name="settings_storage_folder_structure_label">Folder structure</string>
+    <string name="settings_storage_layout_artist_album_label">Artist / Album</string>
+    <string name="settings_storage_layout_artist_album_desc">Nested folders — one per artist, one per album inside it.</string>
+    <string name="settings_storage_layout_single_folder_label">Single folder</string>
+    <string name="settings_storage_layout_single_folder_desc">All tracks directly in one folder, named artist - title.</string>
+    <string name="settings_storage_layout_playlist_label">Per playlist</string>
+    <string name="settings_storage_layout_playlist_desc">One folder per playlist; tracks without a playlist use Artist / Album.</string>
+
+    <!-- Settings > Library & Storage > Move Library -->
+    <string name="settings_storage_move_library_title">Existing library</string>
+    <plurals name="settings_storage_move_library_has_external_desc">
+        <item quantity="one">Move %d track still on your device into the folder above so they\'re accessible over USB too.</item>
+        <item quantity="other">Move %d tracks still on your device into the folder above so they\'re accessible over USB too.</item>
+    </plurals>
+    <plurals name="settings_storage_move_library_no_external_desc">
+        <item quantity="one">Move %d track on your device to an external folder (SD / USB) so you can access them over USB too. You\'ll pick the destination next.</item>
+        <item quantity="other">Move %d tracks on your device to an external folder (SD / USB) so you can access them over USB too. You\'ll pick the destination next.</item>
+    </plurals>
+    <plurals name="settings_storage_move_library_to_folder_button">
+        <item quantity="one">Move %d track to this folder</item>
+        <item quantity="other">Move %d tracks to this folder</item>
+    </plurals>
+    <string name="settings_storage_move_library_pick_dest_button">Pick destination and move library</string>
+    <string name="settings_storage_move_library_progress">Moving %1$d of %2$d…</string>
+    <plurals name="settings_storage_move_library_done_moved">
+        <item quantity="one">Moved %d track</item>
+        <item quantity="other">Moved %d tracks</item>
+    </plurals>
+    <string name="settings_storage_move_library_done_failed"> • %d failed</string>
+    <string name="settings_storage_move_library_failed_note">Failed tracks stay in internal storage. Try again later.</string>
+    <string name="settings_storage_move_library_error_title">Couldn\'t move library</string>
+    <string name="settings_storage_dismiss_button">Dismiss</string>
+
+    <!-- Settings > Library & Storage > Reorganize Library -->
+    <string name="settings_storage_reorganize_title">Reorganize existing tracks</string>
+    <plurals name="settings_storage_reorganize_desc">
+        <item quantity="one">%1$d downloaded track doesn\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>
+        <item quantity="other">%1$d downloaded tracks don\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>
+    </plurals>
+    <plurals name="settings_storage_reorganize_button">
+        <item quantity="one">Move %1$d track into \"%2$s\"</item>
+        <item quantity="other">Move %1$d tracks into \"%2$s\"</item>
+    </plurals>
+    <string name="settings_storage_reorganize_progress">Moving %1$d of %2$d…</string>
+    <plurals name="settings_storage_reorganize_done_moved">
+        <item quantity="one">Moved %d track</item>
+        <item quantity="other">Moved %d tracks</item>
+    </plurals>
+    <string name="settings_storage_reorganize_done_skipped"> • %d already organized</string>
+    <string name="settings_storage_reorganize_done_failed"> • %d failed</string>
+    <string name="settings_storage_reorganize_failed_note">Failed tracks keep their old location. Try again later.</string>
+    <string name="settings_storage_reorganize_error_title">Couldn\'t reorganize library</string>
+
+    <!-- Settings > Library & Storage > Listening History Sheet -->
+    <string name="settings_listening_history_sheet_subtitle_empty">What this phone remembers about the songs you play.</string>
+    <string name="settings_listening_history_sheet_subtitle_nonempty">This phone remembers %1$s%2$s.</string>
+    <string name="settings_listening_history_since_date"> since %s</string>
+    <plurals name="settings_listening_history_plays_count">
+        <item quantity="one">%d play</item>
+        <item quantity="other">%d plays</item>
+    </plurals>
+    <string name="settings_listening_history_pause_title">Pause history</string>
+    <string name="settings_listening_history_pause_subtitle">While paused, nothing you play is saved, and nothing is sent to Last.fm or ListenBrainz.</string>
+    <string name="settings_listening_history_clear_section">Clear</string>
+    <string name="settings_listening_history_clear_range_title">Clear a date range</string>
+    <string name="settings_listening_history_clear_range_subtitle">Pick the first and last day</string>
+    <string name="settings_listening_history_clear_everything_title">Clear everything</string>
+    <string name="settings_listening_history_nothing_to_clear">Nothing to clear</string>
+    <string name="settings_listening_history_clear_footer">Clearing removes listens from this phone only. %s</string>
+    <string name="settings_listening_history_clear_keeps_scrobbles">This doesn\'t remove anything already sent to Last.fm, ListenBrainz or YouTube Music.</string>
+    <string name="settings_listening_history_picker_title">Days to clear</string>
+    <string name="settings_listening_history_picker_next">Next</string>
+    <string name="settings_listening_history_confirm_everything_title">Clear your whole listening history?</string>
+    <string name="settings_listening_history_confirm_range_title">Clear %s?</string>
+    <plurals name="settings_listening_history_confirm_plays_leave">
+        <item quantity="one">%1$s leaves this phone\'s history, and play counts are worked out again without them. %2$s</item>
+        <item quantity="other">%1$s leave this phone\'s history, and play counts are worked out again without them. %2$s</item>
+    </plurals>
+    <string name="settings_listening_history_confirm_no_listens">There are no listens on those days. %s</string>
+    <string name="settings_listening_history_confirm_clear_button">Clear</string>
+
+    <!-- Settings > Web Library Sheets -->
+    <string name="web_library_export_what_to_include">What to include</string>
+    <string name="web_library_export_save_as_file">Save as file</string>
+    <string name="web_library_export_send_to_target">Send to %s</string>
+    <string name="web_library_export_send_to_picker">Send to…</string>
+    <string name="web_library_export_send_to_title">Send to</string>
+    <string name="web_library_export_plays_detail">your last %,d</string>
+    <string name="web_library_import_what_to_import">What to import</string>
+    <string name="web_library_import_action_import">Import</string>
+    <string name="web_library_import_reading_title">Reading the file</string>
+    <string name="web_library_import_adding_title">Adding to your library</string>
+    <string name="web_library_import_done_title">Imported</string>
+    <string name="web_library_import_failed_title">Couldn\'t import</string>
 </resources>
