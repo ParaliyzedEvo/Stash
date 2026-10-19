@@ -469,8 +469,8 @@ Desconectar borra tu estado y elimina el token de este teléfono.</string>
     <string name="settings_listening_history_sheet_subtitle_nonempty">Este teléfono recuerda %1$s%2$s.</string>
     <string name="settings_listening_history_since_date">"desde %s"</string>
     <plurals name="settings_listening_history_plays_count">
-        <item quantity="one">%,d play</item>
-        <item quantity="other">%,d plays</item>
+        <item quantity="one">%,d reproducción</item>
+        <item quantity="other">%,d reproducciones</item>
     </plurals>
     <string name="settings_listening_history_pause_title">Pausa del historial</string>
     <string name="settings_listening_history_pause_subtitle">Mientras esté en pausa, nada de lo que reproduzcas se guarda, ni se envía a Last.fm o ListenBrainz.</string>
