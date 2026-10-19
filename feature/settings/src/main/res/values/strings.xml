@@ -543,4 +543,93 @@
         <item quantity="other">%d songs</item>
     </plurals>
     <string name="blocked_songs_unblock_button">Unblock</string>
+
+    <!-- Settings > Library Health -->
+    <string name="settings_library_health_desc">Format and bitrate breakdown of every downloaded track. Use this to verify what your sync is actually pulling down.</string>
+    <string name="settings_library_health_section_breakdown">Library breakdown</string>
+    <string name="settings_library_health_empty_hint">No downloaded tracks yet. Run a sync first.</string>
+    <string name="settings_library_health_total_downloaded">Total downloaded</string>
+    <string name="settings_library_health_count_and_pct">%1$d · %2$s</string>
+    <string name="settings_library_health_avg_kbps">avg %d kbps</string>
+    <string name="settings_library_health_format_unknown">Unknown</string>
+    <string name="settings_library_health_section_backfill">Backfill metadata</string>
+    <plurals name="settings_library_health_backfill_idle_desc">
+        <item quantity="one">%d track was downloaded before v0.8.1 and still shows as unknown format. Run a one-time scan to read its actual codec and bitrate from disk.</item>
+        <item quantity="other">%d tracks were downloaded before v0.8.1 and still show as unknown format. Run a one-time scan to read their actual codec and bitrate from disk.</item>
+    </plurals>
+    <string name="settings_library_health_scan_files">Scan files</string>
+    <string name="settings_library_health_scanning_progress">Scanning… %1$d / %2$d</string>
+    <plurals name="settings_library_health_scan_complete">
+        <item quantity="one">Scan complete: %1$d of %2$d track updated.</item>
+        <item quantity="other">Scan complete: %1$d of %2$d tracks updated.</item>
+    </plurals>
+    <plurals name="settings_library_health_scan_unreadable">
+        <item quantity="one">%d track still couldn\'t be read — likely missing on disk or unsupported by MediaMetadataRetriever.</item>
+        <item quantity="other">%d tracks still couldn\'t be read — likely missing on disk or unsupported by MediaMetadataRetriever.</item>
+    </plurals>
+    <string name="settings_library_health_retry_scan">Retry scan</string>
+    <string name="settings_library_health_section_missing_downloads">Missing downloads</string>
+    <plurals name="settings_library_health_restore_queued">
+        <item quantity="one">Queued %d track. They download in the background — the Sync tab shows progress.</item>
+        <item quantity="other">Queued %d tracks. They download in the background — the Sync tab shows progress.</item>
+    </plurals>
+    <string name="settings_library_health_done">Done</string>
+    <plurals name="settings_library_health_missing_downloads_desc">
+        <item quantity="one">%d track was downloaded before but the file is not on this device. Connect the accounts they came from first, then download them again.</item>
+        <item quantity="other">%d tracks were downloaded before but the files are not on this device. Connect the accounts they came from first, then download them again.</item>
+    </plurals>
+    <plurals name="settings_library_health_download_again_button">
+        <item quantity="one">Download %d again</item>
+        <item quantity="other">Download %d again</item>
+    </plurals>
+    <string name="settings_library_health_section_verify_library">Verify library</string>
+    <string name="settings_library_health_verify_idle_desc">Reconcile the download queue against your library and rebuild the track and storage stats shown on the Sync tab. Doesn\'t touch playlists or trigger any network sync.</string>
+    <string name="settings_library_health_verify_button">Verify</string>
+    <string name="settings_library_health_checking_library_progress">Checking library… %1$d / %2$d</string>
+    <plurals name="settings_library_health_verified_missing_files">
+        <item quantity="one">%d missing file found</item>
+        <item quantity="other">%d missing files found</item>
+    </plurals>
+    <plurals name="settings_library_health_verified_stale_entries">
+        <item quantity="one">%d stale entry cleaned up</item>
+        <item quantity="other">%d stale entries cleaned up</item>
+    </plurals>
+    <string name="settings_library_health_verified_summary">Verified — %1$s, %2$s.</string>
+    <plurals name="settings_library_health_adopted_songs">
+        <item quantity="one">Found %d song already on disk and added to your library.</item>
+        <item quantity="other">Found %d songs already on disk and added to your library.</item>
+    </plurals>
+    <plurals name="settings_library_health_scanned_tracks_none_matched">
+        <item quantity="one">Checked %d track not yet downloaded — none matched a file on disk.</item>
+        <item quantity="other">Checked %d tracks not yet downloaded — none matched a file on disk.</item>
+    </plurals>
+    <string name="settings_library_health_verify_again_button">Verify again</string>
+    <string name="settings_library_health_verification_failed">Verification couldn\'t finish: %s</string>
+    <string name="settings_library_health_retry">Retry</string>
+    <string name="settings_library_health_section_quality_info">Quality info</string>
+    <string name="settings_library_health_refresh_quality_info_title">Refresh quality info</string>
+    <string name="settings_library_health_refresh_quality_info_desc">Re-extract bit-depth + sample-rate for FLAC tracks where it\'s missing. Runs in the background.</string>
+    <string name="settings_library_health_refreshing_quality_info_toast">Refreshing quality info — running in background.</string>
+    <string name="settings_library_health_refresh_button">Refresh</string>
+    <string name="settings_library_health_section_flac_upgrades">FLAC upgrades</string>
+    <string name="settings_library_health_flac_upgrades_desc">Look for lossless versions of downloaded tracks that aren\'t FLAC yet. Keeps running in the background. To run this after every sync, turn it on in Audio &amp; Quality.</string>
+    <string name="settings_library_health_check_upgrades_button">Check for upgrades</string>
+    <string name="settings_library_health_section_lyrics">Lyrics</string>
+    <string name="settings_library_health_fetch_lyrics_title">Fetch lyrics</string>
+    <string name="settings_library_health_fetch_lyrics_queued_desc">Queued, waiting for a suitable connection. Tap to start now on any network.</string>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Look up lyrics for downloaded tracks that are missing them. Keeps running in the background, so you can leave the app. A notification shows progress.</string>
+    <string name="settings_library_health_fetch_lyrics_button">Fetch lyrics</string>
+    <string name="settings_library_health_fetching_lyrics_progress">Fetching lyrics… %1$d / %2$d</string>
+    <string name="settings_library_health_fetching_lyrics">Fetching lyrics…</string>
+    <plurals name="settings_library_health_lyrics_done_updated">
+        <item quantity="one">Done: %d track updated.</item>
+        <item quantity="other">Done: %d tracks updated.</item>
+    </plurals>
+    <string name="settings_library_health_lyrics_done_nothing">Done: nothing needed updating.</string>
+    <plurals name="settings_library_health_lyrics_not_found">
+        <item quantity="one">No lyrics found for %d track.</item>
+        <item quantity="other">No lyrics found for %d tracks.</item>
+    </plurals>
+    <string name="settings_library_health_lyrics_bailed">Stopped early: the lyrics service isn\'t responding. Try again in a bit.</string>
+    <string name="settings_library_health_fetch_again_button">Fetch again</string>
 </resources>
