@@ -533,4 +533,14 @@
     <string name="web_library_import_adding_title">Adding to your library</string>
     <string name="web_library_import_done_title">Imported</string>
     <string name="web_library_import_failed_title">Couldn\'t import</string>
+    <!-- Settings > Blocked Songs -->
+    <string name="blocked_songs_title">Blocked Songs</string>
+    <string name="blocked_songs_subtitle">These songs are skipped during every sync. Tap Unblock to re-allow one.</string>
+    <string name="blocked_songs_empty_title">No blocked songs</string>
+    <string name="blocked_songs_empty_desc">Songs you block with \u201CDelete &amp; Block\u201D show up here. Tap Unblock to re-allow them on the next sync.</string>
+    <plurals name="blocked_songs_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <string name="blocked_songs_unblock_button">Unblock</string>
 </resources>
