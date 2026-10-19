@@ -49,12 +49,12 @@
     <string name="settings_share_diagnostics">Share diagnostics</string>
     <string name="settings_about_section">About</string>
     <string name="settings_update_on_latest">You\'re on the latest version (%1$s)</string>
-    <string name="settings_update_available">Update available: %1$s</string>
+    <string name="settings_update_available">Доступно обновление: %1$s</string>
     <string name="settings_update_see_releases">see Releases</string>
     <string name="settings_update_check_failed">Couldn\'t check for updates — try again later</string>
-    <string name="settings_version_label">Version</string>
-    <string name="settings_license_label">License</string>
-    <string name="settings_checking_updates_toast">Checking for updates…</string>
+    <string name="settings_version_label">Версия</string>
+    <string name="settings_license_label">Лицензия</string>
+    <string name="settings_checking_updates_toast">Проверка обновлений...</string>
     <string name="settings_checking_updates">Checking…</string>
     <string name="settings_check_updates">Check for updates</string>
     <!-- Settings > Hub -->
