@@ -223,4 +223,112 @@
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>
+
+    <!-- Settings > Audio & Quality -->
+    <string name="settings_audio_quality_section">Audio Quality</string>
+    <string name="settings_download_quality_title">Download quality</string>
+    <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
+    <string name="settings_save_data_title">Save Data</string>
+    <string name="settings_save_data_subtitle">Streams YouTube at its lowest audio quality — about 2 MB per track instead of 5 — and JioSaavn at 96 kbps instead of 320. Downloads are unaffected.</string>
+    <string name="settings_lossless_section">Lossless</string>
+    <string name="settings_lossless_title">Lossless</string>
+    <string name="settings_lossless_subtitle_off">Stream and download studio-quality FLAC. Off, everything plays via YouTube. Files ~10× larger than MP3.</string>
+    <string name="settings_lossless_subtitle_no_source">No lossless source configured — see below. Files ~10× larger than MP3.</string>
+    <string name="settings_lossless_subtitle_active">FLAC for streaming and downloads. Files ~10× larger than MP3.</string>
+    <string name="settings_qobuz_no_source_warning">No lossless source configured — connect your Qobuz account below</string>
+    <string name="settings_qobuz_account_title">Your Qobuz account</string>
+    <string name="settings_connected_as">Connected as %1$s</string>
+    <string name="settings_qobuz_connected_token">Connected (token)</string>
+    <string name="settings_disconnect">Disconnect</string>
+    <string name="settings_qobuz_signin_desc">Sign in with your own Qobuz subscription for guaranteed lossless.</string>
+    <string name="settings_qobuz_email_label">Qobuz email</string>
+    <string name="settings_password_label">Password</string>
+    <string name="settings_connecting">Connecting…</string>
+    <string name="settings_connect">Connect</string>
+    <string name="settings_auto_flac_upgrade_title">Auto-upgrade to FLAC after sync</string>
+    <string name="settings_auto_flac_upgrade_subtitle">After every sync, look for lossless versions of your downloads that aren\'t FLAC yet. You can also check by hand in Library Health.</string>
+    <string name="settings_tidal_aac_fallback_title">Tidal AAC when no FLAC</string>
+    <string name="settings_tidal_aac_fallback_subtitle">Plays and downloads Tidal\'s 320 kbps AAC when a song has no lossless version. Off = Tidal is used for FLAC only.</string>
+    <string name="settings_streaming_section">Streaming</string>
+    <string name="settings_on_wifi">On Wi-Fi</string>
+    <string name="settings_on_cellular">On cellular</string>
+    <string name="settings_save_data_lossless_subtitle">Streams CD quality instead of Hi-Res or Max on every network — about 28 MB per track instead of 70 or 140. Tracks that fall to JioSaavn or YouTube use their lowest audio quality. Downloads are unaffected.</string>
+    <string name="settings_state_expanded">expanded</string>
+    <string name="settings_state_collapsed">collapsed</string>
+    <string name="settings_lossy_fallback_title">Lossy fallback</string>
+    <string name="settings_state_on">on</string>
+    <string name="settings_state_off">off</string>
+    <string name="settings_lossy_fallback_switch_label">Use JioSaavn, then YouTube when a download has no lossless match</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_custom_relay_desc">Point Stash at your own lossless relay. It takes priority over Stash\'s.</string>
+    <string name="settings_custom_endpoint_label">Custom lossless endpoint</string>
+    <string name="settings_url_placeholder">https://…</string>
+    <string name="settings_test">Test</string>
+    <string name="settings_testing">Testing…</string>
+    <string name="settings_reachable">Reachable</string>
+    <string name="settings_not_reachable">Not reachable</string>
+    <string name="settings_bitchord_desc">Optional: use your own BitChord server for Tidal instead of Stash\'s. Leave blank otherwise.</string>
+    <string name="settings_bitchord_server_label">Custom Tidal server (optional)</string>
+    <string name="settings_access_token_label">Access token (optional)</string>
+    <string name="settings_bitchord_token_saved">A token is saved</string>
+    <string name="settings_bitchord_token_hint">Only if your own server sets ACCESS_TOKEN</string>
+    <string name="settings_squid_captcha_desc">qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value directly.</string>
+    <string name="settings_squid_captcha_label">captcha_verified_at value</string>
+    <string name="settings_squid_captcha_placeholder">e.g. 1777687404951</string>
+    <string name="settings_reset_lossless_attempts">Reset lossless attempts</string>
+    <string name="settings_effects_section">Effects</string>
+    <string name="settings_equalizer_title">Equalizer</string>
+
+    <!-- Settings > Audio & Quality > Lossless tiers -->
+    <string name="settings_lossless_tier_max">Max (24-bit/192 kHz)</string>
+    <string name="settings_lossless_tier_max_hint">~140 MB / 4 min</string>
+    <string name="settings_lossless_tier_hires">Hi-Res (24-bit/96 kHz)</string>
+    <string name="settings_lossless_tier_hires_hint">~70 MB / 4 min</string>
+    <string name="settings_lossless_tier_cd">CD (16-bit/44.1 kHz)</string>
+    <string name="settings_lossless_tier_cd_hint">~28 MB / 4 min</string>
+
+    <!-- Settings > Audio & Quality > HiResOutputSection -->
+    <string name="settings_hires_output_section">Hi-Res Output</string>
+    <string name="settings_hires_verdict_idle">Play a song to see what it goes through on the way to your ears.</string>
+    <string name="settings_hires_verdict_now">Now: %1$s</string>
+    <string name="settings_hires_verdict_now_with_device">Now: %1$s · %2$s</string>
+    <string name="settings_hires_mode_standard">Standard</string>
+    <string name="settings_hires_mode_standard_desc">Android\'s shared mixer, like every app. It resamples songs that don\'t match its own rate (usually 48 kHz).</string>
+    <string name="settings_hires_mode_match_rate">Match USB DAC to each song</string>
+    <string name="settings_hires_mode_match_rate_desc">Your DAC runs at the song\'s own sample rate — 44.1, 96, 192 kHz — so nothing is resampled. EQ, crossfade and notifications still work.</string>
+    <string name="settings_hires_needs_android_14">Needs Android 14 or newer.</string>
+    <string name="settings_hires_mode_bit_perfect">Bit-perfect USB</string>
+    <string name="settings_hires_mode_bit_perfect_desc">Every sample reaches your DAC unaltered. EQ, normalization and crossfade are bypassed, and volume is set on your DAC. Falls back to matching the sample rate where your phone doesn\'t offer it.</string>
+    <string name="settings_hires_footer_note">These apply to USB DACs and USB-C dongles. The phone\'s own headphone jack, speaker and Bluetooth always go through Android\'s mixer. Bluetooth also re-encodes the audio.</string>
+    <string name="settings_hires_bit_perfect_dialog_title">Turn your DAC down first</string>
+    <string name="settings_hires_bit_perfect_dialog_body">In bit-perfect mode Android doesn\'t touch the volume: your DAC sets it. If your DAC has no volume control of its own, the phone\'s volume keys may stop working and music can play at full level.\n\nTurn the volume down before you press play. EQ, normalization and crossfade are bypassed while bit-perfect is active.</string>
+    <string name="settings_hires_bit_perfect_confirm">Use bit-perfect</string>
+
+    <!-- Settings > Audio & Quality > SupporterSection -->
+    <string name="settings_supporter_active">Supporter · unlimited lossless</string>
+    <string name="settings_supporter_remove_from_device">Remove from this device</string>
+    <string name="settings_supporter_offer">Unlimited lossless for supporters</string>
+    <string name="settings_supporter_sheet_title">Unlimited lossless</string>
+    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited lossless. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
+    <string name="settings_supporter_kofi_email_label">Ko-fi email</string>
+    <string name="settings_supporter_email_code_button">Email me a code</string>
+    <string name="settings_supporter_code_sent_desc">If %1$s is on our Ko-fi list, a code is on its way. It can take a minute.</string>
+    <string name="settings_supporter_code_label">6-digit code</string>
+    <string name="settings_supporter_unlock_button">Unlock</string>
+    <string name="settings_supporter_resend_code_button">Send a new code</string>
+    <string name="settings_supporter_different_email_button">Use a different email</string>
+    <string name="settings_supporter_donate_button">Donate on Ko-fi</string>
+    <string name="settings_supporter_remove_code_button">Remove supporter code from this device</string>
+
+    <!-- Settings > Audio & Quality > AudioQualityPicker -->
+    <string name="settings_audio_quality_bitrate_size">%1$d kbps  ~%2$s MB/min</string>
+    <string name="settings_quality_tier_max">Max</string>
+    <string name="settings_quality_tier_best">Best</string>
+    <string name="settings_quality_tier_high">High</string>
+    <string name="settings_quality_tier_normal">Normal</string>
+    <string name="settings_quality_tier_low">Low</string>
+
+    <!-- Settings > Audio & Quality > LosslessRoutingStatus -->
+    <string name="settings_lossless_routing_header">ROUTING</string>
+    <string name="settings_lossless_routing_footer">Lossless comes from the sources above. Misses try JioSaavn before falling back to YouTube, shown as \"via YT\" while it plays.</string>
 </resources>
