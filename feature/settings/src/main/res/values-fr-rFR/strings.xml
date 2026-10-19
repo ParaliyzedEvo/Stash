@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">Stash on the web</string>
-    <string name="web_library_export_subtitle">Take your likes, your playlists and what you played lately to Stash on the web. Then, in the web player: Settings › Your library › Import from the Stash app.</string>
-    <string name="web_library_export_button">Export for Stash on the web</string>
-    <string name="web_library_export_working_title">Exporting your library</string>
-    <string name="web_library_export_done_title">Ready for the web</string>
+    <string name="web_library_export_title">Stash sur le Web</string>
+    <string name="web_library_export_subtitle">Importez vos favoris, vos playlists et vos dernières écoutes vers Stash sur le Web. Ensuite, dans le lecteur Web : Paramètres › Votre bibliothèque › Importer depuis l\'application Stash.</string>
+    <string name="web_library_export_button">Exporter vers Stash sur le Web</string>
+    <string name="web_library_export_working_title">Exporter votre bibliothèque</string>
+    <string name="web_library_export_done_title">Prêt pour le Web</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
-    <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open Stash on the web and import this file in Settings › Your library.</string>
+    <string name="web_library_export_done_body">%1$s, %2$s et %3$s ont été enregistrés. Ouvrez Stash sur le Web et importez ce fichier dans Paramètres › Votre bibliothèque.</string>
     <plurals name="web_library_export_likes">
-        <item quantity="one">%d like</item>
+        <item quantity="one">%d « J\'aime »</item>
         <item quantity="other">%d likes</item>
     </plurals>
     <plurals name="web_library_export_playlists">
@@ -17,11 +17,11 @@
         <item quantity="other">%d playlists</item>
     </plurals>
     <plurals name="web_library_export_plays">
-        <item quantity="one">%d play</item>
-        <item quantity="other">%d plays</item>
+        <item quantity="one">%d lecture</item>
+        <item quantity="other">%d lectures</item>
     </plurals>
-    <string name="web_library_export_failed_title">Couldn’t export</string>
-    <string name="web_library_export_failed_body">The file couldn’t be written. Try again, or pick another place to save it.</string>
+    <string name="web_library_export_failed_title">Impossible d\'exporter</string>
+    <string name="web_library_export_failed_body">Impossible d\'enregistrer le fichier. Réessayez ou choisissez un autre emplacement pour l\'enregistrer.</string>
     <string name="web_library_export_ok">OK</string>
     <string name="web_library_import_button">Import from Stash on the web</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
