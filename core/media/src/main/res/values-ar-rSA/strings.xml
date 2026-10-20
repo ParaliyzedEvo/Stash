@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">أَغَانٍ أعجبتني</string>
+    <string name="notification_action_like">إضافة إلى الأغاني المفضلة</string>
     <string name="notification_action_unlike">إزالة من الأغاني المفضلة</string>
     <string name="notification_action_repeat_off">إيقاف التكرار</string>
     <string name="notification_action_repeat_all">تكرار الكل</string>
-    <string name="notification_action_repeat_one">تكرار الأغنية الحالية</string>
+    <string name="notification_action_repeat_one">تكرار أغنية واحدة</string>
     <string name="notification_action_shuffle_on">تفعيل التشغيل العشوائي</string>
-    <string name="notification_action_shuffle_off">إلغاء التشغيل العشوائي</string>
+    <string name="notification_action_shuffle_off">إيقاف التشغيل العشوائي</string>
     <string name="shuffle_play">تشغيل عشوائي</string>
     <string name="resuming_channel_name">التشغيل</string>
-    <string name="resuming_notification_title">جاري الاستئناف…</string>
-    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
+    <string name="resuming_notification_title">جارٍ استئناف التشغيل…</string>
+    <string name="cast_no_wifi">لا يمكن الإرسال: قم بتوصيل هاتفك بنفس Wi-Fi مثل مكبر الصوت</string>
 </resources>
