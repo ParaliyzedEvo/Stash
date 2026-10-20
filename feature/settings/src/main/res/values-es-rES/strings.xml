@@ -70,8 +70,9 @@
     <string name="settings_support_title">Apoyo a Stash</string>
     <string name="settings_support_subtitle">Stash es gratuito y está hecho por voluntarios. Si te resulta útil, considera apoyar el proyecto.</string>
     <string name="settings_support_donate">Donar</string>
-    <string name="settings_support_role_owner">Propietario, desarrollador principal</string>
-    <string name="settings_support_role_codev">Co-desarrollador — crea las versiones beta</string>
+    <string name="settings_support_role_owner">Owner, main dev · Ko-fi</string>
+    <string name="settings_support_role_owner_paypal">Owner, main dev · PayPal</string>
+    <string name="settings_support_role_codev">Co-dev — makes the beta builds · PayPal</string>
     <string name="settings_support_star">Marcar con estrella</string>
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Conexiones</string>
@@ -203,6 +204,7 @@ Desconectar borra tu estado y elimina el token de este teléfono.</string>
     <string name="settings_home_section_listening_desc">Reproducidos recientemente y tu Historial. Aparece después de tu primera escucha.</string>
     <string name="settings_home_show_liked_title">Mostrar Canciones que te gustan en Inicio</string>
     <string name="settings_home_show_liked_subtitle">Tus Me gusta de Stash, Spotify y YouTube como una sola tarjeta en tus listas</string>
+    <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
     <string name="settings_home_section_your_playlists">Tus listas</string>
     <string name="settings_home_section_new_releases">Novedades</string>
     <string name="settings_home_section_qobuz_playlists">Listas de Qobuz</string>
@@ -218,14 +220,22 @@ Desconectar borra tu estado y elimina el token de este teléfono.</string>
     <!-- Settings > Audio & Quality -->
     <string name="settings_audio_quality_section">Calidad de audio</string>
     <string name="settings_download_quality_title">Calidad de descarga</string>
+    <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
+    <string name="settings_download_mode_lossless_desc">Best quality, largest files.</string>
+    <string name="settings_download_mode_aac">AAC 320</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC. Uses your daily allowance.</string>
+    <string name="settings_download_mode_opus">Opus (smallest)</string>
+    <string name="settings_download_mode_opus_desc">From YouTube. Smallest files.</string>
+    <string name="settings_flac_quality_title">FLAC quality</string>
+    <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Configura las descargas de YouTube con las tasas que aparecen abajo, y las de JioSaavn a 96 kbps en Bajo y Normal, 160 en Alto, 320 en Mejor y Máximo.</string>
     <string name="settings_save_data_title">Ahorro de datos</string>
     <string name="settings_save_data_subtitle">Reproduce YouTube en su calidad de audio más baja —aprox. 2 MB por pista en vez de 5— y JioSaavn a 96 kbps en lugar de 320. Las descargas no se ven afectadas.</string>
     <string name="settings_lossless_section">Sin pérdida</string>
     <string name="settings_lossless_title">Sin pérdida</string>
-    <string name="settings_lossless_subtitle_off">Transmite y descarga FLAC con calidad de estudio. Si está desactivado, todo se reproduce vía YouTube. Los archivos son ~10× más grandes que MP3.</string>
+    <string name="settings_lossless_subtitle_off">Stream studio-quality FLAC. Off, songs play via JioSaavn or YouTube. Downloads follow Download quality.</string>
     <string name="settings_lossless_subtitle_no_source">No hay una fuente Sin pérdida configurada —ver abajo. Los archivos son ~10× más grandes que MP3.</string>
-    <string name="settings_lossless_subtitle_active">FLAC para streaming y descargas. Los archivos son ~10× más grandes que MP3.</string>
+    <string name="settings_lossless_subtitle_active">FLAC for streaming. Downloads follow Download quality.</string>
     <string name="settings_qobuz_no_source_warning">No hay una fuente Sin pérdida configurada —conecta tu cuenta de Qobuz a continuación</string>
     <string name="settings_qobuz_account_title">Tu cuenta de Qobuz</string>
     <string name="settings_connected_as">Conectado como %1$s</string>
@@ -250,6 +260,7 @@ Desconectar borra tu estado y elimina el token de este teléfono.</string>
     <string name="settings_state_on">activado</string>
     <string name="settings_state_off">desactivado</string>
     <string name="settings_lossy_fallback_switch_label">Usar JioSaavn y luego YouTube cuando una descarga no tenga versión sin pérdida</string>
+    <string name="settings_lossy_fallback_switch_label_aac">Use JioSaavn, then YouTube when Tidal has no AAC of a song</string>
     <string name="settings_advanced">Avanzado</string>
     <string name="settings_custom_relay_desc">Apunta Stash a tu propio relé sin pérdida. Tiene prioridad sobre el de Stash.</string>
     <string name="settings_custom_endpoint_label">Endpoint sin pérdida personalizado</string>
@@ -293,11 +304,11 @@ Desconectar borra tu estado y elimina el token de este teléfono.</string>
     <string name="settings_hires_bit_perfect_dialog_body">En modo bit-perfect Android no toca el volumen: tu DAC lo establece. Si tu DAC no tiene control de volumen, las teclas de volumen del teléfono pueden dejar de funcionar y la música puede reproducirse a volumen máximo.\n\nBaja el volumen antes de presionar reproducir. El ecualizador, la normalización y el Crossfade se omiten mientras el modo bit-perfect esté activo.</string>
     <string name="settings_hires_bit_perfect_confirm">Usar bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Patrocinador · Sin pérdida ilimitado</string>
+    <string name="settings_supporter_active">Supporter · unlimited Tidal &amp; Qobuz</string>
     <string name="settings_supporter_remove_from_device">Eliminar de este dispositivo</string>
-    <string name="settings_supporter_offer">Audio Sin pérdida ilimitado para patrocinadores</string>
-    <string name="settings_supporter_sheet_title">Sin pérdida ilimitado</string>
-    <string name="settings_supporter_sheet_desc">Cualquier donación en Ko-fi desbloquea audio Sin pérdida ilimitado. Introduce el correo electrónico que usaste en Ko-fi y te enviaremos un código.</string>
+    <string name="settings_supporter_offer">Unlimited Tidal &amp; Qobuz for supporters</string>
+    <string name="settings_supporter_sheet_title">Unlimited Tidal &amp; Qobuz</string>
+    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
     <string name="settings_supporter_kofi_email_label">Correo de Ko-fi</string>
     <string name="settings_supporter_email_code_button">Enviar código por correo</string>
     <string name="settings_supporter_code_sent_desc">Si %1$s está en nuestra lista de Ko-fi, un código está en camino. Puede tardar un minuto.</string>
