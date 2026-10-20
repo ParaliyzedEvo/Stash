@@ -10,5 +10,5 @@
     <string name="shuffle_play">Случайный порядок</string>
     <string name="resuming_channel_name">Воспроизведение</string>
     <string name="resuming_notification_title">Возобновление…</string>
-    <string name="cast_no_wifi">Невозможно транслировать: подключите телефон к той же сети Wi-Fi, что и колонка.</string>
+    <string name="cast_no_wifi">Невозможно транслировать: подключите устройства к одной сети Wi-Fi</string>
 </resources>
