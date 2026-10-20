@@ -249,7 +249,7 @@
     <string name="settings_connected_as">Подключен как %1$s</string>
     <string name="settings_qobuz_connected_token">Подключен (токен)</string>
     <string name="settings_disconnect">Отвязать</string>
-    <string name="settings_qobuz_signin_desc">Войдите в </string>
+    <string name="settings_qobuz_signin_desc">Войдите в аккаунт Qobuz, чтобы гарантированно слушать аудио без потерь.</string>
     <string name="settings_qobuz_email_label">Эл.почта Qobuz</string>
     <string name="settings_password_label">Пароль</string>
     <string name="settings_connecting">Подключение...</string>
@@ -588,13 +588,13 @@
     <string name="settings_library_health_section_missing_downloads">Отсутствующие загрузки</string>
     <plurals name="settings_library_health_restore_queued">
         <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
-        <item quantity="few">В очередь добавлены %d дорожки. Они загрузятся в фоновом режиме — прогресс отображается на вкладке «Синхронизация».</item>
-        <item quantity="many">В очереди %d треков. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
+        <item quantity="few">В очереди %d трека. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
+        <item quantity="many">В очереди %d треков. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
         <item quantity="other"></item>
     </plurals>
     <string name="settings_library_health_done">Готово</string>
     <plurals name="settings_library_health_missing_downloads_desc">
-        <item quantity="one">%d трек был ранее загружен, но файл отсутствует на этом устройстве. Привяжите аккаунты,</item>
+        <item quantity="one">%d дорожка была загружена ранее, но файла нет на этом устройстве. Сначала подключите аккаунты, из которых она была загружена, а затем загрузите её снова.</item>
         <item quantity="few"></item>
         <item quantity="many">%d дорожек были загружены ранее, но файлов нет на этом устройстве. Сначала подключите аккаунты, из которых они были загружены, а затем загрузите их снова.</item>
         <item quantity="other">%d дорожек были загружены ранее, но файлов нет на этом устройстве. Сначала подключите аккаунты, из которых они были загружены, а затем загрузите их снова.</item>
