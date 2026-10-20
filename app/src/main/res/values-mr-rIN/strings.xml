@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Stash</string>
-    <string name="resume_playback_short">Resume</string>
-    <string name="resume_playback_long">Resume playback</string>
-    <string name="cast_connect_failed">Couldn\'t connect to %1$s</string>
+    <string name="resume_playback_short">पुन्हा सुरू करा</string>
+    <string name="resume_playback_long">प्लेबॅक पुन्हा सुरू करा</string>
+    <string name="cast_connect_failed">%1$s शी कनेक्ट करू शकलो नाही</string>
 </resources>
