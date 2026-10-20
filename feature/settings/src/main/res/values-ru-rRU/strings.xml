@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">Stash в интернете</string>
-    <string name="web_library_export_subtitle">Перенесите лайки, плейлисты и историю прослушиваний в Stash в интернете. Затем в веб-плеере выберите: Настройки › Ваша библиотека › Импорт из приложения Stash.</string>
-    <string name="web_library_export_button">Экспортировать для Stash в интернете</string>
-    <string name="web_library_export_working_title">Экспорт библиотеки…</string>
+    <string name="web_library_export_title">Веб-версия Stash</string>
+    <string name="web_library_export_subtitle">Перенесите ваши понравившиеся, плейлисты и недавние прослушивания в веб-версию Stash. Затем, в веб-плеере выберите: Настройки › Ваша библиотека › Импорт из приложения Stash.</string>
+    <string name="web_library_export_button">Экспорт в веб-версию Stash</string>
+    <string name="web_library_export_working_title">Экспортируем вашу медиатеку</string>
     <string name="web_library_export_done_title">Готово к работе в веб-плеере</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
     <string name="web_library_export_done_body">Сохранены %1$s, %2$s и %3$s. Откройте Stash в интернете и импортируйте этот файл в разделе «Настройки» › «Ваша библиотека».</string>
@@ -27,72 +27,72 @@
         <item quantity="other">%d прослушиваний</item>
     </plurals>
     <string name="web_library_export_failed_title">Не удалось экспортировать</string>
-    <string name="web_library_export_failed_body">Не удалось сохранить файл. Попробуйте ещё раз или выберите другое место для сохранения.</string>
+    <string name="web_library_export_failed_body">Не удалось записать файл. Попробуйте снова или выберите другое место для сохранения.</string>
     <string name="web_library_export_ok">ОК</string>
-    <string name="web_library_import_button">Импортировать из Stash в интернете</string>
+    <string name="web_library_import_button">Импортировать из веб-версии Stash</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">Отправлено</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
     <string name="web_library_sent_body">На %1$s отправлены %2$s, %3$s и %4$s. Перед добавлением сервис запросит подтверждение.</string>
     <!-- Settings > About -->
-    <string name="settings_about_title">О программе &amp; справка</string>
+    <string name="settings_about_title">О приложении &amp; Помощь</string>
     <string name="settings_diagnostics_section">Диагностика</string>
-    <string name="settings_share_latest_crash">Поделиться последним отчётом о сбое</string>
-    <string name="settings_attach_most_recent_crash">Прикрепите последний журнал сбоев к письму или сообщению. Он останется на устройстве, пока вы им не поделитесь.</string>
-    <string name="settings_no_recent_crashes">Недавних сбоев нет.</string>
-    <string name="settings_no_crash_report_toast">Нет отчёта о сбое, которым можно поделиться.</string>
-    <string name="settings_crash_report_subject">Отчёт о сбое Stash</string>
-    <string name="settings_share_crash_report_chooser">Поделиться отчётом о сбое</string>
-    <string name="settings_no_app_share_report_toast">Нет приложения, чтобы поделиться отчётом.</string>
-    <string name="settings_share_diagnostics_bundle">Поделиться диагностикой</string>
-    <string name="settings_bundle_recent_logs">Собирает недавние журналы, историю синхронизации и состояние подключения (без паролей), чтобы разработчик мог разобраться в вашей проблеме.</string>
-    <string name="settings_share_diagnostics">Поделиться диагностикой</string>
-    <string name="settings_about_section">О программе</string>
-    <string name="settings_update_on_latest">У вас установлена последняя версия (%1$s)</string>
+    <string name="settings_share_latest_crash">Отправить последний отчёт об ошибке</string>
+    <string name="settings_attach_most_recent_crash">Прикрепите недавний отчёт об ошибке к письму или отправьте его в чат. Он остаётся на вашем устройстве до тех пор, пока вы сами его не отправите. </string>
+    <string name="settings_no_recent_crashes">Нет недавних сбоев.</string>
+    <string name="settings_no_crash_report_toast">Нет отчётов для отправки.</string>
+    <string name="settings_crash_report_subject">Отчёт об ошибке Stash</string>
+    <string name="settings_share_crash_report_chooser">Отправить отчёт об ошибке</string>
+    <string name="settings_no_app_share_report_toast">Нет доступных приложений для отправки отчёта.</string>
+    <string name="settings_share_diagnostics_bundle">Отправить диагностику</string>
+    <string name="settings_bundle_recent_logs">Собрать недавние логи, историю синхронизаций и статус соединений (без паролей), чтобы разработчик мог отладить вашу проблему.</string>
+    <string name="settings_share_diagnostics">Отправить диагностику</string>
+    <string name="settings_about_section">О приложении</string>
+    <string name="settings_update_on_latest">У вас последняя версия (%1$s)</string>
     <string name="settings_update_available">Доступно обновление: %1$s</string>
     <string name="settings_update_see_releases">посмотреть релизы</string>
     <string name="settings_update_check_failed">Не удалось проверить обновления — попробуйте позже</string>
     <string name="settings_version_label">Версия</string>
     <string name="settings_license_label">Лицензия</string>
     <string name="settings_checking_updates_toast">Проверка обновлений…</string>
-    <string name="settings_checking_updates">Проверка…</string>
+    <string name="settings_checking_updates">Проверяем...</string>
     <string name="settings_check_updates">Проверить обновления</string>
     <!-- Settings > Hub -->
     <string name="settings_playback_title">Воспроизведение</string>
-    <string name="settings_playback_search_subtitle">Таймер сна, автоматическое воспроизведение радио, плавное сведение, воспроизведение без пауз</string>
-    <string name="settings_audio_quality_title">Звук &amp; качество</string>
-    <string name="settings_audio_quality_search_subtitle">Качество потокового воспроизведения, lossless, качество загрузок</string>
+    <string name="settings_playback_search_subtitle">Таймер сна, автовоспроизведение радио, плавный переход, без пауз </string>
+    <string name="settings_audio_quality_title">Аудио &amp; Качество</string>
+    <string name="settings_audio_quality_search_subtitle">Качество потока, lossless, качество загрузок</string>
     <string name="settings_accounts_sync_title">Аккаунты &amp; синхронизация</string>
     <string name="settings_accounts_sync_search_subtitle">Spotify, YouTube Music, Last.fm</string>
     <string name="settings_library_storage_title">Библиотека &amp; хранилище</string>
-    <string name="settings_library_storage_search_subtitle">Место хранения, резервные копии, загрузки</string>
+    <string name="settings_library_storage_search_subtitle">Расположение хранилища, резервные копии, загрузки </string>
     <string name="settings_appearance_title">Внешний вид</string>
-    <string name="settings_appearance_search_subtitle">Тема, AMOLED, главная страница</string>
-    <string name="settings_about_search_subtitle">Версия, диагностика, отчёты о сбоях</string>
+    <string name="settings_appearance_search_subtitle">Тема, AMOLED, Макет главной</string>
+    <string name="settings_about_search_subtitle">Версия, диагностика, отчёты</string>
     <string name="settings_search_no_results">Настройки по запросу «%1$s» не найдены</string>
     <string name="settings_search_placeholder">Поиск настроек</string>
     <string name="settings_search_clear">Очистить поиск</string>
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Поддержать Stash</string>
-    <string name="settings_support_subtitle">Stash бесплатен, его создают волонтёры. Если приложение вам полезно, поддержите проект.</string>
+    <string name="settings_support_subtitle">Stash полностью бесплатен и создан волонтёрами. Если проект оказался вам полезен, пожалуйста, поддержите его.</string>
     <string name="settings_support_donate">Пожертвовать</string>
-    <string name="settings_support_role_owner">Владелец, основной разработчик · Ko-fi</string>
-    <string name="settings_support_role_owner_paypal">Владелец, основной разработчик · PayPal</string>
-    <string name="settings_support_role_codev">Соразработчик — создаёт бета-версии · PayPal</string>
-    <string name="settings_support_star">Поставить звезду</string>
+    <string name="settings_support_role_owner">Основатель, главный разработчик · Ko-fi</string>
+    <string name="settings_support_role_owner_paypal">Основатель, главный разработчик · PayPal</string>
+    <string name="settings_support_role_codev">Соразработчик — собирает бета-сборки · PayPal</string>
+    <string name="settings_support_star">Звезда</string>
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Подключения</string>
-    <string name="settings_accounts_sync_likes_section">Синхронизация лайков</string>
+    <string name="settings_accounts_sync_likes_section">Синхронизировать понравившиеся</string>
     <string name="settings_yt_music_error_title">YouTube Music</string>
     <string name="settings_ok">ОК</string>
-    <string name="settings_cancel">Отмена</string>
+    <string name="settings_cancel">Отменить</string>
     <string name="settings_enable">Включить</string>
-    <string name="settings_disable">Отключить</string>
-    <string name="settings_discord_risk_title">Прежде чем подключить Discord</string>
-    <string name="settings_discord_risk_body">Discord не предоставляет официального способа менять статус из мобильного приложения, поэтому Stash входит в ваш аккаунт и использует его сеанс. Правила Discord считают это self-bot и разрешают Discord принимать меры в отношении вашего аккаунта.\n\nЭти меры направлены прежде всего против спама, а не обновлений статуса, поэтому вероятность санкций невелика. Но это ваш аккаунт, и решение за вами.\n\nПри отключении ваш статус сбрасывается, а токен удаляется с этого телефона.</string>
-    <string name="settings_discord_risk_connect">Всё равно подключить</string>
-    <string name="settings_discord_finish_connecting">Завершить подключение</string>
-    <string name="settings_lastfm_connect_first">Сначала подключите Last.fm.</string>
+    <string name="settings_disable">Выключить</string>
+    <string name="settings_discord_risk_title">Прежде, чем вы привяжете Discord</string>
+    <string name="settings_discord_risk_body">У Discord нет официального способа, с помощью которого мобильное приложение могло бы менять ваш статус, поэтому Stash входит в ваш аккаунт и использует собственную сессию. Правила Discord называют это \"self-bot\" и разрешают применять к такому аккаунту меры.\n\nМеры обычно направлены против спама, а не против обновления статуса, так что это маловероятно — но аккаунт ваш, и решать вам.\n\nПри отвязке статус очищается, а токен удаляется с этого устройства.</string>
+    <string name="settings_discord_risk_connect">Привязать</string>
+    <string name="settings_discord_finish_connecting">Завершить привязку </string>
+    <string name="settings_lastfm_connect_first">Сначала привяжите Last.fm.</string>
     <string name="settings_lastfm_reach_error">Не удалось связаться с Last.fm. Прослушивания останутся в очереди и будут отправлены позже.</string>
     <string name="settings_lastfm_no_new_scrobbles">Нет новых скробблов для отправки.</string>
     <plurals name="settings_lastfm_scrobbles_sent">
@@ -102,31 +102,33 @@
         <item quantity="other">Отправлено %d скробблов в Last.fm.</item>
     </plurals>
     <!-- Settings > Accounts > AccountConnectionCard -->
-    <string name="settings_account_reconnect">Подключить заново</string>
-    <string name="settings_account_disconnect">Отключить</string>
-    <string name="settings_account_connect">Подключить</string>
+    <string name="settings_account_reconnect">Перепривязать </string>
+    <string name="settings_account_disconnect">Отвязать </string>
+    <string name="settings_account_connect">Привязать </string>
     <!-- Settings > Accounts > DisconnectAccountDialog -->
-    <string name="settings_disconnect_account_title">Отключить %1$s?</string>
-    <string name="settings_disconnect_account_body">Stash выйдет из аккаунта %1$s на этом телефоне и прекратит его синхронизацию. Песни из %1$s, ожидающие загрузки, будут удалены из очереди.\n\nУже загруженные песни останутся в вашей библиотеке, и вы сможете подключить аккаунт снова в любое время.</string>
+    <string name="settings_disconnect_account_title">Отвязать %1$s?</string>
+    <string name="settings_disconnect_account_body">Stash выйдет из %1$s на данном устройстве и перестанет его синхронизировать. Треки из %1$s ожидающие загрузки будут удалены из очереди.
+\n\nТреки, которые вы уже загрузили, остаются в вашей медиатеке.
+</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Синхронизировать лайки с %1$s?</string>
     <string name="settings_like_mirror_warning_body">Если поставить отметку «Нравится» у дорожки в Stash, она также будет отмечена как понравившаяся в %1$s; если убрать отметку в Stash, она будет удалена и там. Отражаются только отметки «Нравится», добавленные с этого момента.\n\nИспользуется тот же закрытый интерфейс, что и в веб-плеере %1$s, а не официальный API. Он может перестать работать в любой момент, а в редких случаях неофициальный доступ может привести к тому, что аккаунт пометят как подозрительный. Рекомендуем включать эту функцию только для дополнительного или резервного аккаунта.</string>
     <string name="settings_like_mirror_warning_confirm">Понятно</string>
     <!-- Settings > Accounts > SpotifyAutoSaveSection -->
-    <string name="settings_spotify_autosave_title">Автоматически сохранять понравившиеся треки</string>
-    <string name="settings_spotify_autosave_connect_first">Сначала подключите Spotify</string>
+    <string name="settings_spotify_autosave_title">Автосохранение понравившихся треков </string>
+    <string name="settings_spotify_autosave_connect_first">Сначала привяжите Spotify</string>
     <string name="settings_spotify_autosave_subtitle">Помогает обновлять миксы.</string>
     <plurals name="settings_spotify_autosave_threshold_days">
-        <item quantity="one">%d день</item>
-        <item quantity="few">%d дня</item>
+        <item quantity="one">%d день </item>
+        <item quantity="few">%d дня </item>
         <item quantity="many">%d дней</item>
         <item quantity="other">%d дней</item>
     </plurals>
     <string name="settings_spotify_autosave_threshold">Порог: %1$s из 30</string>
-    <string name="settings_spotify_autosave_last_7_days">За последние 7 дней автоматически сохранено треков: %1$d</string>
+    <string name="settings_spotify_autosave_last_7_days">За последние 7 дней: %1$d треков автосохранены</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <string name="settings_yt_sync_title">Отправлять прослушивания в YouTube Music</string>
-    <string name="settings_yt_sync_connect_first">Сначала подключите YouTube Music</string>
+    <string name="settings_yt_sync_connect_first">Сначала привяжите YouTube Music</string>
     <string name="settings_yt_sync_retry">Повторить синхронизацию с YouTube</string>
     <string name="settings_yt_status_up_to_date">Актуально</string>
     <string name="settings_yt_status_pending">Ожидают: %1$d</string>
@@ -138,7 +140,7 @@
     <string name="settings_yt_sync_dialog_body">Каждая дорожка, которую вы дослушаете в Stash, будет добавлена в историю просмотров YouTube Music. Daily Mix и другие рекомендации YouTube Music будут учитывать прослушивания в Stash.</string>
     <string name="settings_yt_sync_dialog_how_it_works_title">Как это работает</string>
     <string name="settings_yt_sync_dialog_how_it_works_body">Stash использует неофициальный интерфейс YouTube — тот же, что и приложение YouTube Music. Google допускает такое использование в личных приложениях, но может изменить правила без предупреждения. Если это произойдёт, Stash перестанет отправлять прослушивания, пока обновление не исправит интеграцию.</string>
-    <string name="settings_yt_sync_dialog_risk_title">Риск</string>
+    <string name="settings_yt_sync_dialog_risk_title">Риски</string>
     <string name="settings_yt_sync_dialog_risk_body">Вероятность того, что YouTube ограничит частоту запросов для вашего аккаунта, невелика, но не равна нулю. Stash отслеживает ошибки и приостанавливает работу, если обнаруживает проблемы.</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
     <string name="settings_like_mirror_title">Синхронизация лайков</string>
@@ -157,17 +159,17 @@
     <string name="settings_lastfm_up_to_date">Отправка прослушиваний в Last.fm. Всё синхронизировано.</string>
     <string name="settings_lastfm_first_artist_only_title">Отправлять только первого исполнителя</string>
     <string name="settings_lastfm_first_artist_only_desc">Отправлять «Исполнитель A» вместо «Исполнитель A, Исполнитель B», чтобы совместные треки не разделяли статистику Last.fm. Имена исполнителей с запятой могут быть обрезаны.</string>
-    <string name="settings_lastfm_syncing">Синхронизация…</string>
-    <string name="settings_lastfm_nothing_to_sync">Нет данных для синхронизации</string>
+    <string name="settings_lastfm_syncing">Синхронизация...</string>
+    <string name="settings_lastfm_nothing_to_sync">Синхронизировать нечего</string>
     <string name="settings_lastfm_sync_now">Отправить скробблы сейчас</string>
-    <string name="settings_lastfm_couldnt_connect">Не удалось подключиться</string>
+    <string name="settings_lastfm_couldnt_connect">Ошибка подключения</string>
     <string name="settings_lastfm_dismiss">Закрыть</string>
     <!-- Settings > Accounts > ListenBrainzSection -->
     <string name="settings_listenbrainz_title">ListenBrainz</string>
     <string name="settings_listenbrainz_subtitle">Скробблинг от MetaBrainz. Данные о прослушиваниях принадлежат вам, и их можно экспортировать.</string>
     <string name="settings_listenbrainz_paste_token">Вставьте пользовательский токен со страницы listenbrainz.org/profile.</string>
     <string name="settings_listenbrainz_user_token_label">Пользовательский токен</string>
-    <string name="settings_listenbrainz_validating">Проверка токена…</string>
+    <string name="settings_listenbrainz_validating">Проверяем ваш токен...</string>
     <string name="settings_listenbrainz_connected">Подключено.</string>
     <string name="settings_listenbrainz_queued">История прослушиваний отправляется в ListenBrainz. В очереди: %1$d.</string>
     <string name="settings_listenbrainz_up_to_date">История прослушиваний отправляется в ListenBrainz. Всё синхронизировано.</string>
@@ -177,7 +179,7 @@
     <!-- Settings > Common / Reusable components -->
     <string name="settings_back">Назад</string>
     <string name="settings_reset">Сбросить</string>
-    <string name="settings_beta">Бета-версия</string>
+    <string name="settings_beta">Beta</string>
     <string name="settings_dismiss">Закрыть</string>
     <!-- Settings > Appearance -->
     <string name="settings_theme_section">Тема</string>
@@ -186,22 +188,22 @@
     <string name="settings_theme_follow_system">Как в системе</string>
     <string name="settings_theme_follow_system_desc">Настройка «Следовать системе» адаптирует тему к дневному или ночному режиму устройства.</string>
     <string name="settings_display_size_section">Размер элементов интерфейса</string>
-    <string name="settings_ui_scale_title">Масштаб интерфейса</string>
+    <string name="settings_ui_scale_title">Масштаб UI</string>
     <string name="settings_ui_scale_subtitle">Изменяет размер текста и элементов во всём приложении. Изменение применяется, когда вы отпустите ползунок.</string>
     <string name="settings_dark_theme_section">Тёмная тема</string>
-    <string name="settings_amoled_title">Чёрный фон (AMOLED)</string>
+    <string name="settings_amoled_title">Чистый чёрный (AMOLED)</string>
     <string name="settings_amoled_subtitle">При включённой тёмной теме фон становится абсолютно чёрным — пиксели OLED выключаются.</string>
     <string name="settings_now_playing_section">Сейчас играет</string>
     <string name="settings_ambient_motion_title">Анимация фона</string>
     <string name="settings_ambient_motion_subtitle">Анимированный цветной фон на экране «Сейчас играет». Отключите анимацию, чтобы сохранить заряд батареи.</string>
     <string name="settings_ambient_style_title">Стиль анимации</string>
     <string name="settings_ambient_style_soft_glow">Мягкое свечение</string>
-    <string name="settings_ambient_style_classic">Классический</string>
+    <string name="settings_ambient_style_classic">Классическое</string>
     <string name="settings_ambient_style_desc">Мягкое свечение плавно меняется, как в веб-плеере. Классический стиль — исходный вариант.</string>
     <string name="settings_ambient_style_disabled_desc">Включите анимацию фона, чтобы выбрать стиль.</string>
     <string name="settings_open_stash_on_section">Открывать Stash на вкладке</string>
     <string name="settings_start_tab_home">Главная</string>
-    <string name="settings_start_tab_library">Библиотека</string>
+    <string name="settings_start_tab_library">Медиатека</string>
     <string name="settings_start_tab_search">Поиск</string>
     <string name="settings_start_tab_desc">Вкладка, которая открывается при запуске Stash.</string>
     <string name="settings_home_layout_section">Главная страница</string>
@@ -214,8 +216,8 @@
     <string name="settings_home_section_your_playlists">Ваши плейлисты</string>
     <string name="settings_home_section_new_releases">Новые релизы</string>
     <string name="settings_home_section_qobuz_playlists">Плейлисты Qobuz</string>
-    <string name="settings_home_section_top_albums">Популярные альбомы</string>
-    <string name="settings_home_section_made_for_you">Для вас</string>
+    <string name="settings_home_section_top_albums">Топ альбомов</string>
+    <string name="settings_home_section_made_for_you">Специально для вас</string>
     <string name="settings_home_section_radios">Радио</string>
     <string name="settings_home_section_mood_decades">Настроение и десятилетия</string>
     <string name="settings_home_section_community">Сообщество</string>
@@ -224,14 +226,14 @@
     <string name="settings_home_section_move_down">Переместить %1$s вниз</string>
     <string name="settings_home_section_show_desc">Показывать %1$s на главной</string>
     <!-- Settings > Audio & Quality -->
-    <string name="settings_audio_quality_section">Качество звука</string>
-    <string name="settings_download_quality_title">Качество загрузок</string>
-    <string name="settings_download_mode_lossless">Без потерь (FLAC)</string>
-    <string name="settings_download_mode_lossless_desc">Лучшее качество, самые большие файлы.</string>
+    <string name="settings_audio_quality_section">Качество аудио</string>
+    <string name="settings_download_quality_title">Качество загрузки</string>
+    <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
+    <string name="settings_download_mode_lossless_desc">Наилучшее качество, большие файлы.</string>
     <string name="settings_download_mode_aac">AAC 320</string>
     <string name="settings_download_mode_aac_desc">AAC от Tidal, 320 кбит/с. Не FLAC. Расходует часть дневного лимита.</string>
-    <string name="settings_download_mode_opus">Opus (самый компактный)</string>
-    <string name="settings_download_mode_opus_desc">Из YouTube. Самые компактные файлы.</string>
+    <string name="settings_download_mode_opus">Opus (наименьшее)</string>
+    <string name="settings_download_mode_opus_desc">Из YouTube. Маленькие файлы.</string>
     <string name="settings_flac_quality_title">Качество FLAC</string>
     <string name="settings_youtube_quality_title">Качество YouTube</string>
     <string name="settings_download_quality_rates_desc">Задаёт битрейт загрузок YouTube. Для JioSaavn: 96 кбит/с при низком и обычном качестве, 160 при высоком, 320 при наилучшем и максимальном.</string>
@@ -243,15 +245,15 @@
     <string name="settings_lossless_subtitle_no_source">Источник аудио без потерь не настроен — см. ниже. Размер файлов примерно в 10 раз больше, чем у MP3.</string>
     <string name="settings_lossless_subtitle_active">FLAC для потокового воспроизведения. Для загрузок используется заданное качество загрузки.</string>
     <string name="settings_qobuz_no_source_warning">Источник аудио без потерь не настроен — подключите аккаунт Qobuz ниже</string>
-    <string name="settings_qobuz_account_title">Аккаунт Qobuz</string>
-    <string name="settings_connected_as">Подключено: %1$s</string>
-    <string name="settings_qobuz_connected_token">Подключено (токен)</string>
-    <string name="settings_disconnect">Отключить</string>
-    <string name="settings_qobuz_signin_desc">Войдите в аккаунт Qobuz, чтобы гарантированно слушать аудио без потерь.</string>
-    <string name="settings_qobuz_email_label">Электронная почта Qobuz</string>
+    <string name="settings_qobuz_account_title">Ваш аккаунт Qobuz</string>
+    <string name="settings_connected_as">Подключен как %1$s</string>
+    <string name="settings_qobuz_connected_token">Подключен (токен)</string>
+    <string name="settings_disconnect">Отвязать</string>
+    <string name="settings_qobuz_signin_desc">Войдите в </string>
+    <string name="settings_qobuz_email_label">Эл.почта Qobuz</string>
     <string name="settings_password_label">Пароль</string>
-    <string name="settings_connecting">Подключение…</string>
-    <string name="settings_connect">Подключить</string>
+    <string name="settings_connecting">Подключение...</string>
+    <string name="settings_connect">Привязать</string>
     <string name="settings_auto_flac_upgrade_title">Автоматически заменять треки на FLAC после синхронизации</string>
     <string name="settings_auto_flac_upgrade_subtitle">После каждой синхронизации ищет версии загруженных песен без потерь, которые ещё не представлены в формате FLAC. Проверить это вручную можно в разделе «Состояние библиотеки».</string>
     <string name="settings_tidal_aac_fallback_title">AAC из Tidal, если нет FLAC</string>
@@ -267,7 +269,7 @@
     <string name="settings_state_off">выкл.</string>
     <string name="settings_lossy_fallback_switch_label">Если для загрузки нет lossless-версии, использовать JioSaavn, а затем YouTube.</string>
     <string name="settings_lossy_fallback_switch_label_aac">Использовать JioSaavn, а затем YouTube, если у Tidal нет песни в формате AAC</string>
-    <string name="settings_advanced">Дополнительно</string>
+    <string name="settings_advanced">Расширенные</string>
     <string name="settings_custom_relay_desc">Настройте Stash для работы с собственным промежуточным сервером аудио без потерь. Он имеет приоритет над сервером Stash.</string>
     <string name="settings_custom_endpoint_label">Пользовательский lossless-адрес</string>
     <string name="settings_url_placeholder">https://…</string>
@@ -282,17 +284,17 @@
     <string name="settings_bitchord_token_hint">Только если на вашем сервере задан ACCESS_TOKEN</string>
     <string name="settings_squid_captcha_desc">Капча qobuz.squid.wtf: вставьте значение cookie captcha_verified_at.</string>
     <string name="settings_squid_captcha_label">Значение captcha_verified_at</string>
-    <string name="settings_squid_captcha_placeholder">например, 1777687404951</string>
+    <string name="settings_squid_captcha_placeholder">напр. 1777687404951</string>
     <string name="settings_reset_lossless_attempts">Сбросить попытки lossless</string>
     <string name="settings_effects_section">Эффекты</string>
     <string name="settings_equalizer_title">Эквалайзер</string>
     <!-- Settings > Audio & Quality > Lossless tiers -->
-    <string name="settings_lossless_tier_max">Максимальное (24 бит/192 кГц)</string>
-    <string name="settings_lossless_tier_max_hint">~140 МБ / 4 мин</string>
-    <string name="settings_lossless_tier_hires">Hi-Res (24 бит/96 кГц)</string>
-    <string name="settings_lossless_tier_hires_hint">~70 МБ / 4 мин</string>
-    <string name="settings_lossless_tier_cd">CD (16 бит/44,1 кГц)</string>
-    <string name="settings_lossless_tier_cd_hint">~28 МБ / 4 мин</string>
+    <string name="settings_lossless_tier_max">Максимальное (24-бит/192 кГц)</string>
+    <string name="settings_lossless_tier_max_hint">~140 МБ / 4 мин.</string>
+    <string name="settings_lossless_tier_hires">Hi-Res (24-бит/96кГц)</string>
+    <string name="settings_lossless_tier_hires_hint">~70 МБ / 4 мин.</string>
+    <string name="settings_lossless_tier_cd">CD (16-бит/44.1 кГц)</string>
+    <string name="settings_lossless_tier_cd_hint">~28 МБ / 4 мин.</string>
     <!-- Settings > Audio & Quality > HiResOutputSection -->
     <string name="settings_hires_output_section">Вывод Hi-Res</string>
     <string name="settings_hires_verdict_idle">Включите трек, чтобы увидеть, какой путь проходит звук до наушников.</string>
@@ -318,16 +320,16 @@
     <string name="settings_supporter_kofi_email_label">Электронная почта Ko-fi</string>
     <string name="settings_supporter_email_code_button">Отправить мне код по электронной почте</string>
     <string name="settings_supporter_code_sent_desc">Если адрес %1$s есть в нашем списке Ko-fi, код уже отправлен. Это может занять минуту.</string>
-    <string name="settings_supporter_code_label">Код из 6 цифр</string>
-    <string name="settings_supporter_unlock_button">Активировать</string>
+    <string name="settings_supporter_code_label">6-значный код</string>
+    <string name="settings_supporter_unlock_button">Разблокировать</string>
     <string name="settings_supporter_resend_code_button">Отправить новый код</string>
-    <string name="settings_supporter_different_email_button">Использовать другой адрес эл. почты</string>
+    <string name="settings_supporter_different_email_button">Использовать другой адрес эл.почты</string>
     <string name="settings_supporter_donate_button">Пожертвовать на Ko-fi</string>
     <string name="settings_supporter_remove_code_button">Удалить код поддержки с этого устройства</string>
     <!-- Settings > Audio & Quality > AudioQualityPicker -->
-    <string name="settings_audio_quality_bitrate_size">%1$d кбит/с · ~%2$s МБ/мин</string>
+    <string name="settings_audio_quality_bitrate_size">%1$d кбит/c ~%2$s МБ/мин</string>
     <string name="settings_quality_tier_max">Максимальное</string>
-    <string name="settings_quality_tier_best">Наилучшее</string>
+    <string name="settings_quality_tier_best">Лучшее</string>
     <string name="settings_quality_tier_high">Высокое</string>
     <string name="settings_quality_tier_normal">Обычное</string>
     <string name="settings_quality_tier_low">Низкое</string>
@@ -336,102 +338,102 @@
     <string name="settings_lossless_routing_footer">Аудио без потерь поступает из источников выше. Если подходящего варианта нет, сначала выполняется поиск в JioSaavn, а затем — в YouTube; во время воспроизведения источник обозначается как \"via YT\".</string>
     <!-- Settings > Playback -->
     <string name="settings_mode_section">Режим</string>
-    <string name="settings_mode_stream_only">Только потоковое воспроизведение</string>
-    <string name="settings_mode_download">Загрузка</string>
-    <string name="settings_stream_on_cellular_title">Потоковое воспроизведение через мобильную сеть</string>
-    <string name="settings_stream_on_cellular_desc">Разрешить потоковое воспроизведение через мобильный интернет (5G/LTE). По умолчанию отключено, чтобы не расходовать трафик неожиданно.</string>
-    <string name="settings_stream_via_youtube_title">Воспроизводить через YouTube</string>
-    <string name="settings_stream_via_youtube_desc">Не использовать Qobuz и воспроизводить всё через YouTube. Включите этот параметр, если воспроизведение без потерь не работает или доступны только короткие фрагменты.</string>
-    <string name="settings_force_qobuz_debug_title">Только Qobuz (отладка)</string>
+    <string name="settings_mode_stream_only">Только поток</string>
+    <string name="settings_mode_download">Загруженные</string>
+    <string name="settings_stream_on_cellular_title">Поток через мобильный интернет</string>
+    <string name="settings_stream_on_cellular_desc">Разрешает потоковое воспроизведение через мобильные данные (5G / LTE). Отключено по умолчанию во избежание </string>
+    <string name="settings_stream_via_youtube_title">Поток через YouTube</string>
+    <string name="settings_stream_via_youtube_desc">Пропускать Qobuz и воспроизводить всё через YouTube. Включите, если lossless недоступен или проигрываются только короткие отрывки. </string>
+    <string name="settings_force_qobuz_debug_title">Принудительно только Qobuz (отладка)</string>
     <string name="settings_force_qobuz_debug_desc">Только для отладочных версий. Потоковое воспроизведение и загрузка выполняются через Qobuz, без перехода на YouTube.</string>
     <string name="settings_streaming_unavailable">Потоковое воспроизведение недоступно в этой сборке.</string>
-    <string name="settings_autoplay_section">Автовоспроизведение</string>
-    <string name="settings_autoplay_radio_title">Радио после очереди</string>
+    <string name="settings_autoplay_section">Автовоспроизведение </string>
+    <string name="settings_autoplay_radio_title">Автовоспроизведение радио</string>
     <string name="settings_autoplay_radio_desc">Когда начнётся воспроизведение последней песни в очереди, музыка продолжится с помощью радио, созданного на её основе. Требуется подключение.</string>
-    <string name="settings_crossfade_section">Кроссфейд</string>
-    <string name="settings_crossfade_title">Кроссфейд</string>
+    <string name="settings_crossfade_section">Плавный переход</string>
+    <string name="settings_crossfade_title">Плавный переход</string>
     <string name="settings_crossfade_desc">При автоматическом переходе конец текущей дорожки плавно переходит в следующую. При ручном переключении воспроизведение по-прежнему прерывается мгновенно.</string>
-    <string name="settings_crossfade_duration_label">Продолжительность</string>
+    <string name="settings_crossfade_duration_label">Длительность</string>
     <plurals name="settings_crossfade_duration_seconds">
         <item quantity="one">%d с</item>
         <item quantity="few">%d с</item>
         <item quantity="many">%d с</item>
         <item quantity="other">%d с</item>
     </plurals>
-    <string name="settings_lyrics_section">Тексты песен</string>
-    <string name="settings_lyrics_apple_music">Apple Музыка</string>
+    <string name="settings_lyrics_section">Текст</string>
+    <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">только LRC</string>
     <string name="settings_lyrics_lrc_only_desc">Тексты песен с пословной синхронизацией отключены. При возвращении к варианту Apple Music повторный поиск не запускается сразу: тексты Apple Music с пословной синхронизацией будут получены при следующем поиске — автоматически при обработке нового релиза или через пункт «Получить тексты» в разделе Library Health.</string>
     <string name="settings_lyrics_apple_music_desc">Предпочитает тексты песен Apple Music, синхронизированные по словам. При переключении на LRC удаляются только все сохраненные тексты, синхронизированные по словам, и выполняется повторная выборка из источников с линейной синхронизацией — используйте «Извлечь тексты песен» в «Состоянии библиотеки», чтобы запустить его сейчас.</string>
     <!-- Settings > Library & Storage -->
     <string name="settings_storage_section">Хранилище</string>
     <string name="settings_downloads_section">Загрузки</string>
-    <string name="settings_library_section">Библиотека</string>
-    <string name="settings_download_recommendations_title">Запускать рекомендации, когда</string>
+    <string name="settings_library_section">Медиатека</string>
+    <string name="settings_download_recommendations_title">Запускать рекомендации когда</string>
     <string name="settings_download_mode_wifi_charging_label">Wi-Fi + зарядка</string>
     <string name="settings_download_mode_wifi_charging_desc">Самый консервативный. Загружается только при наличии Wi-Fi и подключении к сети.</string>
     <string name="settings_download_mode_wifi_any_label">Wi-Fi в любое время</string>
-    <string name="settings_download_mode_wifi_any_desc">Загружается по Wi-Fi даже без зарядного устройства.</string>
+    <string name="settings_download_mode_wifi_any_desc">Загрузка через Wi-Fi без зарядного устройства.</string>
     <string name="settings_download_mode_any_network_label">Любая сеть</string>
-    <string name="settings_download_mode_any_network_desc">Загрузка по сотовой сети тоже. Использует мобильные данные.</string>
-    <string name="settings_stash_mixes_title">Тайные миксы (бета)</string>
+    <string name="settings_download_mode_any_network_desc">Загрузка в любой сети, в том числе через мобильный интернет. Используются мобильные данные.</string>
+    <string name="settings_stash_mixes_title">Миксы Stash (бета)</string>
     <string name="settings_stash_mixes_subtitle_enabled">Миксы Daily Discover, Deep Cuts и First Listen автоматически обновляются в фоновом режиме.</string>
     <string name="settings_stash_mixes_subtitle_disabled">Автоматически созданные плейлисты-миксы скрыты. Фоновая загрузка рекомендаций отключена.</string>
     <string name="settings_qobuz_discovery_title">Открытие Qobuz на сайте Home</string>
-    <string name="settings_qobuz_discovery_subtitle_enabled">Новые релизы, плейлисты Qobuz и популярные альбомы отображаются на главной странице.</string>
+    <string name="settings_qobuz_discovery_subtitle_enabled">Новые релизы, плейлисты Qobuz и Топ альбомов на главной.</string>
     <string name="settings_qobuz_discovery_subtitle_disabled">На главной странице хранятся только ваши миксы и импортированная музыка.</string>
-    <string name="settings_library_health_title">Здоровье библиотеки</string>
-    <string name="settings_listening_history_title">История прослушивания</string>
+    <string name="settings_library_health_title">Состояние библиотеки</string>
+    <string name="settings_listening_history_title">История прослушиваний</string>
     <string name="settings_listening_history_paused_subtitle">Приостановлено: новые прослушивания не сохраняются.</string>
     <string name="settings_listening_history_active_subtitle">Приостановите или очистите данные, которые помнит этот телефон.</string>
     <string name="settings_web_link_nav_title">Link Stash в сети</string>
     <string name="settings_web_link_nav_subtitle">Продолжить с того места, где вы остановились, синхронизировать и отправить библиотеку</string>
     <string name="settings_storage_external_folder_fallback">Внешняя папка</string>
-    <string name="settings_backup_status_exporting_title">Экспорт базы данных</string>
-    <string name="settings_backup_status_importing_title">Импорт резервной копии</string>
-    <string name="settings_backup_status_success_title">Успех</string>
+    <string name="settings_backup_status_exporting_title">Экспортируем базу данных</string>
+    <string name="settings_backup_status_importing_title">Импортируем резервную копию</string>
+    <string name="settings_backup_status_success_title">Успешно</string>
     <string name="settings_backup_status_error_title">Ошибка</string>
-    <string name="settings_backup_status_processing">Обработка…</string>
-    <string name="settings_backup_status_ok">ХОРОШО</string>
-    <string name="settings_backup_export_dialog_title">Экспортировать резервную копию</string>
-    <string name="settings_backup_export_dialog_subtitle">Выберите, что должна содержать эта резервная копия:</string>
-    <string name="settings_backup_export_scope_likes_only_label">Только понравившиеся песни</string>
-    <string name="settings_backup_export_scope_likes_only_desc">Все, что вам понравилось, и ничего больше. Маленький файл.</string>
-    <string name="settings_backup_export_scope_everything_label">Все</string>
-    <string name="settings_backup_export_scope_everything_desc">Библиотека и настройки. Восстановить входы в аккаунты нельзя ни при каком варианте.</string>
-    <string name="settings_backup_export_scope_library_only_label">Только библиотека</string>
-    <string name="settings_backup_export_scope_library_only_desc">Песни, плейлисты и история. Настройки опущены.</string>
+    <string name="settings_backup_status_processing">Обработка...</string>
+    <string name="settings_backup_status_ok">ОК</string>
+    <string name="settings_backup_export_dialog_title">Экспорт резервной копии</string>
+    <string name="settings_backup_export_dialog_subtitle">Выберите, что должна содержать резервная копия:</string>
+    <string name="settings_backup_export_scope_likes_only_label">Только понравившиеся</string>
+    <string name="settings_backup_export_scope_likes_only_desc">Всё, что вам понравилось и ничего больше. Маленький файл. </string>
+    <string name="settings_backup_export_scope_everything_label">Всё</string>
+    <string name="settings_backup_export_scope_everything_desc">Медиатека и настройки. Логины не могут быть восстановлены. </string>
+    <string name="settings_backup_export_scope_library_only_label">Только медиатека</string>
+    <string name="settings_backup_export_scope_library_only_desc">Треки, плейлисты и история. Без настроек. </string>
     <string name="settings_backup_export_scope_settings_only_label">Только настройки</string>
-    <string name="settings_backup_export_scope_settings_only_desc">Настройки без подключенной библиотеки.</string>
-    <string name="settings_backup_export_choose_file_button">Выбрать файл</string>
-    <string name="settings_backup_import_dialog_title">Импортировать резервную копию</string>
-    <string name="settings_backup_import_dialog_subtitle">Выберите, что должна восстановить эта резервная копия:</string>
-    <string name="settings_backup_import_scope_merge_label">Объединить в библиотеку</string>
-    <string name="settings_backup_import_scope_merge_desc">Добавляет в библиотеку отсутствующие песни и плейлисты из резервной копии. Ничего не удаляется и не заменяется; настройки остаются без изменений.</string>
+    <string name="settings_backup_export_scope_settings_only_desc">Настройки без прикреплённой медиатеки.</string>
+    <string name="settings_backup_export_choose_file_button">Выберите файл</string>
+    <string name="settings_backup_import_dialog_title">Импорт резервной копии</string>
+    <string name="settings_backup_import_dialog_subtitle">Выберите, что должна восстановить резервная копия:</string>
+    <string name="settings_backup_import_scope_merge_label">Объединить в медиатеку</string>
+    <string name="settings_backup_import_scope_merge_desc">Добавляет отсутствующие треки и плейлисты из резервной копии. Ничего не удаляется и не заменяется. Настройки остаются нетронутыми.</string>
     <string name="settings_backup_import_scope_merge_confirm">Объединить</string>
-    <string name="settings_backup_import_scope_replace_library_label">Заменить только библиотеку</string>
-    <string name="settings_backup_import_scope_replace_library_desc">Восстанавливает библиотеку резервной копии. Ваши текущие настройки сохраняются.</string>
-    <string name="settings_backup_import_scope_replace_library_confirm">Заменить библиотеку</string>
+    <string name="settings_backup_import_scope_replace_library_label">Заменить только медиатеку</string>
+    <string name="settings_backup_import_scope_replace_library_desc">Восстанавливает медиатеку из резервной копии. Ваши текущие настройки сохраняются. </string>
+    <string name="settings_backup_import_scope_replace_library_confirm">Заменить медиатеку</string>
     <string name="settings_backup_import_scope_restore_settings_label">Восстановить только настройки</string>
-    <string name="settings_backup_import_scope_restore_settings_desc">Восстанавливает настройки из резервной копии. Ваша текущая библиотека сохраняется.</string>
+    <string name="settings_backup_import_scope_restore_settings_desc">Восстанавливает настройки из резервной копии. Ваша текущая медиатека сохранена.</string>
     <string name="settings_backup_import_scope_restore_settings_confirm">Восстановить настройки</string>
-    <string name="settings_backup_import_scope_replace_everything_label">Заменить все</string>
+    <string name="settings_backup_import_scope_replace_everything_label">Заменить всё</string>
     <string name="settings_backup_import_scope_replace_everything_desc">Полное восстановление в точности в соответствии с резервной копией — заменяется вся ваша библиотека И все настройки.</string>
-    <string name="settings_backup_import_scope_replace_everything_confirm">Перезаписать все</string>
-    <string name="settings_backup_import_destructive_warning">Это невозможно отменить.</string>
-    <string name="settings_storage_backup_title">Резервное копирование</string>
-    <string name="settings_storage_backup_subtitle">Экспортируйте настройки и базу данных или импортируйте их из предыдущей резервной копии.</string>
-    <string name="settings_storage_export_backup_button">Экспортировать резервную копию</string>
-    <string name="settings_storage_import_backup_button">Импортировать резервную копию</string>
+    <string name="settings_backup_import_scope_replace_everything_confirm">Перезаписать всё</string>
+    <string name="settings_backup_import_destructive_warning">Это действие нельзя отменить.</string>
+    <string name="settings_storage_backup_title">Резервная копия</string>
+    <string name="settings_storage_backup_subtitle">Экспортировать настройки и базу данных или импортировать из ранее созданной резервной копии.</string>
+    <string name="settings_storage_export_backup_button">Экспорт резервной копии</string>
+    <string name="settings_storage_import_backup_button">Импорт резервной копии</string>
     <string name="settings_storage_total_tracks_label">Всего треков</string>
     <string name="settings_storage_used_label">Использовано памяти</string>
     <string name="settings_storage_download_location_label">Местоположение загрузки</string>
     <string name="settings_storage_location_internal">Внутренний (частный для приложения)</string>
-    <string name="settings_storage_location_external_unknown">Внешняя папка (SD-карта/USB)</string>
-    <string name="settings_storage_location_external_desc">Треки сохраняются в этой папке и не подлежат удалению. Виден другим приложениям и через USB.</string>
-    <string name="settings_storage_change_folder_button">Изменить папку</string>
-    <string name="settings_storage_pick_folder_button">Выберите SD/папку</string>
-    <string name="settings_storage_use_internal_button">Используйте внутренний</string>
+    <string name="settings_storage_location_external_unknown">Внешняя папка (SD-карта / USB)</string>
+    <string name="settings_storage_location_external_desc">Треки хранятся в этой папке и сохраняются после удаления. Они видны другим приложениям и через USB.</string>
+    <string name="settings_storage_change_folder_button">Сменить папку</string>
+    <string name="settings_storage_pick_folder_button">Выбрать SD / папку</string>
+    <string name="settings_storage_use_internal_button">Использовать внутреннее</string>
     <string name="settings_storage_new_downloads_location_note">Новые загрузки отправляются в выбранное место.</string>
     <string name="settings_storage_folder_structure_label">Структура папок</string>
     <string name="settings_storage_layout_artist_album_label">Исполнитель / Альбом</string>
@@ -441,7 +443,7 @@
     <string name="settings_storage_layout_playlist_label">По плейлисту</string>
     <string name="settings_storage_layout_playlist_desc">Одна папка на плейлист; для треков без плейлиста используйте «Исполнитель/Альбом».</string>
     <!-- Settings > Library & Storage > Move Library -->
-    <string name="settings_storage_move_library_title">Существующая библиотека</string>
+    <string name="settings_storage_move_library_title">Существующая медиатека</string>
     <plurals name="settings_storage_move_library_has_external_desc">
         <item quantity="one">Переместить %d трек, который ещё хранится на устройстве, в папку выше, чтобы он был доступен и по USB.</item>
         <item quantity="few">Переместить %d трека, которые ещё хранятся на устройстве, в папку выше, чтобы они были доступны и по USB.</item>
@@ -458,7 +460,7 @@
         <item quantity="one">Переместить %d трек в эту папку</item>
         <item quantity="few">Переместить %d трека в эту папку</item>
         <item quantity="many">Переместить %d треков в эту папку</item>
-        <item quantity="other">Переместить %d треков в эту папку</item>
+        <item quantity="other"></item>
     </plurals>
     <string name="settings_storage_move_library_pick_dest_button">Выберите пункт назначения и переместите библиотеку</string>
     <string name="settings_storage_move_library_progress">Перемещение %1$d из %2$d…</string>
@@ -466,7 +468,7 @@
         <item quantity="one">Перемещён %d трек</item>
         <item quantity="few">Перемещено %d трека</item>
         <item quantity="many">Перемещено %d треков</item>
-        <item quantity="other">Перемещено %d треков</item>
+        <item quantity="other"></item>
     </plurals>
     <string name="settings_storage_move_library_done_failed">" • %d не удалось"</string>
     <string name="settings_storage_move_library_failed_note">Дорожки, которые не удалось переместить, останутся во внутренней памяти. Попробуйте ещё раз позже.</string>
@@ -512,13 +514,13 @@
     <string name="settings_listening_history_clear_section">Очистить</string>
     <string name="settings_listening_history_clear_range_title">Очистить диапазон дат</string>
     <string name="settings_listening_history_clear_range_subtitle">Выберите начальную и конечную даты</string>
-    <string name="settings_listening_history_clear_everything_title">Очистить все</string>
+    <string name="settings_listening_history_clear_everything_title">Очистить всё</string>
     <string name="settings_listening_history_nothing_to_clear">Нечего очищать</string>
     <string name="settings_listening_history_clear_footer">При очистке удаляются прослушивания только с этого телефона. %s</string>
     <string name="settings_listening_history_clear_keeps_scrobbles">При этом ничего уже отправленное на Last.fm, ListenBrainz или YouTube Music не удаляется.</string>
     <string name="settings_listening_history_picker_title">Дни для очистки</string>
     <string name="settings_listening_history_picker_next">Далее</string>
-    <string name="settings_listening_history_confirm_everything_title">Очистить всю историю прослушивания?</string>
+    <string name="settings_listening_history_confirm_everything_title">Очистить всю историю прослушиваний?</string>
     <string name="settings_listening_history_confirm_range_title">Очистить %s?</string>
     <plurals name="settings_listening_history_confirm_plays_leave">
         <item quantity="one">Из истории этого телефона исключается %1$s; число прослушиваний пересчитывается без них. %2$s</item>
@@ -529,7 +531,7 @@
     <string name="settings_listening_history_confirm_no_listens">В эти дни прослушиваний нет. %s</string>
     <string name="settings_listening_history_confirm_clear_button">Очистить</string>
     <!-- Settings > Web Library Sheets -->
-    <string name="web_library_export_what_to_include">Что включить</string>
+    <string name="web_library_export_what_to_include">Что включить </string>
     <string name="web_library_export_save_as_file">Сохранить как файл</string>
     <string name="web_library_export_send_to_target">Отправить на %s</string>
     <string name="web_library_export_send_to_picker">Отправить в…</string>
@@ -538,13 +540,13 @@
     <string name="web_library_import_what_to_import">Что импортировать</string>
     <string name="web_library_import_action_import">Импорт</string>
     <string name="web_library_import_reading_title">Чтение файла</string>
-    <string name="web_library_import_adding_title">Добавление в вашу библиотеку</string>
+    <string name="web_library_import_adding_title">Добавляем в вашу медиатеку</string>
     <string name="web_library_import_done_title">Импортировано</string>
     <string name="web_library_import_failed_title">Не удалось импортировать</string>
     <!-- Settings > Blocked Songs -->
     <string name="blocked_songs_title">Заблокированные треки</string>
     <string name="blocked_songs_subtitle">Эти треки пропускаются при каждой синхронизации. Нажмите «Разблокировать», чтобы снова разрешить их.</string>
-    <string name="blocked_songs_empty_title">Нет заблокированных песен</string>
+    <string name="blocked_songs_empty_title">Нет заблокированных треков</string>
     <string name="blocked_songs_empty_desc">Здесь отображаются песни, заблокированные командой \u201CУдалить и заблокировать\u201D. Нажмите «Разблокировать», чтобы снова разрешить их при следующей синхронизации.</string>
     <plurals name="blocked_songs_count">
         <item quantity="one">%d песня</item>
@@ -569,36 +571,36 @@
         <item quantity="other">%d треков загружены до версии v0.8.1 и всё ещё отображаются в неизвестном формате. Запустите разовое сканирование, чтобы определить кодек и битрейт по файлам.</item>
     </plurals>
     <string name="settings_library_health_scan_files">Сканировать файлы</string>
-    <string name="settings_library_health_scanning_progress">Сканирование… %1$d / %2$d</string>
+    <string name="settings_library_health_scanning_progress">Сканирование... %1$d / %2$d</string>
     <plurals name="settings_library_health_scan_complete">
-        <item quantity="one">Проверка завершена. Обновлено дорожек: %1$d из %2$d.</item>
-        <item quantity="few">Проверка завершена. Обновлено дорожек: %1$d из %2$d.</item>
-        <item quantity="many">Проверка завершена. Обновлено дорожек: %1$d из %2$d.</item>
-        <item quantity="other">Проверка завершена. Обновлено дорожек: %1$d из %2$d.</item>
+        <item quantity="one">Сканирование завершено: %1$d из %2$d трека обновлён.</item>
+        <item quantity="few">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
+        <item quantity="many">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
+        <item quantity="other"></item>
     </plurals>
     <plurals name="settings_library_health_scan_unreadable">
-        <item quantity="one">Не удалось прочитать %d трек — вероятно, файла нет на диске или он не поддерживается MediaMetadataRetriever.</item>
-        <item quantity="few">Не удалось прочитать %d трека — вероятно, файлов нет на диске или они не поддерживаются MediaMetadataRetriever.</item>
-        <item quantity="many">Не удалось прочитать %d треков — вероятно, файлов нет на диске или они не поддерживаются MediaMetadataRetriever.</item>
-        <item quantity="other">Не удалось прочитать %d треков — вероятно, файлов нет на диске или они не поддерживаются MediaMetadataRetriever.</item>
+        <item quantity="one">%d трек все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="few">%d трека все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="many">%d треков все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="other"></item>
     </plurals>
     <string name="settings_library_health_retry_scan">Повторить сканирование</string>
     <string name="settings_library_health_section_missing_downloads">Отсутствующие загрузки</string>
     <plurals name="settings_library_health_restore_queued">
-        <item quantity="one">В очередь добавлена %d дорожка. Она загрузится в фоновом режиме — прогресс отображается на вкладке «Синхронизация».</item>
+        <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
         <item quantity="few">В очередь добавлены %d дорожки. Они загрузятся в фоновом режиме — прогресс отображается на вкладке «Синхронизация».</item>
-        <item quantity="many">В очередь добавлено %d дорожек. Они загрузятся в фоновом режиме — прогресс отображается на вкладке «Синхронизация».</item>
-        <item quantity="other">В очередь добавлено %d дорожек. Они загрузятся в фоновом режиме — прогресс отображается на вкладке «Синхронизация».</item>
+        <item quantity="many">В очереди %d треков. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
+        <item quantity="other"></item>
     </plurals>
     <string name="settings_library_health_done">Готово</string>
     <plurals name="settings_library_health_missing_downloads_desc">
-        <item quantity="one">%d дорожка была загружена ранее, но файла нет на этом устройстве. Сначала подключите аккаунты, из которых она была загружена, а затем загрузите её снова.</item>
-        <item quantity="few">%d дорожки были загружены ранее, но файлов нет на этом устройстве. Сначала подключите аккаунты, из которых они были загружены, а затем загрузите их снова.</item>
+        <item quantity="one">%d трек был ранее загружен, но файл отсутствует на этом устройстве. Привяжите аккаунты,</item>
+        <item quantity="few"></item>
         <item quantity="many">%d дорожек были загружены ранее, но файлов нет на этом устройстве. Сначала подключите аккаунты, из которых они были загружены, а затем загрузите их снова.</item>
         <item quantity="other">%d дорожек были загружены ранее, но файлов нет на этом устройстве. Сначала подключите аккаунты, из которых они были загружены, а затем загрузите их снова.</item>
     </plurals>
     <plurals name="settings_library_health_download_again_button">
-        <item quantity="one">Загрузить %d трек повторно</item>
+        <item quantity="one">Скачать %d снова</item>
         <item quantity="few">Загрузить %d трека повторно</item>
         <item quantity="many">Загрузить %d треков повторно</item>
         <item quantity="other">Загрузить %d треков повторно</item>
@@ -668,10 +670,10 @@
     <!-- Settings > Equalizer -->
     <string name="settings_equalizer_loudness_first_run_message">Нормализация громкости включена. По мере измерения громкости дорожек библиотеки в фоновом режиме их громкость будет выравниваться.</string>
     <string name="settings_equalizer_bit_perfect_bypassed">Отключено: активен побитовый вывод, поэтому ЦАП получает музыку без изменений. Чтобы использовать эквалайзер, выберите «Match USB DAC» для вывода Hi-Res в разделе «Звук и качество».</string>
-    <string name="settings_equalizer_section_5band_eq">5-полосный эквалайзер</string>
-    <string name="settings_equalizer_section_bass_boost">Усиление басов</string>
-    <string name="settings_equalizer_section_loudness">Нормализация громкости</string>
-    <string name="settings_equalizer_loudness_desc">Воспроизводит каждую дорожку с одинаковой громкостью.</string>
+    <string name="settings_equalizer_section_5band_eq">5-Band EQ</string>
+    <string name="settings_equalizer_section_bass_boost">Bass Boost</string>
+    <string name="settings_equalizer_section_loudness">Нормализация звука</string>
+    <string name="settings_equalizer_loudness_desc">Воспроизводит каждый трек с постоянной громкостью.</string>
     <plurals name="settings_equalizer_loudness_backfill_progress">
         <item quantity="one">%1$d из %2$d трека</item>
         <item quantity="few">%1$d из %2$d треков</item>
@@ -679,17 +681,17 @@
         <item quantity="other">%1$d из %2$d треков</item>
     </plurals>
     <string name="settings_equalizer_loudness_charging_hint">Продолжается автоматически во время зарядки.</string>
-    <string name="settings_equalizer_section_preamp">Предусиление</string>
+    <string name="settings_equalizer_section_preamp">Pre-amp</string>
     <string name="settings_equalizer_save_preset">Сохранить пресет</string>
     <string name="settings_equalizer_save">Сохранить</string>
-    <string name="settings_equalizer_preset_flat">Без коррекции</string>
-    <string name="settings_equalizer_preset_bass_boost">Усиление басов</string>
-    <string name="settings_equalizer_preset_treble_boost">Усиление высоких частот</string>
+    <string name="settings_equalizer_preset_flat">Плоский</string>
+    <string name="settings_equalizer_preset_bass_boost">Усиление НЧ</string>
+    <string name="settings_equalizer_preset_treble_boost">Усиление ВЧ</string>
     <string name="settings_equalizer_preset_vocal">Вокал</string>
     <string name="settings_equalizer_preset_rock">Рок</string>
     <string name="settings_equalizer_preset_pop">Поп</string>
     <string name="settings_equalizer_preset_jazz">Джаз</string>
-    <string name="settings_equalizer_preset_classical">Классика</string>
+    <string name="settings_equalizer_preset_classical">Классическая</string>
     <string name="settings_equalizer_save_preset_dialog_title">Сохранить пресет</string>
     <string name="settings_equalizer_preset_name_label">Название пресета</string>
 </resources>
