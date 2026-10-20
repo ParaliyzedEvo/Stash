@@ -14,6 +14,7 @@ data class LyricsQuery(
     val albumArtist: String?,
     val durationMs: Long?,
     val youtubeVideoId: String?,
+    val isrc: String? = null,
     /**
      * True when this fetch is blocking something the user is actively watching (the lyrics sheet's
      * on-open fetch, a Retry tap). Sources MAY trade patience for latency on this — a shorter

@@ -121,6 +121,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var trackDao: TrackDao
 
     @Inject
+    lateinit var lyricsDao: com.stash.core.data.db.dao.LyricsDao
+
+    @Inject
     lateinit var swapCoordinator: com.stash.data.download.files.SwapCoordinator
 
     @Inject
@@ -1096,6 +1099,19 @@ class StashApplication : Application(), Configuration.Provider {
      * nothing here: MetadataBackfillWorker chains into the same trigger when it finishes.
      */
     private suspend fun maybeEnqueueLyricsTtmlUpgrade() {
+        // One-shot: lrc.red and binimum are now TTML sources, so forget "Apple asked, no TTML" stamps.
+        // Runs before the enqueue so the worker reads the cleared stamps. Set the flag only after success.
+        runCatching {
+            val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
+            if (!prefs.getBoolean(TTML_CHECKED_RESET_KEY, false)) {
+                val reset = lyricsDao.resetTtmlChecked()
+                prefs.edit().putBoolean(TTML_CHECKED_RESET_KEY, true).apply()
+                Log.i("StashMigration", "reset ttml_checked_at on $reset lyrics row(s) for the ISRC TTML sources")
+            }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "ttml_checked_at reset failed", it)
+        }
         runCatching {
             if (backfillVersionTracker.shouldRunForCurrentVersion(LYRICS_TTML_UPGRADE_KEY)) {
                 lyricsUpgradeTrigger.enqueueTtmlUpgrade()
@@ -1113,6 +1129,8 @@ class StashApplication : Application(), Configuration.Provider {
          * tracks forever.
          */
         private const val LYRICS_MISS_RESET_KEY = "lyrics_miss_reset_done"
+
+        private const val TTML_CHECKED_RESET_KEY = "ttml_checked_reset_isrc_sources_done"
 
         /**
          * [BackfillVersionTracker] key for the TTML lyrics upgrade. Keep stable across releases

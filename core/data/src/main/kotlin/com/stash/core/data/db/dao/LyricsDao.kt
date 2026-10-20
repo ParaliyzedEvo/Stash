@@ -67,4 +67,8 @@ interface LyricsDao {
 
     @Query("UPDATE lyrics SET sync_offset_ms = :offsetMs WHERE track_id = :trackId")
     suspend fun setSyncOffsetMs(trackId: Long, offsetMs: Long)
+
+    /** One-shot: forget "Apple asked, no TTML" stamps so the upgrade pass re-asks with lrc.red/binimum. */
+    @Query("UPDATE lyrics SET ttml_checked_at = NULL WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NOT NULL")
+    suspend fun resetTtmlChecked(): Int
 }

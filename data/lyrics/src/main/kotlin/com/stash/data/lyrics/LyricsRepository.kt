@@ -9,6 +9,7 @@ import com.stash.core.data.prefs.LyricsPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
+import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsSource
@@ -167,8 +168,8 @@ class LyricsRepository @Inject constructor(
     private suspend fun write(query: LyricsQuery, outcome: WalkOutcome): LyricsEntity? {
         // TTML only while Apple is a source: a walk that started before a switch to LRC-only
         // (still asking Apple) must not write TTML back after the wipe. Read at write time.
-        val appleActive = activeSources().any { it.id == AppleTtmlLyricsSource.SOURCE_ID }
-        val result = outcome.result?.let { if (!appleActive && it.ttml != null) it.copy(ttml = null) else it }
+        val ttmlActive = activeSources().any { it.id in TTML_SOURCE_IDS }
+        val result = outcome.result?.let { if (!ttmlActive && it.ttml != null) it.copy(ttml = null) else it }
         val appleCleanMiss = outcome.appleCleanMiss
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
@@ -201,6 +202,9 @@ class LyricsRepository @Inject constructor(
         )
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(query.trackId, now)
+        if (result.sourceId in ISRC_SOURCE_IDS) {
+            result.sourceLyricsId?.let { runCatching { trackDao.backfillIsrcIfMissing(query.trackId, it) } }
+        }
         if (!result.instrumental) {
             runCatching { sidecarWriter.write(query.trackId, entity) }
                 .onFailure { e ->
@@ -272,7 +276,7 @@ class LyricsRepository @Inject constructor(
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return emptyList()
         val after = lyricsPreference.ttmlUpgradeCursor.first()
         // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
-        return lyricsDao.trackIdsPendingTtml().sortedBy { it <= after }
+        return lyricsDao.trackIdsPendingTtml().sortedDescending().sortedBy { it >= after }
     }
 
     /**
@@ -283,7 +287,7 @@ class LyricsRepository @Inject constructor(
     suspend fun trackIdsMissingLyrics(): List<Long> {
         val after = lyricsPreference.bulkFetchCursor.first()
         // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
-        return lyricsDao.trackIdsMissingLyrics().sortedBy { it <= after }
+        return lyricsDao.trackIdsMissingLyrics().sortedDescending().sortedBy { it >= after }
     }
 
     /**
@@ -303,6 +307,7 @@ class LyricsRepository @Inject constructor(
             albumArtist = track.albumArtist.ifBlank { null },
             durationMs = track.durationMs.takeIf { it > 0 },
             youtubeVideoId = track.youtubeId,
+            isrc = track.isrc?.takeIf { it.isNotBlank() },
         )
         return try {
             if (resolveAndStore(query, fresh = true) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
@@ -366,8 +371,8 @@ class LyricsRepository @Inject constructor(
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
             return TtmlUpgradeResult.SKIPPED
         }
-        val apple = sources.firstOrNull { it.id == AppleTtmlLyricsSource.SOURCE_ID }
-            ?: return TtmlUpgradeResult.SKIPPED
+        val ttmlSources = sources.filter { it.id in TTML_SOURCE_IDS }
+        if (ttmlSources.isEmpty()) return TtmlUpgradeResult.SKIPPED
         val before = lyricsDao.get(trackId) ?: return TtmlUpgradeResult.SKIPPED
         if (before.ttml != null || before.instrumental) return TtmlUpgradeResult.SKIPPED
         val track = trackDao.getById(trackId) ?: return TtmlUpgradeResult.SKIPPED
@@ -380,19 +385,28 @@ class LyricsRepository @Inject constructor(
             albumArtist = track.albumArtist.ifBlank { null },
             durationMs = track.durationMs.takeIf { it > 0 },
             youtubeVideoId = track.youtubeId,
+            isrc = track.isrc?.takeIf { it.isNotBlank() },
             interactive = interactive,
         )
-        val result = try {
-            apple.resolve(query)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: AppleTtmlLyricsSource.AppleSkippedException) {
-            return TtmlUpgradeResult.PAUSED
-        } catch (e: Exception) {
-            Log.w(TAG, "TTML upgrade failed for trackId=$trackId", e)
+        var found: LyricsResult? = null
+        var failure: Exception? = null
+        for (source in ttmlSources) {
+            try {
+                found = source.resolve(query)
+                if (found != null) break
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "TTML upgrade: ${source.id} failed for trackId=$trackId", e)
+                if (failure == null) failure = e
+            }
+        }
+        val result = found
+        if (result == null && failure != null) {
             return when {
-                (e as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429 -> TtmlUpgradeResult.RATE_LIMITED
-                e is InterruptedIOException -> TtmlUpgradeResult.NOT_READY
+                failure is AppleTtmlLyricsSource.AppleSkippedException -> TtmlUpgradeResult.PAUSED
+                (failure as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429 -> TtmlUpgradeResult.RATE_LIMITED
+                failure is InterruptedIOException -> TtmlUpgradeResult.NOT_READY
                 else -> TtmlUpgradeResult.FAILED
             }
         }
@@ -424,6 +438,9 @@ class LyricsRepository @Inject constructor(
                 )
                 lyricsDao.upsert(entity)
                 trackDao.setLyricsFetchedAt(trackId, now)
+                if (result.sourceId in ISRC_SOURCE_IDS) {
+                    result.sourceLyricsId?.let { runCatching { trackDao.backfillIsrcIfMissing(trackId, it) } }
+                }
                 if (track.filePath != null) {
                     runCatching { sidecarWriter.write(trackId, entity) }
                         .onFailure { e -> Log.w(TAG, "Sidecar rewrite failed for trackId=$trackId", e) }
@@ -440,7 +457,7 @@ class LyricsRepository @Inject constructor(
 
     private suspend fun activeSources(): List<LyricsSource> =
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
-            sources.filterNot { it.id == AppleTtmlLyricsSource.SOURCE_ID }
+            sources.filterNot { it.id in TTML_SOURCE_IDS }
         } else {
             sources
         }
@@ -522,6 +539,19 @@ class LyricsRepository @Inject constructor(
 
         /** How long a degraded answer (a hit after an earlier source failed) is kept. */
         private const val DEGRADED_TTL_MS = 2 * 60_000L
+
+        /** Sources that produce TTML: all dropped when the user picks LRC-only. */
+        private val TTML_SOURCE_IDS = setOf(
+            AppleTtmlLyricsSource.SOURCE_ID,
+            IsrcTtmlLyricsSource.LRC_RED_ID,
+            IsrcTtmlLyricsSource.BINIMUM_ID,
+        )
+
+        /** Sources keyed by ISRC: their `sourceLyricsId` is the ISRC that hit. */
+        private val ISRC_SOURCE_IDS = setOf(
+            IsrcTtmlLyricsSource.LRC_RED_ID,
+            IsrcTtmlLyricsSource.BINIMUM_ID,
+        )
 
         /**
          * One key per song: the YouTube id when there is one (it survives a stream being

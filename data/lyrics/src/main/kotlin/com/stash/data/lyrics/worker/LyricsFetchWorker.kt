@@ -63,6 +63,7 @@ class LyricsFetchWorker @AssistedInject constructor(
             albumArtist = track.albumArtist.ifBlank { null },
             durationMs = track.durationMs.takeIf { it > 0L },
             youtubeVideoId = extractYoutubeVideoId(track),
+            isrc = track.isrc?.takeIf { it.isNotBlank() },
         )
         return try {
             lyricsRepository.resolveAndStore(query)

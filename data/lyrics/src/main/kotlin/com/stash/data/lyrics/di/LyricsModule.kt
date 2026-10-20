@@ -6,6 +6,8 @@ import com.stash.core.common.SystemClock
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
 import com.stash.data.lyrics.source.InnerTubeLyricsGateway
 import com.stash.data.lyrics.source.InnerTubeLyricsGatewayImpl
+import com.stash.data.lyrics.source.IsrcResolver
+import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.KugouLyricsSource
 import com.stash.data.lyrics.source.LrclibLyricsSource
 import com.stash.data.lyrics.source.LyricsSource
@@ -75,7 +77,25 @@ abstract class LyricsModule {
             lrclib: LrclibLyricsSource,
             kugou: KugouLyricsSource,
             ytmusic: YtMusicLyricsSource,
-        ): List<@JvmSuppressWildcards LyricsSource> = listOf(appleTtml, lrclib, kugou, ytmusic)
+            okHttpClient: OkHttpClient,
+            @ApplicationContext context: Context,
+            isrcResolver: IsrcResolver,
+        ): List<@JvmSuppressWildcards LyricsSource> {
+            val versionName = context.packageManager
+                .getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+            return listOf(
+                appleTtml,
+                IsrcTtmlLyricsSource(
+                    okHttpClient, versionName, IsrcTtmlLyricsSource.LRC_RED_ID,
+                    "lrc.red (word-synced)", IsrcTtmlLyricsSource.LRC_RED_URL, isrcResolver,
+                ),
+                IsrcTtmlLyricsSource(
+                    okHttpClient, versionName, IsrcTtmlLyricsSource.BINIMUM_ID,
+                    "Binimum (word-synced)", IsrcTtmlLyricsSource.BINIMUM_URL, isrcResolver,
+                ),
+                lrclib, kugou, ytmusic,
+            )
+        }
 
         /** Word-synced Apple Music TTML via lyrics.paxsenix.org; first so it wins when it has syllable timing. */
         @Provides
