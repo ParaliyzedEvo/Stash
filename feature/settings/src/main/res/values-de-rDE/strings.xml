@@ -70,8 +70,9 @@
     <string name="settings_support_title">Stash unterstützen</string>
     <string name="settings_support_subtitle">Stash ist kostenlos und wird von Freiwilligen gemacht. Wenn es dir nützt, erwäge eine Unterstützung des Projekts.</string>
     <string name="settings_support_donate">Spenden</string>
-    <string name="settings_support_role_owner">Inhaber, Hauptentwickler</string>
-    <string name="settings_support_role_codev">Mitentwickler – erstellt die Beta-Versionen</string>
+    <string name="settings_support_role_owner">Owner, main dev · Ko-fi</string>
+    <string name="settings_support_role_owner_paypal">Owner, main dev · PayPal</string>
+    <string name="settings_support_role_codev">Co-dev — makes the beta builds · PayPal</string>
     <string name="settings_support_star">Mit Stern markieren</string>
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Verbindungen</string>
@@ -207,6 +208,7 @@ Dies nutzt denselben privaten Endpunkt wie der %1$s-Webplayer – keine offiziel
     <string name="settings_home_section_listening_desc">Kürzlich gespielt und dein Verlauf. Erscheint nach der ersten Wiedergabe.</string>
     <string name="settings_home_show_liked_title">„Gefällt mir“-Titel auf Startseite zeigen</string>
     <string name="settings_home_show_liked_subtitle">Deine Stash-, Spotify- und YouTube-„Gefällt mir“-Angaben als eine Karte unter „Deine Playlists“</string>
+    <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
     <string name="settings_home_section_your_playlists">Deine Playlists</string>
     <string name="settings_home_section_new_releases">Neuerscheinungen</string>
     <string name="settings_home_section_qobuz_playlists">Qobuz-Playlists</string>
@@ -222,14 +224,22 @@ Dies nutzt denselben privaten Endpunkt wie der %1$s-Webplayer – keine offiziel
     <!-- Settings > Audio & Quality -->
     <string name="settings_audio_quality_section">Audioqualität</string>
     <string name="settings_download_quality_title">Download-Qualität</string>
+    <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
+    <string name="settings_download_mode_lossless_desc">Best quality, largest files.</string>
+    <string name="settings_download_mode_aac">AAC 320</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC. Uses your daily allowance.</string>
+    <string name="settings_download_mode_opus">Opus (smallest)</string>
+    <string name="settings_download_mode_opus_desc">From YouTube. Smallest files.</string>
+    <string name="settings_flac_quality_title">FLAC quality</string>
+    <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Download-Qualität</string>
     <string name="settings_save_data_title">Datensparen</string>
     <string name="settings_save_data_subtitle">Streamt YouTube in niedrigster Audioqualität – ca. 2 MB pro Titel statt 5 – und JioSaavn mit 96 kbps statt 320. Downloads bleiben unberührt.</string>
     <string name="settings_lossless_section">Verlustfrei</string>
     <string name="settings_lossless_title">Verlustfrei</string>
-    <string name="settings_lossless_subtitle_off">Streamt und lädt FLAC in Studioqualität herunter. Aus: Alles wird über YouTube wiedergegeben. Dateien ~10× größer als MP3.</string>
+    <string name="settings_lossless_subtitle_off">Stream studio-quality FLAC. Off, songs play via JioSaavn or YouTube. Downloads follow Download quality.</string>
     <string name="settings_lossless_subtitle_no_source">Keine verlustfreie Quelle konfiguriert – siehe unten. Dateien ~10× größer als MP3.</string>
-    <string name="settings_lossless_subtitle_active">FLAC für Streaming und Downloads. Dateien ~10× größer als MP3.</string>
+    <string name="settings_lossless_subtitle_active">FLAC for streaming. Downloads follow Download quality.</string>
     <string name="settings_qobuz_no_source_warning">Keine verlustfreie Quelle konfiguriert – verbinde unten dein Qobuz-Konto</string>
     <string name="settings_qobuz_account_title">Dein Qobuz-Konto</string>
     <string name="settings_connected_as">Verbunden als %1$s</string>
@@ -254,6 +264,7 @@ Dies nutzt denselben privaten Endpunkt wie der %1$s-Webplayer – keine offiziel
     <string name="settings_state_on">an</string>
     <string name="settings_state_off">aus</string>
     <string name="settings_lossy_fallback_switch_label">JioSaavn, dann YouTube nutzen, wenn ein Download keinen verlustfreien Treffer hat</string>
+    <string name="settings_lossy_fallback_switch_label_aac">Use JioSaavn, then YouTube when Tidal has no AAC of a song</string>
     <string name="settings_advanced">Erweitert</string>
     <string name="settings_custom_relay_desc">Richte Stash so ein, dass es dein eigenes verlustfreies Relay verwendet. Dieses hat Vorrang vor dem Relay von Stash.</string>
     <string name="settings_custom_endpoint_label">Eigener verlustfreier Endpunkt</string>
@@ -299,11 +310,11 @@ Dies nutzt denselben privaten Endpunkt wie der %1$s-Webplayer – keine offiziel
 Verringere die Lautstärke, bevor du die Wiedergabe startest. EQ, Normalisierung und Crossfade werden umgangen, solange Bit-Perfect aktiv ist.</string>
     <string name="settings_hires_bit_perfect_confirm">Bit-Perfect nutzen</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Unterstützer · unbegrenzt verlustfrei</string>
+    <string name="settings_supporter_active">Supporter · unlimited Tidal &amp; Qobuz</string>
     <string name="settings_supporter_remove_from_device">Von diesem Gerät entfernen</string>
-    <string name="settings_supporter_offer">Unbegrenzt verlustfrei für Unterstützer</string>
-    <string name="settings_supporter_sheet_title">Unbegrenzt verlustfrei</string>
-    <string name="settings_supporter_sheet_desc">Jeder Betrag auf Ko-fi schaltet unbegrenzt verlustfreie Wiedergabe frei. Gib die E-Mail an, die du bei Ko-fi verwendet hast, und wir senden dir einen Code.</string>
+    <string name="settings_supporter_offer">Unlimited Tidal &amp; Qobuz for supporters</string>
+    <string name="settings_supporter_sheet_title">Unlimited Tidal &amp; Qobuz</string>
+    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
     <string name="settings_supporter_kofi_email_label">Ko-fi-E-Mail</string>
     <string name="settings_supporter_email_code_button">Code per E-Mail anfordern</string>
     <string name="settings_supporter_code_sent_desc">Wenn %1$s auf unserer Ko-fi-Liste steht, ist ein Code unterwegs. Es kann eine Minute dauern.</string>
