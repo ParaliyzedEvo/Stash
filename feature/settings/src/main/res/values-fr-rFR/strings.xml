@@ -2,38 +2,38 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">Stash sur le Web</string>
-    <string name="web_library_export_subtitle">Importez vos favoris, vos playlists et vos dernières écoutes vers Stash sur le Web. Ensuite, dans le lecteur Web : Paramètres › Votre bibliothèque › Importer depuis l\'application Stash.</string>
+    <string name="web_library_export_subtitle">Retrouvez vos titres aimés, vos playlists et vos écoutes récentes sur Stash sur le Web. Dans le lecteur Web : Paramètres › Votre bibliothèque › Importer depuis l’app Stash.</string>
     <string name="web_library_export_button">Exporter vers Stash sur le Web</string>
-    <string name="web_library_export_working_title">Exporter votre bibliothèque</string>
+    <string name="web_library_export_working_title">Exportation de votre bibliothèque</string>
     <string name="web_library_export_done_title">Prêt pour le Web</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
     <string name="web_library_export_done_body">%1$s, %2$s et %3$s ont été enregistrés. Ouvrez Stash sur le Web et importez ce fichier dans Paramètres › Votre bibliothèque.</string>
     <plurals name="web_library_export_likes">
-        <item quantity="one">%d « J\'aime »</item>
-        <item quantity="other">%d « J\'aime »</item>
+        <item quantity="one">%d j’aime</item>
+        <item quantity="other">%d j’aime</item>
     </plurals>
     <plurals name="web_library_export_playlists">
         <item quantity="one">%d playlist</item>
         <item quantity="other">%d playlists</item>
     </plurals>
     <plurals name="web_library_export_plays">
-        <item quantity="one">%d lecture</item>
-        <item quantity="other">%d lectures</item>
+        <item quantity="one">%d écoute</item>
+        <item quantity="other">%d écoutes</item>
     </plurals>
-    <string name="web_library_export_failed_title">Impossible d\'exporter</string>
-    <string name="web_library_export_failed_body">Impossible d\'enregistrer le fichier. Réessayez ou choisissez un autre emplacement pour l\'enregistrer.</string>
+    <string name="web_library_export_failed_title">Exportation impossible</string>
+    <string name="web_library_export_failed_body">Impossible d’écrire le fichier. Réessayez ou choisissez un autre emplacement.</string>
     <string name="web_library_export_ok">OK</string>
     <string name="web_library_import_button">Importer depuis Stash sur le Web</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
-    <string name="web_library_sent_title">Envoyer</string>
+    <string name="web_library_sent_title">Envoyé</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
-    <string name="web_library_sent_body">J\'ai envoyé %2$s, %3$s et %4$s à %1$s. On me demande de le faire avant d\'ajouter quoi que ce soit.</string>
+    <string name="web_library_sent_body">%2$s, %3$s et %4$s ont été envoyés à %1$s. Vous devrez confirmer leur ajout sur place.</string>
     <!-- Settings > About -->
-    <string name="settings_about_title">À propos &amp; Aide</string>
+    <string name="settings_about_title">À propos &amp; aide</string>
     <string name="settings_diagnostics_section">Diagnostics</string>
-    <string name="settings_share_latest_crash">Partager le dernier rapport d\'incident</string>
-    <string name="settings_attach_most_recent_crash">Attach the most recent crash log to email or chat. Stays on device until you share.</string>
-    <string name="settings_no_recent_crashes">Aucun incident récent.</string>
+    <string name="settings_share_latest_crash">Partager le dernier rapport de plantage</string>
+    <string name="settings_attach_most_recent_crash">Joindre le journal de plantage le plus récent à un e-mail ou une discussion. Il reste sur l’appareil jusqu’à son partage.</string>
+    <string name="settings_no_recent_crashes">Aucun plantage récent.</string>
     <string name="settings_no_crash_report_toast">Aucun rapport d\'incident à partager.</string>
     <string name="settings_crash_report_subject">Stash crash report</string>
     <string name="settings_share_crash_report_chooser">Share crash report</string>
@@ -90,8 +90,8 @@
     <string name="settings_lastfm_reach_error">Couldn\'t reach Last.fm. Your plays stay queued and will be sent later.</string>
     <string name="settings_lastfm_no_new_scrobbles">No new scrobbles to send.</string>
     <plurals name="settings_lastfm_scrobbles_sent">
-        <item quantity="one">Sent %d scrobble to Last.fm.</item>
-        <item quantity="other">Sent %d scrobbles to Last.fm.</item>
+        <item quantity="one">%d scrobble envoyé à Last.fm.</item>
+        <item quantity="other">%d scrobbles envoyés à Last.fm.</item>
     </plurals>
     <!-- Settings > Accounts > AccountConnectionCard -->
     <string name="settings_account_reconnect">Reconnect</string>
