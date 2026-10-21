@@ -3,6 +3,15 @@ package com.stash.data.lyrics.source
 interface LyricsSource {
     val id: String
     val displayName: String
+
+    /**
+     * True for a source asked only for a track someone is playing or just downloaded
+     * ([LyricsQuery.onDemand]), never by a library-wide pass, and only after every other source
+     * (see `LyricsRepository`). Its failures count as misses: it is an extra, never the answer
+     * the other sources depend on.
+     */
+    val onDemandOnly: Boolean get() = false
+
     suspend fun resolve(query: LyricsQuery): LyricsResult?
 }
 
@@ -14,6 +23,7 @@ data class LyricsQuery(
     val albumArtist: String?,
     val durationMs: Long?,
     val youtubeVideoId: String?,
+    /** The track's own ISRC, when known. Read by ISRC-keyed sources; never written back from here. */
     val isrc: String? = null,
     /**
      * True when this fetch is blocking something the user is actively watching (the lyrics sheet's
@@ -22,6 +32,12 @@ data class LyricsQuery(
      * sources with nothing to trade off.
      */
     val interactive: Boolean = false,
+    /**
+     * True for a lookup for a track being played (Now Playing, its prefetch) or just downloaded
+     * (the post-download fetch). Only these consult [LyricsSource.onDemandOnly] sources; a
+     * library-wide pass leaves it false so it never fans out to them.
+     */
+    val onDemand: Boolean = false,
 )
 
 data class LyricsResult(
