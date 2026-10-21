@@ -125,9 +125,9 @@
     <string name="settings_yt_status_protocol_broken">Aufgrund von Fehlern deaktiviert – wird im nächsten Update reaktiviert</string>
     <string name="settings_yt_status_disabled">Aus</string>
     <string name="settings_yt_sync_dialog_title">Deine Stash-Wiedergaben an YouTube Music senden?</string>
-    <string name="settings_yt_sync_dialog_body">Jeder Song, den du in Stash zu Ende hörst, wird deinem YouTube-Music-Wiedergabeverlauf hinzugefügt. Dein Daily Mix und andere YouTube-Music-Empfehlungen lernen aus dem, was du in Stash hörst.</string>
-    <string name="settings_yt_sync_dialog_how_it_works_title">So funktioniert\'s</string>
-    <string name="settings_yt_sync_dialog_how_it_works_body">Stash nutzt einen inoffiziellen YouTube-Endpunkt (denselben wie die YouTube-Music-App). Google toleriert dieses Muster für Apps zur persönlichen Nutzung, könnte die Regeln aber ohne Vorankündigung ändern. In dem Fall stoppt Stash das Senden automatisch, bis ein neues Update die Integration repariert.</string>
+    <string name="settings_yt_sync_dialog_body">Jeder Song, den du in Stash zu Ende hörst, wird dem Wiedergabeverlauf von YouTube Music hinzugefügt. Dein Daily Mix und andere Empfehlungen von YouTube Music lernen aus dem, was du in Stash hörst.</string>
+    <string name="settings_yt_sync_dialog_how_it_works_title">So funktioniert’s</string>
+    <string name="settings_yt_sync_dialog_how_it_works_body">Stash nutzt einen inoffiziellen YouTube-Endpunkt (denselben Endpunkt wie die App YouTube Music). Google toleriert dieses Muster für Apps zur persönlichen Nutzung, könnte die Regeln aber ohne Vorankündigung ändern. In dem Fall stoppt Stash das Senden automatisch, bis ein neues Update die Integration repariert.</string>
     <string name="settings_yt_sync_dialog_risk_title">Risiko</string>
     <string name="settings_yt_sync_dialog_risk_body">Es besteht eine geringe, aber nicht auszuschließende Wahrscheinlichkeit, dass YouTube die Häufigkeit der Anfragen für dein Konto begrenzt. Stash überwacht Fehler und pausiert sich selbst, wenn Probleme auftreten.</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
@@ -250,6 +250,8 @@
     <string name="settings_on_wifi">Über WLAN</string>
     <string name="settings_on_cellular">Über Mobilfunk</string>
     <string name="settings_save_data_lossless_subtitle">Streamt in jedem Netzwerk in CD-Qualität statt in Hi-Res oder Max – etwa 28 MB pro Song statt 70 oder 140. Songs, die über JioSaavn oder YouTube wiedergegeben werden, nutzen die niedrigste Audioqualität des jeweiligen Dienstes. Downloads sind davon nicht betroffen.</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
     <string name="settings_state_expanded">ausgeklappt</string>
     <string name="settings_state_collapsed">eingeklappt</string>
     <string name="settings_lossy_fallback_title">Verlustbehaftete Ersatzquelle</string>
@@ -395,7 +397,7 @@
     <string name="settings_backup_import_dialog_title">Sicherung importieren</string>
     <string name="settings_backup_import_dialog_subtitle">Wähle, was diese Sicherung wiederherstellen soll:</string>
     <string name="settings_backup_import_scope_merge_label">Mit der Bibliothek zusammenführen</string>
-    <string name="settings_backup_import_scope_merge_desc">Fügt fehlende Songs und Playlists aus dem Backup zur Bibliothek hinzu. Nichts wird gelöscht oder ersetzt; die Einstellungen bleiben unverändert.</string>
+    <string name="settings_backup_import_scope_merge_desc">Fügt fehlende Songs und Playlists aus der Datensicherung zur Bibliothek hinzu. Nichts wird gelöscht oder ersetzt; die Einstellungen bleiben unverändert.</string>
     <string name="settings_backup_import_scope_merge_confirm">Zusammenführen</string>
     <string name="settings_backup_import_scope_replace_library_label">Nur Bibliothek ersetzen</string>
     <string name="settings_backup_import_scope_replace_library_desc">Stellt die Bibliothek der Sicherung wieder her. Deine aktuellen Einstellungen bleiben erhalten.</string>
