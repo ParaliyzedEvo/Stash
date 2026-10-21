@@ -83,7 +83,7 @@
     <string name="settings_enable">Activar</string>
     <string name="settings_disable">Desactivar</string>
     <string name="settings_discord_risk_title">Antes de conectar Discord</string>
-    <string name="settings_discord_risk_body">Discord no ofrece una forma oficial de establecer tu estado desde una aplicación móvil, por lo que Stash inicia sesión como tú y utiliza la sesión de tu cuenta. Las normas de Discord consideran esto un self-bot y permiten que Discord tome medidas contra tu cuenta.\n\nEstas normas se aplican principalmente contra el spam, no contra las actualizaciones de estado, por lo que es poco probable que se tomen medidas contra tu cuenta. Aun así, es tu cuenta y la decisión es tuya.\n\nAl desconectar, se borra tu estado y se elimina el token de este teléfono.</string>
+    <string name="settings_discord_risk_body">Discord no ofrece una forma oficial de establecer tu estado desde una aplicación móvil, por lo que Stash inicia sesión en tu nombre y utiliza la sesión de tu cuenta. Las normas de Discord consideran esto un self-bot y permiten que Discord tome medidas contra tu cuenta.\n\nEstas normas se aplican principalmente contra el spam, no contra las actualizaciones de estado, por lo que es poco probable que se tomen medidas contra tu cuenta. Aun así, es tu cuenta y la decisión es tuya.\n\nAl desconectar, se borra tu estado y se elimina el token de este teléfono.</string>
     <string name="settings_discord_risk_connect">Conectar de todos modos</string>
     <string name="settings_discord_finish_connecting">Finalizar conexión</string>
     <string name="settings_lastfm_connect_first">Conecta Last.fm primero.</string>
@@ -226,7 +226,7 @@
     <string name="settings_youtube_quality_title">Calidad de YouTube</string>
     <string name="settings_download_quality_rates_desc">Configura las descargas de YouTube con las tasas que aparecen abajo, y las de JioSaavn a 96 kbps en Bajo y Normal, 160 en Alto, 320 en Mejor y Máximo.</string>
     <string name="settings_save_data_title">Ahorro de datos</string>
-    <string name="settings_save_data_subtitle">Reproduce YouTube en su calidad de audio más baja —aprox. 2 MB por pista en vez de 5— y JioSaavn a 96 kbps en lugar de 320. Las descargas no se ven afectadas.</string>
+    <string name="settings_save_data_subtitle">Reproduce YouTube con la calidad de audio más baja —aprox. 2 MB por pista en vez de 5— y JioSaavn a 96 kbps en lugar de 320. Las descargas no se ven afectadas.</string>
     <string name="settings_lossless_section">Sin pérdida</string>
     <string name="settings_lossless_title">Sin pérdida</string>
     <string name="settings_lossless_subtitle_off">Streaming FLAC con calidad de estudio. Si está desactivado, las canciones se reproducen desde JioSaavn o YouTube. Las descargas usan la calidad de descarga configurada.</string>
@@ -250,6 +250,8 @@
     <string name="settings_on_wifi">En Wi‑Fi</string>
     <string name="settings_on_cellular">En datos móviles</string>
     <string name="settings_save_data_lossless_subtitle">Reproduce en calidad de CD en vez de Hi-Res o Max en todas las redes — aprox. 28 MB por pista en lugar de 70 o 140. Las pistas que se reproducen desde JioSaavn o YouTube como alternativa usan su calidad de audio más baja. Las descargas no se ven afectadas.</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
     <string name="settings_state_expanded">expandido</string>
     <string name="settings_state_collapsed">colapsado</string>
     <string name="settings_lossy_fallback_title">Alternativa con pérdida</string>
@@ -300,11 +302,11 @@
     <string name="settings_hires_bit_perfect_dialog_body">En modo bit-perfect Android no toca el volumen: tu DAC lo establece. Si tu DAC no tiene control de volumen, las teclas de volumen del teléfono pueden dejar de funcionar y la música puede reproducirse a volumen máximo.\n\nBaja el volumen antes de iniciar la reproducción. El ecualizador, la normalización y el crossfade se omiten mientras el modo bit-perfect esté activo.</string>
     <string name="settings_hires_bit_perfect_confirm">Usar bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Colaborador · Tidal y Qobuz ilimitados</string>
+    <string name="settings_supporter_active">Mecenas · Tidal y Qobuz ilimitados</string>
     <string name="settings_supporter_remove_from_device">Eliminar de este dispositivo</string>
-    <string name="settings_supporter_offer">Tidal y Qobuz ilimitados para colaboradores</string>
+    <string name="settings_supporter_offer">Tidal y Qobuz ilimitados para mecenas</string>
     <string name="settings_supporter_sheet_title">Tidal y Qobuz ilimitados</string>
-    <string name="settings_supporter_sheet_desc">Cualquier importe en Ko-fi desbloquea Tidal y Qobuz ilimitados, en FLAC y AAC. Introduce el correo que usaste en Ko-fi y te enviaremos un código.</string>
+    <string name="settings_supporter_sheet_desc">Cualquier aportación en Ko-fi desbloquea el acceso ilimitado a Tidal y Qobuz, además de FLAC y AAC. Introduce el correo que usaste en Ko-fi y te enviaremos un código.</string>
     <string name="settings_supporter_kofi_email_label">Correo de Ko-fi</string>
     <string name="settings_supporter_email_code_button">Enviar código por correo</string>
     <string name="settings_supporter_code_sent_desc">Si %1$s está en nuestra lista de Ko-fi, un código está en camino. Puede tardar un minuto.</string>
@@ -349,8 +351,8 @@
     <string name="settings_lyrics_section">Letras</string>
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">Solo LRC</string>
-    <string name="settings_lyrics_lrc_only_desc">Las letras sincronizadas por palabra están desactivadas. Volver a la opción de Apple Music no vuelve a obtener nada de inmediato: las pistas obtendrán las letras sincronizadas por palabra de Apple Music la próxima vez que se busquen sus letras (durante el procesamiento automático de un nuevo lanzamiento, o mediante \"Obtener letras\" en Library Health).</string>
-    <string name="settings_lyrics_apple_music_desc">Prefiere las letras sincronizadas por palabra de Apple Music. Cambiar a Solo LRC elimina las letras sincronizadas por palabra almacenadas y las vuelve a obtener de fuentes sincronizadas por línea: usa \"Obtener letras\" en Library Health para ejecutarlo ahora.</string>
+    <string name="settings_lyrics_lrc_only_desc">Las letras sincronizadas por palabra están desactivadas. Volver a la opción de Apple Music no vuelve a obtener nada de inmediato: las pistas obtendrán las letras sincronizadas por palabra de Apple Music la próxima vez que se busquen sus letras (durante el procesamiento automático de un nuevo lanzamiento, o mediante \"Obtener letras\" en Estado de la biblioteca).</string>
+    <string name="settings_lyrics_apple_music_desc">Prefiere las letras sincronizadas por palabra de Apple Music. Cambiar a Solo LRC elimina las letras sincronizadas por palabra almacenadas y las vuelve a obtener de fuentes sincronizadas por línea: usa \"Obtener letras\" en Estado de la biblioteca para ejecutarlo ahora.</string>
     <!-- Settings > Library & Storage -->
     <string name="settings_storage_section">Almacenamiento</string>
     <string name="settings_downloads_section">Descargas</string>
@@ -522,7 +524,7 @@
     </plurals>
     <string name="blocked_songs_unblock_button">Desbloquear</string>
     <!-- Settings > Library Health -->
-    <string name="settings_library_health_desc">Desglose de formato y bitrate de cada pista descargada. Úsalo para verificar qué está descargando realmente tu sincronización.</string>
+    <string name="settings_library_health_desc">Desglose de formato y tasa de bits de cada pista descargada. Úsalo para verificar qué está descargando realmente tu sincronización.</string>
     <string name="settings_library_health_section_breakdown">Desglose de la biblioteca</string>
     <string name="settings_library_health_empty_hint">Aún no hay pistas descargadas. Ejecuta primero una sincronización.</string>
     <string name="settings_library_health_total_downloaded">Total descargado</string>
