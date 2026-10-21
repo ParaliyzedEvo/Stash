@@ -67,7 +67,7 @@ class NowPlayingWordSyncedLyricsTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<TtmlUpgradeResult>()
         coEvery { lyricsRepository.get(42L) } returns storedLyrics()
-        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any()) } coAnswers {
+        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any(), any()) } coAnswers {
             entered.complete(Unit)
             release.await()
         }
@@ -78,7 +78,7 @@ class NowPlayingWordSyncedLyricsTest {
             viewModel.getWordSyncedLyricsForCurrentTrack()
             entered.await()
             assertEquals(42L, viewModel.upgradingLyricsTrackId.value)
-            coVerify(exactly = 1) { lyricsRepository.upgradeToTtml(42L, moveCursor = false, interactive = true) }
+            coVerify(exactly = 1) { lyricsRepository.upgradeToTtml(42L, moveCursor = false, interactive = true, sources = com.stash.data.lyrics.TtmlUpgradeSources.APPLE_THEN_ON_DEMAND) }
 
             release.complete(TtmlUpgradeResult.UPGRADED)
             assertEquals("Looking for word-synced lyrics\u2026", awaitItem())
@@ -92,7 +92,7 @@ class NowPlayingWordSyncedLyricsTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<TtmlUpgradeResult>()
         coEvery { lyricsRepository.get(42L) } returns storedLyrics()
-        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any()) } coAnswers {
+        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any(), any()) } coAnswers {
             entered.complete(Unit)
             release.await()
         }
@@ -124,7 +124,7 @@ class NowPlayingWordSyncedLyricsTest {
             TtmlUpgradeResult.PAUSED,
             "Word-synced lyrics are paused for a few minutes after repeated timeouts.",
         )
-        expectResult(TtmlUpgradeResult.RATE_LIMITED, "Apple lyrics are rate-limiting, try again later.")
+        expectResult(TtmlUpgradeResult.RATE_LIMITED, "Word-synced lyrics are rate-limiting, try again later.")
         expectResult(TtmlUpgradeResult.FAILED, "Couldn't get word-synced lyrics.")
         expectResult(TtmlUpgradeResult.SKIPPED, "Nothing to upgrade for this song.")
     }
@@ -138,7 +138,7 @@ class NowPlayingWordSyncedLyricsTest {
             viewModel.getWordSyncedLyricsForCurrentTrack()
             assertEquals("Looking for word-synced lyrics\u2026", awaitItem())
             assertEquals("No lyrics found for this song.", awaitItem())
-            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any()) }
+            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -152,14 +152,14 @@ class NowPlayingWordSyncedLyricsTest {
             viewModel.getWordSyncedLyricsForCurrentTrack()
             assertEquals("Looking for word-synced lyrics\u2026", awaitItem())
             assertEquals("Lyrics aren't loaded yet, try again from the lyrics view.", awaitItem())
-            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any()) }
+            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test fun `exception reports failure instead of crashing and frees the guard`() = runTest(dispatcher) {
         coEvery { lyricsRepository.get(42L) } returns storedLyrics()
-        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any()) } throws IOException("database unavailable")
+        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any(), any()) } throws IOException("database unavailable")
         val viewModel = viewModelWithStoredTrack()
 
         viewModel.userMessages.test {
@@ -174,7 +174,7 @@ class NowPlayingWordSyncedLyricsTest {
     @Test fun `cancellation is preserved without a failure message`() = runTest(dispatcher) {
         val entered = CompletableDeferred<Unit>()
         coEvery { lyricsRepository.get(42L) } returns storedLyrics()
-        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any()) } coAnswers {
+        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any(), any()) } coAnswers {
             entered.complete(Unit)
             throw CancellationException("cancelled")
         }
@@ -198,7 +198,7 @@ class NowPlayingWordSyncedLyricsTest {
             expectNoEvents()
             assertEquals(null, viewModel.upgradingLyricsTrackId.value)
             coVerify(exactly = 0) { lyricsRepository.get(any()) }
-            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any()) }
+            coVerify(exactly = 0) { lyricsRepository.upgradeToTtml(any(), any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -216,7 +216,7 @@ class NowPlayingWordSyncedLyricsTest {
     /** Runs one tap with [result] from the repository and checks the final toast. */
     private suspend fun TestScope.expectResult(result: TtmlUpgradeResult, message: String) {
         coEvery { lyricsRepository.get(42L) } returns storedLyrics()
-        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any()) } returns result
+        coEvery { lyricsRepository.upgradeToTtml(42L, any(), any(), any()) } returns result
         val viewModel = viewModelWithStoredTrack()
         viewModel.userMessages.test {
             viewModel.getWordSyncedLyricsForCurrentTrack()

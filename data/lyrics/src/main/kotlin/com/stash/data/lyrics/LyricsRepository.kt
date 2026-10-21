@@ -9,6 +9,7 @@ import com.stash.core.data.prefs.LyricsPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.AppleTtmlLyricsSource
+import com.stash.data.lyrics.source.IsrcLyricsHostBreaker
 import com.stash.data.lyrics.source.IsrcTtmlLyricsSource
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.data.lyrics.source.LyricsResult
@@ -40,6 +41,17 @@ import javax.inject.Singleton
  */
 enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED, NOT_READY, PAUSED }
 
+/**
+ * Which word-synced sources [LyricsRepository.upgradeToTtml] asks.
+ * - [APPLE]: Apple only. The library-wide upgrade pass: it never fans out to the on-demand sources.
+ * - [APPLE_THEN_ON_DEMAND]: Apple, then the [LyricsSource.onDemandOnly] sources. The Now Playing
+ *   "word-synced lyrics" action for the playing track.
+ * - [ON_DEMAND]: only the on-demand sources. The one follow-up after a played/downloaded track's
+ *   lyrics were first stored without word timing; a miss stamps nothing (Apple's own check stays
+ *   the library pass's business).
+ */
+enum class TtmlUpgradeSources { APPLE, APPLE_THEN_ON_DEMAND, ON_DEMAND }
+
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
 
@@ -64,7 +76,11 @@ private class WalkOutcome(val result: LyricsResult?, val appleCleanMiss: Boolean
  * and workers (post-download + backfill) go through this class.
  *
  * `resolveAndStore` walks the [sources] chain in priority order (Apple TTML -> LRCLIB -> KuGou ->
- * InnerTube; ordering enforced in `LyricsModule.provideLyricsSources`, and Apple is skipped
+ * InnerTube -> lrc.red -> Binimum; ordering enforced in `LyricsModule.provideLyricsSources`. The
+ * last two are [LyricsSource.onDemandOnly]: asked only for a [LyricsQuery.onDemand] lookup (a
+ * track being played or just downloaded), after every other source, and their failures count as
+ * misses. When an earlier source answers without word timing, they get one follow-up try in the
+ * background instead ([upgradeOnDemandLater]), so they never delay lyrics. TTML sources are skipped
  * entirely when [LyricsPreference.sourcePreference] is [LyricsSourcePreference.LRC_ONLY] — see
  * [activeSources]), persists the first non-null result to the `lyrics` table, stamps
  * `tracks.lyrics_fetched_at` with the success epoch-millis, and triggers a sidecar write.
@@ -124,6 +140,14 @@ class LyricsRepository @Inject constructor(
 
     private fun writeLock(trackId: Long): Mutex = writeLocks[Math.floorMod(trackId, WRITE_STRIPES.toLong()).toInt()]
 
+    /** Tracks the on-demand follow-up already ran for this process, bounded. Guarded by [walkLock]. */
+    private val onDemandTried: MutableSet<Long> = java.util.Collections.newSetFromMap(
+        object : LinkedHashMap<Long, Boolean>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Boolean>?): Boolean =
+                size > ON_DEMAND_TRIED_MAX
+        },
+    )
+
     /** The current prefetch: its key and job. Guarded by [walkLock]. */
     private var prefetchKey: String? = null
     private var prefetchJob: Job? = null
@@ -155,25 +179,30 @@ class LyricsRepository @Inject constructor(
     ): LyricsEntity? {
         if (skipIfStamped && isStamped(query.trackId)) return lyricsDao.get(query.trackId)
         val outcome = sharedWalk(query, fresh)
-        return withContext(NonCancellable) {
+        val written = withContext(NonCancellable) {
             writeLock(query.trackId).withLock {
-                if (skipIfStamped && isStamped(query.trackId)) lyricsDao.get(query.trackId)
+                if (skipIfStamped && isStamped(query.trackId)) Written(lyricsDao.get(query.trackId), wantsOnDemandUpgrade = false)
                 else write(query, outcome)
             }
         }
+        if (written.wantsOnDemandUpgrade) upgradeOnDemandLater(query)
+        return written.entity
     }
+
+    /** What [write] stored, and whether the on-demand sources should get their one follow-up try. */
+    private class Written(val entity: LyricsEntity?, val wantsOnDemandUpgrade: Boolean)
 
     private suspend fun isStamped(trackId: Long): Boolean = trackDao.observeLyricsFetchedAt(trackId).first() != null
 
-    private suspend fun write(query: LyricsQuery, outcome: WalkOutcome): LyricsEntity? {
-        // TTML only while Apple is a source: a walk that started before a switch to LRC-only
+    private suspend fun write(query: LyricsQuery, outcome: WalkOutcome): Written {
+        // TTML only while a TTML source is active: a walk that started before a switch to LRC-only
         // (still asking Apple) must not write TTML back after the wipe. Read at write time.
         val ttmlActive = activeSources().any { it.id in TTML_SOURCE_IDS }
         val result = outcome.result?.let { if (!ttmlActive && it.ttml != null) it.copy(ttml = null) else it }
         val appleCleanMiss = outcome.appleCleanMiss
         if (result == null) {
             trackDao.setLyricsFetchedAt(query.trackId, 0L)
-            return null
+            return Written(null, wantsOnDemandUpgrade = false)
         }
         // Carries over any sync offset the user already set: upsert replaces the whole row, so
         // without this a rewrite (an Apple upgrade, or Retry) silently reset a manually-tuned
@@ -202,9 +231,6 @@ class LyricsRepository @Inject constructor(
         )
         lyricsDao.upsert(entity)
         trackDao.setLyricsFetchedAt(query.trackId, now)
-        if (result.sourceId in ISRC_SOURCE_IDS) {
-            result.sourceLyricsId?.let { runCatching { trackDao.backfillIsrcIfMissing(query.trackId, it) } }
-        }
         if (!result.instrumental) {
             runCatching { sidecarWriter.write(query.trackId, entity) }
                 .onFailure { e ->
@@ -217,7 +243,38 @@ class LyricsRepository @Inject constructor(
                     }
                 }
         }
-        return entity
+        // Lyrics without word timing, stored for the first time for a played/downloaded track (a
+        // row already TTML-checked is left alone: no re-check of the library): the on-demand
+        // sources weren't asked (an earlier source answered), so they get one follow-up try.
+        val wantsOnDemandUpgrade = query.onDemand && query.trackId > 0L && ttmlActive &&
+            entity.ttml == null && !entity.instrumental && previousRow?.ttmlCheckedAt == null &&
+            sources.any { it.onDemandOnly }
+        return Written(entity, wantsOnDemandUpgrade)
+    }
+
+    /**
+     * The on-demand sources' one follow-up try for a track whose lyrics were just stored without
+     * word timing (see [write]). Runs detached, so the lyrics already found show at once; at most
+     * once per track per process ([onDemandTried]). A hit upgrades the row (Now Playing observes
+     * it); a miss or failure changes nothing.
+     */
+    private fun upgradeOnDemandLater(query: LyricsQuery) {
+        synchronized(walkLock) { if (!onDemandTried.add(query.trackId)) return }
+        walkScope.launch {
+            try {
+                val result = upgradeToTtml(
+                    query.trackId,
+                    moveCursor = false,
+                    interactive = query.interactive,
+                    sources = TtmlUpgradeSources.ON_DEMAND,
+                )
+                Log.d(TAG, "On-demand word-sync try for trackId=${query.trackId}: $result")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "On-demand word-sync try for trackId=${query.trackId} failed: ${e.message}")
+            }
+        }
     }
 
     /** A lookup for a track with no library row (a stream). Shares the walk and its memory, see [sharedWalk]. */
@@ -228,7 +285,7 @@ class LyricsRepository @Inject constructor(
      * The finished answer for [query]'s song, if one is in memory: lets a screen show lyrics
      * already in hand at once, with no Loading frame. Null when the song hasn't been looked up.
      */
-    fun cached(query: LyricsQuery): CachedLyrics? = synchronized(walkLock) { remembered(songKey(query)) }
+    fun cached(query: LyricsQuery): CachedLyrics? = synchronized(walkLock) { remembered(memoryKey(query)) }
 
     /**
      * Looks the playing song up early, once (the app-wide prefetch). Every Now Playing ViewModel
@@ -349,14 +406,17 @@ class LyricsRepository @Inject constructor(
     }
 
     /**
-     * Backfill path: asks ONLY the Apple TTML source and replaces the stored lyrics + sidecar only
-     * on a hit.
+     * Backfill path: asks the word-synced sources picked by [sources] (Apple only by default, as
+     * the library-wide pass does) and replaces the stored lyrics + sidecar only on a hit.
      *
      * - hit          -> row upserted (sync offset carried over from [existing]), fetch stamp
      *                   refreshed, sidecar rewritten (keeps the existing .lrc, adds/refreshes .ttml
      *                   beside it) -> UPGRADED
      * - clean miss   -> `ttml_checked_at` stamped, row untouched -> NO_TTML
-     * - source threw -> NOTHING written, stays pending -> FAILED (RATE_LIMITED for an HTTP 429)
+     * - source threw -> NOTHING written, stays pending -> FAILED (RATE_LIMITED when any asked
+     *                   source answered HTTP 429, else by the first failure: PAUSED for a skip
+     *                   window, NOT_READY for a timeout)
+     * - [TtmlUpgradeSources.ON_DEMAND] clean miss -> nothing stamped -> NO_TTML
      * - no row / already TTML / instrumental / source not in chain -> SKIPPED
      */
     suspend fun upgradeToTtml(
@@ -365,13 +425,20 @@ class LyricsRepository @Inject constructor(
         moveCursor: Boolean = true,
         /** True when someone is watching: 4s timeout, no retry (see AppleTtmlLyricsSource). */
         interactive: Boolean = false,
+        sources: TtmlUpgradeSources = TtmlUpgradeSources.APPLE,
     ): TtmlUpgradeResult {
         // First, before the network, so a kill mid-request still moves the next run on.
         if (moveCursor) lyricsPreference.setTtmlUpgradeCursor(trackId)
         if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) {
             return TtmlUpgradeResult.SKIPPED
         }
-        val ttmlSources = sources.filter { it.id in TTML_SOURCE_IDS }
+        val apple = this.sources.filter { it.id == AppleTtmlLyricsSource.SOURCE_ID }
+        val onDemand = this.sources.filter { it.onDemandOnly && it.id in TTML_SOURCE_IDS }
+        val ttmlSources = when (sources) {
+            TtmlUpgradeSources.APPLE -> apple
+            TtmlUpgradeSources.APPLE_THEN_ON_DEMAND -> apple + onDemand
+            TtmlUpgradeSources.ON_DEMAND -> onDemand
+        }
         if (ttmlSources.isEmpty()) return TtmlUpgradeResult.SKIPPED
         val before = lyricsDao.get(trackId) ?: return TtmlUpgradeResult.SKIPPED
         if (before.ttml != null || before.instrumental) return TtmlUpgradeResult.SKIPPED
@@ -387,9 +454,10 @@ class LyricsRepository @Inject constructor(
             youtubeVideoId = track.youtubeId,
             isrc = track.isrc?.takeIf { it.isNotBlank() },
             interactive = interactive,
+            onDemand = sources != TtmlUpgradeSources.APPLE,
         )
         var found: LyricsResult? = null
-        var failure: Exception? = null
+        val failures = ArrayList<Exception>(ttmlSources.size)
         for (source in ttmlSources) {
             try {
                 found = source.resolve(query)
@@ -398,18 +466,11 @@ class LyricsRepository @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "TTML upgrade: ${source.id} failed for trackId=$trackId", e)
-                if (failure == null) failure = e
+                failures += e
             }
         }
         val result = found
-        if (result == null && failure != null) {
-            return when {
-                failure is AppleTtmlLyricsSource.AppleSkippedException -> TtmlUpgradeResult.PAUSED
-                (failure as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429 -> TtmlUpgradeResult.RATE_LIMITED
-                failure is InterruptedIOException -> TtmlUpgradeResult.NOT_READY
-                else -> TtmlUpgradeResult.FAILED
-            }
-        }
+        if (result == null && failures.isNotEmpty()) return upgradeFailure(failures)
 
         // The lookup can take a while: re-read the row under the per-track write lock and write
         // from THAT, so an offset (or anything else) changed meanwhile is kept, and a concurrent
@@ -420,7 +481,7 @@ class LyricsRepository @Inject constructor(
                 if (current.ttml != null || current.instrumental) return@withLock TtmlUpgradeResult.SKIPPED
                 val now = clock.now()
                 if (result == null) {
-                    lyricsDao.markTtmlChecked(trackId, now)
+                    if (sources != TtmlUpgradeSources.ON_DEMAND) lyricsDao.markTtmlChecked(trackId, now)
                     return@withLock TtmlUpgradeResult.NO_TTML
                 }
                 val entity = LyricsEntity(
@@ -438,15 +499,25 @@ class LyricsRepository @Inject constructor(
                 )
                 lyricsDao.upsert(entity)
                 trackDao.setLyricsFetchedAt(trackId, now)
-                if (result.sourceId in ISRC_SOURCE_IDS) {
-                    result.sourceLyricsId?.let { runCatching { trackDao.backfillIsrcIfMissing(trackId, it) } }
-                }
                 if (track.filePath != null) {
                     runCatching { sidecarWriter.write(trackId, entity) }
                         .onFailure { e -> Log.w(TAG, "Sidecar rewrite failed for trackId=$trackId", e) }
                 }
                 TtmlUpgradeResult.UPGRADED
             }
+        }
+    }
+
+    /** Any HTTP 429 wins (stop asking); otherwise the first failure decides, as with Apple alone. */
+    private fun upgradeFailure(failures: List<Exception>): TtmlUpgradeResult {
+        if (failures.any { (it as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429 }) {
+            return TtmlUpgradeResult.RATE_LIMITED
+        }
+        return when (failures.first()) {
+            is AppleTtmlLyricsSource.AppleSkippedException,
+            is IsrcLyricsHostBreaker.SkippedException -> TtmlUpgradeResult.PAUSED
+            is InterruptedIOException -> TtmlUpgradeResult.NOT_READY
+            else -> TtmlUpgradeResult.FAILED
         }
     }
 
@@ -462,6 +533,10 @@ class LyricsRepository @Inject constructor(
             sources
         }
 
+    /** The sources one walk asks: [activeSources], minus the on-demand ones unless [query] is on-demand. */
+    private suspend fun walkSources(query: LyricsQuery): List<LyricsSource> =
+        activeSources().let { active -> if (query.onDemand) active else active.filterNot { it.onDemandOnly } }
+
     /**
      * The one network walk per song (see the class KDoc). [fresh] skips the memory but still
      * joins a walk already in flight for the same song. A failed walk is not remembered, so the
@@ -469,7 +544,7 @@ class LyricsRepository @Inject constructor(
      */
     @OptIn(ExperimentalCoroutinesApi::class) // Deferred.getCompleted, read only once complete
     private suspend fun sharedWalk(query: LyricsQuery, fresh: Boolean): WalkOutcome {
-        val key = songKey(query)
+        val key = memoryKey(query)
         // A background walk (long timeouts, a retry) and an interactive one don't share a flight:
         // someone watching the screen shouldn't inherit a worker's 10-second profile.
         val flightKey = key + if (query.interactive) "|i" else "|b"
@@ -509,7 +584,7 @@ class LyricsRepository @Inject constructor(
     private suspend fun walkSourcesNotingApple(query: LyricsQuery): WalkOutcome {
         var firstFailure: Exception? = null
         var appleCleanMiss = false
-        for (source in activeSources()) {
+        for (source in walkSources(query)) {
             try {
                 val result = source.resolve(query)
                 if (result != null) return WalkOutcome(result, appleCleanMiss, degraded = firstFailure != null)
@@ -517,6 +592,12 @@ class LyricsRepository @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (source.onDemandOnly) {
+                    // An extra, asked last: its failure is a miss, so a dead host never turns
+                    // "no lyrics" into a retryable error that is re-asked on every open.
+                    Log.d(TAG, "Lyrics source ${source.id} failed for trackId=${query.trackId}: ${e.message}")
+                    continue
+                }
                 Log.w(TAG, "Lyrics source ${source.id} failed for trackId=${query.trackId}", e)
                 if (firstFailure == null) firstFailure = e
             }
@@ -547,11 +628,15 @@ class LyricsRepository @Inject constructor(
             IsrcTtmlLyricsSource.BINIMUM_ID,
         )
 
-        /** Sources keyed by ISRC: their `sourceLyricsId` is the ISRC that hit. */
-        private val ISRC_SOURCE_IDS = setOf(
-            IsrcTtmlLyricsSource.LRC_RED_ID,
-            IsrcTtmlLyricsSource.BINIMUM_ID,
-        )
+        /** Tracks remembered as having had their on-demand follow-up this process. */
+        private const val ON_DEMAND_TRIED_MAX = 256
+
+        /**
+         * The in-memory key for a walk: the song, plus whether the on-demand sources were in it,
+         * so a library pass's answer (asked without them) is never served to Now Playing as if
+         * they had been asked.
+         */
+        fun memoryKey(query: LyricsQuery): String = songKey(query) + if (query.onDemand) "" else "\u0000pass"
 
         /**
          * One key per song: the YouTube id when there is one (it survives a stream being

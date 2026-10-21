@@ -8,6 +8,7 @@ import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.TtmlUpgradeResult
+import com.stash.data.lyrics.TtmlUpgradeSources
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.SleepTimerController
@@ -636,7 +637,10 @@ class NowPlayingViewModel @Inject constructor(
         albumArtist = track.albumArtist.ifBlank { null },
         durationMs = track.durationMs.takeIf { it > 0 },
         youtubeVideoId = track.youtubeId,
+        isrc = track.isrc?.takeIf { it.isNotBlank() },
         interactive = true,
+        // The playing track (Now Playing, its prefetch): the on-demand lyrics sources may be asked.
+        onDemand = true,
     )
 
     /**
@@ -1319,12 +1323,17 @@ class NowPlayingViewModel @Inject constructor(
                         "Lyrics aren't loaded yet, try again from the lyrics view"
                     }
                 } else {
-                    when (lyricsRepository.upgradeToTtml(track.id, moveCursor = false, interactive = true)) {
+                    when (lyricsRepository.upgradeToTtml(
+                        track.id,
+                        moveCursor = false,
+                        interactive = true,
+                        sources = TtmlUpgradeSources.APPLE_THEN_ON_DEMAND,
+                    )) {
                         TtmlUpgradeResult.UPGRADED -> "Word-synced lyrics added"
                         TtmlUpgradeResult.NO_TTML -> "No word-synced lyrics available for this song"
                         TtmlUpgradeResult.NOT_READY -> "Word-synced lyrics aren't ready yet. Try again in a minute"
                         TtmlUpgradeResult.PAUSED -> "Word-synced lyrics are paused for a few minutes after repeated timeouts"
-                        TtmlUpgradeResult.RATE_LIMITED -> "Apple lyrics are rate-limiting, try again later"
+                        TtmlUpgradeResult.RATE_LIMITED -> "Word-synced lyrics are rate-limiting, try again later"
                         TtmlUpgradeResult.FAILED -> "Couldn't get word-synced lyrics"
                         TtmlUpgradeResult.SKIPPED -> "Nothing to upgrade for this song"
                     }
