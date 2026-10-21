@@ -589,7 +589,7 @@
         <item quantity="one">Сканирование завершено: %1$d из %2$d трека обновлён.</item>
         <item quantity="few">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
         <item quantity="many">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
-        <item quantity="other"></item>
+        <item quantity="other">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
     </plurals>
     <plurals name="settings_library_health_scan_unreadable">
         <item quantity="one">%d трек все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
@@ -603,12 +603,12 @@
         <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
         <item quantity="few">В очереди %d трека. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
         <item quantity="many">В очереди %d треков. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
-        <item quantity="other"></item>
+        <item quantity="other">Queued %d tracks. They download in the background — the Sync tab shows progress.</item>
     </plurals>
     <string name="settings_library_health_done">Done</string>
     <plurals name="settings_library_health_missing_downloads_desc">
         <item quantity="one">%d track was downloaded before but the file is not on this device. Connect the accounts they came from first, then download them again.</item>
-        <item quantity="few"></item>
+        <item quantity="few">%d tracks were downloaded before but the files are not on this device. Connect the accounts they came from first, then download them again.</item>
         <item quantity="many">%d tracks were downloaded before but the files are not on this device. Connect the accounts they came from first, then download them again.</item>
         <item quantity="other">%d tracks were downloaded before but the files are not on this device. Connect the accounts they came from first, then download them again.</item>
     </plurals>
