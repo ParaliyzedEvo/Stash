@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">Stash on the web</string>
-    <string name="web_library_export_subtitle">Take your likes, your playlists and what you played lately to Stash on the web. Then, in the web player: Settings › Your library › Import from the Stash app.</string>
-    <string name="web_library_export_button">Export for Stash on the web</string>
-    <string name="web_library_export_working_title">Exporting your library</string>
-    <string name="web_library_export_done_title">Ready for the web</string>
+    <string name="web_library_export_title">웹 버전 Stash</string>
+    <string name="web_library_export_subtitle">좋아요 표시한 음악, 재생목록, 최근 재생 기록을 웹 버전 Stash로 가져오세요. 그런 다음 웹 플레이어에서 \'Settings › Your library › Import from the Stash app\'를 선택하세요</string>
+    <string name="web_library_export_button">웹 버전 Stash용으로 내보내기</string>
+    <string name="web_library_export_working_title">라이브러리를 내보내는 중</string>
+    <string name="web_library_export_done_title">웹에서 사용할 준비</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
     <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open Stash on the web and import this file in Settings › Your library.</string>
     <plurals name="web_library_export_likes">
