@@ -351,8 +351,19 @@
     <string name="settings_lyrics_section">Letras</string>
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">Solo LRC</string>
-    <string name="settings_lyrics_lrc_only_desc">Las letras sincronizadas por palabra están desactivadas. Volver a la opción de Apple Music no vuelve a obtener nada de inmediato: las pistas obtendrán las letras sincronizadas por palabra de Apple Music la próxima vez que se busquen sus letras (durante el procesamiento automático de un nuevo lanzamiento, o mediante \"Obtener letras\" en Estado de la biblioteca).</string>
+    <string name="settings_lyrics_lrc_only_desc">Word-synced lyrics are off. Switching back doesn\'t re-fetch anything right away — tracks pick up word-synced lyrics the next time they\'re played, or when you re-check your library below.</string>
     <string name="settings_lyrics_apple_music_desc">Prefiere las letras sincronizadas por palabra de Apple Music. Cambiar a Solo LRC elimina las letras sincronizadas por palabra almacenadas y las vuelve a obtener de fuentes sincronizadas por línea: usa \"Obtener letras\" en Estado de la biblioteca para ejecutarlo ahora.</string>
+    <string name="settings_lyrics_recheck_title">Re-check library for word-synced lyrics</string>
+    <string name="settings_lyrics_recheck_desc">Looks up synced lyrics for songs that don\'t have them yet. Runs slowly in the background.</string>
+    <string name="settings_lyrics_recheck_dialog_title">Re-check your library?</string>
+    <string name="settings_lyrics_recheck_dialog_body">Stash asks the lyrics services about every song that doesn\'t have word-synced lyrics yet, one song every few seconds, so a big library can take hours. It runs only on Wi-Fi while your battery isn\'t low, and you can cancel it any time. Songs it finds nothing for keep the lyrics they have.</string>
+    <string name="settings_lyrics_recheck_dialog_confirm">Re-check</string>
+    <string name="settings_lyrics_recheck_progress">Checking… %1$,d / %2$,d</string>
+    <string name="settings_lyrics_recheck_starting">Checking…</string>
+    <string name="settings_lyrics_recheck_waiting">Waiting for Wi-Fi and enough battery…</string>
+    <string name="settings_lyrics_recheck_last_checked">Last checked %1$s</string>
+    <string name="settings_lyrics_recheck_partway">Stopped partway. Tap to carry on where it left off.</string>
+    <string name="settings_lyrics_recheck_stopped_early">Stopped early: the lyrics services are busy. Tap to try again later.</string>
     <!-- Settings > Library & Storage -->
     <string name="settings_storage_section">Almacenamiento</string>
     <string name="settings_downloads_section">Descargas</string>
