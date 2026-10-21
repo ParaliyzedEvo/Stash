@@ -230,10 +230,10 @@ class LyricsRepositoryTest {
             mockk { every { bulkFetchCursor } returns flowOf(cursor) },
         )
 
-        assertEquals(listOf(4L, 5L, 1L, 2L, 3L), repoAt(3L).trackIdsMissingLyrics())
-        // Fresh install (0) and a cursor past every id both mean plain id order.
-        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(0L).trackIdsMissingLyrics())
-        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(99L).trackIdsMissingLyrics())
+        assertEquals(listOf(2L, 1L, 5L, 4L, 3L), repoAt(3L).trackIdsMissingLyrics())
+        // Fresh install (0) and a cursor past every id both mean plain newest-first order.
+        assertEquals(listOf(5L, 4L, 3L, 2L, 1L), repoAt(0L).trackIdsMissingLyrics())
+        assertEquals(listOf(5L, 4L, 3L, 2L, 1L), repoAt(99L).trackIdsMissingLyrics())
     }
 
     @Test fun `fetchLyricsNow moves the cursor before anything else`() = runTest {
@@ -255,10 +255,10 @@ class LyricsRepositoryTest {
             },
         )
 
-        assertEquals(listOf(4L, 5L, 1L, 2L, 3L), repoAt(3L).trackIdsPendingTtml())
-        // Fresh install (0) and a cursor past every id both mean plain id order.
-        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(0L).trackIdsPendingTtml())
-        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), repoAt(99L).trackIdsPendingTtml())
+        assertEquals(listOf(2L, 1L, 5L, 4L, 3L), repoAt(3L).trackIdsPendingTtml())
+        // Fresh install (0) and a cursor past every id both mean plain newest-first order.
+        assertEquals(listOf(5L, 4L, 3L, 2L, 1L), repoAt(0L).trackIdsPendingTtml())
+        assertEquals(listOf(5L, 4L, 3L, 2L, 1L), repoAt(99L).trackIdsPendingTtml())
     }
 
     @Test fun `upgradeToTtml moves the cursor before anything else`() = runTest {
