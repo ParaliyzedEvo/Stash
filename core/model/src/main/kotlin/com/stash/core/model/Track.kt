@@ -78,12 +78,14 @@ data class Track(
      * reconstructed by `PlayerRepositoryImpl.MediaItem.toTrack` from
      * the playing `MediaItem`'s extras. Never persisted to Room.
      *
-     * Conventional values: `"kennyy"` / `"squid"` (Qobuz lossless) or
-     * `"youtube"` (yt-dlp / InnerTube extraction, lossy). NULL when
+     * Conventional values: `"qbdlx"` (`"kennyy"` / `"squid"` parked) for
+     * Qobuz, `"tidal"` (FLAC or AAC), `"jiosaavn"`, `"youtube"`. NULL when
      * playback is from a downloaded file or no extras were attached.
      *
-     * Used by `NowPlayingScreen` to render a "via YT" suffix on the
-     * format chip when the streaming fallback kicks in.
+     * Used by `NowPlayingScreen` to render a "via YT" / "via JioSaavn"
+     * suffix on the quality line for the lossy fallbacks, and (through
+     * `StreamService.displayName`) to name the service at the head of the
+     * signal-path sheet's Source row.
      */
     val streamOrigin: String? = null,
     /**
@@ -122,4 +124,9 @@ data class Track(
      * official audio upload (whose length is the song's) from a music video.
      */
     val musicVideoType: String? = null,
+    /**
+     * Where a [MusicSource.CLOUD] song streams from:
+     * `stash-cloud://onedrive/<accountId>/<itemId>?v=<cTag>`. Null for every other source.
+     */
+    val cloudUri: String? = null,
 )

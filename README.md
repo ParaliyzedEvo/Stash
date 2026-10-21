@@ -2,9 +2,9 @@
 
 <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Stash app icon" width="120" />
 
-# Stash
+# Stash (stashfm.app)
 
-### your Spotify + YouTube Music library, on your phone
+### your Spotify + YouTube Music library, on your phone or browser
 
 [![Latest release](https://img.shields.io/github/v/release/rawnaldclark/Stash?style=for-the-badge&labelColor=0d1117&color=8b5cf6&include_prereleases)](https://github.com/rawnaldclark/Stash/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/rawnaldclark/Stash/total?style=for-the-badge&labelColor=0d1117&color=8b5cf6)](https://github.com/rawnaldclark/Stash/releases)
@@ -33,8 +33,8 @@ No Stash account, no analytics, your logins stay on your phone. Free and open so
 
 ####  Your library, one place
 - Spotify + YouTube Music together: liked songs, playlists, daily mixes
-- Finds the right version of a song. Almost always. If it doesn't, flag it and pick the right one
-- Your listening: top songs, stats, and a recap of your month
+- Your listening wrapped: top songs, stats, and a recap of your month
+- Got your own music in Dropbox, OneDrive or Google Drive? Connect it and stream or download it like everything else (on Google Drive you pick the songs)
 
 </td>
     <td width="50%" valign="top">

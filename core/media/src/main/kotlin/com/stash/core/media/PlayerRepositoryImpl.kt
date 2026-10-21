@@ -763,7 +763,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
     /** The body of [setQueueInternal], run while [queueBuildsInFlight] counts it. */
     private suspend fun setQueueBuilding(
-        tracks: List<Track>,
+        requested: List<Track>,
         startIndex: Int,
         startPositionMs: Long,
         source: com.stash.core.model.PlaybackSource,
@@ -782,7 +782,11 @@ class PlayerRepositoryImpl @Inject constructor(
         val generation = setQueueGeneration.incrementAndGet()
 
         val controller = ensureController() ?: return
-        if (tracks.isEmpty()) return
+        if (requested.isEmpty()) return
+        // Synthetic stream ids (an artist page's or a YouTube album's songs) become library ids,
+        // so the saved queue resumes after the app is closed (withQueueIdentity). A real id is a
+        // pure check, no DB. Id 0 is left as it was: those callers persist their own tracks.
+        val tracks = requested.map { if (it.id == 0L) it else it.withQueueIdentity() }
 
         val safeStart = startIndex.coerceIn(0, tracks.size - 1)
 
@@ -1055,6 +1059,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // isStreamableCheckedAt=null) — the bare-flag gate silently killed
         // next-track prefetch for every synced track.
         if (next.isUnavailableForDisplay) return
+        // A cloud song's queue item already carries its stash-cloud:// address and resolves its
+        // own link at open(); the online resolver below must never see it.
+        if (next.source == com.stash.core.model.MusicSource.CLOUD) return
 
         // Fresh-cache check — avoid redundant resolve work when the URL is
         // good. Still upgrade the timeline slot before returning: the URL may
@@ -1220,8 +1227,11 @@ class PlayerRepositoryImpl @Inject constructor(
         keepCurrent: Boolean,
     ): RadioStartResult {
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
-        val (session, firstBatch) = radioGenerator.start(seed)
-        if (firstBatch.isEmpty()) return RadioStartResult.NoStation
+        val (session, generated) = radioGenerator.start(seed)
+        if (generated.isEmpty()) return RadioStartResult.NoStation
+        // Library ids before queueing: the generator's ids are videoId hashes with no row, so a
+        // saved radio queue resumed into nothing after the app was closed (withQueueIdentity).
+        val firstBatch = generated.map { it.withQueueIdentity() }
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
@@ -1301,10 +1311,12 @@ class PlayerRepositoryImpl @Inject constructor(
                 stopRadio()
                 return
             }
-            // Streaming tracks → stash-resolve:// placeholders (see startRadio). The logical queue
-            // first, as in addNext: the add is reported, and the queue published, during the call.
-            currentQueueTracks = currentQueueTracks + batch
-            controller.addMediaItems(batch.map { it.toQueueMediaItem() })
+            // Library ids, as in startRadio, so the grown queue resumes too. Streaming tracks →
+            // stash-resolve:// placeholders (see startRadio). The logical queue first, as in
+            // addNext: the add is reported, and the queue published, during the call.
+            val queued = batch.map { it.withQueueIdentity() }
+            currentQueueTracks = currentQueueTracks + queued
+            controller.addMediaItems(queued.map { it.toQueueMediaItem() })
         }
     }
 
@@ -1350,9 +1362,26 @@ class PlayerRepositoryImpl @Inject constructor(
      * Native Qobuz rows reach per-track actions without a video id, which
      * previously mapped every one of them to id=0. Persist those transient
      * rows before queueing so different songs cannot share one cached URL.
+     *
+     * A synthetic stream id (`videoId.hashCode().toLong()`: radio, an artist page's or a
+     * YouTube album's non-library songs) is persisted too, by the same test as
+     * [MusicRepository.ensureTrackPersisted]: the saved queue holds these ids, and the cold-start
+     * resume ([PlaybackResumer]) drops every id with no `tracks` row, so a radio queue came
+     * back as nothing and a mixed one lost its current song. Search plays take this road since
+     * 53814e39. If the save fails the synthetic id is kept: the song still plays, it just
+     * won't come back after a restart. All Songs files keep their own ids (never saved).
      */
-    private suspend fun Track.withQueueIdentity(): Track =
-        if (id != 0L) this else copy(id = musicRepository.ensureTrackPersisted(this))
+    private suspend fun Track.withQueueIdentity(): Track {
+        val syntheticId = !youtubeId.isNullOrBlank() && id == youtubeId.hashCode().toLong()
+        if (id == 0L) return copy(id = musicRepository.ensureTrackPersisted(this))
+        if (!syntheticId || isScannedSong) return this
+        return runCatching { copy(id = musicRepository.ensureTrackPersisted(this)) }
+            .getOrElse { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "withQueueIdentity: could not persist '$title' — queued under a transient id", e)
+                this
+            }
+    }
 
     /**
      * A track may join the queue unless it is confirmed unavailable. Streaming
@@ -2368,6 +2397,10 @@ class PlayerRepositoryImpl @Inject constructor(
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) {
             return StreamRoutingResult.CellularRefused
         }
+        // A cloud song plays from the user's own cloud through its stash-cloud:// address.
+        if (track.source == com.stash.core.model.MusicSource.CLOUD) {
+            return StreamRoutingResult.Item(track.toDomain().toStreamPlaceholderMediaItem())
+        }
 
         val cached = streamUrlCache.get(track.id)
         val stream = cached ?: streamResolver.resolve(
@@ -2915,15 +2948,20 @@ class PlayerRepositoryImpl @Inject constructor(
             return false
         }
 
-        val placeholder = stashResolveUri(
-            trackId = track.id,
-            youtubeId = track.youtubeId,
-            title = track.title,
-            artist = track.artist,
-            album = track.album,
-            durationMs = track.durationMs,
-            isrc = track.isrc,
-        )
+        // A downloaded cloud song whose file failed falls back to its cloud copy, never an online match.
+        val placeholder = if (track.source == com.stash.core.model.MusicSource.CLOUD) {
+            com.stash.core.media.streaming.cloudPlaybackUri(track.cloudUri)
+        } else {
+            stashResolveUri(
+                trackId = track.id,
+                youtubeId = track.youtubeId,
+                title = track.title,
+                artist = track.artist,
+                album = track.album,
+                durationMs = track.durationMs,
+                isrc = track.isrc,
+            )
+        }
         val replacement = failedItem.buildUpon().setUri(placeholder).build()
         replaceMediaItemKeepingShuffle(controller, failedIndex, replacement)
         controller.prepare()
@@ -3442,6 +3480,10 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     private fun Track.toStreamPlaceholderMediaItem(): MediaItem {
+        // A cloud song streams from the user's own cloud, never from an online match by its words.
+        if (source == com.stash.core.model.MusicSource.CLOUD) {
+            return toMediaItem().buildUpon().setUri(com.stash.core.media.streaming.cloudPlaybackUri(cloudUri)).build()
+        }
         // Resolver inputs ride the URI's query params so even a track with no
         // Room row (search-surface synthetic id) can resolve at open() time.
         val placeholder = stashResolveUri(
@@ -3475,10 +3517,19 @@ class PlayerRepositoryImpl @Inject constructor(
                 if (durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, durationMs)
                 // "Stream-only" means no local file (as AutoBrowse computes it): a
                 // downloaded row can still carry is_streamable=1 from how it was found.
-                putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable && filePath.isNullOrBlank())
+                putBoolean(
+                    EXTRA_TRACK_IS_STREAMABLE,
+                    (isStreamable || source == com.stash.core.model.MusicSource.CLOUD) && filePath.isNullOrBlank(),
+                )
                 // An All Songs file's format comes from its file name, which an opaque SAF
                 // document id (`msf:123`) doesn't carry, so it rides along for toTrack().
                 if (isScannedSong) putString(EXTRA_SCANNED_FILE_FORMAT, fileFormat)
+                // Now Playing rebuilds its Track from these extras: a cloud song must stay one, so
+                // its "find FLAC" / "wrong match" actions stay off and its format stays its own.
+                if (source == com.stash.core.model.MusicSource.CLOUD) {
+                    putString(EXTRA_TRACK_SOURCE, source.name)
+                    putString(EXTRA_CLOUD_FILE_FORMAT, fileFormat)
+                }
             })
             .build()
 
@@ -3521,6 +3572,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val streamSampleRate = extras?.getInt(EXTRA_STREAM_SAMPLE_RATE, 0)?.takeIf { it > 0 }
         val streamBitrate = extras?.getInt(EXTRA_STREAM_BITRATE, 0)?.takeIf { it > 0 }
         val streamOrigin = extras?.getString(EXTRA_STREAM_ORIGIN)
+        val isCloud = extras?.getString(EXTRA_TRACK_SOURCE) == com.stash.core.model.MusicSource.CLOUD.name
 
         return Track(
             id = trackId,
@@ -3537,8 +3589,13 @@ class PlayerRepositoryImpl @Inject constructor(
             // (issue #105 follow-up).
             youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID)
                 ?: if (trackId == 0L) mediaId else null,
-            source = if (trackId == 0L) com.stash.core.model.MusicSource.YOUTUBE else com.stash.core.model.MusicSource.SPOTIFY,
-            fileFormat = streamCodec ?: "opus",
+            source = when {
+                isCloud -> com.stash.core.model.MusicSource.CLOUD
+                trackId == 0L -> com.stash.core.model.MusicSource.YOUTUBE
+                else -> com.stash.core.model.MusicSource.SPOTIFY
+            },
+            cloudUri = localConfiguration?.uri?.toString()?.takeIf { isCloud && it.startsWith(com.stash.core.model.STASH_CLOUD_SCHEME) },
+            fileFormat = streamCodec ?: extras?.getString(EXTRA_CLOUD_FILE_FORMAT) ?: "opus",
             bitsPerSample = streamBitDepth,
             sampleRateHz = streamSampleRate,
             qualityKbps = streamBitrate ?: 0,
@@ -3626,6 +3683,12 @@ internal fun trackIdentity(title: String, artist: String): String {
 
 /** MediaMetadata extra: an All Songs file's format (its file extension), see [toScannedTrack]. */
 internal const val EXTRA_SCANNED_FILE_FORMAT = "stash_scanned_file_format"
+
+/** Set (to "CLOUD") on a cloud song's MediaItem so the Track rebuilt from it stays a cloud song. */
+internal const val EXTRA_TRACK_SOURCE = "stash_track_source"
+
+/** A cloud song's file format, for Now Playing's quality line (its Room row's truth). */
+internal const val EXTRA_CLOUD_FILE_FORMAT = "stash_cloud_file_format"
 
 /**
  * The [Track] Now Playing and the queue see for an All Songs file. The logical queue doesn't hold

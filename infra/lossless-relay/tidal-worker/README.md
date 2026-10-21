@@ -9,7 +9,7 @@ Separate Cloudflare Worker implementing the Tidal subset of BitChord's relay con
 - `GET /stream/td:<id>?client=media3` with `X-Access-Token` → progressive FLAC URL or a signed DASH MPD URL, with the BitChord response fields. Progressive answers (FLAC and AAC) add `expiresAt` (epoch seconds, from Tidal's signed URL) when it is readable; DASH answers carry their expiry as `exp` in the signed URL. `?aac` is one of `1`, `only` or absent; any other value is treated as absent.
 - `GET /quota` with `X-Access-Token` and the signed install headers (below) → today's daily lossless count.
 - Signed `GET /dash/td/<id>.mpd` and `GET /dash/td/<id>/init.mp4` URLs need no header; their HMAC signatures (keyed by the `DASH_SIGNING_KEY` secret, see Deployment) expire after one hour.
-- Admin-only `POST /admin/device/start`, then `POST /admin/device/poll` with `{ "user_code": "..." }` starts and completes the Tidal OAuth device flow. These require `X-Access-Token: <ADMIN_TOKEN>`.
+- Admin-only `POST /admin/device/start`, then `POST /admin/device/poll` with `{ "user_code": "..." }` starts and completes the Tidal OAuth device flow; `POST /admin/seats/pkce` adds a web seat (see `?web=mse` below). These require `X-Access-Token: <ADMIN_TOKEN>`.
 
 Tidal accounts are linked through the device flow; passwords and OAuth tokens are never printed. The pool rotates least-recently-used live accounts, with per-account caps of 200 upstream calls/hour and 3,200/day (`TIDAL_ACCOUNT_HOURLY_CAP` / `TIDAL_ACCOUNT_DAILY_CAP` in `wrangler.toml`; the code falls back to 250 and 1,600 when they are unset). It applies cooldowns for transient failures and retires an account only when Tidal rejects its refresh token (see the 401 rule below). A lower-than-lossless answer is final (no cross-check on another account), and Tidal's `subStatus=4005` is a track/rights refusal (`not_available`) that never kills an account. When no account is available, search and stream return `503 busy`: `Retry-After: 300` when seats are capped or cooling, `Retry-After: 15` when seats are only waiting out their pacing gap.
 
@@ -95,6 +95,8 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
 
 One `/stream` cache miss makes **one** upstream `playbackinfopostpaywall` call: `countryCode=TIDAL_COUNTRY_CODE` (default `US`) and `audioquality=HI_RES_LOSSLESS` (`HIGH` for `?aac=only`). Tidal answers with the best quality available up to that level; with this client ID CD-only tracks come back `HIGH` (AAC), which is final (`lossless_unavailable`, or AAC under `?aac=1`). There is no quality/country walk and no second-account retry for a track-level answer; a second seat is tried only after a seat-level failure (failed refresh, Tidal 5xx). Any other upstream 4xx on `/stream` (e.g. 400/403) answers `502 {"error":"upstream_error"}` on the one seat. `?aac=only` adds one `/tracks/<id>` metadata call on a hires-cache miss.
 
+**`TIDAL_V2_MANIFESTS="1"`** (default `"0"`): every lossless mode (all but `?aac=only`) first asks openapi v2 `GET /v2/trackManifests/<id>?formats=FLAC&formats=FLAC_HIRES&manifestType=MPEG_DASH&uriScheme=DATA&adaptive=false&usage=PLAYBACK` on the same seat (same pacing, counting, 401 refresh and 429 strike as playbackinfo). v2 gives this client's seat tokens CD FLAC, which v1 caps at AAC. A clear FLAC/FLAC_HIRES MPD (inline `data:` URI, or an https link on `*.tidal.com`) is served exactly like a v1 hi-res DASH answer (`/dash/td/<id>.mpd`, or edge URLs under `?web=1`), with bits/rate from the Representation id (`FLAC,44100,16`), and writes `tidal_hires_cache`. A v2 answer with no FLAC, `drmData`, a preview, a 404 or anything unparseable falls back to the v1 call above on the same seat (2 calls at most; a v2 429 is busy with no v1 call). Stream cache keys gain `:v2` while it is on, so old 5-day `lossless_unavailable` entries do not hide v2 FLAC; a v1 `lossless_unavailable` after a *transient* v2 failure (5xx, 403, timeout, bad MPD) is cached 6 h, not 5 days. Each stream on this path logs one `tidal_stream {"track","path":"v2"|"v1","reason","formats","bits","rate","status","codec"|"error"}` line.
+
 Every upstream call counts in the seat's `hour_n`/`day_n`: `takeAccount` counts the first, `bumpSeat` counts the metadata call and a post-refresh retry, so the caps reflect real Tidal load.
 
 Seat pacing: Tidal's 429 is a short-window burst limit (an idle seat was refused on its 5th call in 14 s, then answered again minutes later) with an empty body and no `Retry-After`, so hourly/daily caps do not prevent it. Every upstream call on a seat (search, playback, hires metadata) waits `TIDAL_SEAT_MIN_GAP_SECONDS` (default 20) since that seat's last call (column `last_call_at`, migration 0008); the hires lookup takes a seat of its own rather than following the playback call. A 429 cools the seat `TIDAL_429_COOLDOWN_SECONDS` (default 120), doubling per repeat strike up to `TIDAL_429_COOLDOWN_MAX_SECONDS` (960); a seat whose last cooldown ended over `TIDAL_429_FORGIVE_SECONDS` (1800) ago starts again at 120. `not_available` answers are cached 6 h (not 5 days), and an upstream search refusal is a 502, never a cached empty result.
@@ -122,6 +124,39 @@ refuses Cloudflare egress and browser Origins): `{ url: <edge>/t/<token>/manifes
 The token is base64url(JSON) "." base64url(HMAC-SHA256(EDGE_SECRET, body)) and carries the Tidal URLs / MPD itself
 (no D1 write). Needs `wrangler secret put EDGE_SECRET` (same value as the edge) and the var `EDGE_BASE`
 (e.g. `https://tidal-edge.<org>.deno.net`). Without both, `?web=1` is ignored and the normal answer is returned.
+
+## Web seats and the browser MSE lane (`?web=mse`)
+
+Tidal hands out FLAC only as DASH, and the CDN host depends on the OAuth client behind the token. Device-flow seats
+(`TIDAL_CLIENT_ID`) get `sp-ad-fa.audio.tidal.com`, which refuses every browser Origin but Tidal's own. Seats linked
+through python-tidal's PKCE client (`TIDAL_PKCE_CLIENT_ID`, "web seats", `tidal_accounts.client = 'pkce'`, migration
+0009) get the CloudFront host `sp-ad-cf.audio.tidal.com`, which answers any Origin (`Access-Control-Allow-Origin: *`,
+Range OK). So a browser can play their FLAC itself through Media Source Extensions, with no proxy.
+
+`GET /stream/td:<id>?web=mse` (lossless only; with `?aac` it is a 400) is served **only by web seats**, least recently
+used first, with the usual gap, caps, 429 strikes and quota accounting. It always asks v2 trackManifests first, then
+v1 `HI_RES_LOSSLESS` on the same seat, and answers with the raw MPD:
+`{ codec: "flac", container: "fmp4", manifest: "dash", mpd: "<MPD xml>", bitDepth, sampleRate, hires, expiresAt, cdn }`.
+`expiresAt` is the earliest CloudFront `Policy` `AWS:EpochTime` (or `Expires` / Tidal `token=`) in the MPD's URLs, and
+the answer is cached (key `...:web=mse:v2`) until 60 s before it. Every BaseURL / `initialization` / `media` URL must be
+https on a `TIDAL_MSE_CDN_HOSTS` host (default the CloudFront one), or the answer is `404 web_flac_unavailable` and
+logged as `tidal_web_mse` with the reason and host (cached 10 min). `404 web_flac_unavailable` is also the answer, with
+no Tidal call and no cache, when there is no live web seat at all. Web seats all cooling or capped: `503 busy` as
+usual. The player falls back to AAC on any of these. Other modes prefer device seats and use a web seat only when no
+device seat is free. Plain `?web=1` (tidal-edge) is unchanged.
+
+Web seats refresh like python-tidal's `token_refresh`: `grant_type`, `refresh_token`, the PKCE `client_id` and
+`client_secret` = the `TIDAL_PKCE_CLIENT_SECRET` secret (python-tidal's `client_secret_pkce`), no scope. The device
+flow cannot create them; add one per account with tokens from a python-tidal PKCE login:
+
+    curl -X POST "$TIDAL_RELAY_URL/admin/seats/pkce" -H "X-Access-Token: $TIDAL_ADMIN_TOKEN" \
+      -H "content-type: application/json" \
+      -d '{"access_token":"<token>","refresh_token":"<refresh>","expires_in":<seconds>,"user_id":<tidal uid>}'
+
+It upserts the row keyed by the Tidal user id (`client='pkce'`, `state='live'`, strikes and cooling cleared), so an
+account already in the pool as a device seat becomes a web seat. Re-linking it through the device flow turns it back.
+Token values are never logged or echoed. Apply migration 0009 **before** deploying this code: seat selection reads
+the `client` column.
 
 ## `?aac=only` and `hires`
 

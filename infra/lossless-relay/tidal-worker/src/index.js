@@ -3,6 +3,9 @@ import { verifySigned, MAX_SKEW_S } from "./auth.js";
 import { readStanding, spendLossless, losslessHeaders, capAnswer, quotaBody, pruneUsage } from "./quota.js";
 
 const API = "https://api.tidal.com/v1";
+// TIDAL_V2_MANIFESTS=1: lossless streams ask the openapi v2 trackManifests endpoint first. Since ~April 2026 v1
+// playbackinfo caps this client ID at HIGH (AAC) for LOSSLESS, while v2 hands the same seat token CD FLAC as DASH.
+const V2_API = "https://openapi.tidal.com/v2";
 const AUTH = "https://auth.tidal.com/v1/oauth2";
 const UA = "okhttp/5.3.2";
 const SCOPE = "r_usr+w_usr+w_sub";
@@ -12,6 +15,16 @@ const RESPONSE_CACHE_TTL = 5 * 86400;
 // tracks it does have, and a 5-day answer hid them from every install.
 const NOT_AVAILABLE_TTL = 6 * 3600;
 const STREAM_CACHE_SAFETY = 60;
+// Web seats (tidal_accounts.client='pkce'): accounts linked through python-tidal's PKCE client. Tidal serves their DASH
+// FLAC from a CloudFront host that answers any browser Origin, so they alone can serve ?web=mse. The client id is
+// public (the same in every python-tidal install); its secret is the Worker secret TIDAL_PKCE_CLIENT_SECRET.
+const PKCE_CLIENT_ID = "6BDSRdpK9hqEBTgU";
+// ?web=mse: the CDN hosts a browser can fetch cross-origin (Access-Control-Allow-Origin: *). Override: TIDAL_MSE_CDN_HOSTS.
+const MSE_CDN_HOSTS = "sp-ad-cf.audio.tidal.com";
+const MSE_MAX_MPD_BYTES = 256 * 1024;
+// A web_flac_unavailable verdict that cost Tidal a call (the seat got a non-CORS CDN host) is cached briefly: it
+// protects the one web seat from a replay loop, and a fixed seat is picked up within minutes.
+const WEB_FLAC_UNAVAILABLE_TTL = 600;
 
 export default {
   async scheduled(_event, env) {
@@ -37,6 +50,7 @@ export default {
       }
       if (url.pathname === "/admin/device/start" && request.method === "POST") return startDeviceAuth(request, env);
       if (url.pathname === "/admin/device/poll" && request.method === "POST") return pollDeviceAuth(request, env);
+      if (url.pathname === "/admin/seats/pkce" && request.method === "POST") return addPkceSeat(request, env);
       if (url.pathname === "/search" && request.method === "GET") {
         if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
         if (env.TIDAL_RELAY_PAUSED === "1") return paused();
@@ -58,6 +72,8 @@ export default {
         // The daily counter, shared with the Qobuz relay. Tidal's AAC (?aac=1, ?aac=only) counts like FLAC, and past
         // the cap every mode gets the 429: no uncounted AAC after it.
         const aac = aacMode(url);
+        // ?web=mse is a lossless-only lane: no AAC answer can be shaped as a FLAC MPD, so it never mixes with ?aac.
+        if (mseMode(url) && aac) return json({ error: "bad_request", message: "web=mse takes no aac" }, 400);
         const standing = caller.subject ? await readStanding(request, env, caller.subject, now()) : null;
         if (standing?.over) { const cap = capAnswer(standing, now()); return json(cap.body, cap.status, cap.headers); }
         const { response, upstream } = await stream(streamMatch[1], request, env, quota, aac);
@@ -89,9 +105,46 @@ function busy(retryAfter = 300) {
 }
 const PACING_RETRY_AFTER = 15;
 
-/** The busy answer for "takeAccount found no seat". */
-async function noSeat(env) {
-  return busy(await onlyPacingBlocks(env) ? PACING_RETRY_AFTER : 300);
+/** The busy answer for "takeAccount found no seat" (`client` = the seat kind that was asked for, "" = any). */
+async function noSeat(env, client = "") {
+  return busy(await onlyPacingBlocks(env, client) ? PACING_RETRY_AFTER : 300);
+}
+
+/** 404 web_flac_unavailable: ?web=mse cannot be served (no web seat, or Tidal gave a CDN host browsers can't use). */
+function webFlacUnavailable() { return json({ error: "web_flac_unavailable" }, 404); }
+
+/** True when the pool has at least one live web (PKCE) seat, cooling/capped or not. Never throws (false on error). */
+async function hasLivePkceSeat(env) {
+  try {
+    return Boolean(await env.DB.prepare("SELECT 1 AS ok FROM tidal_accounts WHERE client='pkce' AND state='live' LIMIT 1").first());
+  } catch { return false; }
+}
+
+/**
+ * POST /admin/seats/pkce (ADMIN_TOKEN): adds or replaces a web seat from tokens obtained with python-tidal's PKCE
+ * login, which the device flow cannot produce. Body: {access_token, refresh_token, expires_in, user_id}. The row is
+ * keyed by the Tidal user id like device seats, so the same account as a device seat is converted to a web seat.
+ * Token values are never logged or echoed.
+ */
+async function addPkceSeat(request, env) {
+  if (!authorized(request, env.ADMIN_TOKEN)) return unauthorized();
+  if (Number(request.headers.get("content-length") || 0) > 16384) return json({ error: "bad_request" }, 400);
+  const body = await request.json().catch(() => null);
+  const token = (v) => typeof v === "string" && v.length >= 16 && v.length <= 4096 && !/\s/.test(v);
+  const userId = typeof body?.user_id === "number" || typeof body?.user_id === "string" ? String(body.user_id) : "";
+  const expiresIn = Number(body?.expires_in);
+  if (!token(body?.access_token) || !token(body?.refresh_token) || !/^\d{1,20}$/.test(userId)
+    || !Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 366 * 86400) {
+    return json({ error: "bad_request", message: "need access_token, refresh_token, expires_in (s), user_id" }, 400);
+  }
+  const previous = await env.DB.prepare("SELECT client,state FROM tidal_accounts WHERE id=?").bind(userId).first();
+  await env.DB.prepare(`INSERT INTO tidal_accounts(id,access_token,refresh_token,token_expires_at,state,client,updated_at)
+    VALUES(?,?,?,?,'live','pkce',?) ON CONFLICT(id) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,
+    token_expires_at=excluded.token_expires_at,state='live',client='pkce',dead_reason='',cooling_until=0,strikes=0,refresh_lock_until=0,
+    generation=tidal_accounts.generation+1,updated_at=excluded.updated_at`)
+    .bind(userId, body.access_token, body.refresh_token, now() + expiresIn, now()).run();
+  console.log(`tidal_pkce_seat ${JSON.stringify({ account: userId.slice(-4), replaced: previous ? `${previous.client}/${previous.state}` : null })}`);
+  return json({ status: "ok", account_id: userId, client: "pkce", state: "live", replaced: previous ? { client: previous.client, state: previous.state } : null });
 }
 
 async function startDeviceAuth(request, env) {
@@ -137,7 +190,7 @@ async function pollDeviceAuth(request, env) {
   const lifetime = Number(data.expires_in || 604800);
   await env.DB.prepare(`INSERT INTO tidal_accounts(id,access_token,refresh_token,token_expires_at,state,updated_at)
     VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,
-    token_expires_at=excluded.token_expires_at,state=excluded.state,dead_reason='',cooling_until=0,
+    token_expires_at=excluded.token_expires_at,state=excluded.state,client='device',dead_reason='',cooling_until=0,
     generation=tidal_accounts.generation+1,updated_at=excluded.updated_at`)
     .bind(userId, data.access_token, data.refresh_token || "", now() + lifetime, pending.account_state || "live", now()).run();
   await env.DB.prepare("DELETE FROM tidal_device_auth WHERE device_code=?").bind(pending.device_code).run();
@@ -245,8 +298,12 @@ function searchError() { return json({ error: "upstream_error" }, 502); }
  */
 async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(request.url))) {
   const url = new URL(request.url);
-  const web = url.searchParams.get("web") === "1" ? "web" : "app";
-  const keyFor = (mode) => `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${mode}:web=${web}`;
+  const mse = mseMode(url);
+  const web = mse ? "mse" : url.searchParams.get("web") === "1" ? "web" : "app";
+  // With v2 on, lossless answers get their own namespace: the v1-era lossless_unavailable entries (5 days) must
+  // not hide a track v2 can now serve as FLAC. ?aac=only stays on v1, so its keys never change. ?web=mse is always v2.
+  const v2 = (v2Manifests(env) || mse) && aac !== "only" ? ":v2" : "";
+  const keyFor = (mode) => `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${mode}:web=${web}${v2}`;
   const noHires = skipsHires(url, aac);
   const key = keyFor(noHires ? "only-nohires" : aac);
   // ?aac=only&hires=0 (the app's AAC downloads) is served by the full ?aac=only entry when that is
@@ -254,15 +311,23 @@ async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(r
   const cached = await cachedJson(env, key) || (noHires ? await cachedJson(env, keyFor("only")) : null);
   if (cached) return { response: cached, upstream: false };
   if (quota.globalFull) return { response: globalCapped(), upstream: false };
+  // No live web seat at all: the player's cue to stay on AAC (a 503 would make it retry). Never cached, so a seat
+  // added through /admin/seats/pkce serves on the next ask.
+  if (mse && !await hasLivePkceSeat(env)) return { response: webFlacUnavailable(), upstream: false };
   if (await softOpenBlocks(env)) return { response: busy(), upstream: false };
   if (!await upstreamAllowed(request, env)) return { response: busy(UPSTREAM_RL_RETRY_AFTER), upstream: false };
-  const response = await streamUncached(trackId, request, env, aac);
+  const trace = {};
+  const response = await streamUncached(trackId, request, env, aac, trace);
   let body;
   try { body = await response.clone().json(); } catch { return { response, upstream: true }; }
+  if (trace.path) logV2Stream(trackId, trace, response, body);
   if (response.status === 404 && body.error === "lossless_unavailable") {
-    await cacheJson(env, key, response, RESPONSE_CACHE_TTL);
+    // After a transient v2 failure the v1 verdict is cached like not_available: v2 may serve it on the next ask.
+    await cacheJson(env, key, response, trace.transient ? NOT_AVAILABLE_TTL : RESPONSE_CACHE_TTL);
   } else if (response.status === 404 && body.error === "not_available") {
     await cacheJson(env, key, response, NOT_AVAILABLE_TTL);
+  } else if (response.status === 404 && body.error === "web_flac_unavailable") {
+    await cacheJson(env, key, response, WEB_FLAC_UNAVAILABLE_TTL);
   } else if (response.status === 200) {
     const expiresAt = streamAnswerExpiry(body);
     const ttl = expiresAt - now() - STREAM_CACHE_SAFETY;
@@ -279,13 +344,17 @@ function skipsHires(url, aac) {
   return aac === "only" && url.searchParams.get("hires") === "0";
 }
 
+/** ?web=mse: the browser-MSE FLAC lane (raw MPD on CORS-open CDN URLs), served by web (PKCE) seats only. */
+function mseMode(url) { return url.searchParams.get("web") === "mse"; }
+
 /** ?aac as one of "", "1", "only": anything else is "", so callers cannot mint unbounded cache namespaces. */
 function aacMode(url) {
   const aac = url.searchParams.get("aac");
   return aac === "1" || aac === "only" ? aac : "";
 }
 
-async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url))) {
+/** @param trace filled for stream()'s log line and cache TTL when the v2 path runs: path, reason, formats, bits, rate, transient. */
+async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url)), trace = {}) {
   // ?aac=1: when no account can play the track losslessly, answer with Tidal's AAC
   // stream (labelled codec "aac") instead of lossless_unavailable. Opt-in so the
   // download path, which must never save AAC as FLAC, keeps the lossless-only answer.
@@ -293,19 +362,41 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // track. A browser can only play Tidal's progressive file; Hi-Res comes as DASH.
   const aacOnly = aac === "only";
   const allowAac = aac === "1" || aacOnly;
+  // ?web=mse: web (PKCE) seats only, always the v2 lane first (fetch() already refused it with ?aac).
+  const mse = mseMode(new URL(request.url));
+  const seatKind = mse ? { client: "pkce" } : {};
   // Upstream budget: one playbackinfo call per seat taken. A second seat is only tried
   // after a seat-level failure (failed refresh, Tidal 5xx), never for a
   // track-level answer: with this client ID CD-only tracks always come back HIGH (AAC),
   // and a 4005 is a track/rights refusal, so asking another seat just burns budget.
+  // TIDAL_V2_MANIFESTS=1 (lossless modes only): v2 trackManifests first, v1 HI_RES_LOSSLESS (then the AAC handling
+  // below) as the fallback on the same seat. `budget` counts real upstream calls (tidalFetch's refresh retry
+  // included) and holds a stream to 2 on this path; with the flag off it is never consulted.
+  const useV2 = (v2Manifests(env) || mse) && !aacOnly;
+  const budget = { calls: 0 };
   for (let attempt = 0; attempt < 2; attempt++) {
-    const account = await takeAccount(env);
-    if (!account) return noSeat(env);
+    if (useV2 && budget.calls >= 2) break;
+    const account = await takeAccount(env, seatKind);
+    if (!account) return noSeat(env, seatKind.client);
     const fresh = await refreshIfNeeded(account, env);
     if (!fresh) {
       await coolAccount(env, account.id, 300);
       continue;
     }
-    const data = await playbackInfo(trackId, fresh, env, aacOnly ? "HIGH" : "HI_RES_LOSSLESS");
+    let data;
+    if (useV2 && budget.calls === 0) {
+      const v2 = await v2Stream(trackId, request, env, account, fresh, allowAac, budget, trace);
+      if (v2.response) return v2.response;
+      if (v2.seatFailed) { await coolAccount(env, account.id, 300); continue; } // v2's 401 refresh failed: like a v1 5xx
+      // A second call straight after the first on this seat, counted like tidalFetch's refresh retry. Past the
+      // budget (v2 already spent a refresh retry) the app retries shortly; the seat's token is fresh by then.
+      if (budget.calls >= 2) { trace.reason += "+budget"; return busy(PACING_RETRY_AFTER); }
+      await bumpSeat(env, account.id);
+      // No refresh retry here: v2 just used (or refreshed) this token, so a 401 now is a refusal, not an expiry.
+      data = await playbackInfo(trackId, budget.account || fresh, env, "HI_RES_LOSSLESS", { budget, refresh: false });
+    } else {
+      data = await playbackInfo(trackId, fresh, env, aacOnly ? "HIGH" : "HI_RES_LOSSLESS", useV2 ? { budget } : undefined);
+    }
     if (data.status === 401) {
       const denial = await data.clone().json().catch(() => ({}));
       if (denial.subStatus === 4005) return json({ error: "not_available" }, 404);
@@ -329,6 +420,7 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
       // The normal answer for a CD-only track with this client, not a seat problem.
       return allowAac ? aacInfo(info) : json({ error: "lossless_unavailable" }, 404);
     }
+    if (mse) return mseInfo(trackId, info, env);
     const web = webEdge(request, env);
     if (web) return await edgeInfo(trackId, info, env, web);
     return await streamInfo(trackId, request, env, info, allowAac);
@@ -336,15 +428,151 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   return json({ error: "upstream_unavailable" }, 503);
 }
 
+/** TIDAL_V2_MANIFESTS: "1" = on; unset, "0" or anything else = off (v1 only, as before). */
+function v2Manifests(env) { return env.TIDAL_V2_MANIFESTS === "1"; }
+
+const V2_ACCEPT = "application/vnd.api+json";
+// Reasons v2 is definitively not the answer for this track (cached as long as the v1 verdict). Anything else
+// (5xx, 403, timeouts, parse failures, a bad MPD) is transient: a v1 lossless_unavailable after it is cached 6 h.
+const V2_DEFINITIVE = new Set(["no_flac", "drm", "preview", "not_found", "not_flac"]);
+
+/**
+ * The v2 lossless lane: GET openapi v2 /trackManifests/{id} (FLAC + FLAC_HIRES, DASH, inline data: MPD) on the
+ * seat streamUncached took, through tidalFetch (same headers, 401 refresh + retry, bumpSeat). A clear FLAC MPD
+ * becomes a v1-shaped DASH playbackinfo and goes through streamInfo / edgeInfo, so the app gets the same answer
+ * as a v1 hi-res DASH track, and tidal_hires_cache is written from it (no metadata call needed later).
+ * @returns {Promise<{response?: Response, seatFailed?: boolean, fallback?: string}>} response = final answer
+ * (FLAC, or busy on a 429/refused session); seatFailed = the 401 refresh failed (seat already cooled);
+ * fallback = why v1 should answer instead. Never throws.
+ */
+async function v2Stream(trackId, request, env, seat, account, allowAac, budget, trace) {
+  trace.path = "v2";
+  const fallback = (reason) => {
+    trace.path = "v1";
+    trace.reason = reason;
+    trace.transient = !V2_DEFINITIVE.has(reason);
+    return { fallback: reason };
+  };
+  try {
+    const p = new URLSearchParams({ countryCode: env.TIDAL_COUNTRY_CODE || "US", adaptive: "false", manifestType: "MPEG_DASH", uriScheme: "DATA", usage: "PLAYBACK" });
+    p.append("formats", "FLAC");
+    p.append("formats", "FLAC_HIRES");
+    let r;
+    try {
+      r = await tidalFetch(`/trackManifests/${trackId}?${p}`, account, env, { base: V2_API, accept: V2_ACCEPT, budget });
+    } catch { return fallback("network"); }
+    if (r.status === 429) {
+      trace.reason = "429";
+      await onUpstream429(env, seat, "trackmanifests");
+      return { response: busy() };
+    }
+    if (r.status === 503 && (await r.clone().json().catch(() => ({}))).error === "refresh_failed") {
+      trace.path = "v1"; trace.reason = "refresh_failed";
+      return { seatFailed: true };
+    }
+    if (r.status === 401) { // survived tidalFetch's refresh + retry: the same strike v1 gives
+      trace.reason = "401";
+      await onSessionRefused(env, seat, "trackmanifests");
+      return { response: busy() };
+    }
+    if (r.status === 404) return fallback("not_found");
+    if (!r.ok) {
+      console.warn(`tidal_trackmanifests ${JSON.stringify({ account: String(seat.id).slice(-4), status: r.status })}`);
+      return fallback(`http_${r.status}`);
+    }
+    const doc = await r.json().catch(() => null);
+    const a = doc?.data?.attributes;
+    if (!a || typeof a !== "object") return fallback("parse");
+    const formats = Array.isArray(a.formats) ? a.formats.map(String) : [];
+    trace.formats = formats;
+    if (a.drmData != null) return fallback("drm");
+    // Defensive: the probe saw no preview marker, but a preview/sample answer must never play as the track.
+    if ((a.trackPresentation && String(a.trackPresentation).toUpperCase() !== "FULL") || a.previewReason) return fallback("preview");
+    if (!formats.includes("FLAC") && !formats.includes("FLAC_HIRES")) return fallback("no_flac");
+    const xml = await v2Mpd(a.uri);
+    if (!xml) return fallback("manifest");
+    // Every Tidal MPD declares xmlns:cenc="urn:mpeg:cenc:2013", clear or not: only a ContentProtection or pssh
+    // element, or a cenc:default_KID, means the stream is encrypted.
+    if (/<(?:\w+:)?ContentProtection\b|<(?:\w+:)?pssh\b|cenc:default_KID/i.test(xml)) return fallback("drm");
+    if (!/codecs="[^"]*flac/i.test(xml)) return fallback("not_flac");
+    // Representation id "FLAC,44100,16" / "FLAC_HIRES,48000,24"; audioSamplingRate and the format as fallbacks.
+    const rep = /<(?:\w+:)?Representation\b[^>]*\bid="(FLAC(?:_HIRES)?),(\d+),(\d+)"/i.exec(xml);
+    const hires = rep ? rep[1].toUpperCase() === "FLAC_HIRES" : !formats.includes("FLAC");
+    const rate = Number(rep?.[2]) || Number(/audioSamplingRate="(\d+)"/i.exec(xml)?.[1]) || 44100;
+    const bits = Number(rep?.[3]) || (hires ? 24 : 16);
+    const sampleRate = rate >= 8000 && rate <= 768000 ? rate : 44100;
+    const bitDepth = [16, 24, 32].includes(bits) ? bits : (hires ? 24 : 16);
+    Object.assign(trace, { bits: bitDepth, rate: sampleRate });
+    const info = { audioQuality: hires ? "HI_RES_LOSSLESS" : "LOSSLESS", manifestMimeType: "application/dash+xml", manifest: b64(new TextEncoder().encode(xml)), bitDepth, sampleRate };
+    const mse = mseMode(new URL(request.url));
+    const web = mse ? null : webEdge(request, env);
+    const response = mse ? mseInfo(trackId, info, env) : web ? await edgeInfo(trackId, info, env, web) : await streamInfo(trackId, request, env, info, allowAac);
+    if (response.status !== 200) {
+      const error = (await response.clone().json().catch(() => ({}))).error;
+      // A seat-level CDN verdict (this seat gets a non-CORS host): v1 on the same seat gets the same host, so it is final.
+      if (error === "web_flac_unavailable") { trace.reason = "web_cdn"; return { response }; }
+      return fallback(`dash_${error || response.status}`);
+    }
+    // v2 offered its best of FLAC/FLAC_HIRES, so a FLAC-only answer also settles "not hi-res".
+    await env.DB.prepare("INSERT OR REPLACE INTO tidal_hires_cache(track_id,hires,checked_at) VALUES(?,?,?)")
+      .bind(String(trackId), hires ? 1 : 0, now()).run().catch(() => {});
+    return { response };
+  } catch {
+    return fallback("error");
+  }
+}
+
+/**
+ * The MPD text from v2's `uri`: an inline data: URI (uriScheme=DATA, base64 or percent-encoded), or an https link
+ * on a *.tidal.com host (fetched without credentials; ~1 h signed link). null when neither works.
+ */
+async function v2Mpd(uri) {
+  if (typeof uri !== "string") return null;
+  let xml = null;
+  if (uri.startsWith("data:")) {
+    const comma = uri.indexOf(",");
+    if (comma < 0) return null;
+    const meta = uri.slice(5, comma);
+    let payload = uri.slice(comma + 1);
+    try {
+      if (payload.includes("%")) payload = decodeURIComponent(payload);
+      xml = /;base64$/i.test(meta) ? new TextDecoder().decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))) : payload;
+    } catch { return null; }
+  } else if (uri.startsWith("https://")) {
+    try {
+      const host = new URL(uri).hostname;
+      if (host !== "tidal.com" && !host.endsWith(".tidal.com")) return null;
+      const r = await fetch(uri, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(9000) });
+      if (!r.ok) return null;
+      xml = await r.text();
+    } catch { return null; }
+  }
+  return xml && /<(?:\w+:)?MPD\b/.test(xml) ? xml : null;
+}
+
+/** One line per stream on the v2 path, for `wrangler tail`: which lane answered and what it was. No tokens or URLs. */
+function logV2Stream(trackId, trace, response, body) {
+  const line = { track: String(trackId), path: trace.path };
+  if (trace.reason) line.reason = trace.reason;
+  if (trace.formats) line.formats = trace.formats;
+  if (trace.bits) { line.bits = trace.bits; line.rate = trace.rate; }
+  line.status = response.status;
+  if (body?.codec) line.codec = body.codec;
+  if (body?.error) line.error = body.error;
+  console.log(`tidal_stream ${JSON.stringify(line)}`);
+}
+
+function b64(bytes) { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
+
 /**
  * After takeAccount found no seat: true when some seat is free under its caps and
  * cooling but was refused only by its pacing gap, so a short retry will work.
  */
-async function onlyPacingBlocks(env) {
+async function onlyPacingBlocks(env, client = "") {
   try {
     const { hour, day, hourly, daily } = capWindow(env);
     const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tidal_accounts WHERE state='live' AND cooling_until<=?3
-      AND (hour_key!=?1 OR hour_n<?4) AND (day_key!=?2 OR day_n<?5)`).bind(hour, day, now(), hourly, daily).first();
+      AND (hour_key!=?1 OR hour_n<?4) AND (day_key!=?2 OR day_n<?5) AND (?6='' OR client=?6)`).bind(hour, day, now(), hourly, daily, client).first();
     return Number(row?.n) > 0;
   } catch { return false; }
 }
@@ -627,6 +855,97 @@ async function edgeInfo(trackId, info, env, edge) {
   });
 }
 
+// ?web=mse (the web player's MSE FLAC lane, no proxy): a web seat's DASH MPD is handed to the browser as-is. Its
+// segment URLs are CloudFront-signed (Policy/Signature/Key-Pair-Id, ~1 h) on a host that sends
+// Access-Control-Allow-Origin: *, so the player fetches init + segments itself and appends them to a
+// MediaSource('audio/mp4; codecs="flac"'). Nothing is stored in D1 and no relay URL is involved.
+
+/** XML attribute/text unescaping for the five predefined entities (all an MPD URL can carry). */
+function xmlText(s) {
+  return s.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&amp;", "&");
+}
+
+/** Every URL an MPD names: BaseURL text and initialization/media/sourceURL attributes, unescaped. */
+export function mpdUrls(xml) {
+  const urls = [];
+  for (const m of xml.matchAll(/<(?:\w+:)?BaseURL\b[^>]*>([^<]*)<\/(?:\w+:)?BaseURL>/gi)) urls.push({ kind: "base", value: xmlText(m[1].trim()) });
+  for (const m of xml.matchAll(/\b(?:initialization|media|sourceURL)="([^"]*)"/g)) urls.push({ kind: "segment", value: xmlText(m[1].trim()) });
+  return urls.filter((u) => u.value);
+}
+
+/**
+ * Epoch seconds a signed Tidal CDN URL stops working: CloudFront custom policy (Policy = CloudFront's URL-safe base64
+ * of {"Statement":[{"Condition":{"DateLessThan":{"AWS:EpochTime":n}}}]}), canned policy (Expires=n), Tidal's own
+ * token=<n>~ or exp=n. The earliest one present; 0 when none is readable. Never throws.
+ */
+export function signedUrlExpiry(u) {
+  const p = u.searchParams;
+  const found = [Number(p.get("Expires")), Number(p.get("exp")), Number(/^(\d{10})~/.exec(p.get("token") || "")?.[1])];
+  const policy = p.get("Policy");
+  if (policy) {
+    try {
+      const raw = atob(policy.replaceAll("-", "+").replaceAll("_", "=").replaceAll("~", "/"));
+      for (const s of JSON.parse(raw)?.Statement || []) found.push(Number(s?.Condition?.DateLessThan?.["AWS:EpochTime"]));
+    } catch { /* unreadable policy: the other fields may still say */ }
+  }
+  const valid = found.filter((n) => Number.isInteger(n) && n > 1_000_000_000);
+  return valid.length ? Math.min(...valid) : 0;
+}
+
+/** The CDN hosts ?web=mse may hand out (TIDAL_MSE_CDN_HOSTS, comma-separated; default the CloudFront host). */
+function mseHosts(env) {
+  return String(env.TIDAL_MSE_CDN_HOSTS || MSE_CDN_HOSTS).split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * A lossless DASH playbackinfo (v2-converted or v1) as the ?web=mse answer:
+ * { codec:"flac", container:"fmp4", manifest:"dash", mpd, bitDepth, sampleRate, hires, expiresAt, cdn }.
+ * 404 web_flac_unavailable when the browser could not play it from here: not DASH, encrypted, a relative URL with no
+ * absolute BaseURL, or any host that is not one of mseHosts (e.g. sp-ad-fa, which refuses foreign Origins). Logged
+ * with the reason and host only (the URLs carry signatures).
+ */
+function mseInfo(trackId, info, env) {
+  const refuse = (reason, host) => {
+    console.warn(`tidal_web_mse ${JSON.stringify({ track: String(trackId), reason, ...(host ? { host } : {}) })}`);
+    return webFlacUnavailable();
+  };
+  if (!info.manifest) return json({ error: "manifest_missing" }, 404);
+  if (!String(info.manifestMimeType || "").toLowerCase().includes("dash")) return refuse("not_dash");
+  const bytes = Uint8Array.from(atob(info.manifest), (c) => c.charCodeAt(0));
+  if (bytes.length > MSE_MAX_MPD_BYTES) { console.warn(`tidal_web_mse ${JSON.stringify({ track: String(trackId), reason: "mpd_size", bytes: bytes.length })}`); return json({ error: "invalid_dash_manifest" }, 502); }
+  const xml = new TextDecoder().decode(bytes);
+  if (!/<(?:\w+:)?MPD\b/.test(xml)) return json({ error: "invalid_dash_manifest" }, 502);
+  if (/<(?:\w+:)?ContentProtection\b|<(?:\w+:)?pssh\b|cenc:default_KID/i.test(xml)) return refuse("drm");
+  if (!/codecs="[^"]*flac/i.test(xml)) return json({ error: "lossless_unavailable" }, 404);
+  const allowed = mseHosts(env);
+  const urls = mpdUrls(xml);
+  const absolute = [];
+  let relative = false;
+  for (const { value } of urls) {
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) { relative = true; continue; }
+    let u;
+    try { u = new URL(value); } catch { return refuse("bad_url"); }
+    const host = u.hostname.toLowerCase();
+    if (u.protocol !== "https:" || !host.endsWith(".audio.tidal.com")) return refuse("foreign_host", host);
+    if (!allowed.includes(host)) return refuse("non_cors_host", host);
+    absolute.push(u);
+  }
+  if (relative && !urls.some((u) => u.kind === "base" && /^https:/i.test(u.value))) return refuse("relative");
+  if (!absolute.length) return json({ error: "invalid_dash_manifest" }, 502);
+  const expiries = absolute.map(signedUrlExpiry).filter(Boolean);
+  const signed = expiries.length ? Math.min(...expiries) : 0;
+  if (signed && signed <= now() + STREAM_CACHE_SAFETY) return json({ error: "manifest_expired" }, 503);
+  const bitDepth = Number(info.bitDepth) || 16;
+  const sampleRate = Number(info.sampleRate) || 44100;
+  return json({
+    codec: "flac", container: "fmp4", manifest: "dash", mpd: xml, bitDepth, sampleRate,
+    hires: info.audioQuality === "HI_RES_LOSSLESS" || bitDepth > 16 || sampleRate > 48000,
+    // Unreadable signatures: a short assumed life (the answer is cached until 60 s before it).
+    expiresAt: signed || now() + 600,
+    cdn: absolute[0].hostname.toLowerCase(),
+  });
+}
+
 /**
  * HMAC key for /dash links. ACCESS_TOKEN ships in every install (effectively public), so links
  * signed with it can be forged; DASH_SIGNING_KEY (secret, >= 32 chars) replaces it. The fallback
@@ -676,9 +995,9 @@ async function dash(request, trackId, env, isInit) {
  * is final. The old quality x country walk cost up to 6 calls per stream for CD-only
  * tracks, which this client never receives as FLAC, and drew Tidal 429s.
  */
-async function playbackInfo(trackId, account, env, quality) {
+async function playbackInfo(trackId, account, env, quality, opts) {
   const p = new URLSearchParams({ countryCode: env.TIDAL_COUNTRY_CODE || "US", audioquality: quality, playbackmode: "STREAM", assetpresentation: "FULL" });
-  const r = await tidalFetch(`/tracks/${trackId}/playbackinfopostpaywall?${p}`, account, env);
+  const r = await tidalFetch(`/tracks/${trackId}/playbackinfopostpaywall?${p}`, account, env, opts);
   if (!r.ok && r.status !== 429) { // a 429 is logged by the caller's onUpstream429
     // Redacted: last 4 of the seat id, status and Tidal's user message only.
     const details = await r.clone().json().catch(() => ({}));
@@ -703,8 +1022,12 @@ function capWindow(env) {
  * made no call in the last TIDAL_SEAT_MIN_GAP_SECONDS (default 20), and last_call_at is
  * stamped. Tidal's 429 is a burst limit (5 calls in 14 s tripped an idle seat), so the gap,
  * not the hourly/daily caps, is what keeps a seat under it.
+ *
+ * Seat kinds (tidal_accounts.client): `{ client: "pkce" }` takes web seats only (?web=mse). Without it every live
+ * seat qualifies but device seats come first: a web seat serves app traffic only when no device seat is free, as
+ * spare capacity, so the scarce web seats keep their gap for the web player.
  */
-async function takeAccount(env) {
+async function takeAccount(env, { client = "" } = {}) {
   const { hour, day, hourly, daily } = capWindow(env);
   const t = now();
   const gapCutoff = t - positive(env.TIDAL_SEAT_MIN_GAP_SECONDS, 20);
@@ -712,8 +1035,8 @@ async function takeAccount(env) {
       hour_n=CASE WHEN hour_key=?1 THEN hour_n+1 ELSE 1 END,hour_key=?1,
       day_n=CASE WHEN day_key=?2 THEN day_n+1 ELSE 1 END,day_key=?2,last_used_at=?3,last_call_at=?3
     WHERE id=(SELECT id FROM tidal_accounts WHERE state='live' AND cooling_until<=?3 AND (hour_key!=?1 OR hour_n<?4) AND (day_key!=?2 OR day_n<?5)
-      AND last_call_at<=?6 ORDER BY last_used_at,id LIMIT 1)
-    RETURNING *`).bind(hour, day, t, hourly, daily, gapCutoff).first();
+      AND last_call_at<=?6 AND (?7='' OR client=?7) ORDER BY client='pkce',last_used_at,id LIMIT 1)
+    RETURNING *`).bind(hour, day, t, hourly, daily, gapCutoff, client).first();
 }
 
 /**
@@ -897,9 +1220,7 @@ async function refreshAccount(account, env) {
     }
     return null;
   }
-  const form = new URLSearchParams({ client_id: env.TIDAL_CLIENT_ID, refresh_token: claimed.refresh_token, grant_type: "refresh_token", scope: SCOPE });
-  if (env.TIDAL_CLIENT_SECRET) form.set("client_secret", env.TIDAL_CLIENT_SECRET);
-  const r = await fetch(`${AUTH}/token`, { method: "POST", headers: oauthHeaders(), body: form }).catch(() => null);
+  const r = await fetch(`${AUTH}/token`, { method: "POST", headers: oauthHeaders(), body: refreshForm(claimed, env) }).catch(() => null);
   if (!r?.ok) {
     await env.DB.prepare("UPDATE tidal_accounts SET refresh_lock_until=0 WHERE id=? AND generation=?").bind(claimed.id, claimed.generation).run();
     // Only Tidal's verdict on THIS seat's grant retires it; 5xx/network failures are cooled by the caller.
@@ -907,7 +1228,7 @@ async function refreshAccount(account, env) {
     // take the whole pool down one seat at a time, so it only cools (and logs) like a transient failure.
     const error = r && (r.status === 400 || r.status === 401) ? (await r.json().catch(() => ({}))).error : null;
     if (error === "invalid_grant") await killAccount(env, claimed.id, "refresh_invalid");
-    else if (error === "invalid_client") console.error("tidal refresh: invalid_client (shared client credentials?)");
+    else if (error === "invalid_client") console.error(`tidal refresh: invalid_client (shared ${claimed.client === "pkce" ? "PKCE client: TIDAL_PKCE_CLIENT_SECRET" : "client"} credentials?)`);
     return null;
   }
   const d = await r.json();
@@ -916,15 +1237,39 @@ async function refreshAccount(account, env) {
   return { ...claimed, access_token: d.access_token, refresh_token: d.refresh_token || claimed.refresh_token, token_expires_at: now() + Number(d.expires_in || 604800), generation: claimed.generation + 1 };
 }
 
+/**
+ * The refresh_token grant for a seat's own OAuth client. Device seats: TIDAL_CLIENT_ID (+ TIDAL_CLIENT_SECRET) and the
+ * scope, as always. Web (PKCE) seats: python-tidal's Session.token_refresh exactly: grant_type, refresh_token,
+ * the PKCE client_id and client_secret (TIDAL_PKCE_CLIENT_SECRET), no scope.
+ */
+function refreshForm(account, env) {
+  if (account.client === "pkce") {
+    const form = new URLSearchParams({ grant_type: "refresh_token", refresh_token: account.refresh_token, client_id: env.TIDAL_PKCE_CLIENT_ID || PKCE_CLIENT_ID });
+    if (env.TIDAL_PKCE_CLIENT_SECRET) form.set("client_secret", env.TIDAL_PKCE_CLIENT_SECRET);
+    else console.warn("tidal refresh: TIDAL_PKCE_CLIENT_SECRET not set; a PKCE seat refresh will likely be refused");
+    return form;
+  }
+  const form = new URLSearchParams({ client_id: env.TIDAL_CLIENT_ID, refresh_token: account.refresh_token, grant_type: "refresh_token", scope: SCOPE });
+  if (env.TIDAL_CLIENT_SECRET) form.set("client_secret", env.TIDAL_CLIENT_SECRET);
+  return form;
+}
+
 async function refreshIfNeeded(account, env) {
   if (account.token_expires_at > now() + 120) return account;
   return refreshAccount(account, env);
 }
 
-async function tidalFetch(path, account, env) {
-  const headers = tidalHeaders(account.access_token);
-  let r = await fetch(`${API}${path}`, { headers, signal: AbortSignal.timeout(9000) });
-  if (r.status === 401 && account.refresh_token) {
+/**
+ * One Tidal API call (plus one retry after a 401-triggered refresh). opts (the v2 path only; omitted = v1 as always):
+ * base = API root, accept = Accept header, refresh: false = no refresh retry, budget = { calls } counted per real
+ * upstream call, and budget.account = the refreshed account when a refresh happened.
+ */
+async function tidalFetch(path, account, env, opts = {}) {
+  const base = opts.base || API;
+  const headers = tidalHeaders(account.access_token, opts.accept);
+  if (opts.budget) opts.budget.calls++;
+  let r = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(9000) });
+  if (r.status === 401 && account.refresh_token && opts.refresh !== false) {
     // Tidal subStatus 4005 is an asset/rights refusal, not an expired session.
     const error = await r.clone().json().catch(() => ({}));
     if (error.subStatus === 4005) return r;
@@ -936,15 +1281,17 @@ async function tidalFetch(path, account, env) {
       return json({ error: "refresh_failed" }, 503);
     }
     await bumpSeat(env, account.id); // the retry is a second upstream call on this seat
-    r = await fetch(`${API}${path}`, { headers: tidalHeaders(fresh.access_token), signal: AbortSignal.timeout(9000) });
+    if (opts.budget) { opts.budget.calls++; opts.budget.account = fresh; }
+    r = await fetch(`${base}${path}`, { headers: tidalHeaders(fresh.access_token, opts.accept), signal: AbortSignal.timeout(9000) });
   }
   return r;
 }
 
 function oauthHeaders() { return { "User-Agent": UA, Accept: "application/json", "X-Platform": "android", "X-Tidal-Platform": "android", "content-type": "application/x-www-form-urlencoded" }; }
-function tidalHeaders(accessToken) {
+function tidalHeaders(accessToken, accept) {
   const headers = { ...oauthHeaders() };
   delete headers["content-type"];
+  if (accept) headers.Accept = accept;
   if (accessToken?.startsWith("CzET")) headers["x-tidal-token"] = accessToken;
   else headers.authorization = `Bearer ${accessToken}`;
   return headers;

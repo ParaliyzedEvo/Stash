@@ -109,6 +109,9 @@ class StashPlaybackService : MediaLibraryService() {
      * [androidx.media3.datasource.okhttp.OkHttpDataSource].
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
+    @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
+    @Inject @field:com.stash.core.media.streaming.StreamCache
+    lateinit var streamCache: androidx.media3.datasource.cache.SimpleCache
     @Inject lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
 
     // Listen Together (spec 2026-09-24 §5): the session engine lives here and drives the master player.
@@ -587,6 +590,14 @@ class StashPlaybackService : MediaLibraryService() {
             // Tidal may answer with a DASH MPD, so with a server set placeholders
             // resolve before their media source is chosen.
             resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
+            // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google
+            // Drive's alt=media with a bearer header through the OkHttp source below.
+            cloudDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.factory(
+                cloudLinkResolver, streamCache, ::cloudHttpDataSource, ::cloudAuthorizedHttpDataSource,
+            ),
+            cloudUncachedDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.uncachedFactory(
+                cloudLinkResolver, ::cloudHttpDataSource, ::cloudAuthorizedHttpDataSource,
+            ),
         )
         this.mediaSourceFactory = mediaSourceFactory
 
@@ -650,8 +661,14 @@ class StashPlaybackService : MediaLibraryService() {
                                 // there would hold the stored-URL fallback (and the next
                                 // track's art) behind it for the 30s socket timeouts.
                                 .setExecutorService(SizedArtBitmapLoader.loadExecutor)
+                                // DefaultDataSource so covers stored on the phone (cloud songs'
+                                // art, a bare file path) load too; http(s) still goes through
+                                // the shared OkHttp client.
                                 .setDataSourceFactory(
-                                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                                    androidx.media3.datasource.DefaultDataSource.Factory(
+                                        this,
+                                        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                                    ),
                                 )
                                 .setMaximumOutputDimension(SizedArtBitmapLoader.TARGET_PX)
                                 .build(),
@@ -1040,6 +1057,36 @@ class StashPlaybackService : MediaLibraryService() {
      * master pauses on unplug and holds the wake lock.
      */
     @OptIn(UnstableApi::class)
+    /**
+     * HTTP for cloud links (Dropbox temporary link, OneDrive downloadUrl). The link is the
+     * credential, so no Authorization header and no logging interceptor; plain
+     * DefaultHttpDataSource like the lazy-resolve path.
+     */
+    private fun cloudHttpDataSource(): androidx.media3.datasource.HttpDataSource =
+        androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setUserAgent("Stash")
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(30_000)
+            .createDataSource()
+
+    /**
+     * For cloud links that carry a bearer token (Google Drive). OkHttp, not DefaultHttpDataSource:
+     * OkHttp drops `Authorization` when a redirect leaves the host, and this client has no
+     * interceptors, so the token is never logged.
+     */
+    private val cloudAuthorizedClient: okhttp3.OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .apply { interceptors().clear(); networkInterceptors().clear() }
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    private fun cloudAuthorizedHttpDataSource(): androidx.media3.datasource.HttpDataSource =
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(cloudAuthorizedClient)
+            .setUserAgent("Stash")
+            .createDataSource()
+
     private fun buildExoPlayer(
         mediaSourceFactory: StashMediaSourceFactory,
         audioAttributes: AudioAttributes,
@@ -1867,7 +1914,10 @@ class StashPlaybackService : MediaLibraryService() {
             val uri = item.localConfiguration?.uri
 
             // 1. If it's already a fully resolved item (has URI), use it
-            if (uri != null && (trusted || uri.scheme?.lowercase() !in LOCAL_URI_SCHEMES)) {
+            // A stash-cloud:// URI names a file in the user's own cloud account: like a local
+            // file, only a trusted controller may hand one over (others go through the DB below).
+            val scheme = uri?.scheme?.lowercase()
+            if (uri != null && (trusted || (scheme !in LOCAL_URI_SCHEMES && scheme != com.stash.core.model.STASH_CLOUD_SCHEME))) {
                 return item
             }
 

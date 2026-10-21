@@ -79,6 +79,16 @@ export function isDonation(entry) {
     return !!entry && typeof entry === "object" && entry.source === "kofi";
 }
 
+/**
+ * Emails the owner has comped (mods, friends): treated as donors for the claim only. COMPED_EMAILS is a
+ * Worker secret, comma/space/newline separated. Nothing is stored in KV and no donation is recorded:
+ * no early-access entry, no goal amount, no supporters-list row.
+ */
+export function isComped(env, email) {
+    const raw = typeof env.COMPED_EMAILS === "string" ? env.COMPED_EMAILS : "";
+    return raw.split(/[\s,;]+/).map(normalizeEmail).filter(Boolean).includes(normalizeEmail(email));
+}
+
 /** The same rule as the website's validEmail (web/worker/crypto.js), on a normalised address. */
 const EMAIL_CHAR = String.raw`[^\s\u0000-\u001f\u007f@<>",;]`;
 const EMAIL = new RegExp(`^${EMAIL_CHAR}+@${EMAIL_CHAR}+\\.${EMAIL_CHAR}+$`);
@@ -273,8 +283,9 @@ async function sendClaimMail(env, message) {
 export async function deliverClaim(env, email, hash, nowMs = clock.now()) {
     try {
         const nowS = Math.floor(nowMs / 1000);
-        const entry = await env.ACCESS_KV.get(KEYS.access(hash), "json");
-        if (!isDonation(entry)) {
+        const comped = isComped(env, email);
+        const entry = comped ? null : await env.ACCESS_KV.get(KEYS.access(hash), "json");
+        if (!comped && !isDonation(entry)) {
             const window = Math.floor(nowS / WINDOW_S);
             const within = await countWithin(env.CLAIMS_DB, CLAIM_KEYS.noDonation(window), LIMITS.noDonationPerHour, (window + 1) * WINDOW_S + WINDOW_S);
             if (!within) {

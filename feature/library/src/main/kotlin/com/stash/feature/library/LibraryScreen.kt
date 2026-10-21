@@ -43,6 +43,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -829,6 +830,8 @@ private fun LibraryContent(
                 // The source filter narrows Songs only; offered elsewhere it looked broken.
                 showSourceFilter = state.activeTab == LibraryTab.TRACKS,
                 showAvailabilityFilter = state.streamingMode,
+                // Kept while it is the active filter, so it can be seen and cleared.
+                showCloudFilter = state.hasCloudSongs || state.sourceFilter == SourceFilter.CLOUD,
                 // Download lists only downloaded songs, all in the library already.
                 showLibraryOnly = state.streamingMode && artistsOrAlbums,
                 libraryOnly = state.libraryOnly,
@@ -1681,6 +1684,17 @@ private fun PlaylistsGrid(
                     selectedPlaylist = null
                 },
             )
+            // Save to Google Drive: only while Drive is connected; the playlist's downloads go.
+            com.stash.core.ui.components.LocalSaveToCloud.current?.let { save ->
+                BottomSheetActionRow(
+                    icon = Icons.Default.CloudUpload,
+                    label = com.stash.core.ui.components.SAVE_TO_CLOUD_LABEL,
+                    onClick = {
+                        save(com.stash.core.ui.components.CloudSaveTarget.Playlist(playlist.id))
+                        selectedPlaylist = null
+                    },
+                )
+            }
             // An active follow is read-only (spec §6): no image edits, and Unfollow replaces Remove/Delete.
             val followed = playlist.id in followedPlaylistIds
             // Image options — only for custom playlists
@@ -2570,6 +2584,17 @@ private fun AlbumsGrid(
                     selectedAlbum = null
                 },
             )
+            // Save to Google Drive: only while Drive is connected; the album's downloads go.
+            com.stash.core.ui.components.LocalSaveToCloud.current?.let { save ->
+                BottomSheetActionRow(
+                    icon = Icons.Default.CloudUpload,
+                    label = com.stash.core.ui.components.SAVE_TO_CLOUD_LABEL,
+                    onClick = {
+                        save(com.stash.core.ui.components.CloudSaveTarget.Album(album.name, album.artist))
+                        selectedAlbum = null
+                    },
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }

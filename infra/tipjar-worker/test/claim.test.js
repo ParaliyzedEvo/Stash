@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, verify as nodeVerify, createPublicKey } from "node:crypto";
 import worker from "../src/index.js";
 import { hashEmail } from "../src/access.js";
-import { CLAIM_TTL_S, clock, codeHashOf, ipBucket, isDonation, LIMITS, MAILER_CLAIM_URL, MAX_TRIES, newCode } from "../src/claim.js";
+import { CLAIM_TTL_S, clock, codeHashOf, ipBucket, isComped, isDonation, LIMITS, MAILER_CLAIM_URL, MAX_TRIES, newCode } from "../src/claim.js";
 import { putClaim, takeTry } from "../src/claim-store.js";
 import { b64url, mintSupporterToken } from "../src/entitlement.js";
 import { donation, env, fakeKV, kofiPost } from "./fake-kv.js";
@@ -155,6 +155,81 @@ test("start for an address that never donated: the same 202, one no-donation ema
     assert.deepEqual(body, { ok: true });
     assert.deepEqual(e.MAILER.calls.map((c) => c.body), [{ email: EMAIL, kind: "no_donation" }]);
     assert.equal(e.CLAIMS_DB.count("claims"), 0);
+});
+
+test("isComped: exact, case-insensitive match on a comma/space/newline list; unset, empty or junk matches nobody", () => {
+    const list = " Mod@Example.com,friend@example.org;\n  pal@example.net ";
+    for (const email of ["mod@example.com", "FRIEND@example.org", " pal@example.net "]) {
+        assert.equal(isComped({ COMPED_EMAILS: list }, email), true, email);
+    }
+    for (const email of ["joe@example.com", "od@example.com", "xmod@example.com", "friend@example.org.evil.com", ""]) {
+        assert.equal(isComped({ COMPED_EMAILS: list }, email), false, JSON.stringify(email));
+    }
+    for (const COMPED_EMAILS of [undefined, null, "", "   ", " , ;\n", 42]) {
+        assert.equal(isComped({ COMPED_EMAILS }, EMAIL), false, String(COMPED_EMAILS));
+        assert.equal(isComped({ COMPED_EMAILS }, ""), false, "an empty address never matches an empty list entry");
+    }
+});
+
+test("start for a comped email with no donation: a code email, a pending claim, and verify mints a valid token", async () => {
+    const e = claimEnv({ COMPED_EMAILS: "Mod@Example.com, friend@example.org" }); // ACCESS_KV has no donor entry
+    const h = await hashEmail("mod@example.com", PEPPER);
+    const { res, body } = await start(e, "mod@example.com");
+    assert.equal(res.status, 202);
+    assert.deepEqual(body, { ok: true });
+    assert.equal(e.MAILER.calls.length, 1);
+    const call = e.MAILER.calls[0];
+    assert.equal(call.body.kind, "code", "not no_donation");
+    assert.equal(call.body.email, "mod@example.com");
+    assert.match(call.body.code, /^\d{6}$/);
+    assert.equal(e.CLAIMS_DB.claim(h).code_hash, await codeHashOf(call.body.code, h, PEPPER), "verify has a claim to check");
+
+    const ok = await verifyReq(e, call.body.code, "mod@example.com");
+    assert.equal(ok.status, 200);
+    assert.equal(checkToken((await ok.json()).token).payload.tier, "supporter");
+});
+
+test("a comped email still has to receive the code: a wrong code is bad_code, and the claim is not skipped", async () => {
+    const e = claimEnv({ COMPED_EMAILS: EMAIL });
+    // No start was ever made for this address, so there is nothing to verify against.
+    await assertBadCode(await verifyReq(e, "123456"), "comped, but no code requested");
+    await start(e);
+    const code = e.MAILER.calls[0].body.code;
+    await assertBadCode(await verifyReq(e, code === "000000" ? "111111" : "000000"), "comped, wrong code");
+    assert.equal((await verifyReq(e, code)).status, 200);
+});
+
+test("with a comp list set, an address that is not on it still gets the no-donation email and no claim", async () => {
+    const e = claimEnv({ COMPED_EMAILS: "mod@example.com" });
+    const { res } = await start(e, "stranger@example.org");
+    assert.equal(res.status, 202);
+    assert.deepEqual(e.MAILER.calls.map((c) => c.body), [{ email: "stranger@example.org", kind: "no_donation" }]);
+    assert.equal(e.CLAIMS_DB.count("claims"), 0);
+});
+
+test("a comped claim records no donation: no access entry, no supporters row, no no-donation counter", async () => {
+    const e = claimEnv({ COMPED_EMAILS: EMAIL });
+    await start(e);
+    await verifyReq(e, e.MAILER.calls[0].body.code);
+    const keys = [...e.ACCESS_KV.map.keys()];
+    assert.equal(keys.filter((k) => k.startsWith("access:") || k.startsWith("goal:")).length, 0, "nothing early-access or goal");
+    assert.equal([...e.STASH_KV.map.keys()].filter((k) => k.startsWith("supporter:")).length, 0, "not in the public ticker");
+    assert.equal(e.CLAIMS_DB.count("claim_counters"), 0, "a comped code isn't counted against the no-donation cap");
+});
+
+test("a comped email's code isn't held back by the no-donation cap", async () => {
+    const e = claimEnv({ COMPED_EMAILS: "mod@example.com" });
+    const realNow = clock.now;
+    try {
+        clock.now = () => Date.UTC(2026, 9, 17, 10, 5, 0);
+        for (let i = 0; i < LIMITS.noDonationPerHour + 1; i++) {
+            await logsOf(() => start(e, `nobody${i}@example.org`, `198.51.${Math.floor(i / 200)}.${i % 200}`));
+        }
+        await start(e, "mod@example.com", "192.0.2.50");
+        assert.equal(e.MAILER.calls.at(-1).body.kind, "code");
+    } finally {
+        clock.now = realNow;
+    }
 });
 
 test("only source kofi is a donation: approved, manual and open entries get the no-donation email", async () => {

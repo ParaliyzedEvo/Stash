@@ -435,7 +435,8 @@ fun NowPlayingScreen(
     // Services, outside a Listen Together room (the two exclude each other, cast spec §3).
     val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
     val isScannedSong = track?.isScannedSong == true
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong) {
+    val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
@@ -443,6 +444,7 @@ fun NowPlayingScreen(
             isDownloaded = isDownloaded,
             castSupported = castSupported,
             isScannedSong = isScannedSong,
+            isCloudSong = isCloudSong,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
@@ -622,6 +624,7 @@ fun NowPlayingScreen(
         com.stash.feature.nowplaying.ui.SignalPathSheet(
             onDismiss = { showSignalPath = false },
             onOpenSettings = null,
+            service = com.stash.core.media.streaming.StreamService.displayName(track?.streamOrigin),
             viewModel = signalPathViewModel,
         )
     }
@@ -1604,56 +1607,6 @@ private fun PlaybackControls(
             )
         }
     }
-}
-
-/**
- * Formats a one-line quality summary for the Now Playing screen.
- *
- * Examples:
- *   - All four fields known:  `FLAC · 24-bit/96.0 kHz · 4233 kbps`
- *   - Codec + bitrate only:    `OPUS · 160 kbps`
- *   - Codec only:              `FLAC` (data not yet backfilled)
- *
- * Returns null only when the codec is blank — in that case the caller
- * should render no line at all.
- */
-private fun trackQualityText(track: com.stash.core.model.Track): String? {
-    // v0.9.13 fix: tracks downloaded before format-tracking was wired (pre-v0.9.11)
-    // default to file_format = "opus" regardless of the actual codec — so a FLAC
-    // file would render "OPUS · 4233 kbps", which is the source of "every track says
-    // Opus" complaints. The Library Health backfill writes correct values from disk
-    // but only when the user opens that screen. Cheap interim correction: if the
-    // track has a downloaded filePath, prefer the file extension as canonical.
-    val extension = track.filePath
-        ?.takeIf { it.isNotBlank() }
-        ?.substringAfterLast('.', missingDelimiterValue = "")
-        ?.lowercase()
-    val codec = when (extension) {
-        "flac", "alac", "wav", "ape", "tta", "wv", "aiff" -> extension!!.uppercase()
-        "opus", "m4a", "mp3", "ogg", "aac" -> extension!!.uppercase()
-        else -> track.fileFormat.takeIf { it.isNotBlank() }?.uppercase() ?: return null
-    }
-    val bitDepth = track.bitsPerSample
-    val sampleRateKHz = track.sampleRateHz?.let { it / 1000.0 }
-    val bitrate = track.qualityKbps.takeIf { it > 0 }
-    return buildList {
-        add(codec)
-        if (bitDepth != null && sampleRateKHz != null) {
-            add("${bitDepth}-bit/${"%.1f".format(sampleRateKHz)} kHz")
-        }
-        if (bitrate != null) add("$bitrate kbps")
-        // Flag the YouTube fallback so the user can tell when a track is
-        // playing from yt-dlp/InnerTube extraction rather than Qobuz. The
-        // codec ("AAC") alone doesn't convey this — Qobuz also serves AAC
-        // at MP3_320 tier. Only the streamOrigin field distinguishes the
-        // two. We don't badge "via Kennyy" / "via squid" because those
-        // are the expected primary sources; only the lossy fallback
-        // deserves a callout.
-        when (track.streamOrigin) {
-            "jiosaavn" -> add("via JioSaavn")
-            "youtube" -> add("via YT")
-        }
-    }.joinToString(" · ")
 }
 
 /**

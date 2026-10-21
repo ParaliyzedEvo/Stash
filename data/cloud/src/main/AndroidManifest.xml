@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CloudAuthRedirectActivity is declared in the app manifest, which owns the ${dropboxAppKey} placeholder. -->
+<manifest />
