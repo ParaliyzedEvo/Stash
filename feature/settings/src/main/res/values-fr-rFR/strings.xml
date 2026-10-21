@@ -226,7 +226,7 @@
     <string name="settings_youtube_quality_title">Qualité YouTube</string>
     <string name="settings_download_quality_rates_desc">Définit les débits des téléchargements YouTube ci-dessous, et ceux de JioSaavn à 96 kbit/s en Basse et Normale, 160 en Élevée, 320 en Meilleure et Max.</string>
     <string name="settings_save_data_title">Économiser les données</string>
-    <string name="settings_save_data_subtitle">Diffuse YouTube avec la qualité audio la plus basse — environ 2 Mo par titre au lieu de 5 — et JioSaavn à 96 kbit/s au lieu de 320. N’affecte pas les téléchargements.</string>
+    <string name="settings_save_data_subtitle">Le streaming YouTube utilise la qualité audio la plus basse — environ 2 Mo par titre au lieu de 5 — et JioSaavn 96 kbit/s au lieu de 320. Les téléchargements ne sont pas affectés.</string>
     <string name="settings_lossless_section">Sans perte</string>
     <string name="settings_lossless_title">Sans perte</string>
     <string name="settings_lossless_subtitle_off">Streaming en FLAC de qualité studio. Si l’option est désactivée, les titres sont lus via JioSaavn ou YouTube. Les téléchargements utilisent la qualité de téléchargement configurée.</string>
@@ -250,6 +250,8 @@
     <string name="settings_on_wifi">En Wi-Fi</string>
     <string name="settings_on_cellular">Sur réseau mobile</string>
     <string name="settings_save_data_lossless_subtitle">Diffuse en qualité CD plutôt qu’en Hi-Res ou Max sur tous les réseaux — environ 28 Mo par titre au lieu de 70 ou 140. Les titres lus depuis JioSaavn ou YouTube en remplacement utilisent leur qualité audio la plus basse. Les téléchargements ne sont pas affectés.</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
     <string name="settings_state_expanded">développé</string>
     <string name="settings_state_collapsed">réduit</string>
     <string name="settings_lossy_fallback_title">Source de secours avec perte</string>
@@ -300,7 +302,7 @@
     <string name="settings_hires_bit_perfect_dialog_body">En mode bit-perfect, Android ne modifie pas le volume : c’est votre DAC qui le règle. Si votre DAC ne dispose pas de son propre réglage du volume, les touches de volume du téléphone peuvent cesser de fonctionner et la musique risque d’être diffusée au volume maximal.\n\nBaissez le volume avant de lancer la lecture. L’égaliseur, la normalisation et le fondu enchaîné sont contournés lorsque le mode bit-perfect est actif.</string>
     <string name="settings_hires_bit_perfect_confirm">Utiliser le mode bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Soutien · Tidal &amp; Qobuz illimités</string>
+    <string name="settings_supporter_active">Mécène · Tidal et Qobuz illimités</string>
     <string name="settings_supporter_remove_from_device">Retirer de cet appareil</string>
     <string name="settings_supporter_offer">Tidal &amp; Qobuz illimités pour les soutiens</string>
     <string name="settings_supporter_sheet_title">Tidal &amp; Qobuz illimités</string>
@@ -372,7 +374,7 @@
     <string name="settings_listening_history_title">Historique d’écoute</string>
     <string name="settings_listening_history_paused_subtitle">En pause : les nouvelles écoutes ne sont pas enregistrées</string>
     <string name="settings_listening_history_active_subtitle">Mettez en pause ou effacez les données mémorisées par ce téléphone</string>
-    <string name="settings_web_link_nav_title">Lier Stash sur le Web</string>
+    <string name="settings_web_link_nav_title">Associer Stash à la version Web</string>
     <string name="settings_web_link_nav_subtitle">Reprenez là où vous en étiez, mettez votre bibliothèque en miroir et envoyez-la</string>
     <string name="settings_storage_external_folder_fallback">Dossier externe</string>
     <string name="settings_backup_status_exporting_title">Exportation de la base de données</string>
@@ -414,7 +416,7 @@
     <string name="settings_storage_total_tracks_label">Nombre total de titres</string>
     <string name="settings_storage_used_label">Espace utilisé</string>
     <string name="settings_storage_download_location_label">Emplacement des téléchargements</string>
-    <string name="settings_storage_location_internal">Interne (privé à l’app)</string>
+    <string name="settings_storage_location_internal">Interne (stockage privé de l’application)</string>
     <string name="settings_storage_location_external_unknown">Dossier externe (carte SD/USB)</string>
     <string name="settings_storage_location_external_desc">Les titres sont stockés dans ce dossier et restent après la désinstallation. Ils sont visibles par les autres apps et via USB.</string>
     <string name="settings_storage_change_folder_button">Changer de dossier</string>
@@ -448,7 +450,7 @@
         <item quantity="one">%d titre déplacé</item>
         <item quantity="other">%d titres déplacés</item>
     </plurals>
-    <string name="settings_storage_move_library_done_failed">" • %d échec(s)"</string>
+    <string name="settings_storage_move_library_done_failed">" • Échecs : %d"</string>
     <string name="settings_storage_move_library_failed_note">Les titres qui n’ont pas pu être déplacés restent dans le stockage interne. Réessayez plus tard.</string>
     <string name="settings_storage_move_library_error_title">Impossible de déplacer la bibliothèque</string>
     <string name="settings_storage_dismiss_button">Ignorer</string>
@@ -468,12 +470,12 @@
         <item quantity="other">%d titres déplacés</item>
     </plurals>
     <string name="settings_storage_reorganize_done_skipped">" • %d déjà organisé(s)"</string>
-    <string name="settings_storage_reorganize_done_failed">" • %d échec(s)"</string>
+    <string name="settings_storage_reorganize_done_failed">" • Échecs : %d"</string>
     <string name="settings_storage_reorganize_failed_note">Les titres qui n’ont pas pu être déplacés conservent leur ancien emplacement. Réessayez plus tard.</string>
     <string name="settings_storage_reorganize_error_title">Impossible de réorganiser la bibliothèque</string>
     <!-- Settings > Library & Storage > Listening History Sheet -->
     <string name="settings_listening_history_sheet_subtitle_empty">Ce téléphone mémorise les titres que vous écoutez.</string>
-    <string name="settings_listening_history_sheet_subtitle_nonempty">Ce téléphone a mémorisé %1$s%2$s.</string>
+    <string name="settings_listening_history_sheet_subtitle_nonempty">Ce téléphone mémorise %1$s%2$s.</string>
     <string name="settings_listening_history_since_date">" depuis %s"</string>
     <plurals name="settings_listening_history_plays_count">
         <item quantity="one">%,d lecture</item>
@@ -513,7 +515,7 @@
     <string name="web_library_import_failed_title">Importation impossible</string>
     <!-- Settings > Blocked Songs -->
     <string name="blocked_songs_title">Titres bloqués</string>
-    <string name="blocked_songs_subtitle">Ces titres sont ignorés à chaque synchronisation. Appuyez sur Débloquer pour les autoriser à nouveau.</string>
+    <string name="blocked_songs_subtitle">Ces titres sont ignorés à chaque synchronisation. Appuyez sur « Débloquer » pour en autoriser un à nouveau.</string>
     <string name="blocked_songs_empty_title">Aucun titre bloqué</string>
     <string name="blocked_songs_empty_desc">Les titres que vous bloquez avec \u201CSupprimer et bloquer\u201D apparaissent ici. Appuyez sur « Débloquer » pour les autoriser à nouveau lors de la prochaine synchronisation.</string>
     <plurals name="blocked_songs_count">
@@ -560,7 +562,7 @@
         <item quantity="other">Télécharger à nouveau %d</item>
     </plurals>
     <string name="settings_library_health_section_verify_library">Vérifier la bibliothèque</string>
-    <string name="settings_library_health_verify_idle_desc">Comparez la file de téléchargement à votre bibliothèque et reconstruisez les statistiques des titres et du stockage affichées dans l’onglet Synchronisation. Ne modifie pas les playlists et ne lance aucune synchronisation réseau.</string>
+    <string name="settings_library_health_verify_idle_desc">Comparez la file de téléchargement à votre bibliothèque et reconstruisez les statistiques des titres et du stockage affichées dans l’onglet Synchronisation. Cette opération ne modifie pas les playlists et ne déclenche aucune synchronisation réseau.</string>
     <string name="settings_library_health_verify_button">Vérifier</string>
     <string name="settings_library_health_checking_library_progress">Vérification de la bibliothèque… %1$d / %2$d</string>
     <plurals name="settings_library_health_verified_missing_files">
