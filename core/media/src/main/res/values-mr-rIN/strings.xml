@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">आवडलेल्या गाण्यांमध्ये जोडा</string>
-    <string name="notification_action_unlike">आवडलेल्या गाण्यांमधून काढून टाका</string>
-    <string name="notification_action_repeat_off">पुनरावृत्ती बंद</string>
-    <string name="notification_action_repeat_all">सर्व पुन्हा ऐका</string>
-    <string name="notification_action_repeat_one">एकच गाणे सतत पुन्हा वाजवा</string>
-    <string name="notification_action_shuffle_on">यादृच्छिक प्लेबॅक सुरू</string>
-    <string name="notification_action_shuffle_off">यादृच्छिक प्लेबॅक बंद</string>
-    <string name="shuffle_play">शफल करून प्ले करा</string>
-    <string name="resuming_channel_name">प्लेबॅक</string>
-    <string name="resuming_notification_title">पुन्हा सुरू होत आहे…</string>
-    <string name="cast_no_wifi">कास्ट करता येत नाही: तुमचा फोन आणि स्पीकर एकाच Wi-Fi नेटवर्कशी जोडा</string>
+    <string name="notification_action_like">Add to Liked Songs</string>
+    <string name="notification_action_unlike">Remove from Liked Songs</string>
+    <string name="notification_action_repeat_off">Repeat Off</string>
+    <string name="notification_action_repeat_all">Repeat All</string>
+    <string name="notification_action_repeat_one">Repeat One</string>
+    <string name="notification_action_shuffle_on">Shuffle On</string>
+    <string name="notification_action_shuffle_off">Shuffle Off</string>
+    <string name="shuffle_play">Shuffle Play</string>
+    <string name="resuming_channel_name">Playback</string>
+    <string name="resuming_notification_title">Resuming…</string>
+    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>
