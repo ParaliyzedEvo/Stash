@@ -80,7 +80,7 @@
     <string name="settings_enable">활성화</string>
     <string name="settings_disable">비활성화</string>
     <string name="settings_discord_risk_title">Discord에 연결하기 전에</string>
-    <string name="settings_discord_risk_body">Discord has no official way for a phone app to set your status, so Stash signs in as you and uses your account\'s own session. Discord\'s rules call that a self-bot and allow them to action the account.\n\nEnforcement goes after spam rather than status updates, so this is unlikely — but it is your account, so it is your call.\n\nDisconnecting clears your status and deletes the token from this phone.</string>
+    <string name="settings_discord_risk_body">Discord는 휴대폰 앱에서 상태를 설정할 수 있는 공식적인 방법을 제공하지 않기 때문에, Stash는 사용자의 계정 세션을 이용해 직접 로그인합니다. Discord의 규정상 이를 셀프봇이라고 하며, 계정에 제재가 가해질 수 있습니다\n\n실제로는 상태 업데이트보다는 스팸 행위를 주로 단속하기 때문에 제재를 받을 가능성은 낮습니다. 하지만 본인의 계정이므로, 사용할지는 직접 판단해야 합니다\n\n연결을 해제하면 설정한 상태가 초기화되고, 이 휴대폰에 저장된 토큰도 삭제됩니다</string>
     <string name="settings_discord_risk_connect">그래도 연결</string>
     <string name="settings_discord_finish_connecting">연결 완료</string>
     <string name="settings_lastfm_connect_first">먼저 Last.fm에 연결하세요</string>
@@ -95,10 +95,10 @@
     <string name="settings_account_connect">연결</string>
     <!-- Settings > Accounts > DisconnectAccountDialog -->
     <string name="settings_disconnect_account_title">%1$s 연결을 해제하시겠습니까?</string>
-    <string name="settings_disconnect_account_body">Stash signs out of %1$s on this phone and stops syncing it. Songs from %1$s still waiting to download are dropped from the queue.\n\nSongs you\'ve already downloaded stay in your library, and you can reconnect any time.</string>
+    <string name="settings_disconnect_account_body">Stash가 이 휴대폰에서 %1$s 계정의 로그아웃을 진행하고 동기화를 중단합니다. 아직 다운로드 대기열에 있는 %1$s의 노래는 대기열에서 제거됩니다\n\n이미 다운로드한 노래는 라이브러리에 그대로 유지되며, 언제든지 다시 연결할 수 있습니다</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">%1$s에 미러링하시겠습니까?</string>
-    <string name="settings_like_mirror_warning_body">Hearting a track in Stash will also Like it on %1$s, and removing a heart will remove the Like there too. Only likes you add from now on are mirrored.\n\nThis uses the same private endpoint the %1$s web player uses — not an official API. It can stop working at any time and, rarely, unofficial access can get an account flagged. Consider enabling this only on a secondary or backup account.</string>
+    <string name="settings_like_mirror_warning_body">Stash에서 트랙에 좋아요를 누르면 %1$s에서도 해당 곡에 좋아요가 표시됩니다. 좋아요를 취소하면 %1$s의 좋아요도 함께 취소됩니다. 앞으로 새로 추가하는 좋아요만 동기화됩니다\n\n이 기능은 %1$s 웹 플레이어에서 사용하는 동일한 비공개 엔드포인트를 사용합니다 — 공식 API는 아닙니다. 언제든지 작동하지 않게 될 수 있으며, 드물게 비공식적인 접근으로 인해 계정에 제한이 가해질 수도 있습니다. 이 기능은 보조 계정이나 백업 계정에서만 활성화하는 것을 권장합니다</string>
     <string name="settings_like_mirror_warning_confirm">이해했습니다</string>
     <!-- Settings > Accounts > SpotifyAutoSaveSection -->
     <string name="settings_spotify_autosave_title">좋아요 표시한 음악 자동 저장</string>
@@ -120,9 +120,9 @@
     <string name="settings_yt_status_protocol_broken">오류로 인해 비활성화됨 — 다음 업데이트에서 다시 활성화됩니다</string>
     <string name="settings_yt_status_disabled">끄기</string>
     <string name="settings_yt_sync_dialog_title">Stash 재생 기록을 YouTube Music으로 보내시겠습니까?</string>
-    <string name="settings_yt_sync_dialog_body">Every track you finish listening to in Stash will be added to your YouTube Music Watch History. Your Daily Mix and other YouTube Music recommendations will learn from your Stash listening.</string>
+    <string name="settings_yt_sync_dialog_body">Stash에서 끝까지 감상한 모든 트랙은 YouTube Music 시청 기록에 추가됩니다. Stash에서 감상한 음악을 바탕으로 Daily Mix를 비롯한 YouTube Music의 음악 추천도 맞춤형으로 조정됩니다</string>
     <string name="settings_yt_sync_dialog_how_it_works_title">작동 방식</string>
-    <string name="settings_yt_sync_dialog_how_it_works_body">Stash uses an unofficial YouTube endpoint (the same one the YouTube Music app uses). Google tolerates this pattern for personal-use apps but could change the rules without notice. If that happens, Stash will automatically stop sending plays until a new update fixes the integration.</string>
+    <string name="settings_yt_sync_dialog_how_it_works_body">Stash는 YouTube Music 앱에서 사용하는 것과 동일한 비공식 YouTube 엔드포인트를 사용합니다. Google은 개인용 앱에서 이러한 방식을 허용하고 있지만, 사전 공지 없이 정책을 변경할 수 있습니다. 이 경우 Stash는 연동 기능을 수정하는 업데이트가 제공될 때까지 재생 기록 전송을 자동으로 중단합니다</string>
     <string name="settings_yt_sync_dialog_risk_title">위험</string>
     <string name="settings_yt_sync_dialog_risk_body">Rare but not zero chance of YouTube rate-limiting your account. Stash monitors for errors and pauses itself if it sees problems.</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
@@ -135,7 +135,7 @@
     <string name="settings_lastfm_scrobble_plays">재생 기록 스크로블</string>
     <string name="settings_lastfm_connect">Last.fm에 연결</string>
     <string name="settings_lastfm_waiting_approval_title">승인 대기 중</string>
-    <string name="settings_lastfm_waiting_approval_body">Your browser should be open on Last.fm. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.</string>
+    <string name="settings_lastfm_waiting_approval_body">브라우저에서 Last.fm 페이지를 열어 두세요. 해당 페이지에서 ‘Yes, allow access’ 를 탭한 다음, 이 앱으로 돌아와 아래의 ‘Finish’ 버튼을 탭하세요.</string>
     <string name="settings_lastfm_finish_connecting">연결 완료</string>
     <string name="settings_lastfm_connected_as">%1$s에 연결됨</string>
     <string name="settings_lastfm_queued_scrobbles">재생 기록 스크로블링 중입니다. %1$d가 제출 대기 중입니다</string>
