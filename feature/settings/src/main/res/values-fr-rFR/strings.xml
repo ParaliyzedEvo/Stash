@@ -27,7 +27,7 @@
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">Envoyé</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
-    <string name="web_library_sent_body">%2$s, %3$s et %4$s ont été envoyés à %1$s. Vous devrez confirmer leur ajout sur place.</string>
+    <string name="web_library_sent_body">%2$s, %3$s et %4$s ont été envoyés à %1$s. Vous devrez y confirmer leur ajout.</string>
     <!-- Settings > About -->
     <string name="settings_about_title">À propos &amp; aide</string>
     <string name="settings_diagnostics_section">Diagnostics</string>
@@ -154,7 +154,7 @@
     <string name="settings_lastfm_dismiss">Ignorer</string>
     <!-- Settings > Accounts > ListenBrainzSection -->
     <string name="settings_listenbrainz_title">ListenBrainz</string>
-    <string name="settings_listenbrainz_subtitle">Activez le scrobbling via MetaBrainz. Vos données d’écoute restent les vôtres et peuvent être exportées.</string>
+    <string name="settings_listenbrainz_subtitle">Scrobbling open source de MetaBrainz. Vos données d’écoute restent les vôtres et peuvent être exportées.</string>
     <string name="settings_listenbrainz_paste_token">Collez votre jeton utilisateur depuis listenbrainz.org/profile.</string>
     <string name="settings_listenbrainz_user_token_label">Jeton utilisateur</string>
     <string name="settings_listenbrainz_validating">Vérification de votre jeton…</string>
@@ -250,8 +250,8 @@
     <string name="settings_on_wifi">En Wi-Fi</string>
     <string name="settings_on_cellular">Sur réseau mobile</string>
     <string name="settings_save_data_lossless_subtitle">Diffuse en qualité CD plutôt qu’en Hi-Res ou Max sur tous les réseaux — environ 28 Mo par titre au lieu de 70 ou 140. Les titres lus depuis JioSaavn ou YouTube en remplacement utilisent leur qualité audio la plus basse. Les téléchargements ne sont pas affectés.</string>
-    <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
-    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Privilégier l’AAC de Tidal en streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Lorsque Tidal propose le titre, le streaming utilise l’AAC de Tidal à 320 kbit/s plutôt que le FLAC — environ 10 Mo par titre au lieu de 28 Mo ou plus. Les titres absents de Tidal sont lus normalement. Les téléchargements ne sont pas affectés.</string>
     <string name="settings_state_expanded">développé</string>
     <string name="settings_state_collapsed">réduit</string>
     <string name="settings_lossy_fallback_title">Source de secours avec perte</string>
@@ -351,19 +351,19 @@
     <string name="settings_lyrics_section">Paroles</string>
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">LRC uniquement</string>
-    <string name="settings_lyrics_lrc_only_desc">Word-synced lyrics are off. Switching back doesn\'t re-fetch anything right away — tracks pick up word-synced lyrics the next time they\'re played, or when you re-check your library below.</string>
-    <string name="settings_lyrics_apple_music_desc">Privilégie les paroles synchronisées mot à mot d’Apple Music. Le passage au mode LRC uniquement supprime les paroles synchronisées enregistrées et relance la recherche auprès de sources synchronisées par ligne. Utilisez « Récupérer les paroles » dans État de la bibliothèque pour le faire maintenant.</string>
-    <string name="settings_lyrics_recheck_title">Re-check library for word-synced lyrics</string>
-    <string name="settings_lyrics_recheck_desc">Looks up synced lyrics for songs that don\'t have them yet. Runs slowly in the background.</string>
-    <string name="settings_lyrics_recheck_dialog_title">Re-check your library?</string>
-    <string name="settings_lyrics_recheck_dialog_body">Stash asks the lyrics services about every song that doesn\'t have word-synced lyrics yet, one song every few seconds, so a big library can take hours. It runs only on Wi-Fi while your battery isn\'t low, and you can cancel it any time. Songs it finds nothing for keep the lyrics they have.</string>
-    <string name="settings_lyrics_recheck_dialog_confirm">Re-check</string>
-    <string name="settings_lyrics_recheck_progress">Checking… %1$,d / %2$,d</string>
-    <string name="settings_lyrics_recheck_starting">Checking…</string>
-    <string name="settings_lyrics_recheck_waiting">Waiting for Wi-Fi and enough battery…</string>
-    <string name="settings_lyrics_recheck_last_checked">Last checked %1$s</string>
-    <string name="settings_lyrics_recheck_partway">Stopped partway. Tap to carry on where it left off.</string>
-    <string name="settings_lyrics_recheck_stopped_early">Stopped early: the lyrics services are busy. Tap to try again later.</string>
+    <string name="settings_lyrics_lrc_only_desc">Les paroles synchronisées mot à mot sont désactivées. Les réactiver ne relance pas leur recherche immédiatement : les titres récupéreront ces paroles lors de leur prochaine lecture ou lorsque vous revérifierez votre bibliothèque ci-dessous.</string>
+    <string name="settings_lyrics_apple_music_desc">Privilégie les paroles synchronisées mot à mot d’Apple Music. Le passage au mode LRC uniquement supprime les paroles synchronisées mot à mot enregistrées et relance la recherche auprès de sources de paroles synchronisées par ligne — utilisez « Récupérer les paroles » dans État de la bibliothèque pour le faire maintenant.</string>
+    <string name="settings_lyrics_recheck_title">Rechercher à nouveau des paroles synchronisées mot à mot dans la bibliothèque</string>
+    <string name="settings_lyrics_recheck_desc">Recherche des paroles synchronisées pour les titres qui n’en ont pas encore. L’opération s’exécute lentement en arrière-plan.</string>
+    <string name="settings_lyrics_recheck_dialog_title">Revérifier votre bibliothèque ?</string>
+    <string name="settings_lyrics_recheck_dialog_body">Stash interroge les services de paroles pour chaque titre qui n’a pas encore de paroles synchronisées mot à mot, à raison d’un titre toutes les quelques secondes ; une grande bibliothèque peut donc prendre des heures. L’opération ne s’exécute qu’en Wi-Fi lorsque la batterie est suffisamment chargée, et vous pouvez l’annuler à tout moment. Les titres pour lesquels aucun résultat n’est trouvé conservent leurs paroles actuelles.</string>
+    <string name="settings_lyrics_recheck_dialog_confirm">Revérifier</string>
+    <string name="settings_lyrics_recheck_progress">Vérification… %1$,d / %2$,d</string>
+    <string name="settings_lyrics_recheck_starting">Vérification…</string>
+    <string name="settings_lyrics_recheck_waiting">En attente du Wi-Fi et d’une charge suffisante de la batterie…</string>
+    <string name="settings_lyrics_recheck_last_checked">Dernière vérification : %1$s</string>
+    <string name="settings_lyrics_recheck_partway">La vérification s’est arrêtée en cours de route. Appuyez pour la reprendre là où elle s’est arrêtée.</string>
+    <string name="settings_lyrics_recheck_stopped_early">Arrêt prématuré : les services de paroles sont occupés. Appuyez pour réessayer plus tard.</string>
     <!-- Settings > Library & Storage -->
     <string name="settings_storage_section">Stockage</string>
     <string name="settings_downloads_section">Téléchargements</string>
@@ -384,7 +384,7 @@
     <string name="settings_library_health_title">État de la bibliothèque</string>
     <string name="settings_listening_history_title">Historique d’écoute</string>
     <string name="settings_listening_history_paused_subtitle">En pause : les nouvelles écoutes ne sont pas enregistrées</string>
-    <string name="settings_listening_history_active_subtitle">Mettez en pause ou effacez les données mémorisées par ce téléphone</string>
+    <string name="settings_listening_history_active_subtitle">Mettez en pause l’historique d’écoute ou effacez les données mémorisées par ce téléphone.</string>
     <string name="settings_web_link_nav_title">Associer Stash à la version Web</string>
     <string name="settings_web_link_nav_subtitle">Reprenez là où vous en étiez, mettez votre bibliothèque en miroir et envoyez-la</string>
     <string name="settings_storage_external_folder_fallback">Dossier externe</string>
@@ -485,7 +485,7 @@
     <string name="settings_storage_reorganize_failed_note">Les titres qui n’ont pas pu être déplacés conservent leur ancien emplacement. Réessayez plus tard.</string>
     <string name="settings_storage_reorganize_error_title">Impossible de réorganiser la bibliothèque</string>
     <!-- Settings > Library & Storage > Listening History Sheet -->
-    <string name="settings_listening_history_sheet_subtitle_empty">Ce téléphone mémorise les titres que vous écoutez.</string>
+    <string name="settings_listening_history_sheet_subtitle_empty">Ce que ce téléphone mémorise à propos des titres que vous écoutez.</string>
     <string name="settings_listening_history_sheet_subtitle_nonempty">Ce téléphone mémorise %1$s%2$s.</string>
     <string name="settings_listening_history_since_date">" depuis %s"</string>
     <plurals name="settings_listening_history_plays_count">
@@ -513,7 +513,7 @@
     <string name="settings_listening_history_confirm_clear_button">Effacer</string>
     <!-- Settings > Web Library Sheets -->
     <string name="web_library_export_what_to_include">Éléments à inclure</string>
-    <string name="web_library_export_save_as_file">Enregistrer comme fichier</string>
+    <string name="web_library_export_save_as_file">Enregistrer dans un fichier</string>
     <string name="web_library_export_send_to_target">Envoyer à %s</string>
     <string name="web_library_export_send_to_picker">Envoyer vers…</string>
     <string name="web_library_export_send_to_title">Envoyer vers</string>
@@ -573,7 +573,7 @@
         <item quantity="other">Télécharger à nouveau %d</item>
     </plurals>
     <string name="settings_library_health_section_verify_library">Vérifier la bibliothèque</string>
-    <string name="settings_library_health_verify_idle_desc">Comparez la file de téléchargement à votre bibliothèque et reconstruisez les statistiques des titres et du stockage affichées dans l’onglet Synchronisation. Cette opération ne modifie pas les playlists et ne déclenche aucune synchronisation réseau.</string>
+    <string name="settings_library_health_verify_idle_desc">Mettez la file de téléchargement en cohérence avec votre bibliothèque et recalculez les statistiques des titres et du stockage affichées dans l’onglet Synchronisation. Cette opération ne modifie pas les playlists et ne lance aucune synchronisation réseau.</string>
     <string name="settings_library_health_verify_button">Vérifier</string>
     <string name="settings_library_health_checking_library_progress">Vérification de la bibliothèque… %1$d / %2$d</string>
     <plurals name="settings_library_health_verified_missing_files">
@@ -601,9 +601,9 @@
     <string name="settings_library_health_refresh_quality_info_desc">Récupérez à nouveau la profondeur de bits et la fréquence d’échantillonnage des titres FLAC lorsque ces données sont manquantes. Cette opération s’exécute en arrière-plan.</string>
     <string name="settings_library_health_refreshing_quality_info_toast">Actualisation des informations de qualité en arrière-plan.</string>
     <string name="settings_library_health_refresh_button">Actualiser</string>
-    <string name="settings_library_health_section_flac_upgrades">Améliorations FLAC</string>
+    <string name="settings_library_health_section_flac_upgrades">Mises à niveau vers le FLAC</string>
     <string name="settings_library_health_flac_upgrades_desc">Rechercher des versions sans perte pour les titres téléchargés qui ne sont pas encore en FLAC. La recherche continue en arrière-plan. Pour la lancer après chaque synchronisation, activez cette option dans Audio et qualité.</string>
-    <string name="settings_library_health_check_upgrades_button">Rechercher des améliorations</string>
+    <string name="settings_library_health_check_upgrades_button">Rechercher des versions de meilleure qualité</string>
     <string name="settings_library_health_section_lyrics">Paroles</string>
     <string name="settings_library_health_fetch_lyrics_title">Récupérer les paroles</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">En attente d’une connexion adaptée. Appuyez pour démarrer maintenant sur n’importe quel réseau.</string>
@@ -630,8 +630,8 @@
     <string name="settings_equalizer_section_loudness">Normalisation du volume</string>
     <string name="settings_equalizer_loudness_desc">Lit chaque titre à un volume homogène.</string>
     <plurals name="settings_equalizer_loudness_backfill_progress">
-        <item quantity="one">%1$d titre sur %2$d</item>
-        <item quantity="other">%1$d titres sur %2$d</item>
+        <item quantity="one">%1$d sur %2$d titre</item>
+        <item quantity="other">%1$d sur %2$d titres</item>
     </plurals>
     <string name="settings_equalizer_loudness_charging_hint">Continue automatiquement pendant la charge.</string>
     <string name="settings_equalizer_section_preamp">Préampli</string>
