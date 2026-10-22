@@ -395,27 +395,27 @@
     <string name="settings_backup_export_scope_everything_label">모두</string>
     <string name="settings_backup_export_scope_everything_desc">라이브러리와 설정을 포함합니다. 어느 방식을 선택하더라도 로그인 정보는 복원할 수 없습니다</string>
     <string name="settings_backup_export_scope_library_only_label">라이브러리 전용</string>
-    <string name="settings_backup_export_scope_library_only_desc">Songs, playlists and history. Settings are left out.</string>
+    <string name="settings_backup_export_scope_library_only_desc">노래, 재생목록 및 재생 기록. 설정은 제외됩니다</string>
     <string name="settings_backup_export_scope_settings_only_label">설정 전용</string>
-    <string name="settings_backup_export_scope_settings_only_desc">Preferences with no library attached.</string>
+    <string name="settings_backup_export_scope_settings_only_desc">라이브러리가 연결되지 않은 환경설정입니다</string>
     <string name="settings_backup_export_choose_file_button">파일 선택</string>
     <string name="settings_backup_import_dialog_title">백업 가져오기</string>
-    <string name="settings_backup_import_dialog_subtitle">Choose what this backup should restore:</string>
+    <string name="settings_backup_import_dialog_subtitle">이 백업에서 복원할 항목을 선택하세요:</string>
     <string name="settings_backup_import_scope_merge_label">라이브러리에 병합</string>
-    <string name="settings_backup_import_scope_merge_desc">Adds missing songs and playlists from the backup. Nothing is deleted or replaced; settings stay untouched.</string>
+    <string name="settings_backup_import_scope_merge_desc">백업에 있는 노래와 재생목록 중 현재 없는 항목을 추가합니다. 기존 항목은 삭제되거나 교체되지 않으며, 설정은 변경되지 않습니다</string>
     <string name="settings_backup_import_scope_merge_confirm">병합</string>
     <string name="settings_backup_import_scope_replace_library_label">라이브러리만 교체</string>
-    <string name="settings_backup_import_scope_replace_library_desc">Restores the backup\'s library. Your current settings are kept.</string>
+    <string name="settings_backup_import_scope_replace_library_desc">백업에 저장된 라이브러리를 복원합니다. 현재 설정은 유지됩니다</string>
     <string name="settings_backup_import_scope_replace_library_confirm">라이브러리 교체</string>
     <string name="settings_backup_import_scope_restore_settings_label">설정만 복원</string>
-    <string name="settings_backup_import_scope_restore_settings_desc">Restores settings from the backup. Your current library is kept.</string>
+    <string name="settings_backup_import_scope_restore_settings_desc">백업에 저장된 설정을 복원합니다. 현재 라이브러리는 유지됩니다</string>
     <string name="settings_backup_import_scope_restore_settings_confirm">설정 복원</string>
     <string name="settings_backup_import_scope_replace_everything_label">모두 교체</string>
-    <string name="settings_backup_import_scope_replace_everything_desc">Full restore exactly as backed up — replaces your entire library AND all settings.</string>
+    <string name="settings_backup_import_scope_replace_everything_desc">백업 당시 상태 그대로 전체 복원합니다 — 라이브러리 전체와 모든 설정이 교체됩니다</string>
     <string name="settings_backup_import_scope_replace_everything_confirm">모두 재정의</string>
     <string name="settings_backup_import_destructive_warning">이 작업은 되돌릴 수 없습니다</string>
     <string name="settings_storage_backup_title">백업</string>
-    <string name="settings_storage_backup_subtitle">Export settings and database or import from a previous backup.</string>
+    <string name="settings_storage_backup_subtitle">설정과 데이터베이스를 내보내거나 이전 백업에서 가져옵니다</string>
     <string name="settings_storage_export_backup_button">백업 내보내기</string>
     <string name="settings_storage_import_backup_button">백업 가져오기</string>
     <string name="settings_storage_total_tracks_label">총 트랙 수</string>
@@ -423,7 +423,7 @@
     <string name="settings_storage_download_location_label">다운로드 위치</string>
     <string name="settings_storage_location_internal">내부 저장소 (앱 전용)</string>
     <string name="settings_storage_location_external_unknown">외부 폴더 (SD 카드 / USB)</string>
-    <string name="settings_storage_location_external_desc">Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB.</string>
+    <string name="settings_storage_location_external_desc">음악 파일은 이 폴더에 저장되며, 앱을 삭제해도 유지됩니다. 다른 앱과 USB 연결을 통해서도 파일에 접근할 수 있습니다</string>
     <string name="settings_storage_change_folder_button">폴더 변경</string>
     <string name="settings_storage_pick_folder_button">SD / 폴더 선택</string>
     <string name="settings_storage_use_internal_button">내부 저장소 사용</string>
@@ -434,9 +434,9 @@
     <string name="settings_storage_layout_single_folder_label">단일 폴더</string>
     <string name="settings_storage_layout_single_folder_desc">모든 트랙을 하나의 폴더에 저장하고, 파일명은 \'아티스트명 - 곡 제목\' 형식으로 지정합니다</string>
     <string name="settings_storage_layout_playlist_label">재생목록별</string>
-    <string name="settings_storage_layout_playlist_desc">One folder per playlist; tracks without a playlist use Artist / Album.</string>
+    <string name="settings_storage_layout_playlist_desc">재생목록마다 별도의 폴더를 사용합니다; 재생목록에 속하지 않은 곡은 아티스트 / 앨범을 사용합니다</string>
     <!-- Settings > Library & Storage > Move Library -->
-    <string name="settings_storage_move_library_title">Existing library</string>
+    <string name="settings_storage_move_library_title">기존 라이브러리</string>
     <plurals name="settings_storage_move_library_has_external_desc">
         <item quantity="other">기기에 남아 있는 %d 개의 트랙을 위 폴더로 이동하여 USB로도 접근할 수 있게 합니다</item>
     </plurals>
@@ -458,7 +458,7 @@
     <!-- Settings > Library & Storage > Reorganize Library -->
     <string name="settings_storage_reorganize_title">기존 트랙 재구성</string>
     <plurals name="settings_storage_reorganize_desc">
-        <item quantity="other">%1$d downloaded tracks don\'t follow the \"%2$s\" structure yet. Move them now? New downloads already use it.</item>
+        <item quantity="other">%1$d 개의 다운로드한 트랙이 아직 \'%2$s\' 폴더 구조를 따르지 않습니다. 지금 이동하시겠습니까? 새로 다운로드하는 트랙에는 이미 이 구조가 사용됩니다</item>
     </plurals>
     <plurals name="settings_storage_reorganize_button">
         <item quantity="other">%1$d 개의 트랙을 \'%2$s\'로 이동</item>
@@ -474,27 +474,27 @@
     <!-- Settings > Library & Storage > Listening History Sheet -->
     <string name="settings_listening_history_sheet_subtitle_empty">이 휴대폰이 재생한 노래에 대해 기억하는 내용입니다</string>
     <string name="settings_listening_history_sheet_subtitle_nonempty">이 휴대폰은 %1$s%2$s를 기억합니다</string>
-    <string name="settings_listening_history_since_date">" since %s"</string>
+    <string name="settings_listening_history_since_date">" %s 이후"</string>
     <plurals name="settings_listening_history_plays_count">
-        <item quantity="other">%,d 번 재생</item>
+        <item quantity="other">%,d 개의 트랙 재생</item>
     </plurals>
     <string name="settings_listening_history_pause_title">기록 일시 정지</string>
-    <string name="settings_listening_history_pause_subtitle">While paused, nothing you play is saved, and nothing is sent to Last.fm or ListenBrainz.</string>
+    <string name="settings_listening_history_pause_subtitle">일시 정지 중에는 재생한 항목이 저장되지 않으며, Last.fm 또는 ListenBrainz로 어떤 정보도 전송되지 않습니다</string>
     <string name="settings_listening_history_clear_section">지우기</string>
     <string name="settings_listening_history_clear_range_title">날짜 범위 지우기</string>
     <string name="settings_listening_history_clear_range_subtitle">시작일과 마지막 날 선택</string>
     <string name="settings_listening_history_clear_everything_title">모두 지우기</string>
     <string name="settings_listening_history_nothing_to_clear">지울 것이 없습니다</string>
-    <string name="settings_listening_history_clear_footer">Clearing removes listens from this phone only. %s</string>
-    <string name="settings_listening_history_clear_keeps_scrobbles">This doesn\'t remove anything already sent to Last.fm, ListenBrainz or YouTube Music.</string>
+    <string name="settings_listening_history_clear_footer">기록을 삭제하면 이 기기에 저장된 재생 기록만 삭제됩니다. %s</string>
+    <string name="settings_listening_history_clear_keeps_scrobbles">이미 Last.fm, ListenBrainz 또는 YouTube Music으로 전송된 기록은 삭제되지 않습니다</string>
     <string name="settings_listening_history_picker_title">지울 일수</string>
     <string name="settings_listening_history_picker_next">다음</string>
     <string name="settings_listening_history_confirm_everything_title">전체 청취 기록을 삭제하시겠습니까?</string>
     <string name="settings_listening_history_confirm_range_title">%s를 삭제하시겠습니까?</string>
     <plurals name="settings_listening_history_confirm_plays_leave">
-        <item quantity="other">%1$s leave this phone\'s history, and play counts are worked out again without them. %2$s</item>
+        <item quantity="other">%1$s가 이 기기의 재생 기록에서 삭제되며, 삭제된 기록을 제외하고 재생 횟수가 다시 계산됩니다. %2$s</item>
     </plurals>
-    <string name="settings_listening_history_confirm_no_listens">There are no listens on those days. %s</string>
+    <string name="settings_listening_history_confirm_no_listens">해당 날짜에는 재생 기록이 없습니다. %s</string>
     <string name="settings_listening_history_confirm_clear_button">지우기</string>
     <!-- Settings > Web Library Sheets -->
     <string name="web_library_export_what_to_include">포함할 항목</string>
@@ -502,7 +502,7 @@
     <string name="web_library_export_send_to_target">%s로 보내기</string>
     <string name="web_library_export_send_to_picker">다음으로 보내기...</string>
     <string name="web_library_export_send_to_title">다음으로 보내기</string>
-    <string name="web_library_export_plays_detail">your last %,d</string>
+    <string name="web_library_export_plays_detail">최근 %d 개</string>
     <string name="web_library_import_what_to_import">가져올 항목</string>
     <string name="web_library_import_action_import">가져오기</string>
     <string name="web_library_import_reading_title">파일을 읽는 중</string>
