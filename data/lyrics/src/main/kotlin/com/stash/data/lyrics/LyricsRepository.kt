@@ -39,7 +39,11 @@ import javax.inject.Singleton
  * NOT_READY: the live lookup timed out (the server keeps working and caches, so a retry
  * shortly after usually hits the cache). PAUSED: the skip window is open.
  */
-enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED, NOT_READY, PAUSED }
+enum class TtmlUpgradeResult {
+    UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED, NOT_READY, PAUSED,
+    /** A source errored (timeout, 5xx) and every other source asked cleanly had nothing. Nothing stamped. */
+    UNCONFIRMED_MISS,
+}
 
 /**
  * Which word-synced sources [LyricsRepository.upgradeToTtml] asks.
@@ -184,6 +188,7 @@ class LyricsRepository @Inject constructor(
         query: LyricsQuery,
         fresh: Boolean = false,
         skipIfStamped: Boolean = false,
+        onDemandFollowUp: Boolean = true,
     ): LyricsEntity? {
         if (skipIfStamped && isStamped(query.trackId)) return lyricsDao.get(query.trackId)
         val outcome = sharedWalk(query, fresh)
@@ -193,7 +198,7 @@ class LyricsRepository @Inject constructor(
                 else write(query, outcome)
             }
         }
-        if (written.wantsOnDemandUpgrade) upgradeOnDemandLater(query)
+        if (written.wantsOnDemandUpgrade && onDemandFollowUp) upgradeOnDemandLater(query)
         return written.entity
     }
 
@@ -408,9 +413,10 @@ class LyricsRepository @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             youtubeVideoId = track.youtubeId,
             isrc = track.isrc?.takeIf { it.isNotBlank() },
+            onDemand = true,
         )
         return try {
-            if (resolveAndStore(query, fresh = true) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
+            if (resolveAndStore(query, fresh = true, onDemandFollowUp = false) != null) ManualFetchResult.FETCHED else ManualFetchResult.NOT_FOUND
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -500,11 +506,14 @@ class LyricsRepository @Inject constructor(
             onDemand = sources != TtmlUpgradeSources.APPLE,
         )
         var found: LyricsResult? = null
+        var cleanMisses = 0
         val failures = ArrayList<Exception>(ttmlSources.size)
         for (source in ttmlSources) {
             try {
+                Log.d(TAG, "TTML upgrade: ${source.id} for trackId=$trackId -> ${if (found != null) "hit" else "miss"}")
                 found = source.resolve(query)
                 if (found != null) break
+                cleanMisses++
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -513,7 +522,7 @@ class LyricsRepository @Inject constructor(
             }
         }
         val result = found
-        if (result == null && failures.isNotEmpty()) return upgradeFailure(failures)
+        if (result == null && failures.isNotEmpty()) return upgradeFailure(failures, cleanMisses)
 
         // The lookup can take a while: re-read the row under the per-track write lock and write
         // from THAT, so an offset (or anything else) changed meanwhile is kept, and a concurrent
@@ -552,15 +561,17 @@ class LyricsRepository @Inject constructor(
     }
 
     /** Any HTTP 429 wins (stop asking); otherwise the first failure decides, as with Apple alone. */
-    private fun upgradeFailure(failures: List<Exception>): TtmlUpgradeResult {
+    private fun upgradeFailure(failures: List<Exception>, cleanMisses: Int): TtmlUpgradeResult {
         if (failures.any { (it as? AppleTtmlLyricsSource.HttpStatusException)?.code == 429 }) {
             return TtmlUpgradeResult.RATE_LIMITED
         }
         return when (failures.first()) {
             is AppleTtmlLyricsSource.AppleSkippedException,
             is IsrcLyricsHostBreaker.SkippedException -> TtmlUpgradeResult.PAUSED
-            is InterruptedIOException -> TtmlUpgradeResult.NOT_READY
-            else -> TtmlUpgradeResult.FAILED
+            is InterruptedIOException ->
+                if (cleanMisses > 0) TtmlUpgradeResult.UNCONFIRMED_MISS else TtmlUpgradeResult.NOT_READY
+            else ->
+                if (cleanMisses > 0) TtmlUpgradeResult.UNCONFIRMED_MISS else TtmlUpgradeResult.FAILED
         }
     }
 
