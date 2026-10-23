@@ -1338,7 +1338,7 @@ class NowPlayingViewModel @Inject constructor(
                         TtmlUpgradeResult.NOT_READY -> "Word-synced lyrics aren't ready yet. Try again in a minute"
                         TtmlUpgradeResult.PAUSED -> "Word-synced lyrics are paused for a few minutes after repeated timeouts"
                         TtmlUpgradeResult.RATE_LIMITED -> "Word-synced lyrics are rate-limiting, try again later"
-                        TtmlUpgradeResult.UNCONFIRMED_MISS -> "Apple's lyrics service didn't respond, and no other source has word-synced lyrics for this song"
+                        TtmlUpgradeResult.UNCONFIRMED_MISS -> "A word-synced lyrics service didn't respond, and the others have none for this song"
                         TtmlUpgradeResult.FAILED -> "Couldn't reach the word-synced lyrics services"
                         TtmlUpgradeResult.SKIPPED -> "Nothing to upgrade for this song"
                     }

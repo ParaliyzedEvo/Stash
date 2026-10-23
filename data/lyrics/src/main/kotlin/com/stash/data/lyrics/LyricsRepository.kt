@@ -510,8 +510,8 @@ class LyricsRepository @Inject constructor(
         val failures = ArrayList<Exception>(ttmlSources.size)
         for (source in ttmlSources) {
             try {
-                Log.d(TAG, "TTML upgrade: ${source.id} for trackId=$trackId -> ${if (found != null) "hit" else "miss"}")
                 found = source.resolve(query)
+                Log.d(TAG, "TTML upgrade: ${source.id} for trackId=$trackId -> ${if (found != null) "hit" else "miss"}")
                 if (found != null) break
                 cleanMisses++
             } catch (e: CancellationException) {
