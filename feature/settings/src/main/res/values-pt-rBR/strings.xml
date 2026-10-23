@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">Stash na web</string>
-    <string name="web_library_export_subtitle">Leve suas curtidas, suas playlists e o que você tocou ultimamente para o Stash na web. Em seguida, no web player: Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
+    <string name="web_library_export_subtitle">Leve suas curtidas, suas playlists e o que você tocou ultimamente para o Stash na web. Em seguida, no player web: Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
     <string name="web_library_export_button">Exportar para Stash na web</string>
     <string name="web_library_export_working_title">Exportando sua biblioteca</string>
     <string name="web_library_export_done_title">Pronto para a web</string>
@@ -187,7 +187,7 @@
     <string name="settings_ambient_style_title">Estilo ambiente</string>
     <string name="settings_ambient_style_soft_glow">Brilho suave</string>
     <string name="settings_ambient_style_classic">Clássico</string>
-    <string name="settings_ambient_style_desc">O brilho suave flutua suavemente, como o web player. Clássico é o visual original.</string>
+    <string name="settings_ambient_style_desc">O brilho suave flutua suavemente, como o player web. Clássico é o visual original.</string>
     <string name="settings_ambient_style_disabled_desc">Ative o movimento ambiente para escolher um estilo.</string>
     <string name="settings_open_stash_on_section">Abra Stash em</string>
     <string name="settings_start_tab_home">Início</string>
@@ -297,7 +297,7 @@
     <string name="settings_hires_needs_android_14">Precisa de Android 14 ou mais recente.</string>
     <string name="settings_hires_mode_bit_perfect">USB bit-perfect</string>
     <string name="settings_hires_mode_bit_perfect_desc">Cada amostra chega ao seu DAC sem alterações. EQ, normalização e crossfade são ignorados, e o controle de volume fica no DAC. Se o telefone não oferecer esse modo, o DAC ajusta a taxa de amostragem para acompanhar a da música.</string>
-    <string name="settings_hires_footer_note">Aplica-se a DACs USB e dongles USB-C. A saída de áudio do próprio telefone para fones de ouvido, o alto-falante e o Bluetooth sempre passam pelo mixer do Android. O Bluetooth também recodifica o áudio.</string>
+    <string name="settings_hires_footer_note">Aplicam-se a DACs USB e dongles USB-C. A saída de áudio do próprio telefone para fones de ouvido, o alto-falante e o Bluetooth sempre passam pelo mixer do Android. O Bluetooth também recodifica o áudio.</string>
     <string name="settings_hires_bit_perfect_dialog_title">Abaixe primeiro o volume do seu DAC.</string>
     <string name="settings_hires_bit_perfect_dialog_body">No modo bit-perfect, o Android não altera o volume: quem o controla é o DAC. Se o DAC não tiver controle de volume próprio, as teclas de volume do celular podem parar de funcionar e a música pode tocar no volume máximo.\n\nDiminua o volume antes de iniciar a reprodução. EQ, normalização e crossfade são ignorados enquanto o modo bit-perfect estiver ativo.</string>
     <string name="settings_hires_bit_perfect_confirm">Ativar modo bit-perfect</string>
@@ -352,7 +352,7 @@
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">Somente LRC</string>
     <string name="settings_lyrics_lrc_only_desc">As letras sincronizadas por palavra estão desativadas. Reativá-las não faz uma nova busca imediatamente: as faixas recebem essas letras na próxima reprodução ou quando você verificar a biblioteca novamente abaixo.</string>
-    <string name="settings_lyrics_apple_music_desc">Prefere as letras sincronizadas por palavra do Apple Music. Ao mudar para o modo Somente LRC, todas as letras sincronizadas por palavra armazenadas são removidas, e a busca é refeita em fontes de letras sincronizadas por linha. Use “Buscar letras” em Library Health para fazer isso agora.</string>
+    <string name="settings_lyrics_apple_music_desc">Prefere as letras sincronizadas por palavra do Apple Music. Ao mudar para o modo Somente LRC, todas as letras sincronizadas por palavra armazenadas são removidas, e a busca é refeita em fontes de letras sincronizadas por linha. Use “Buscar letras” em Saúde da biblioteca para fazer isso agora.</string>
     <string name="settings_lyrics_recheck_title">Verificar novamente a biblioteca em busca de letras sincronizadas por palavra</string>
     <string name="settings_lyrics_recheck_desc">Busca letras sincronizadas para as músicas que ainda não as têm. A operação é executada lentamente em segundo plano.</string>
     <string name="settings_lyrics_recheck_dialog_title">Verificar sua biblioteca novamente?</string>
@@ -412,11 +412,11 @@
     <string name="settings_backup_import_scope_merge_confirm">Mesclar</string>
     <string name="settings_backup_import_scope_replace_library_label">Substituir apenas biblioteca</string>
     <string name="settings_backup_import_scope_replace_library_desc">Restaura a biblioteca do backup. Suas configurações atuais são mantidas.</string>
-    <string name="settings_backup_import_scope_replace_library_confirm">Substituir Biblioteca</string>
+    <string name="settings_backup_import_scope_replace_library_confirm">Substituir biblioteca</string>
     <string name="settings_backup_import_scope_restore_settings_label">Restaurar apenas configurações</string>
     <string name="settings_backup_import_scope_restore_settings_desc">Restaura as configurações do backup. Sua biblioteca atual é mantida.</string>
     <string name="settings_backup_import_scope_restore_settings_confirm">Restaurar configurações</string>
-    <string name="settings_backup_import_scope_replace_everything_label">Substitua tudo</string>
+    <string name="settings_backup_import_scope_replace_everything_label">Substituir tudo</string>
     <string name="settings_backup_import_scope_replace_everything_desc">Restauração completa exatamente como foi feito o backup – substitui toda a sua biblioteca E todas as configurações.</string>
     <string name="settings_backup_import_scope_replace_everything_confirm">Substituir tudo</string>
     <string name="settings_backup_import_destructive_warning">Isto não pode ser desfeito.</string>
@@ -572,7 +572,7 @@
         <item quantity="one">Baixar %d novamente</item>
         <item quantity="other">Baixar %d novamente</item>
     </plurals>
-    <string name="settings_library_health_section_verify_library">Verifique a biblioteca</string>
+    <string name="settings_library_health_section_verify_library">Verificar biblioteca</string>
     <string name="settings_library_health_verify_idle_desc">Reconcilie a fila de downloads com sua biblioteca e reconstrua as estatísticas de faixas e de armazenamento mostradas na guia Sincronizar. Isso não altera as listas de reprodução nem aciona qualquer sincronização de rede.</string>
     <string name="settings_library_health_verify_button">Verificar</string>
     <string name="settings_library_health_checking_library_progress">Verificando biblioteca… %1$d / %2$d</string>
