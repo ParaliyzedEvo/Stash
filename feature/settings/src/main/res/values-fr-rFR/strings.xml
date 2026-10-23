@@ -102,7 +102,9 @@
     <string name="settings_disconnect_account_body">Stash déconnecte votre compte %1$s sur ce téléphone et arrête sa synchronisation. Les titres de %1$s dont le téléchargement est encore en attente sont retirés de la file d’attente.\n\nLes titres déjà téléchargés restent dans votre bibliothèque et vous pouvez vous reconnecter à tout moment.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
-    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.\n\nCette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut faire signaler un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
+    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.
+
+Cette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
     <string name="settings_like_mirror_warning_confirm">J’ai compris</string>
     <!-- Settings > Accounts > SpotifyAutoSaveSection -->
     <string name="settings_spotify_autosave_title">Enregistrer automatiquement les titres aimés</string>
@@ -195,7 +197,7 @@
     <string name="settings_start_tab_search">Recherche</string>
     <string name="settings_start_tab_desc">Onglet affiché à l’ouverture de Stash.</string>
     <string name="settings_home_layout_section">Disposition de l’accueil</string>
-    <string name="settings_home_layout_desc">Réorganisez les sections de l’accueil ou masquez celles que vous n’utilisez pas. La bannière Découvrir reste en haut.</string>
+    <string name="settings_home_layout_desc">Réorganisez les sections de l’accueil ou masquez celles que vous n’utilisez pas. La bannière « Daily Discover » reste en haut.</string>
     <string name="settings_home_section_community_desc">Playlists et titres appréciés par les autres utilisateurs de Stash. Vos publications affichent votre nom.</string>
     <string name="settings_home_section_listening_desc">Écoutes récentes et historique. Apparaît après votre première écoute.</string>
     <string name="settings_home_show_liked_title">Afficher les titres aimés sur l’accueil</string>
@@ -229,7 +231,7 @@
     <string name="settings_save_data_subtitle">Le streaming YouTube utilise la qualité audio la plus basse — environ 2 Mo par titre au lieu de 5 — et JioSaavn 96 kbit/s au lieu de 320. Les téléchargements ne sont pas affectés.</string>
     <string name="settings_lossless_section">Sans perte</string>
     <string name="settings_lossless_title">Sans perte</string>
-    <string name="settings_lossless_subtitle_off">Streaming en FLAC de qualité studio. Si l’option est désactivée, les titres sont lus via JioSaavn ou YouTube. Les téléchargements utilisent la qualité de téléchargement configurée.</string>
+    <string name="settings_lossless_subtitle_off">Diffuse du FLAC en qualité studio. Si l’option est désactivée, les titres sont lus via JioSaavn ou YouTube. Les téléchargements utilisent la qualité de téléchargement configurée.</string>
     <string name="settings_lossless_subtitle_no_source">Aucune source audio sans perte configurée — voir ci-dessous. Fichiers environ 10 fois plus volumineux que les fichiers MP3.</string>
     <string name="settings_lossless_subtitle_active">FLAC en streaming. Les téléchargements utilisent la qualité de téléchargement configurée.</string>
     <string name="settings_qobuz_no_source_warning">Aucune source sans perte configurée — connectez votre compte Qobuz ci-dessous</string>
@@ -602,12 +604,12 @@
     <string name="settings_library_health_refreshing_quality_info_toast">Actualisation des informations de qualité en arrière-plan.</string>
     <string name="settings_library_health_refresh_button">Actualiser</string>
     <string name="settings_library_health_section_flac_upgrades">Mises à niveau vers le FLAC</string>
-    <string name="settings_library_health_flac_upgrades_desc">Rechercher des versions sans perte pour les titres téléchargés qui ne sont pas encore en FLAC. La recherche continue en arrière-plan. Pour la lancer après chaque synchronisation, activez cette option dans Audio et qualité.</string>
+    <string name="settings_library_health_flac_upgrades_desc">Recherche des versions sans perte pour les titres téléchargés qui ne sont pas encore en FLAC. La recherche continue en arrière-plan. Pour la lancer après chaque synchronisation, activez cette option dans « Audio &amp; qualité ».</string>
     <string name="settings_library_health_check_upgrades_button">Rechercher des versions de meilleure qualité</string>
     <string name="settings_library_health_section_lyrics">Paroles</string>
     <string name="settings_library_health_fetch_lyrics_title">Récupérer les paroles</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">En attente d’une connexion adaptée. Appuyez pour démarrer maintenant sur n’importe quel réseau.</string>
-    <string name="settings_library_health_fetch_lyrics_idle_desc">Rechercher les paroles manquantes des titres téléchargés. L’opération continue en arrière-plan ; vous pouvez quitter l’app. Une notification indique la progression.</string>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Recherche les paroles manquantes des titres téléchargés. L’opération continue en arrière-plan ; vous pouvez quitter l’app. Une notification indique la progression.</string>
     <string name="settings_library_health_fetch_lyrics_button">Récupérer les paroles</string>
     <string name="settings_library_health_fetching_lyrics_progress">Récupération des paroles… %1$d / %2$d</string>
     <string name="settings_library_health_fetching_lyrics">Récupération des paroles…</string>
@@ -624,7 +626,7 @@
     <string name="settings_library_health_fetch_again_button">Récupérer à nouveau</string>
     <!-- Settings > Equalizer -->
     <string name="settings_equalizer_loudness_first_run_message">La normalisation du volume est activée. Les titres auront un volume plus homogène à mesure que le volume de votre bibliothèque sera analysé en arrière-plan.</string>
-    <string name="settings_equalizer_bit_perfect_bypassed">Contourné : la sortie bit-perfect est activée, votre DAC reçoit donc la musique sans modification. Réglez la sortie Hi-Res sur « Adapter le DAC USB » dans Audio et qualité pour utiliser l’égaliseur.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Contourné : la sortie bit-perfect est activée, votre DAC reçoit donc la musique sans modification. Réglez la sortie Hi-Res sur « Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre » dans « Audio &amp; qualité » pour utiliser l’égaliseur.</string>
     <string name="settings_equalizer_section_5band_eq">Égaliseur 5 bandes</string>
     <string name="settings_equalizer_section_bass_boost">Renforcement des basses</string>
     <string name="settings_equalizer_section_loudness">Normalisation du volume</string>
