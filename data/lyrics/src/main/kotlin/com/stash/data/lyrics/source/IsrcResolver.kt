@@ -94,6 +94,7 @@ class IsrcResolver(
                 return null
             }
         }
+        Log.d(TAG, "ISRC search got ${results?.length() ?: 0} result(s) for \"${query.title}\"")
         val isrc = results?.let { pickBest(query, it) }
         Log.d(TAG, "ISRC search \"${query.title}\" - ${query.artist}: ${isrc ?: "no word-timed match"}")
         synchronized(cache) { cache[key] = isrc }

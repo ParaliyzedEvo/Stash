@@ -106,12 +106,14 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             // NOT_READY (a timeout) and PAUSED (the skip window) were FAILED before the single-track
             // upgrade told them apart, so the bulk pass still counts them as failures.
             val softFailure = result == TtmlUpgradeResult.FAILED ||
+                result == TtmlUpgradeResult.UNCONFIRMED_MISS ||
                 result == TtmlUpgradeResult.NOT_READY ||
                 result == TtmlUpgradeResult.PAUSED
             when (result) {
                 TtmlUpgradeResult.UPGRADED -> upgraded++
                 TtmlUpgradeResult.NO_TTML -> Unit
                 TtmlUpgradeResult.FAILED,
+                TtmlUpgradeResult.UNCONFIRMED_MISS,
                 TtmlUpgradeResult.NOT_READY,
                 TtmlUpgradeResult.PAUSED,
                 TtmlUpgradeResult.RATE_LIMITED -> failed++
