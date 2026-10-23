@@ -251,7 +251,7 @@
     <string name="settings_on_cellular">Über Mobilfunk</string>
     <string name="settings_save_data_lossless_subtitle">Streamt in jedem Netzwerk in CD-Qualität statt in Hi-Res oder Max – etwa 28 MB pro Song statt 70 oder 140. Songs, die über JioSaavn oder YouTube wiedergegeben werden, nutzen die niedrigste Audioqualität des jeweiligen Dienstes. Downloads sind davon nicht betroffen.</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Tidal-AAC beim Streaming bevorzugen</string>
-    <string name="settings_prefer_tidal_aac_streaming_subtitle">Wenn der Song bei Tidal verfügbar ist, wird beim Streaming Tidal-AAC mit 320 kbit/s statt FLAC verwendet – etwa 10 MB pro Song statt 28 MB oder mehr. Songs, die Tidal nicht anbietet, werden wie gewohnt wiedergegeben. Downloads sind davon nicht betroffen.</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Wenn der Song bei Tidal verfügbar ist, wird beim Streaming Tidal-AAC mit 320 kbps statt FLAC verwendet – etwa 10 MB pro Song statt 28 MB oder mehr. Songs, die Tidal nicht anbietet, werden wie gewohnt wiedergegeben. Downloads sind davon nicht betroffen.</string>
     <string name="settings_state_expanded">ausgeklappt</string>
     <string name="settings_state_collapsed">eingeklappt</string>
     <string name="settings_lossy_fallback_title">Verlustbehaftete Ersatzquelle</string>
