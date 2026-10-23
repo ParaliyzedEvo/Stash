@@ -589,13 +589,13 @@
         <item quantity="one">Сканирование завершено: %1$d из %2$d трека обновлён.</item>
         <item quantity="few">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
         <item quantity="many">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
-        <item quantity="other">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
+        <item quantity="other">Scan complete: %1$d of %2$d tracks updated.</item>
     </plurals>
     <plurals name="settings_library_health_scan_unreadable">
         <item quantity="one">%d трек все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
         <item quantity="few">%d трека все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
         <item quantity="many">%d треков все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
-        <item quantity="other"></item>
+        <item quantity="other">%d tracks still couldn\'t be read — likely missing on disk or unsupported by MediaMetadataRetriever.</item>
     </plurals>
     <string name="settings_library_health_retry_scan">Retry scan</string>
     <string name="settings_library_health_section_missing_downloads">Missing downloads</string>
