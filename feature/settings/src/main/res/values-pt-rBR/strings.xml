@@ -282,7 +282,7 @@
     <string name="settings_lossless_tier_max">Máx. (24 bits/192 kHz)</string>
     <string name="settings_lossless_tier_max_hint">~140 MB / 4 min</string>
     <string name="settings_lossless_tier_hires">Hi-Res (24 bits/96 kHz)</string>
-    <string name="settings_lossless_tier_hires_hint">~70 MB/4 min</string>
+    <string name="settings_lossless_tier_hires_hint">~70 MB / 4 min</string>
     <string name="settings_lossless_tier_cd">CD (16 bits/44,1 kHz)</string>
     <string name="settings_lossless_tier_cd_hint">~28 MB / 4 min</string>
     <!-- Settings > Audio & Quality > HiResOutputSection -->
@@ -392,7 +392,7 @@
     <string name="settings_backup_status_importing_title">Importando Backup</string>
     <string name="settings_backup_status_success_title">Sucesso</string>
     <string name="settings_backup_status_error_title">Erro</string>
-    <string name="settings_backup_status_processing">Processamento…</string>
+    <string name="settings_backup_status_processing">Processando…</string>
     <string name="settings_backup_status_ok">OK</string>
     <string name="settings_backup_export_dialog_title">Exportar backup</string>
     <string name="settings_backup_export_dialog_subtitle">Escolha o que este backup deve conter:</string>
@@ -466,7 +466,7 @@
     <string name="settings_storage_move_library_error_title">Não foi possível mover a biblioteca</string>
     <string name="settings_storage_dismiss_button">Fechar</string>
     <!-- Settings > Library & Storage > Reorganize Library -->
-    <string name="settings_storage_reorganize_title">Reorganizar trilhas existentes</string>
+    <string name="settings_storage_reorganize_title">Reorganizar faixas existentes</string>
     <plurals name="settings_storage_reorganize_desc">
         <item quantity="one">%1$d faixa baixada ainda não segue a estrutura \"%2$s\". Quer movê-la agora? Os novos downloads já usam essa estrutura.</item>
         <item quantity="other">%1$d faixas baixadas ainda não seguem a estrutura \"%2$s\". Quer movê-las agora? Os novos downloads já usam essa estrutura.</item>
