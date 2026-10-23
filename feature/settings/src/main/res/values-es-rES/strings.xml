@@ -251,7 +251,7 @@
     <string name="settings_on_cellular">En datos móviles</string>
     <string name="settings_save_data_lossless_subtitle">Reproduce en calidad de CD en vez de Hi-Res o Max en todas las redes — aprox. 28 MB por pista en lugar de 70 o 140. Las pistas que se reproducen desde JioSaavn o YouTube como alternativa usan su calidad de audio más baja. Las descargas no se ven afectadas.</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Preferir AAC de Tidal durante el streaming</string>
-    <string name="settings_prefer_tidal_aac_streaming_subtitle">Cuando Tidal tenga la canción, la reproducción usará AAC de Tidal a 320 kbps en lugar de FLAC —aprox. 10 MB por pista en vez de 28 o más. Las canciones que Tidal no tenga se reproducirán como siempre. Las descargas no se ven afectadas.</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Cuando Tidal tenga la canción, la reproducción usará AAC de Tidal a 320 kbps en lugar de FLAC — aprox. 10 MB por pista en vez de 28 o más. Las canciones que Tidal no tenga se reproducirán como siempre. Las descargas no se ven afectadas.</string>
     <string name="settings_state_expanded">expandido</string>
     <string name="settings_state_collapsed">colapsado</string>
     <string name="settings_lossy_fallback_title">Alternativa con pérdida</string>
