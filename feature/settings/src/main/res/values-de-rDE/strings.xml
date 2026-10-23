@@ -526,14 +526,14 @@
     <string name="web_library_import_failed_title">Import fehlgeschlagen</string>
     <!-- Settings > Blocked Songs -->
     <string name="blocked_songs_title">Blockierte Titel</string>
-    <string name="blocked_songs_subtitle">Diese Titel werden bei jeder Synchronisierung übersprungen. Tippe auf „Freigeben“, um einen wieder zu erlauben.</string>
+    <string name="blocked_songs_subtitle">Diese Titel werden bei jeder Synchronisierung übersprungen. Tippe auf „Entsperren“, um einen wieder zuzulassen.</string>
     <string name="blocked_songs_empty_title">Keine blockierten Titel</string>
     <string name="blocked_songs_empty_desc">Songs, die du mit \u201CLöschen &amp; Blockieren\u201D blockierst, erscheinen hier. Tippe auf „Entsperren“, damit sie bei der nächsten Synchronisierung wieder zugelassen werden.</string>
     <plurals name="blocked_songs_count">
         <item quantity="one">%d Titel</item>
         <item quantity="other">%d Titel</item>
     </plurals>
-    <string name="blocked_songs_unblock_button">Freigeben</string>
+    <string name="blocked_songs_unblock_button">Entsperren</string>
     <!-- Settings > Library Health -->
     <string name="settings_library_health_desc">Format- und Bitraten-Aufschlüsselung jedes heruntergeladenen Titels. Nutze dies, um zu prüfen, was deine Synchronisierung tatsächlich lädt.</string>
     <string name="settings_library_health_section_breakdown">Bibliotheks-Aufschlüsselung</string>
