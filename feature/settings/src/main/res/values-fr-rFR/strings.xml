@@ -102,9 +102,7 @@
     <string name="settings_disconnect_account_body">Stash déconnecte votre compte %1$s sur ce téléphone et arrête sa synchronisation. Les titres de %1$s dont le téléchargement est encore en attente sont retirés de la file d’attente.\n\nLes titres déjà téléchargés restent dans votre bibliothèque et vous pouvez vous reconnecter à tout moment.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
-    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.
-
-Cette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
+    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.\n\nCette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
     <string name="settings_like_mirror_warning_confirm">J’ai compris</string>
     <!-- Settings > Accounts > SpotifyAutoSaveSection -->
     <string name="settings_spotify_autosave_title">Enregistrer automatiquement les titres aimés</string>
