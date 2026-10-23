@@ -528,7 +528,7 @@
     <string name="blocked_songs_title">Músicas bloqueadas</string>
     <string name="blocked_songs_subtitle">Essas músicas são ignoradas em todas as sincronizações. Toque em Desbloquear para permitir uma delas novamente.</string>
     <string name="blocked_songs_empty_title">Nenhuma música bloqueada</string>
-    <string name="blocked_songs_empty_desc">As músicas que você bloqueia com “Excluir e Bloquear” aparecem aqui. Toque em Desbloquear para incluí-las novamente na próxima sincronização.</string>
+    <string name="blocked_songs_empty_desc">As músicas que você bloqueia com \u201CExcluir e Bloquear\u201D aparecem aqui. Toque em Desbloquear para incluí-las novamente na próxima sincronização.</string>
     <plurals name="blocked_songs_count">
         <item quantity="one">%d música</item>
         <item quantity="other">%d músicas</item>
