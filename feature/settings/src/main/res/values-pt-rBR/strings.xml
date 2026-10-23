@@ -195,10 +195,10 @@
     <string name="settings_start_tab_search">Procurar</string>
     <string name="settings_start_tab_desc">A guia que o Stash abre ao iniciar.</string>
     <string name="settings_home_layout_section">Layout inicial</string>
-    <string name="settings_home_layout_desc">Organize as seções da página inicial ou oculte as que não usa. O destaque do Discover permanece no topo.</string>
+    <string name="settings_home_layout_desc">Organize as seções da página inicial ou oculte as que não usa. O destaque “Daily Discover &amp; seus mixes” permanece no topo.</string>
     <string name="settings_home_section_community_desc">Listas de reprodução e músicas de que outros ouvintes do Stash gostam. Suas postagens mostram seu nome.</string>
     <string name="settings_home_section_listening_desc">Reproduções recentes e seu histórico. Aparece após a primeira reprodução.</string>
-    <string name="settings_home_show_liked_title">Mostrar músicas favoritas na página inicial</string>
+    <string name="settings_home_show_liked_title">Mostrar músicas curtidas na página inicial</string>
     <string name="settings_home_show_liked_subtitle">Suas curtidas do Stash, Spotify e YouTube em um único cartão em Suas playlists.</string>
     <string name="settings_home_section_discover">Daily Discover &amp; seus mixes</string>
     <string name="settings_home_section_your_playlists">Suas listas de reprodução</string>
@@ -207,7 +207,7 @@
     <string name="settings_home_section_top_albums">Principais álbuns</string>
     <string name="settings_home_section_made_for_you">Feito para você</string>
     <string name="settings_home_section_radios">Rádios</string>
-    <string name="settings_home_section_mood_decades">Humores e décadas</string>
+    <string name="settings_home_section_mood_decades">Humor e décadas</string>
     <string name="settings_home_section_community">Comunidade</string>
     <string name="settings_home_section_your_listening">Sua escuta</string>
     <string name="settings_home_section_move_up">Mova %1$s para cima</string>
@@ -224,12 +224,12 @@
     <string name="settings_download_mode_opus_desc">Do YouTube. Os menores arquivos.</string>
     <string name="settings_flac_quality_title">Qualidade FLAC</string>
     <string name="settings_youtube_quality_title">Qualidade YouTube</string>
-    <string name="settings_download_quality_rates_desc">Define as taxas de download do YouTube conforme abaixo e as do JioSaavn em 96 kbps nas opções Baixa e Normal, 160 em Alta e 320 em Melhor e Máx.</string>
+    <string name="settings_download_quality_rates_desc">Define as taxas de download do YouTube conforme abaixo e as do JioSaavn em 96 kbps nas opções Baixo e Normal, 160 em Alto e 320 em Melhor e Máx.</string>
     <string name="settings_save_data_title">Economizar dados</string>
     <string name="settings_save_data_subtitle">Reproduz pelo YouTube na qualidade de áudio mais baixa — cerca de 2 MB por faixa em vez de 5 — e pelo JioSaavn a 96 kbps em vez de 320. Os downloads não são afetados.</string>
     <string name="settings_lossless_section">Sem perdas</string>
     <string name="settings_lossless_title">Sem perdas</string>
-    <string name="settings_lossless_subtitle_off">Transmita FLAC com qualidade de estúdio. Quando a opção estiver desativada, as músicas serão reproduzidas pelo JioSaavn ou pelo YouTube. Os downloads seguem a qualidade de download selecionada.</string>
+    <string name="settings_lossless_subtitle_off">Transmite FLAC com qualidade de estúdio. Quando a opção estiver desativada, as músicas serão reproduzidas pelo JioSaavn ou pelo YouTube. Os downloads seguem a qualidade de download selecionada.</string>
     <string name="settings_lossless_subtitle_no_source">Nenhuma fonte sem perdas configurada — veja abaixo. Os arquivos são cerca de 10 vezes maiores que os MP3.</string>
     <string name="settings_lossless_subtitle_active">FLAC para streaming. Os downloads seguem a qualidade de download selecionada.</string>
     <string name="settings_qobuz_no_source_warning">Nenhuma fonte sem perdas configurada — conecte sua conta do Qobuz abaixo</string>
@@ -243,7 +243,7 @@
     <string name="settings_connecting">Conectando…</string>
     <string name="settings_connect">Conectar</string>
     <string name="settings_auto_flac_upgrade_title">Atualização automática para FLAC após sincronização</string>
-    <string name="settings_auto_flac_upgrade_subtitle">Após cada sincronização, procura versões sem perdas dos seus downloads que ainda não estão em FLAC. Você também pode verificar manualmente em Saúde da biblioteca.</string>
+    <string name="settings_auto_flac_upgrade_subtitle">Após cada sincronização, procura versões sem perdas dos seus downloads que ainda não estão em FLAC. Você também pode verificar manualmente em Saúde da Biblioteca.</string>
     <string name="settings_tidal_aac_fallback_title">Tidal AAC quando não há FLAC</string>
     <string name="settings_tidal_aac_fallback_subtitle">Reproduz e baixa o AAC de 320 kbps do Tidal quando uma música não tem uma versão sem perdas. Desativado = o Tidal é usado somente para FLAC.</string>
     <string name="settings_streaming_section">Transmissão</string>
@@ -256,7 +256,7 @@
     <string name="settings_state_collapsed">recolhido</string>
     <string name="settings_lossy_fallback_title">Fallback com perdas</string>
     <string name="settings_state_on">ativado</string>
-    <string name="settings_state_off">desligado</string>
+    <string name="settings_state_off">desativado</string>
     <string name="settings_lossy_fallback_switch_label">Use JioSaavn e depois YouTube quando um download não tiver correspondência sem perdas</string>
     <string name="settings_lossy_fallback_switch_label_aac">Usar JioSaavn e, depois, YouTube quando o Tidal não tiver a faixa em AAC</string>
     <string name="settings_advanced">Avançado</string>
@@ -293,7 +293,7 @@
     <string name="settings_hires_mode_standard">Padrão</string>
     <string name="settings_hires_mode_standard_desc">O mixer compartilhado do Android, como em qualquer aplicativo. Ele reamostra as músicas cuja taxa não corresponde à dele (geralmente 48 kHz).</string>
     <string name="settings_hires_mode_match_rate">Ajustar o DAC USB à taxa de amostragem de cada música</string>
-    <string name="settings_hires_mode_match_rate_desc">Seu DAC funciona na taxa de amostragem da própria música — 44.1, 96, 192 kHz —, então nada é reamostrado. EQ, crossfade e notificações continuam funcionando.</string>
+    <string name="settings_hires_mode_match_rate_desc">Seu DAC funciona na taxa de amostragem da própria música — 44,1, 96, 192 kHz —, então nada é reamostrado. EQ, crossfade e notificações continuam funcionando.</string>
     <string name="settings_hires_needs_android_14">Precisa de Android 14 ou mais recente.</string>
     <string name="settings_hires_mode_bit_perfect">USB bit-perfect</string>
     <string name="settings_hires_mode_bit_perfect_desc">Cada amostra chega ao seu DAC sem alterações. EQ, normalização e crossfade são ignorados, e o controle de volume fica no DAC. Se o telefone não oferecer esse modo, o DAC ajusta a taxa de amostragem para acompanhar a da música.</string>
@@ -480,8 +480,8 @@
         <item quantity="one">%d faixa movida</item>
         <item quantity="other">%d faixas movidas</item>
     </plurals>
-    <string name="settings_storage_reorganize_done_skipped">" • %d já organizadas"</string>
-    <string name="settings_storage_reorganize_done_failed">" • %d falharam"</string>
+    <string name="settings_storage_reorganize_done_skipped">" • %d já organizada(s)"</string>
+    <string name="settings_storage_reorganize_done_failed">" • %d com falha"</string>
     <string name="settings_storage_reorganize_failed_note">As faixas que falharam permanecem no local antigo. Tente novamente mais tarde.</string>
     <string name="settings_storage_reorganize_error_title">Não foi possível reorganizar a biblioteca</string>
     <!-- Settings > Library & Storage > Listening History Sheet -->
@@ -503,7 +503,7 @@
     <string name="settings_listening_history_clear_keeps_scrobbles">Isso não remove nada já enviado para Last.fm, ListenBrainz ou YouTube Music.</string>
     <string name="settings_listening_history_picker_title">Dias para limpar</string>
     <string name="settings_listening_history_picker_next">Próximo</string>
-    <string name="settings_listening_history_confirm_everything_title">Limpar todo o seu histórico de audição?</string>
+    <string name="settings_listening_history_confirm_everything_title">Limpar todo o seu histórico de escuta?</string>
     <string name="settings_listening_history_confirm_range_title">Limpar %s?</string>
     <plurals name="settings_listening_history_confirm_plays_leave">
         <item quantity="one">%1$s sai do histórico deste celular, e as contagens de reprodução são recalculadas sem essa faixa. %2$s</item>
@@ -598,11 +598,11 @@
     <string name="settings_library_health_retry">Tentar novamente</string>
     <string name="settings_library_health_section_quality_info">Informação de qualidade</string>
     <string name="settings_library_health_refresh_quality_info_title">Atualizar informações de qualidade</string>
-    <string name="settings_library_health_refresh_quality_info_desc">Reextrai a profundidade de bits e a taxa de amostragem das faixas FLAC em que esses dados estão faltando. É executado em segundo plano.</string>
+    <string name="settings_library_health_refresh_quality_info_desc">Extrai novamente a profundidade de bits e a taxa de amostragem das faixas FLAC em que esses dados estão faltando. É executado em segundo plano.</string>
     <string name="settings_library_health_refreshing_quality_info_toast">Atualizando informações de qualidade em segundo plano.</string>
     <string name="settings_library_health_refresh_button">Atualizar</string>
     <string name="settings_library_health_section_flac_upgrades">Atualizações FLAC</string>
-    <string name="settings_library_health_flac_upgrades_desc">Procure versões sem perdas das faixas baixadas que ainda não estão em FLAC. A busca continua em segundo plano. Para executá-la após cada sincronização, ative esta opção em Áudio &amp; qualidade.</string>
+    <string name="settings_library_health_flac_upgrades_desc">Procure versões sem perdas das faixas baixadas que ainda não estão em FLAC. A busca continua em segundo plano. Para executá-la após cada sincronização, ative esta opção em “Áudio &amp; qualidade”.</string>
     <string name="settings_library_health_check_upgrades_button">Verifique se há atualizações</string>
     <string name="settings_library_health_section_lyrics">Letra da música</string>
     <string name="settings_library_health_fetch_lyrics_title">Buscar letras</string>
@@ -624,7 +624,7 @@
     <string name="settings_library_health_fetch_again_button">Buscar novamente</string>
     <!-- Settings > Equalizer -->
     <string name="settings_equalizer_loudness_first_run_message">A normalização de volume está ativada. As faixas terão um volume mais consistente à medida que sua biblioteca for analisada em segundo plano.</string>
-    <string name="settings_equalizer_bit_perfect_bypassed">Ignorado: a saída bit-perfect está ativada, então seu DAC recebe a música sem alterações. Mude a saída Hi-Res para \"Ajustar ao DAC USB\" em Áudio e qualidade para usar o EQ.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Ignorado: a saída bit-perfect está ativada, então seu DAC recebe a música sem alterações. Mude a saída Hi-Res para “Ajustar o DAC USB à taxa de amostragem de cada música” em “Áudio &amp; qualidade” para usar o EQ.</string>
     <string name="settings_equalizer_section_5band_eq">Equalizador de 5 bandas</string>
     <string name="settings_equalizer_section_bass_boost">Aumento de graves</string>
     <string name="settings_equalizer_section_loudness">Normalização de volume</string>
@@ -640,7 +640,7 @@
     <string name="settings_equalizer_preset_flat">Plano</string>
     <string name="settings_equalizer_preset_bass_boost">Aumento de graves</string>
     <string name="settings_equalizer_preset_treble_boost">Aumento de agudos</string>
-    <string name="settings_equalizer_preset_vocal">Vocal</string>
+    <string name="settings_equalizer_preset_vocal">Voz</string>
     <string name="settings_equalizer_preset_rock">Rock</string>
     <string name="settings_equalizer_preset_pop">Pop</string>
     <string name="settings_equalizer_preset_jazz">Jazz</string>
