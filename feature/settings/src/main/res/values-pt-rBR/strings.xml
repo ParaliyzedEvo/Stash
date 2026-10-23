@@ -221,7 +221,7 @@
     <string name="settings_download_mode_aac">AAC 320</string>
     <string name="settings_download_mode_aac_desc">AAC do Tidal a 320 kbps. Nunca FLAC. Usa sua cota diária.</string>
     <string name="settings_download_mode_opus">Opus (menor)</string>
-    <string name="settings_download_mode_opus_desc">Do YouTube. Arquivos menores.</string>
+    <string name="settings_download_mode_opus_desc">Do YouTube. Os menores arquivos.</string>
     <string name="settings_flac_quality_title">Qualidade FLAC</string>
     <string name="settings_youtube_quality_title">Qualidade YouTube</string>
     <string name="settings_download_quality_rates_desc">Define as taxas de download do YouTube conforme abaixo e as do JioSaavn em 96 kbps nas opções Baixa e Normal, 160 em Alta e 320 em Melhor e Máx.</string>
@@ -646,5 +646,5 @@
     <string name="settings_equalizer_preset_jazz">Jazz</string>
     <string name="settings_equalizer_preset_classical">Clássico</string>
     <string name="settings_equalizer_save_preset_dialog_title">Salvar predefinição</string>
-    <string name="settings_equalizer_preset_name_label">Nome do preset</string>
+    <string name="settings_equalizer_preset_name_label">Nome da predefinição</string>
 </resources>
