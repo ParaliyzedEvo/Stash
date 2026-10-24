@@ -50,7 +50,7 @@
     <string name="settings_license_label">Licença</string>
     <string name="settings_checking_updates_toast">Verificando atualizações…</string>
     <string name="settings_checking_updates">Verificando…</string>
-    <string name="settings_check_updates">Verifique se há atualizações</string>
+    <string name="settings_check_updates">Verificar atualizações</string>
     <!-- Settings > Hub -->
     <string name="settings_playback_title">Reprodução</string>
     <string name="settings_playback_search_subtitle">Timer de desligamento, rádio com reprodução automática, crossfade, reprodução sem intervalos</string>
@@ -84,7 +84,7 @@
     <string name="settings_disable">Desativar</string>
     <string name="settings_discord_risk_title">Antes de conectar Discord</string>
     <string name="settings_discord_risk_body">O Discord não oferece uma forma oficial de um aplicativo para celular definir seu status, então o Stash faz login como você e usa a sessão da sua própria conta. As regras do Discord consideram isso um self-bot e permitem que a plataforma tome medidas contra a conta.\n\nA fiscalização mira mais o spam do que as atualizações de status, então isso é improvável — mas a conta é sua, e a decisão cabe a você.\n\nAo desconectar, seu status é apagado e o token é excluído deste celular.</string>
-    <string name="settings_discord_risk_connect">Conecte-se mesmo assim</string>
+    <string name="settings_discord_risk_connect">Conectar mesmo assim</string>
     <string name="settings_discord_finish_connecting">Concluir a conexão</string>
     <string name="settings_lastfm_connect_first">Conecte Last.fm primeiro.</string>
     <string name="settings_lastfm_reach_error">Não foi possível acessar o Last.fm. Suas reproduções ficam na fila e serão enviadas posteriormente.</string>
@@ -308,13 +308,13 @@
     <string name="settings_supporter_sheet_title">Tidal &amp; Qobuz ilimitados</string>
     <string name="settings_supporter_sheet_desc">Qualquer valor no Ko-fi desbloqueia acesso ilimitado ao Tidal e ao Qobuz, além de reprodução em FLAC e AAC. Digite o e-mail usado no Ko-fi para receber um código.</string>
     <string name="settings_supporter_kofi_email_label">E-mail Ko-fi</string>
-    <string name="settings_supporter_email_code_button">Envie-me um código por e-mail</string>
+    <string name="settings_supporter_email_code_button">Enviar um código por e-mail</string>
     <string name="settings_supporter_code_sent_desc">Se %1$s estiver em nossa lista Ko-fi, um código está a caminho. Pode demorar um minuto.</string>
     <string name="settings_supporter_code_label">Código de 6 dígitos</string>
     <string name="settings_supporter_unlock_button">Desbloquear</string>
-    <string name="settings_supporter_resend_code_button">Envie um novo código</string>
-    <string name="settings_supporter_different_email_button">Use um e-mail diferente</string>
-    <string name="settings_supporter_donate_button">Doe em Ko-fi</string>
+    <string name="settings_supporter_resend_code_button">Enviar um novo código</string>
+    <string name="settings_supporter_different_email_button">Usar um e-mail diferente</string>
+    <string name="settings_supporter_donate_button">Doar em Ko-fi</string>
     <string name="settings_supporter_remove_code_button">Remover código de apoiador deste dispositivo</string>
     <!-- Settings > Audio & Quality > AudioQualityPicker -->
     <string name="settings_audio_quality_bitrate_size">%1$d kbps ~%2$s MB/min</string>
@@ -404,7 +404,7 @@
     <string name="settings_backup_export_scope_library_only_desc">Músicas, playlists e histórico. As configurações ficam de fora.</string>
     <string name="settings_backup_export_scope_settings_only_label">Somente configurações</string>
     <string name="settings_backup_export_scope_settings_only_desc">Preferências sem biblioteca anexada.</string>
-    <string name="settings_backup_export_choose_file_button">Escolha o arquivo</string>
+    <string name="settings_backup_export_choose_file_button">Escolher arquivo</string>
     <string name="settings_backup_import_dialog_title">Importar backup</string>
     <string name="settings_backup_import_dialog_subtitle">Escolha o que este backup deve restaurar:</string>
     <string name="settings_backup_import_scope_merge_label">Mesclar na biblioteca</string>
@@ -431,7 +431,7 @@
     <string name="settings_storage_location_external_unknown">Pasta externa (cartão SD/USB)</string>
     <string name="settings_storage_location_external_desc">As faixas ficam nesta pasta e permanecem após a desinstalação. Elas ficam visíveis para outros aplicativos e acessíveis via USB.</string>
     <string name="settings_storage_change_folder_button">Alterar pasta</string>
-    <string name="settings_storage_pick_folder_button">Escolha SD / pasta</string>
+    <string name="settings_storage_pick_folder_button">Escolher SD / pasta</string>
     <string name="settings_storage_use_internal_button">Usar armazenamento interno</string>
     <string name="settings_storage_new_downloads_location_note">Novos downloads vão para o local selecionado.</string>
     <string name="settings_storage_folder_structure_label">Estrutura de pastas</string>
@@ -440,7 +440,7 @@
     <string name="settings_storage_layout_single_folder_label">Pasta única</string>
     <string name="settings_storage_layout_single_folder_desc">Todas as faixas diretamente em uma pasta, com nomes no formato artista - título.</string>
     <string name="settings_storage_layout_playlist_label">Por lista de reprodução</string>
-    <string name="settings_storage_layout_playlist_desc">Uma pasta por playlist; faixas sem lista de reprodução usam Artista/Álbum.</string>
+    <string name="settings_storage_layout_playlist_desc">Uma pasta por playlist; faixas sem playlist usam Artista/Álbum.</string>
     <!-- Settings > Library & Storage > Move Library -->
     <string name="settings_storage_move_library_title">Biblioteca existente</string>
     <plurals name="settings_storage_move_library_has_external_desc">
@@ -573,7 +573,7 @@
         <item quantity="other">Baixar %d novamente</item>
     </plurals>
     <string name="settings_library_health_section_verify_library">Verificar biblioteca</string>
-    <string name="settings_library_health_verify_idle_desc">Reconcilie a fila de downloads com sua biblioteca e reconstrua as estatísticas de faixas e de armazenamento mostradas na guia Sincronizar. Isso não altera as listas de reprodução nem aciona qualquer sincronização de rede.</string>
+    <string name="settings_library_health_verify_idle_desc">Reconcilie a fila de downloads com sua biblioteca e reconstrua as estatísticas de faixas e de armazenamento mostradas na guia Sincronização. Isso não altera as playlists nem aciona qualquer sincronização de rede.</string>
     <string name="settings_library_health_verify_button">Verificar</string>
     <string name="settings_library_health_checking_library_progress">Verificando biblioteca… %1$d / %2$d</string>
     <plurals name="settings_library_health_verified_missing_files">
@@ -593,7 +593,7 @@
         <item quantity="one">%d faixa ainda não baixada verificada — nenhum arquivo correspondente foi encontrado no disco.</item>
         <item quantity="other">%d faixas ainda não baixadas verificadas — nenhum arquivo correspondente foi encontrado no disco.</item>
     </plurals>
-    <string name="settings_library_health_verify_again_button">Verifique novamente</string>
+    <string name="settings_library_health_verify_again_button">Verificar novamente</string>
     <string name="settings_library_health_verification_failed">A verificação não pôde ser concluída: %s</string>
     <string name="settings_library_health_retry">Tentar novamente</string>
     <string name="settings_library_health_section_quality_info">Informação de qualidade</string>
@@ -603,7 +603,7 @@
     <string name="settings_library_health_refresh_button">Atualizar</string>
     <string name="settings_library_health_section_flac_upgrades">Atualizações FLAC</string>
     <string name="settings_library_health_flac_upgrades_desc">Procure versões sem perdas das faixas baixadas que ainda não estão em FLAC. A busca continua em segundo plano. Para executá-la após cada sincronização, ative esta opção em “Áudio &amp; qualidade”.</string>
-    <string name="settings_library_health_check_upgrades_button">Verifique se há atualizações</string>
+    <string name="settings_library_health_check_upgrades_button">Verificar atualizações</string>
     <string name="settings_library_health_section_lyrics">Letra da música</string>
     <string name="settings_library_health_fetch_lyrics_title">Buscar letras</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">Na fila, aguardando uma conexão adequada. Toque para começar agora em qualquer rede.</string>
