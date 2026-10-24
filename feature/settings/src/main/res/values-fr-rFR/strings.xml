@@ -131,7 +131,7 @@
     <string name="settings_yt_sync_dialog_risk_title">Risques</string>
     <string name="settings_yt_sync_dialog_risk_body">Le risque que YouTube limite le nombre de requêtes de votre compte est faible, mais pas nul. Stash surveille les erreurs et se met en pause s’il détecte un problème.</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
-    <string name="settings_like_mirror_title">Synchroniser vos J’aime</string>
+    <string name="settings_like_mirror_title">Synchroniser vos titres aimés</string>
     <string name="settings_like_mirror_subtitle">Synchronisez les cœurs avec vos comptes. Ne concerne que les nouveaux J’aime.</string>
     <string name="settings_like_mirror_connect_first">Connectez d’abord %1$s</string>
     <!-- Settings > Accounts > LastFmSection -->
@@ -394,7 +394,7 @@
     <string name="settings_backup_status_error_title">Erreur</string>
     <string name="settings_backup_status_processing">Traitement…</string>
     <string name="settings_backup_status_ok">OK</string>
-    <string name="settings_backup_export_dialog_title">Exporter une sauvegarde</string>
+    <string name="settings_backup_export_dialog_title">Exporter la sauvegarde</string>
     <string name="settings_backup_export_dialog_subtitle">Choisissez le contenu de cette sauvegarde :</string>
     <string name="settings_backup_export_scope_likes_only_label">Titres aimés uniquement</string>
     <string name="settings_backup_export_scope_likes_only_desc">Tout ce que vous avez aimé, rien d’autre. Fichier léger.</string>
@@ -405,7 +405,7 @@
     <string name="settings_backup_export_scope_settings_only_label">Paramètres uniquement</string>
     <string name="settings_backup_export_scope_settings_only_desc">Préférences sans bibliothèque associée.</string>
     <string name="settings_backup_export_choose_file_button">Choisir un fichier</string>
-    <string name="settings_backup_import_dialog_title">Importer une sauvegarde</string>
+    <string name="settings_backup_import_dialog_title">Importer la sauvegarde</string>
     <string name="settings_backup_import_dialog_subtitle">Choisissez les éléments à restaurer :</string>
     <string name="settings_backup_import_scope_merge_label">Fusionner avec la bibliothèque</string>
     <string name="settings_backup_import_scope_merge_desc">Ajoute à la bibliothèque les titres et playlists manquants à partir de la sauvegarde. Rien n’est supprimé ni remplacé ; les paramètres restent inchangés.</string>
@@ -603,7 +603,7 @@
     <string name="settings_library_health_refresh_button">Actualiser</string>
     <string name="settings_library_health_section_flac_upgrades">Mises à niveau vers le FLAC</string>
     <string name="settings_library_health_flac_upgrades_desc">Recherche des versions sans perte pour les titres téléchargés qui ne sont pas encore en FLAC. La recherche continue en arrière-plan. Pour la lancer après chaque synchronisation, activez cette option dans « Audio &amp; qualité ».</string>
-    <string name="settings_library_health_check_upgrades_button">Rechercher des versions de meilleure qualité</string>
+    <string name="settings_library_health_check_upgrades_button">Rechercher des mises à niveau</string>
     <string name="settings_library_health_section_lyrics">Paroles</string>
     <string name="settings_library_health_fetch_lyrics_title">Récupérer les paroles</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">En attente d’une connexion adaptée. Appuyez pour démarrer maintenant sur n’importe quel réseau.</string>
