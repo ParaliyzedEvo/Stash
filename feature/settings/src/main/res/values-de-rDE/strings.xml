@@ -359,7 +359,7 @@
     <string name="settings_lyrics_recheck_dialog_body">Stash fragt bei den Songtextdiensten alle Songs ab, die noch keine wortsynchronisierten Songtexte haben – einen Song alle paar Sekunden, sodass eine große Bibliothek Stunden dauern kann. Der Vorgang läuft nur über WLAN, wenn der Akku ausreichend geladen ist, und du kannst ihn jederzeit abbrechen. Songs, für die keine Songtexte gefunden werden, behalten ihre bisherigen.</string>
     <string name="settings_lyrics_recheck_dialog_confirm">Erneut prüfen</string>
     <string name="settings_lyrics_recheck_progress">Wird geprüft… %1$,d / %2$,d</string>
-    <string name="settings_lyrics_recheck_starting">Wird geprüft…</string>
+    <string name="settings_lyrics_recheck_starting">Prüfe…</string>
     <string name="settings_lyrics_recheck_waiting">Wartet auf WLAN und einen ausreichend geladenen Akku…</string>
     <string name="settings_lyrics_recheck_last_checked">Zuletzt geprüft: %1$s</string>
     <string name="settings_lyrics_recheck_partway">Vorzeitig angehalten. Tippe, um dort weiterzumachen, wo der Vorgang aufgehört hat.</string>
