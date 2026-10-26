@@ -30,7 +30,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:localeConfig="@xml/_generated_res_locale_config"
         android:theme="@style/Theme.Stash">
         <!-- Google Cast (spec docs/superpowers/specs/2026-10-06-google-cast-design.md). -->
         <meta-data
