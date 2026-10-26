@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Stash</string>
+    <string name="resume_playback_short">Resumo</string>
+    <string name="resume_playback_long">Retomar Reprodução</string>
+    <string name="cast_connect_failed">Não foi possível conectar ao %1$s</string>
+</resources>
