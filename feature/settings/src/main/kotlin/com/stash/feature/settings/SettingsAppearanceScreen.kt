@@ -18,6 +18,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.AmbientStyle
@@ -105,6 +119,9 @@ fun SettingsAppearanceScreen(
             }
         }
         SettingsGroupCard(rows = theme)
+
+        SettingsSectionLabel(stringResource(R.string.settings_language_section))
+        SettingsGroupCard(rows = listOf({ LanguageRow() }))
 
         SettingsSectionLabel(stringResource(R.string.settings_display_size_section))
         SettingsGroupCard(
@@ -337,4 +354,56 @@ private fun titleButtonLabel(button: TitleButton): String = stringResource(
 @Composable
 private fun SegmentedRow(content: @Composable () -> Unit) {
     Box(modifier = Modifier.padding(10.dp)) { content() }
+}
+
+@Composable
+private fun LanguageRow() {
+    val context = LocalContext.current
+    val languages = remember { AppLanguage.supported(context) }
+    var showDialog by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(AppLanguage.current(context)) }
+
+    SettingsNavRow(
+        title = stringResource(R.string.settings_language_title),
+        subtitle = selected?.let(AppLanguage::nativeName)
+            ?: stringResource(R.string.settings_language_system_default),
+        onClick = { showDialog = true },
+    )
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(stringResource(R.string.settings_language_title)) },
+            text = {
+                LazyColumn {
+                    val options = listOf<String?>(null) + languages
+                    items(options) { tag ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selected = tag
+                                    showDialog = false
+                                    AppLanguage.set(tag) // activity recreates itself
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selected == tag, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                tag?.let(AppLanguage::nativeName)
+                                    ?: stringResource(R.string.settings_language_system_default),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
+        )
+    }
 }

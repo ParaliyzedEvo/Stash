@@ -244,6 +244,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true; buildConfig = true }
+    androidResources { generateLocaleConfig = true }
     packaging {
         jniLibs {
             // Must extract native libs to disk so ffmpeg/ffprobe executables and
@@ -296,6 +297,7 @@ dependencies {
     debugImplementation(libs.room.runtime)
     debugImplementation(libs.room.ktx)
     implementation(libs.core.ktx)
+    implementation(libs.appcompat)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)
     // ProcessLifecycleOwner — used by StashApplication to start/stop
