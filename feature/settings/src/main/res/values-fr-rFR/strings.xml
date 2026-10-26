@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">Stash sur le Web</string>
-    <string name="web_library_export_subtitle">Then in the web player: Settings › Your library › Import</string>
+    <string name="web_library_export_subtitle">Puis, dans le lecteur Web : Paramètres › Votre bibliothèque › Importer</string>
     <string name="web_library_export_button">Exporter vers Stash sur le Web</string>
     <string name="web_library_export_working_title">Exportation de votre bibliothèque</string>
     <string name="web_library_export_done_title">Prêt pour le Web</string>
@@ -32,16 +32,16 @@
     <string name="settings_about_title">À propos &amp; aide</string>
     <string name="settings_diagnostics_section">Diagnostics</string>
     <string name="settings_share_latest_crash">Partager le dernier rapport de plantage</string>
-    <string name="settings_attach_most_recent_crash">Attach the last crash to a bug report</string>
+    <string name="settings_attach_most_recent_crash">Joindre le dernier plantage à un rapport de bogue</string>
     <string name="settings_no_recent_crashes">Aucun plantage récent.</string>
     <string name="settings_no_crash_report_toast">Aucun rapport de plantage à partager.</string>
     <string name="settings_crash_report_subject">Rapport de plantage Stash</string>
     <string name="settings_share_crash_report_chooser">Partager le rapport de plantage</string>
     <string name="settings_no_app_share_report_toast">Aucune application ne permet de partager le rapport.</string>
     <string name="settings_share_diagnostics_bundle">Partager les diagnostics</string>
-    <string name="settings_bundle_recent_logs">Logs and connection status, no passwords</string>
+    <string name="settings_bundle_recent_logs">Journaux et état de la connexion, sans mot de passe</string>
     <string name="settings_share_diagnostics">Partager les diagnostics</string>
-    <string name="settings_help_section">Help</string>
+    <string name="settings_help_section">Aide</string>
     <string name="settings_about_section">À propos</string>
     <string name="settings_update_on_latest">Vous utilisez la dernière version (%1$s)</string>
     <string name="settings_update_available">Mise à jour disponible : %1$s</string>
@@ -49,8 +49,8 @@
     <string name="settings_update_check_failed">Impossible de vérifier les mises à jour — réessayez plus tard</string>
     <string name="settings_version_label">Version</string>
     <string name="settings_license_label">Licence</string>
-    <string name="settings_album_art_credit">Album art</string>
-    <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_album_art_credit">Pochette d\'album</string>
+    <string name="settings_album_art_credit_detail">Les pochettes arrière et les pages intérieures proviennent de Cover Art Archive et de Discogs. Cette application utilise l\'API de Discogs, mais n\'est ni affiliée à Discogs, ni sponsorisée ni approuvée par cette société. « Discogs » est une marque déposée de Zink Media, LLC.</string>
     <string name="settings_checking_updates_toast">Vérification des mises à jour…</string>
     <string name="settings_checking_updates">Vérification…</string>
     <string name="settings_check_updates">Rechercher des mises à jour</string>
@@ -67,14 +67,14 @@
     <string name="settings_support_title">Soutenir Stash</string>
     <string name="settings_support_subtitle">Stash est gratuit et développé par des bénévoles. Si l’app vous est utile, pensez à soutenir le projet.</string>
     <string name="settings_support_donate">Faire un don</string>
-    <string name="settings_donate_sheet_title">Support Stash</string>
-    <string name="settings_donate_sheet_thanks">Stash is free. Thank you for helping keep it going.</string>
-    <string name="settings_donate_role_owner">Stash creator, main dev</string>
-    <string name="settings_donate_role_codev">Co-develops Stash</string>
+    <string name="settings_donate_sheet_title">Assistance Stash</string>
+    <string name="settings_donate_sheet_thanks">Stash est gratuit. Merci de nous aider à le faire vivre.</string>
+    <string name="settings_donate_role_owner">Créateur de Stash, développeur principal</string>
+    <string name="settings_donate_role_codev">Participants au développement de Stash</string>
     <string name="settings_donate_kofi">Ko-fi</string>
     <string name="settings_donate_paypal">PayPal</string>
     <string name="settings_donate_sponsors">GitHub Sponsors</string>
-    <string name="settings_donate_upi">UPI (India)</string>
+    <string name="settings_donate_upi">UPI (Inde)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
     <string name="settings_support_star">Mettre une étoile</string>
     <!-- Settings > Accounts & Sync -->
@@ -162,17 +162,17 @@
     <string name="settings_unplayed_mixes_first_subtitle">Mixes you\'ve barely played lead</string>
     <string name="settings_home_mixes_favorite_hint">Long-press a mix on Home to favorite it: favorites always come first.</string>
     <string name="settings_home_layout_summary">%1$d of %2$d sections shown</string>
-    <string name="settings_language_section">Language</string>
-    <string name="settings_language_title">App language</string>
+    <string name="settings_language_section">Langue</string>
+    <string name="settings_language_title">Langue de l\'application</string>
     <string name="settings_language_system_default">System default</string>
     <string name="settings_theme_section">Thème</string>
     <string name="settings_theme_dark">Sombre</string>
     <string name="settings_theme_light">Clair</string>
     <string name="settings_display_size_section">Taille d’affichage</string>
     <string name="settings_ui_scale_title">Échelle de l’interface</string>
-    <string name="settings_ui_scale_subtitle">Text and layout size across the app</string>
+    <string name="settings_ui_scale_subtitle">Taille du texte et mise en page dans l\'ensemble de l\'application</string>
     <string name="settings_amoled_title">Noir pur (AMOLED)</string>
-    <string name="settings_amoled_subtitle">Black backgrounds in dark theme</string>
+    <string name="settings_amoled_subtitle">Fonds noirs dans le thème sombre</string>
     <string name="settings_now_playing_section">En lecture</string>
     <string name="settings_ambient_motion_title">Animation ambiante</string>
     <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
