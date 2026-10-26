@@ -1,0 +1,665 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
+    <string name="web_library_export_title">Stash sur le Web</string>
+    <string name="web_library_export_subtitle">Then in the web player: Settings › Your library › Import</string>
+    <string name="web_library_export_button">Exporter vers Stash sur le Web</string>
+    <string name="web_library_export_working_title">Exportation de votre bibliothèque</string>
+    <string name="web_library_export_done_title">Prêt pour le Web</string>
+    <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
+    <string name="web_library_export_done_body">%1$s, %2$s et %3$s ont été enregistrés. Ouvrez Stash sur le Web et importez ce fichier dans Paramètres › Votre bibliothèque.</string>
+    <plurals name="web_library_export_likes">
+        <item quantity="one">%d j’aime</item>
+        <item quantity="other">%d j’aime</item>
+    </plurals>
+    <plurals name="web_library_export_playlists">
+        <item quantity="one">%d playlist</item>
+        <item quantity="other">%d playlists</item>
+    </plurals>
+    <plurals name="web_library_export_plays">
+        <item quantity="one">%d écoute</item>
+        <item quantity="other">%d écoutes</item>
+    </plurals>
+    <string name="web_library_export_failed_title">Exportation impossible</string>
+    <string name="web_library_export_failed_body">Impossible d’écrire le fichier. Réessayez ou choisissez un autre emplacement.</string>
+    <string name="web_library_export_ok">OK</string>
+    <string name="web_library_import_button">Importer depuis Stash sur le Web</string>
+    <!-- %1$s: the browser's name ("Chrome on Windows"). -->
+    <string name="web_library_sent_title">Envoyé</string>
+    <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
+    <string name="web_library_sent_body">%2$s, %3$s et %4$s ont été envoyés à %1$s. Vous devrez y confirmer leur ajout.</string>
+    <!-- Settings > About -->
+    <string name="settings_about_title">À propos &amp; aide</string>
+    <string name="settings_diagnostics_section">Diagnostics</string>
+    <string name="settings_share_latest_crash">Partager le dernier rapport de plantage</string>
+    <string name="settings_attach_most_recent_crash">Attach the last crash to a bug report</string>
+    <string name="settings_no_recent_crashes">Aucun plantage récent.</string>
+    <string name="settings_no_crash_report_toast">Aucun rapport de plantage à partager.</string>
+    <string name="settings_crash_report_subject">Rapport de plantage Stash</string>
+    <string name="settings_share_crash_report_chooser">Partager le rapport de plantage</string>
+    <string name="settings_no_app_share_report_toast">Aucune application ne permet de partager le rapport.</string>
+    <string name="settings_share_diagnostics_bundle">Partager les diagnostics</string>
+    <string name="settings_bundle_recent_logs">Logs and connection status, no passwords</string>
+    <string name="settings_share_diagnostics">Partager les diagnostics</string>
+    <string name="settings_help_section">Help</string>
+    <string name="settings_about_section">À propos</string>
+    <string name="settings_update_on_latest">Vous utilisez la dernière version (%1$s)</string>
+    <string name="settings_update_available">Mise à jour disponible : %1$s</string>
+    <string name="settings_update_see_releases">voir les versions</string>
+    <string name="settings_update_check_failed">Impossible de vérifier les mises à jour — réessayez plus tard</string>
+    <string name="settings_version_label">Version</string>
+    <string name="settings_license_label">Licence</string>
+    <string name="settings_album_art_credit">Album art</string>
+    <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_checking_updates_toast">Vérification des mises à jour…</string>
+    <string name="settings_checking_updates">Vérification…</string>
+    <string name="settings_check_updates">Rechercher des mises à jour</string>
+    <!-- Settings > Hub -->
+    <string name="settings_playback_title">Lecture</string>
+    <string name="settings_audio_quality_title">Audio &amp; qualité</string>
+    <string name="settings_accounts_sync_title">Comptes &amp; synchronisation</string>
+    <string name="settings_library_storage_title">Bibliothèque &amp; stockage</string>
+    <string name="settings_appearance_title">Apparence</string>
+    <string name="settings_search_no_results">Aucun paramètre trouvé pour « %1$s »</string>
+    <string name="settings_search_placeholder">Rechercher dans les paramètres</string>
+    <string name="settings_search_clear">Effacer la recherche</string>
+    <!-- Settings > Support Banner -->
+    <string name="settings_support_title">Soutenir Stash</string>
+    <string name="settings_support_subtitle">Stash est gratuit et développé par des bénévoles. Si l’app vous est utile, pensez à soutenir le projet.</string>
+    <string name="settings_support_donate">Faire un don</string>
+    <string name="settings_donate_sheet_title">Support Stash</string>
+    <string name="settings_donate_sheet_thanks">Stash is free. Thank you for helping keep it going.</string>
+    <string name="settings_donate_role_owner">Stash creator, main dev</string>
+    <string name="settings_donate_role_codev">Co-develops Stash</string>
+    <string name="settings_donate_kofi">Ko-fi</string>
+    <string name="settings_donate_paypal">PayPal</string>
+    <string name="settings_donate_sponsors">GitHub Sponsors</string>
+    <string name="settings_donate_upi">UPI (India)</string>
+    <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
+    <string name="settings_support_star">Mettre une étoile</string>
+    <!-- Settings > Accounts & Sync -->
+    <string name="settings_accounts_connections_section">Connexions</string>
+    <string name="settings_yt_music_error_title">YouTube Music</string>
+    <string name="settings_ok">OK</string>
+    <string name="settings_cancel">Annuler</string>
+    <string name="settings_enable">Activer</string>
+    <string name="settings_disable">Désactiver</string>
+    <string name="settings_discord_risk_title">Avant de connecter Discord</string>
+    <string name="settings_discord_risk_body">Discord ne propose aucun moyen officiel de définir votre statut depuis une application mobile. Stash se connecte donc en votre nom et utilise la session de votre compte. Selon les règles de Discord, cela constitue un self-bot, et Discord peut prendre des mesures à l’encontre de votre compte.\n\nL’application de ces règles vise surtout le spam, et non les mises à jour de statut ; le risque de sanction est donc faible. Mais il s’agit de votre compte, à vous de décider.\n\nEn vous déconnectant, votre statut est effacé et le jeton est supprimé de ce téléphone.</string>
+    <string name="settings_discord_risk_connect">Connecter quand même</string>
+    <string name="settings_discord_finish_connecting">Terminer la connexion</string>
+    <string name="settings_lastfm_connect_first">Connectez d’abord Last.fm.</string>
+    <string name="settings_lastfm_reach_error">Impossible de joindre Last.fm. Vos écoutes restent en attente et seront envoyées plus tard.</string>
+    <string name="settings_lastfm_no_new_scrobbles">Aucun nouveau scrobble à envoyer.</string>
+    <plurals name="settings_lastfm_scrobbles_sent">
+        <item quantity="one">%d scrobble envoyé à Last.fm.</item>
+        <item quantity="other">%d scrobbles envoyés à Last.fm.</item>
+    </plurals>
+    <!-- Settings > Accounts > AccountConnectionCard -->
+    <string name="settings_account_reconnect">Reconnecter</string>
+    <string name="settings_account_disconnect">Déconnecter</string>
+    <string name="settings_account_not_connected">Not connected</string>
+    <string name="settings_like_mirror_row_title">Like on %1$s too</string>
+    <string name="settings_like_mirror_lastfm_title">Love on Last.fm too</string>
+    <string name="settings_like_mirror_row_subtitle">Songs you heart in Stash from now on</string>
+    <string name="settings_listenbrainz_dialog_title">Connect ListenBrainz</string>
+    <string name="settings_scrobbles_send_now">Send now</string>
+    <plurals name="settings_scrobbles_waiting">
+        <item quantity="one">%d play waiting to send</item>
+        <item quantity="other">%d plays waiting to send</item>
+    </plurals>
+    <string name="settings_account_connect">Connecter</string>
+    <!-- Settings > Accounts > DisconnectAccountDialog -->
+    <string name="settings_disconnect_account_title">Déconnecter %1$s ?</string>
+    <string name="settings_disconnect_account_body">Stash déconnecte votre compte %1$s sur ce téléphone et arrête sa synchronisation. Les titres de %1$s dont le téléchargement est encore en attente sont retirés de la file d’attente.\n\nLes titres déjà téléchargés restent dans votre bibliothèque et vous pouvez vous reconnecter à tout moment.</string>
+    <!-- Settings > Accounts > LikeMirrorWarningDialog -->
+    <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
+    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.\n\nCette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
+    <string name="settings_like_mirror_warning_confirm">J’ai compris</string>
+    <!-- Settings > Accounts > YouTubeHistorySyncSection -->
+    <string name="settings_yt_sync_title">Add plays to your YouTube Music history</string>
+    <string name="settings_yt_sync_retry">Réessayer la synchronisation YouTube</string>
+    <string name="settings_yt_status_up_to_date">À jour</string>
+    <string name="settings_yt_status_pending">%1$d en attente</string>
+    <string name="settings_yt_status_pending_offline">%1$d en attente · hors ligne</string>
+    <string name="settings_yt_status_auth_failed">Connexion à YT Music perdue — reconnectez-vous</string>
+    <string name="settings_yt_status_protocol_broken">Désactivé en raison d’erreurs — sera réactivé dans la prochaine mise à jour</string>
+    <string name="settings_yt_status_disabled">Désactivé</string>
+    <string name="settings_yt_sync_dialog_title">Add your plays to YouTube Music history?</string>
+    <string name="settings_yt_sync_dialog_body">Songs you finish in Stash show up in your YouTube Music history, so its recommendations learn from them.</string>
+    <string name="settings_yt_sync_dialog_risk_body">This uses an unofficial YouTube endpoint. It could stop working, and there\'s a small chance YouTube rate-limits your account. Stash pauses itself if it sees errors.</string>
+    <!-- Settings > Accounts > LikeMirrorSection -->
+    <!-- Settings > Accounts > LastFmSection -->
+    <string name="settings_lastfm_waiting_approval_body">Approve Stash on last.fm, then tap Finish.</string>
+    <string name="settings_lastfm_finish_connecting">Finish</string>
+    <string name="settings_lastfm_connected_as">Connecté en tant que %1$s</string>
+    <string name="settings_lastfm_first_artist_only_title">Scrobbler uniquement le premier artiste</string>
+    <string name="settings_lastfm_first_artist_only_desc">Collabs count toward the main artist.</string>
+    <string name="settings_lastfm_syncing">Synchronisation…</string>
+    <!-- Settings > Accounts > ListenBrainzSection -->
+    <string name="settings_listenbrainz_title">ListenBrainz</string>
+    <string name="settings_listenbrainz_paste_token">Paste your user token from listenbrainz.org/profile. Plays are sent from now on.</string>
+    <string name="settings_listenbrainz_user_token_label">Jeton utilisateur</string>
+    <string name="settings_listenbrainz_validating">Vérification de votre jeton…</string>
+    <string name="settings_listenbrainz_connected">Connected</string>
+    <string name="settings_listenbrainz_now_playing_title">Show what you\'re playing now</string>
+    <!-- Settings > Common / Reusable components -->
+    <string name="settings_back">Retour</string>
+    <string name="settings_reset">Réinitialiser</string>
+    <string name="settings_beta">Bêta</string>
+    <string name="settings_dismiss">Ignorer</string>
+    <!-- Settings > Appearance -->
+    <string name="settings_theme_system">System</string>
+    <string name="settings_home_section">Home</string>
+    <string name="settings_home_mixes_section">Mixes</string>
+    <string name="settings_mix_rotation_title">Reshuffle mixes</string>
+    <string name="settings_mix_rotation_off">Off</string>
+    <string name="settings_mix_rotation_daily">Daily</string>
+    <string name="settings_mix_rotation_3_days">Every 3 days</string>
+    <string name="settings_mix_rotation_weekly">Weekly</string>
+    <string name="settings_mix_rotation_footer">Made for you and Mood &amp; decades bring different mixes to the front at midnight. Off: the newest first.</string>
+    <string name="settings_unplayed_mixes_first_title">Unplayed mixes first</string>
+    <string name="settings_unplayed_mixes_first_subtitle">Mixes you\'ve barely played lead</string>
+    <string name="settings_home_mixes_favorite_hint">Long-press a mix on Home to favorite it: favorites always come first.</string>
+    <string name="settings_home_layout_summary">%1$d of %2$d sections shown</string>
+    <string name="settings_theme_section">Thème</string>
+    <string name="settings_theme_dark">Sombre</string>
+    <string name="settings_theme_light">Clair</string>
+    <string name="settings_display_size_section">Taille d’affichage</string>
+    <string name="settings_ui_scale_title">Échelle de l’interface</string>
+    <string name="settings_ui_scale_subtitle">Text and layout size across the app</string>
+    <string name="settings_amoled_title">Noir pur (AMOLED)</string>
+    <string name="settings_amoled_subtitle">Black backgrounds in dark theme</string>
+    <string name="settings_now_playing_section">En lecture</string>
+    <string name="settings_ambient_motion_title">Animation ambiante</string>
+    <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
+    <string name="settings_cycle_album_art_title">Cycle album art</string>
+    <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
+    <string name="settings_ambient_style_soft_glow">Lueur douce</string>
+    <string name="settings_ambient_style_classic">Classique</string>
+    <string name="settings_open_stash_on_section">Ouvrir Stash sur</string>
+    <string name="settings_start_tab_home">Accueil</string>
+    <string name="settings_start_tab_library">Bibliothèque</string>
+    <string name="settings_start_tab_search">Recherche</string>
+    <string name="settings_home_layout_section">Disposition de l’accueil</string>
+    <string name="settings_home_layout_desc">Réorganisez les sections de l’accueil ou masquez celles que vous n’utilisez pas. La bannière « Daily Discover » reste en haut.</string>
+    <string name="settings_home_section_community_desc">Playlists et titres appréciés par les autres utilisateurs de Stash. Vos publications affichent votre nom.</string>
+    <string name="settings_home_section_listening_desc">Écoutes récentes et historique. Apparaît après votre première écoute.</string>
+    <string name="settings_home_show_liked_title">Afficher les titres aimés sur l’accueil</string>
+    <string name="settings_home_show_liked_subtitle">Vos J’aime Stash, Spotify et YouTube réunis dans une carte de Vos playlists</string>
+    <string name="settings_home_section_discover">Daily Discover &amp; vos mixes</string>
+    <string name="settings_home_section_your_playlists">Vos playlists</string>
+    <string name="settings_home_section_new_releases">Nouveautés</string>
+    <string name="settings_home_section_qobuz_playlists">Playlists Qobuz</string>
+    <string name="settings_home_section_top_albums">Meilleurs albums</string>
+    <string name="settings_home_section_made_for_you">Pour vous</string>
+    <string name="settings_home_section_radios">Radios</string>
+    <string name="settings_home_section_mood_decades">Ambiances et décennies</string>
+    <string name="settings_home_section_community">Communauté</string>
+    <string name="settings_home_section_your_listening">Vos écoutes</string>
+    <string name="settings_home_section_move_up">Déplacer %1$s vers le haut</string>
+    <string name="settings_home_section_move_down">Déplacer %1$s vers le bas</string>
+    <string name="settings_home_section_show_desc">Afficher %1$s sur l’accueil</string>
+    <!-- Settings > Audio & Quality -->
+    <string name="settings_download_quality_title">Qualité des téléchargements</string>
+    <string name="settings_download_mode_lossless">Sans perte (FLAC)</string>
+    <string name="settings_download_mode_lossless_desc">Meilleure qualité, fichiers les plus volumineux.</string>
+    <string name="settings_download_mode_aac">AAC 320</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps. Uses your daily allowance.</string>
+    <string name="settings_download_mode_opus">Opus (fichiers les plus légers)</string>
+    <string name="settings_download_mode_opus_desc">From YouTube.</string>
+    <string name="settings_flac_quality_title">Qualité FLAC</string>
+    <string name="settings_youtube_quality_title">Qualité YouTube</string>
+    <string name="settings_download_quality_rates_desc">Définit les débits des téléchargements YouTube ci-dessous, et ceux de JioSaavn à 96 kbit/s en Basse et Normale, 160 en Élevée, 320 en Meilleure et Max.</string>
+    <string name="settings_save_data_title">Économiser les données</string>
+    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="settings_lossless_title">Sans perte</string>
+    <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
+    <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
+    <string name="settings_lossless_subtitle_active">Streams in FLAC</string>
+    <string name="settings_qobuz_no_source_warning">Aucune source sans perte configurée — connectez votre compte Qobuz ci-dessous</string>
+    <string name="settings_qobuz_account_title">Votre compte Qobuz</string>
+    <string name="settings_connected_as">Connecté en tant que %1$s</string>
+    <string name="settings_qobuz_connected_token">Connecté (jeton)</string>
+    <string name="settings_disconnect">Déconnecter</string>
+    <string name="settings_qobuz_signin_desc">Connectez-vous avec votre abonnement Qobuz pour bénéficier d’un son sans perte garanti.</string>
+    <string name="settings_qobuz_email_label">E-mail Qobuz</string>
+    <string name="settings_password_label">Mot de passe</string>
+    <string name="settings_connecting">Connexion…</string>
+    <string name="settings_connect">Connecter</string>
+    <string name="settings_auto_flac_upgrade_title">Upgrade to FLAC after sync</string>
+    <string name="settings_auto_flac_upgrade_subtitle">Finds lossless versions of older downloads</string>
+    <string name="settings_tidal_aac_fallback_title">AAC Tidal en l’absence de FLAC</string>
+    <string name="settings_tidal_aac_fallback_subtitle">Tidal\'s 320 kbps AAC when there\'s no FLAC</string>
+    <string name="settings_lossless_sources_title">Lossless sources</string>
+    <string name="settings_lossless_sources_needs_setup">Not set up yet</string>
+    <string name="settings_output_section">Output</string>
+    <string name="settings_hires_output_title">Hi-Res output</string>
+    <string name="settings_hires_value_match_rate">Match DAC</string>
+    <string name="settings_hires_value_bit_perfect">Bit-perfect</string>
+    <string name="settings_lossless_tier_max_short">Max</string>
+    <string name="settings_lossless_tier_hires_short">Hi-Res</string>
+    <string name="settings_lossless_tier_cd_short">CD</string>
+    <string name="settings_streaming_on_wifi_title">Streaming on Wi-Fi</string>
+    <string name="settings_streaming_on_cellular_title">Streaming on cellular</string>
+    <string name="settings_streaming_section">Streaming</string>
+    <string name="settings_on_wifi">En Wi-Fi</string>
+    <string name="settings_on_cellular">Sur réseau mobile</string>
+    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
+    <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
+    <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Privilégier l’AAC de Tidal en streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Smaller streams when Tidal has the song</string>
+    <string name="settings_state_expanded">développé</string>
+    <string name="settings_state_collapsed">réduit</string>
+    <string name="settings_lossy_fallback_title">Source de secours avec perte</string>
+    <string name="settings_state_on">activé</string>
+    <string name="settings_state_off">désactivé</string>
+    <string name="settings_lossy_fallback_switch_label">JioSaavn, then YouTube, when there\'s no lossless match</string>
+    <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, then YouTube, when Tidal has no AAC</string>
+    <string name="settings_advanced">Avancé</string>
+    <string name="settings_custom_relay_desc">Configurez Stash pour utiliser votre propre serveur relais audio sans perte. Il est prioritaire sur celui de Stash.</string>
+    <string name="settings_custom_endpoint_label">Point de terminaison sans perte personnalisé</string>
+    <string name="settings_url_placeholder">https://…</string>
+    <string name="settings_test">Tester</string>
+    <string name="settings_testing">Test…</string>
+    <string name="settings_reachable">Accessible</string>
+    <string name="settings_not_reachable">Inaccessible</string>
+    <string name="settings_bitchord_desc">Facultatif : utilisez votre propre serveur BitChord pour Tidal au lieu de celui de Stash. Laissez vide sinon.</string>
+    <string name="settings_bitchord_server_label">Serveur Tidal personnalisé (facultatif)</string>
+    <string name="settings_access_token_label">Jeton d’accès (facultatif)</string>
+    <string name="settings_bitchord_token_saved">Un jeton est enregistré</string>
+    <string name="settings_bitchord_token_hint">Uniquement si votre serveur utilise ACCESS_TOKEN</string>
+    <string name="settings_squid_captcha_desc">Captcha qobuz.squid.wtf : collez directement la valeur du cookie captcha_verified_at.</string>
+    <string name="settings_squid_captcha_label">Valeur captcha_verified_at</string>
+    <string name="settings_squid_captcha_placeholder">p. ex. 1777687404951</string>
+    <string name="settings_reset_lossless_attempts">Réinitialiser les tentatives sans perte</string>
+    <string name="settings_equalizer_title">Égaliseur</string>
+    <!-- Settings > Audio & Quality > Lossless tiers -->
+    <string name="settings_lossless_tier_max">Max (24 bits/192 kHz)</string>
+    <string name="settings_lossless_tier_max_hint">~140 Mo / 4 min</string>
+    <string name="settings_lossless_tier_hires">Hi-Res (24 bits/96 kHz)</string>
+    <string name="settings_lossless_tier_hires_hint">~70 Mo / 4 min</string>
+    <string name="settings_lossless_tier_cd">CD (16 bits/44,1 kHz)</string>
+    <string name="settings_lossless_tier_cd_hint">~28 Mo / 4 min</string>
+    <!-- Settings > Audio & Quality > HiResOutputSection -->
+    <string name="settings_hires_verdict_idle">Lancez un titre pour voir le traitement du son jusqu’à vos oreilles.</string>
+    <string name="settings_hires_verdict_now">En cours : %1$s</string>
+    <string name="settings_hires_verdict_now_with_device">En cours : %1$s · %2$s</string>
+    <string name="settings_hires_mode_standard">Standard</string>
+    <string name="settings_hires_mode_standard_desc">Android\'s mixer, usually 48 kHz. What every app gets.</string>
+    <string name="settings_hires_mode_match_rate">Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre</string>
+    <string name="settings_hires_mode_match_rate_desc">Your DAC follows each song\'s sample rate, so nothing is resampled.</string>
+    <string name="settings_hires_needs_android_14">Nécessite Android 14 ou une version ultérieure.</string>
+    <string name="settings_hires_mode_bit_perfect">USB bit-perfect</string>
+    <string name="settings_hires_mode_bit_perfect_desc">Untouched audio. EQ, normalization and crossfade turn off; your DAC sets the volume.</string>
+    <string name="settings_hires_footer_note">For USB DACs and USB-C dongles. Bluetooth, the speaker and the headphone jack always go through Android\'s mixer.</string>
+    <string name="settings_hires_bit_perfect_dialog_title">Baissez d’abord le volume du DAC</string>
+    <string name="settings_hires_bit_perfect_dialog_body">En mode bit-perfect, Android ne modifie pas le volume : c’est votre DAC qui le règle. Si votre DAC ne dispose pas de son propre réglage du volume, les touches de volume du téléphone peuvent cesser de fonctionner et la musique risque d’être diffusée au volume maximal.\n\nBaissez le volume avant de lancer la lecture. L’égaliseur, la normalisation et le fondu enchaîné sont contournés lorsque le mode bit-perfect est actif.</string>
+    <string name="settings_hires_bit_perfect_confirm">Utiliser le mode bit-perfect</string>
+    <!-- Settings > Audio & Quality > SupporterSection -->
+    <string name="settings_supporter_active">Mécène · Tidal et Qobuz illimités</string>
+    <string name="settings_supporter_remove_from_device">Retirer de cet appareil</string>
+    <string name="settings_supporter_offer">Tidal &amp; Qobuz illimités pour les soutiens</string>
+    <string name="settings_supporter_sheet_title">Tidal &amp; Qobuz illimités</string>
+    <string name="settings_supporter_sheet_desc">Un don, quel qu’en soit le montant, sur Ko-fi donne accès sans limite à Tidal et Qobuz, ainsi qu’au FLAC et à l’AAC. Saisissez l’adresse e-mail utilisée sur Ko-fi pour recevoir un code.</string>
+    <string name="settings_supporter_kofi_email_label">E-mail Ko-fi</string>
+    <string name="settings_supporter_email_code_button">M’envoyer un code par e-mail</string>
+    <string name="settings_supporter_code_sent_desc">Si %1$s figure dans notre liste Ko-fi, un code est en route. Cela peut prendre une minute.</string>
+    <string name="settings_supporter_code_label">Code à 6 chiffres</string>
+    <string name="settings_supporter_unlock_button">Déverrouiller</string>
+    <string name="settings_supporter_resend_code_button">Envoyer un nouveau code</string>
+    <string name="settings_supporter_different_email_button">Utiliser une autre adresse e-mail</string>
+    <string name="settings_supporter_donate_button">Faire un don sur Ko-fi</string>
+    <string name="settings_supporter_remove_code_button">Supprimer le code de soutien de cet appareil</string>
+    <!-- Settings > Audio & Quality > AudioQualityPicker -->
+    <string name="settings_audio_quality_bitrate_size">%1$d kbit/s  ~%2$s Mo/min</string>
+    <string name="settings_quality_tier_max">Max</string>
+    <string name="settings_quality_tier_best">Meilleure</string>
+    <string name="settings_quality_tier_high">Élevée</string>
+    <string name="settings_quality_tier_normal">Normale</string>
+    <string name="settings_quality_tier_low">Basse</string>
+    <!-- Settings > Audio & Quality > LosslessRoutingStatus -->
+    <string name="settings_lossless_routing_header">ACHEMINEMENT</string>
+    <string name="settings_lossless_routing_footer">L’audio sans perte provient des sources ci-dessus. En cas d’échec, JioSaavn est essayé avant de passer à YouTube, affiché comme « via YT » pendant la lecture.</string>
+    <!-- Settings > Playback -->
+    <string name="settings_mode_stream_only">Streaming uniquement</string>
+    <string name="settings_mode_download">Téléchargement</string>
+    <string name="settings_stream_on_cellular_title">Streaming sur réseau mobile</string>
+    <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
+    <string name="settings_stream_via_youtube_title">Lire via YouTube</string>
+    <string name="settings_stream_via_youtube_desc">Try this if songs won\'t play or cut off</string>
+    <string name="settings_force_qobuz_debug_title">Forcer Qobuz uniquement (débogage)</string>
+    <string name="settings_force_qobuz_debug_desc">Versions de débogage uniquement. Le streaming et les téléchargements passent par Qobuz, sans solution de repli via YouTube.</string>
+    <string name="settings_streaming_unavailable">Le streaming n’est pas disponible dans cette version.</string>
+    <string name="settings_autoplay_radio_title">Radio en lecture automatique</string>
+    <string name="settings_autoplay_radio_desc">A radio keeps playing when the queue ends</string>
+    <string name="settings_crossfade_title">Fondu enchaîné</string>
+    <string name="settings_crossfade_desc">Blend into the next song. Skips still cut.</string>
+    <string name="settings_crossfade_duration_label">Durée</string>
+    <plurals name="settings_crossfade_duration_seconds">
+        <item quantity="one">%d s</item>
+        <item quantity="other">%d s</item>
+    </plurals>
+    <string name="settings_playing_section">Playing</string>
+    <string name="settings_lyrics_section">Paroles</string>
+    <string name="settings_lyrics_apple_music">Apple Music</string>
+    <string name="settings_lyrics_lrc_only">LRC uniquement</string>
+    <string name="settings_lyrics_lrc_only_desc">Line-synced only. Stored word-synced lyrics are removed.</string>
+    <string name="settings_lyrics_apple_music_desc">Word-synced lyrics when Apple Music has them</string>
+    <string name="settings_lyrics_recheck_title">Rechercher à nouveau des paroles synchronisées mot à mot dans la bibliothèque</string>
+    <string name="settings_lyrics_recheck_desc">Recherche des paroles synchronisées pour les titres qui n’en ont pas encore. L’opération s’exécute lentement en arrière-plan.</string>
+    <string name="settings_lyrics_recheck_dialog_title">Revérifier votre bibliothèque ?</string>
+    <string name="settings_lyrics_recheck_dialog_body">Stash interroge les services de paroles pour chaque titre qui n’a pas encore de paroles synchronisées mot à mot, à raison d’un titre toutes les quelques secondes ; une grande bibliothèque peut donc prendre des heures. L’opération ne s’exécute qu’en Wi-Fi lorsque la batterie est suffisamment chargée, et vous pouvez l’annuler à tout moment. Les titres pour lesquels aucun résultat n’est trouvé conservent leurs paroles actuelles.</string>
+    <string name="settings_lyrics_recheck_dialog_confirm">Revérifier</string>
+    <string name="settings_lyrics_recheck_progress">Vérification… %1$,d / %2$,d</string>
+    <string name="settings_lyrics_recheck_starting">Vérification…</string>
+    <string name="settings_lyrics_recheck_waiting">En attente du Wi-Fi et d’une charge suffisante de la batterie…</string>
+    <string name="settings_lyrics_recheck_last_checked">Dernière vérification : %1$s</string>
+    <string name="settings_lyrics_recheck_partway">La vérification s’est arrêtée en cours de route. Appuyez pour la reprendre là où elle s’est arrêtée.</string>
+    <string name="settings_lyrics_recheck_stopped_early">Arrêt prématuré : les services de paroles sont occupés. Appuyez pour réessayer plus tard.</string>
+    <!-- Settings > Library & Storage -->
+    <string name="settings_storage_section">Stockage</string>
+    <string name="settings_downloads_section">Téléchargements</string>
+    <string name="settings_library_section">Bibliothèque</string>
+    <string name="settings_discovery_section">Discovery</string>
+    <string name="settings_backup_section">Backup &amp; transfer</string>
+    <string name="settings_download_recommendations_title">Background refresh</string>
+    <string name="settings_download_mode_wifi_charging_label">Wi-Fi et en charge</string>
+    <string name="settings_download_mode_wifi_charging_desc">On Wi-Fi while charging. Easiest on battery and data.</string>
+    <string name="settings_download_mode_wifi_any_label">Wi-Fi à tout moment</string>
+    <string name="settings_download_mode_wifi_any_desc">On Wi-Fi, charging or not.</string>
+    <string name="settings_download_mode_any_network_label">Tous les réseaux</string>
+    <string name="settings_download_mode_any_network_desc">Mobile data too.</string>
+    <string name="settings_stash_mixes_title">Stash Mixes (bêta)</string>
+    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts and First Listen refresh on their own</string>
+    <string name="settings_stash_mixes_subtitle_disabled">Mixes hidden; no background discovery</string>
+    <string name="settings_qobuz_discovery_title">Découvertes Qobuz sur l’accueil</string>
+    <string name="settings_qobuz_discovery_subtitle_enabled">New Releases, Qobuz Playlists and Top Albums on Home</string>
+    <string name="settings_qobuz_discovery_subtitle_disabled">Home shows only your mixes and music</string>
+    <string name="settings_library_health_title">État de la bibliothèque</string>
+    <string name="settings_listening_history_title">Historique d’écoute</string>
+    <string name="settings_listening_history_paused_subtitle">En pause : les nouvelles écoutes ne sont pas enregistrées</string>
+    <string name="settings_listening_history_active_subtitle">Mettez en pause l’historique d’écoute ou effacez les données mémorisées par ce téléphone.</string>
+    <string name="settings_web_link_nav_title">Associer Stash à la version Web</string>
+    <string name="settings_web_link_nav_subtitle">Reprenez là où vous en étiez, mettez votre bibliothèque en miroir et envoyez-la</string>
+    <string name="settings_storage_external_folder_fallback">Dossier externe</string>
+    <string name="settings_backup_status_exporting_title">Exportation de la base de données</string>
+    <string name="settings_backup_status_importing_title">Importation de la sauvegarde</string>
+    <string name="settings_backup_status_success_title">Terminé</string>
+    <string name="settings_backup_status_error_title">Erreur</string>
+    <string name="settings_backup_status_processing">Traitement…</string>
+    <string name="settings_backup_status_ok">OK</string>
+    <string name="settings_backup_export_dialog_title">Exporter la sauvegarde</string>
+    <string name="settings_backup_export_dialog_subtitle">Choisissez le contenu de cette sauvegarde :</string>
+    <string name="settings_backup_export_scope_likes_only_label">Titres aimés uniquement</string>
+    <string name="settings_backup_export_scope_likes_only_desc">Tout ce que vous avez aimé, rien d’autre. Fichier léger.</string>
+    <string name="settings_backup_export_scope_everything_label">Tout</string>
+    <string name="settings_backup_export_scope_everything_desc">Bibliothèque et paramètres. Les connexions ne peuvent être restaurées dans aucun des deux cas.</string>
+    <string name="settings_backup_export_scope_library_only_label">Bibliothèque uniquement</string>
+    <string name="settings_backup_export_scope_library_only_desc">Titres, playlists et historique. Les paramètres sont exclus.</string>
+    <string name="settings_backup_export_scope_settings_only_label">Paramètres uniquement</string>
+    <string name="settings_backup_export_scope_settings_only_desc">Préférences sans bibliothèque associée.</string>
+    <string name="settings_backup_export_choose_file_button">Choisir un fichier</string>
+    <string name="settings_backup_import_dialog_title">Importer la sauvegarde</string>
+    <string name="settings_backup_import_dialog_subtitle">Choisissez les éléments à restaurer :</string>
+    <string name="settings_backup_import_scope_merge_label">Fusionner avec la bibliothèque</string>
+    <string name="settings_backup_import_scope_merge_desc">Ajoute à la bibliothèque les titres et playlists manquants à partir de la sauvegarde. Rien n’est supprimé ni remplacé ; les paramètres restent inchangés.</string>
+    <string name="settings_backup_import_scope_merge_confirm">Fusionner</string>
+    <string name="settings_backup_import_scope_replace_library_label">Remplacer uniquement la bibliothèque</string>
+    <string name="settings_backup_import_scope_replace_library_desc">Restaure la bibliothèque de la sauvegarde. Vos paramètres actuels sont conservés.</string>
+    <string name="settings_backup_import_scope_replace_library_confirm">Remplacer la bibliothèque</string>
+    <string name="settings_backup_import_scope_restore_settings_label">Restaurer uniquement les paramètres</string>
+    <string name="settings_backup_import_scope_restore_settings_desc">Restaure les paramètres de la sauvegarde. Votre bibliothèque actuelle est conservée.</string>
+    <string name="settings_backup_import_scope_restore_settings_confirm">Restaurer les paramètres</string>
+    <string name="settings_backup_import_scope_replace_everything_label">Tout remplacer</string>
+    <string name="settings_backup_import_scope_replace_everything_desc">Restauration complète à l’identique : remplace toute votre bibliothèque ET tous vos paramètres.</string>
+    <string name="settings_backup_import_scope_replace_everything_confirm">Tout écraser</string>
+    <string name="settings_backup_import_destructive_warning">Cette action est irréversible.</string>
+    <string name="settings_storage_backup_title">Sauvegarde</string>
+    <string name="settings_storage_backup_subtitle">Settings and library in one file</string>
+    <string name="settings_storage_export_backup_button">Export backup</string>
+    <string name="settings_storage_import_backup_button">Import backup</string>
+    <string name="settings_storage_total_tracks_label">Nombre total de titres</string>
+    <plurals name="settings_storage_tracks">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
+    <string name="settings_storage_used_label">Espace utilisé</string>
+    <string name="settings_storage_download_location_label">Emplacement des téléchargements</string>
+    <string name="settings_storage_location_internal">Internal</string>
+    <string name="settings_storage_location_external_unknown">Dossier externe (carte SD/USB)</string>
+    <string name="settings_storage_location_external_desc">Survives uninstall. Visible over USB.</string>
+    <string name="settings_storage_change_folder_button">Changer de dossier</string>
+    <string name="settings_storage_pick_folder_button">Choisir une carte SD/un dossier</string>
+    <string name="settings_storage_use_internal_button">Use internal storage</string>
+    <string name="settings_storage_new_downloads_location_note">New downloads go here</string>
+    <string name="settings_storage_folder_structure_label">Structure des dossiers</string>
+    <string name="settings_storage_layout_artist_album_label">Artiste / Album</string>
+    <string name="settings_storage_layout_artist_album_desc">Dossiers imbriqués : un par artiste, puis un par album.</string>
+    <string name="settings_storage_layout_single_folder_label">Dossier unique</string>
+    <string name="settings_storage_layout_single_folder_desc">Tous les titres dans un seul dossier, nommés artiste - titre.</string>
+    <string name="settings_storage_layout_playlist_label">Par playlist</string>
+    <string name="settings_storage_layout_playlist_desc">Un dossier par playlist ; les titres sans playlist utilisent Artiste / Album.</string>
+    <!-- Settings > Library & Storage > Move Library -->
+    <string name="settings_storage_move_library_title">Bibliothèque existante</string>
+    <plurals name="settings_storage_move_library_has_external_desc">
+        <item quantity="one">Déplacer %d titre restant sur votre appareil dans le dossier ci-dessus pour qu’il soit aussi accessible par USB.</item>
+        <item quantity="other">Déplacer les %d titres restants sur votre appareil dans le dossier ci-dessus pour qu’ils soient aussi accessibles par USB.</item>
+    </plurals>
+    <plurals name="settings_storage_move_library_no_external_desc">
+        <item quantity="one">Déplacer %d titre de votre appareil vers un dossier externe (SD/USB) afin d’y accéder aussi par USB. Vous choisirez la destination ensuite.</item>
+        <item quantity="other">Déplacer %d titres de votre appareil vers un dossier externe (SD/USB) afin d’y accéder aussi par USB. Vous choisirez la destination ensuite.</item>
+    </plurals>
+    <plurals name="settings_storage_move_library_to_folder_button">
+        <item quantity="one">Déplacer %d titre vers ce dossier</item>
+        <item quantity="other">Déplacer %d titres vers ce dossier</item>
+    </plurals>
+    <string name="settings_storage_move_library_pick_dest_button">Choisir la destination et déplacer la bibliothèque</string>
+    <string name="settings_storage_move_library_progress">Déplacement de %1$d sur %2$d…</string>
+    <plurals name="settings_storage_move_library_done_moved">
+        <item quantity="one">%d titre déplacé</item>
+        <item quantity="other">%d titres déplacés</item>
+    </plurals>
+    <string name="settings_storage_move_library_done_failed">" • Échecs : %d"</string>
+    <string name="settings_storage_move_library_failed_note">Les titres qui n’ont pas pu être déplacés restent dans le stockage interne. Réessayez plus tard.</string>
+    <string name="settings_storage_move_library_error_title">Impossible de déplacer la bibliothèque</string>
+    <string name="settings_storage_dismiss_button">Ignorer</string>
+    <!-- Settings > Library & Storage > Reorganize Library -->
+    <string name="settings_storage_reorganize_title">Réorganiser les titres existants</string>
+    <plurals name="settings_storage_reorganize_desc">
+        <item quantity="one">%1$d titre téléchargé ne respecte pas encore la structure « %2$s ». Le déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
+        <item quantity="other">%1$d titres téléchargés ne respectent pas encore la structure « %2$s ». Les déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
+    </plurals>
+    <plurals name="settings_storage_reorganize_button">
+        <item quantity="one">Déplacer %1$d titre dans « %2$s »</item>
+        <item quantity="other">Déplacer %1$d titres dans « %2$s »</item>
+    </plurals>
+    <string name="settings_storage_reorganize_progress">Déplacement de %1$d sur %2$d…</string>
+    <plurals name="settings_storage_reorganize_done_moved">
+        <item quantity="one">%d titre déplacé</item>
+        <item quantity="other">%d titres déplacés</item>
+    </plurals>
+    <string name="settings_storage_reorganize_done_skipped">" • %d déjà organisé(s)"</string>
+    <string name="settings_storage_reorganize_done_failed">" • Échecs : %d"</string>
+    <string name="settings_storage_reorganize_failed_note">Les titres qui n’ont pas pu être déplacés conservent leur ancien emplacement. Réessayez plus tard.</string>
+    <string name="settings_storage_reorganize_error_title">Impossible de réorganiser la bibliothèque</string>
+    <!-- Settings > Library & Storage > Listening History Sheet -->
+    <string name="settings_listening_history_sheet_subtitle_empty">Ce que ce téléphone mémorise à propos des titres que vous écoutez.</string>
+    <string name="settings_listening_history_sheet_subtitle_nonempty">Ce téléphone mémorise %1$s%2$s.</string>
+    <string name="settings_listening_history_since_date">" depuis %s"</string>
+    <plurals name="settings_listening_history_plays_count">
+        <item quantity="one">%,d lecture</item>
+        <item quantity="other">%,d lectures</item>
+    </plurals>
+    <string name="settings_listening_history_pause_title">Mettre l’historique en pause</string>
+    <string name="settings_listening_history_pause_subtitle">Pendant la pause, vos écoutes ne sont pas enregistrées et rien n’est envoyé à Last.fm ou ListenBrainz.</string>
+    <string name="settings_listening_history_clear_section">Effacer</string>
+    <string name="settings_listening_history_clear_range_title">Effacer une période</string>
+    <string name="settings_listening_history_clear_range_subtitle">Choisissez le premier et le dernier jour</string>
+    <string name="settings_listening_history_clear_everything_title">Tout effacer</string>
+    <string name="settings_listening_history_nothing_to_clear">Rien à effacer</string>
+    <string name="settings_listening_history_clear_footer">L’effacement ne supprime les écoutes que de ce téléphone. %s</string>
+    <string name="settings_listening_history_clear_keeps_scrobbles">Cette action ne supprime rien de ce qui a déjà été envoyé à Last.fm, ListenBrainz ou YouTube Music.</string>
+    <string name="settings_listening_history_picker_title">Jours à effacer</string>
+    <string name="settings_listening_history_picker_next">Suivant</string>
+    <string name="settings_listening_history_confirm_everything_title">Effacer tout votre historique d’écoute ?</string>
+    <string name="settings_listening_history_confirm_range_title">Effacer %s ?</string>
+    <plurals name="settings_listening_history_confirm_plays_leave">
+        <item quantity="one">%1$s quitte l’historique de ce téléphone, et le nombre d’écoutes est recalculé sans ce titre. %2$s</item>
+        <item quantity="other">%1$s quittent l’historique de ce téléphone, et le nombre d’écoutes est recalculé sans ces titres. %2$s</item>
+    </plurals>
+    <string name="settings_listening_history_confirm_no_listens">Aucune écoute ces jours-là. %s</string>
+    <string name="settings_listening_history_confirm_clear_button">Effacer</string>
+    <!-- Settings > Web Library Sheets -->
+    <string name="web_library_export_what_to_include">Éléments à inclure</string>
+    <string name="web_library_export_save_as_file">Enregistrer dans un fichier</string>
+    <string name="web_library_export_send_to_target">Envoyer à %s</string>
+    <string name="web_library_export_send_to_picker">Envoyer vers…</string>
+    <string name="web_library_export_send_to_title">Envoyer vers</string>
+    <string name="web_library_export_plays_detail">vos dernières %,d écoutes</string>
+    <!-- The export picker's tick for this phone's whole history (library-file v1 "Listens"), for Your record on the web. -->
+    <string name="web_library_export_history_label">Your whole listening history</string>
+    <!-- %1$s the count ("12,480"), %2$s the month of the first play ("March 2025"). -->
+    <plurals name="web_library_export_history_detail">
+        <item quantity="one">%1$s play since %2$s</item>
+        <item quantity="other">%1$s plays since %2$s</item>
+    </plurals>
+    <string name="web_library_export_history_none">No plays yet</string>
+    <string name="web_library_export_history_note">Every play on this phone, for Your record on the web: each year you listened, pressed into a record.</string>
+    <!-- The export picker's "Plays" row: the newest plays that go into the web's history (up to 5,000). -->
+    <string name="web_library_export_recent_plays">Recent plays</string>
+    <!-- Under the Send buttons when the whole history is ticked: a send carries only the library. -->
+    <string name="web_library_export_history_file_only">Your whole listening history goes only in a saved file, not in a send.</string>
+    <!-- After "Saved 3 likes, 2 playlists and 40 plays.": %s is the history's plays ("12,480 plays"). -->
+    <string name="web_library_export_done_history">Your whole listening history went too: %s.</string>
+    <string name="web_library_import_what_to_import">Éléments à importer</string>
+    <string name="web_library_import_action_import">Importer</string>
+    <string name="web_library_import_reading_title">Lecture du fichier</string>
+    <string name="web_library_import_adding_title">Ajout à votre bibliothèque</string>
+    <string name="web_library_import_done_title">Importation terminée</string>
+    <string name="web_library_import_failed_title">Importation impossible</string>
+    <!-- Settings > Blocked Songs -->
+    <string name="blocked_songs_title">Titres bloqués</string>
+    <string name="blocked_songs_subtitle">Ces titres sont ignorés à chaque synchronisation. Appuyez sur « Débloquer » pour en autoriser un à nouveau.</string>
+    <string name="blocked_songs_empty_title">Aucun titre bloqué</string>
+    <string name="blocked_songs_empty_desc">Les titres que vous bloquez avec \u201CSupprimer et bloquer\u201D apparaissent ici. Appuyez sur « Débloquer » pour les autoriser à nouveau lors de la prochaine synchronisation.</string>
+    <plurals name="blocked_songs_count">
+        <item quantity="one">%d titre</item>
+        <item quantity="other">%d titres</item>
+    </plurals>
+    <string name="blocked_songs_unblock_button">Débloquer</string>
+    <!-- Settings > Library Health -->
+    <string name="settings_library_health_desc">Répartition des formats et débits de chaque titre téléchargé. Vérifiez ici ce que votre synchronisation télécharge réellement.</string>
+    <string name="settings_library_health_section_breakdown">Répartition de la bibliothèque</string>
+    <string name="settings_library_health_empty_hint">Aucun titre téléchargé. Lancez d’abord une synchronisation.</string>
+    <string name="settings_library_health_total_downloaded">Total téléchargé</string>
+    <string name="settings_library_health_count_and_pct">%1$d · %2$s</string>
+    <string name="settings_library_health_avg_kbps">moy. %d kbit/s</string>
+    <string name="settings_library_health_format_unknown">Inconnu</string>
+    <string name="settings_library_health_section_backfill">Compléter les métadonnées</string>
+    <plurals name="settings_library_health_backfill_idle_desc">
+        <item quantity="one">%d titre téléchargé avant la v0.8.1 est encore indiqué comme ayant un format inconnu. Lancez une analyse unique pour lire son codec et son débit réels sur le disque.</item>
+        <item quantity="other">%d titres téléchargés avant la v0.8.1 sont encore indiqués comme ayant un format inconnu. Lancez une analyse unique pour lire leurs codecs et débits réels sur le disque.</item>
+    </plurals>
+    <string name="settings_library_health_scan_files">Analyser les fichiers</string>
+    <string name="settings_library_health_scanning_progress">Analyse… %1$d / %2$d</string>
+    <plurals name="settings_library_health_scan_complete">
+        <item quantity="one">Analyse terminée. Titres mis à jour : %1$d sur %2$d.</item>
+        <item quantity="other">Analyse terminée. Titres mis à jour : %1$d sur %2$d.</item>
+    </plurals>
+    <plurals name="settings_library_health_scan_unreadable">
+        <item quantity="one">Impossible de lire %d titre — fichier probablement absent du disque ou non pris en charge par MediaMetadataRetriever.</item>
+        <item quantity="other">Impossible de lire %d titres — fichiers probablement absents du disque ou non pris en charge par MediaMetadataRetriever.</item>
+    </plurals>
+    <string name="settings_library_health_retry_scan">Relancer l’analyse</string>
+    <string name="settings_library_health_section_missing_downloads">Téléchargements manquants</string>
+    <plurals name="settings_library_health_restore_queued">
+        <item quantity="one">%d titre ajouté à la file d’attente. Il sera téléchargé en arrière-plan — l’onglet Synchronisation affiche la progression.</item>
+        <item quantity="other">%d titres ajoutés à la file d’attente. Ils seront téléchargés en arrière-plan — l’onglet Synchronisation affiche la progression.</item>
+    </plurals>
+    <string name="settings_library_health_done">Terminé</string>
+    <plurals name="settings_library_health_missing_downloads_desc">
+        <item quantity="one">%d titre a déjà été téléchargé, mais le fichier ne se trouve pas sur cet appareil. Reconnectez d’abord le compte associé, puis téléchargez-le à nouveau.</item>
+        <item quantity="other">%d titres ont déjà été téléchargés, mais les fichiers ne se trouvent pas sur cet appareil. Reconnectez d’abord les comptes associés, puis téléchargez-les à nouveau.</item>
+    </plurals>
+    <plurals name="settings_library_health_download_again_button">
+        <item quantity="one">Télécharger à nouveau %d</item>
+        <item quantity="other">Télécharger à nouveau %d</item>
+    </plurals>
+    <string name="settings_library_health_section_verify_library">Vérifier la bibliothèque</string>
+    <string name="settings_library_health_verify_idle_desc">Mettez la file de téléchargement en cohérence avec votre bibliothèque et recalculez les statistiques des titres et du stockage affichées dans l’onglet Synchronisation. Cette opération ne modifie pas les playlists et ne lance aucune synchronisation réseau.</string>
+    <string name="settings_library_health_verify_button">Vérifier</string>
+    <string name="settings_library_health_checking_library_progress">Vérification de la bibliothèque… %1$d / %2$d</string>
+    <plurals name="settings_library_health_verified_missing_files">
+        <item quantity="one">%d fichier manquant détecté</item>
+        <item quantity="other">%d fichiers manquants détectés</item>
+    </plurals>
+    <plurals name="settings_library_health_verified_stale_entries">
+        <item quantity="one">%d entrée obsolète nettoyée</item>
+        <item quantity="other">%d entrées obsolètes nettoyées</item>
+    </plurals>
+    <string name="settings_library_health_verified_summary">Vérification terminée — %1$s, %2$s.</string>
+    <plurals name="settings_library_health_adopted_songs">
+        <item quantity="one">%d titre déjà présent sur le disque a été trouvé et ajouté à votre bibliothèque.</item>
+        <item quantity="other">%d titres déjà présents sur le disque ont été trouvés et ajoutés à votre bibliothèque.</item>
+    </plurals>
+    <plurals name="settings_library_health_scanned_tracks_none_matched">
+        <item quantity="one">%d titre non téléchargé vérifié — aucun fichier correspondant trouvé sur le disque.</item>
+        <item quantity="other">%d titres non téléchargés vérifiés — aucun fichier correspondant trouvé sur le disque.</item>
+    </plurals>
+    <string name="settings_library_health_verify_again_button">Vérifier à nouveau</string>
+    <string name="settings_library_health_verification_failed">Échec de la vérification : %s</string>
+    <string name="settings_library_health_retry">Réessayer</string>
+    <string name="settings_library_health_section_quality_info">Informations sur la qualité</string>
+    <string name="settings_library_health_refresh_quality_info_title">Actualiser les informations de qualité</string>
+    <string name="settings_library_health_refresh_quality_info_desc">Récupérez à nouveau la profondeur de bits et la fréquence d’échantillonnage des titres FLAC lorsque ces données sont manquantes. Cette opération s’exécute en arrière-plan.</string>
+    <string name="settings_library_health_refreshing_quality_info_toast">Actualisation des informations de qualité en arrière-plan.</string>
+    <string name="settings_library_health_refresh_button">Actualiser</string>
+    <string name="settings_library_health_section_flac_upgrades">Mises à niveau vers le FLAC</string>
+    <string name="settings_library_health_flac_upgrades_desc">Recherche des versions sans perte pour les titres téléchargés qui ne sont pas encore en FLAC. La recherche continue en arrière-plan. Pour la lancer après chaque synchronisation, activez cette option dans « Audio &amp; qualité ».</string>
+    <string name="settings_library_health_check_upgrades_button">Rechercher des mises à niveau</string>
+    <string name="settings_library_health_section_lyrics">Paroles</string>
+    <string name="settings_library_health_fetch_lyrics_title">Récupérer les paroles</string>
+    <string name="settings_library_health_fetch_lyrics_queued_desc">En attente d’une connexion adaptée. Appuyez pour démarrer maintenant sur n’importe quel réseau.</string>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Recherche les paroles manquantes des titres téléchargés. L’opération continue en arrière-plan ; vous pouvez quitter l’app. Une notification indique la progression.</string>
+    <string name="settings_library_health_fetch_lyrics_button">Récupérer les paroles</string>
+    <string name="settings_library_health_fetching_lyrics_progress">Récupération des paroles… %1$d / %2$d</string>
+    <string name="settings_library_health_fetching_lyrics">Récupération des paroles…</string>
+    <plurals name="settings_library_health_lyrics_done_updated">
+        <item quantity="one">Terminé : %d titre mis à jour.</item>
+        <item quantity="other">Terminé : %d titres mis à jour.</item>
+    </plurals>
+    <string name="settings_library_health_lyrics_done_nothing">Terminé : aucune mise à jour nécessaire.</string>
+    <plurals name="settings_library_health_lyrics_not_found">
+        <item quantity="one">Aucune parole trouvée pour %d titre.</item>
+        <item quantity="other">Aucune parole trouvée pour %d titres.</item>
+    </plurals>
+    <string name="settings_library_health_lyrics_bailed">Arrêt prématuré : le service de paroles ne répond pas. Réessayez dans quelques instants.</string>
+    <string name="settings_library_health_fetch_again_button">Récupérer à nouveau</string>
+    <!-- Settings > Equalizer -->
+    <string name="settings_equalizer_loudness_first_run_message">La normalisation du volume est activée. Les titres auront un volume plus homogène à mesure que le volume de votre bibliothèque sera analysé en arrière-plan.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Contourné : la sortie bit-perfect est activée, votre DAC reçoit donc la musique sans modification. Réglez la sortie Hi-Res sur « Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre » dans « Audio &amp; qualité » pour utiliser l’égaliseur.</string>
+    <string name="settings_equalizer_section_5band_eq">Égaliseur 5 bandes</string>
+    <string name="settings_equalizer_section_bass_boost">Renforcement des basses</string>
+    <string name="settings_equalizer_section_loudness">Normalisation du volume</string>
+    <string name="settings_equalizer_loudness_desc">Lit chaque titre à un volume homogène.</string>
+    <plurals name="settings_equalizer_loudness_backfill_progress">
+        <item quantity="one">%1$d sur %2$d titre</item>
+        <item quantity="other">%1$d sur %2$d titres</item>
+    </plurals>
+    <string name="settings_equalizer_loudness_charging_hint">Continue automatiquement pendant la charge.</string>
+    <string name="settings_equalizer_section_preamp">Préampli</string>
+    <string name="settings_equalizer_save_preset">Enregistrer le préréglage</string>
+    <string name="settings_equalizer_save">Enregistrer</string>
+    <string name="settings_equalizer_preset_flat">Neutre</string>
+    <string name="settings_equalizer_preset_bass_boost">Renforcement des basses</string>
+    <string name="settings_equalizer_preset_treble_boost">Renforcement des aigus</string>
+    <string name="settings_equalizer_preset_vocal">Voix</string>
+    <string name="settings_equalizer_preset_rock">Rock</string>
+    <string name="settings_equalizer_preset_pop">Pop</string>
+    <string name="settings_equalizer_preset_jazz">Jazz</string>
+    <string name="settings_equalizer_preset_classical">Classique</string>
+    <string name="settings_equalizer_save_preset_dialog_title">Enregistrer le préréglage</string>
+    <string name="settings_equalizer_preset_name_label">Nom du préréglage</string>
+</resources>
