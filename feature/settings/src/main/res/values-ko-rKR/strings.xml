@@ -64,7 +64,7 @@
     <string name="settings_support_title">Stash 후원</string>
     <string name="settings_support_subtitle">Stash는 무료이며 자원봉사자들이 만듭니다. 유용하다면 프로젝트 지원을 고려해 보세요</string>
     <string name="settings_support_donate">후원</string>
-    <string name="settings_donate_sheet_title">Support Stash</string>
+    <string name="settings_donate_sheet_title">Stash 후원</string>
     <string name="settings_donate_sheet_thanks">Stash is free. Thank you for helping keep it going.</string>
     <string name="settings_donate_role_owner">Stash creator, main dev</string>
     <string name="settings_donate_role_codev">Co-develops Stash</string>
