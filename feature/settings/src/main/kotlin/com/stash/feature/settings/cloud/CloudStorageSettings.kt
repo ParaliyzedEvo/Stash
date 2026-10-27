@@ -45,8 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,7 +53,6 @@ import com.stash.core.auth.model.UserInfo
 import com.stash.core.data.db.dao.CloudFolderWithCount
 import com.stash.core.data.db.entity.CloudScanStatus
 import com.stash.core.model.CloudProvider
-import com.stash.feature.settings.R
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
@@ -110,7 +107,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
     val openGooglePicker = rememberGooglePicker(viewModel)
     CloudMessages(viewModel)
 
-    SettingsSectionLabel(stringResource(R.string.settings_cloud_section_title))
+    SettingsSectionLabel("Cloud storage")
     viewModel.providers.forEach { provider ->
         val row = accounts.firstOrNull { it.account.provider == provider }
         AccountConnectionCard(
@@ -131,16 +128,16 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                 {
                     if (viewModel.usesPicker(provider)) {
                         SettingsNavRow(
-                            title = stringResource(R.string.settings_cloud_gdrive_add_songs_title),
-                            subtitle = stringResource(R.string.settings_cloud_gdrive_add_songs_subtitle),
+                            title = "Add songs from Google Drive",
+                            subtitle = "Stash sees only the songs you pick.",
                             leadingIcon = Icons.Rounded.LibraryAdd,
                             onClick = { openGooglePicker(r.account.id) },
                         )
                         driveUploads?.let { DriveBackupRows(it, r.account.id, viewModel) }
                     } else {
                         SettingsNavRow(
-                            title = stringResource(R.string.settings_cloud_folder_add_title),
-                            subtitle = stringResource(R.string.settings_cloud_folder_add_subtitle),
+                            title = "Add a music folder",
+                            subtitle = "Read-only. Your files stay as they are.",
                             leadingIcon = Icons.Rounded.CreateNewFolder,
                             onClick = { viewModel.openBrowser(r.account.id, r.account.displayName) },
                         )
@@ -155,24 +152,18 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
             onDismissRequest = viewModel::cancelDisconnect,
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text(stringResource(R.string.settings_cloud_disconnect_dialog_title, p.provider.displayName), style = MaterialTheme.typography.titleLarge) },
+            title = { Text("Disconnect ${p.provider.displayName}?", style = MaterialTheme.typography.titleLarge) },
             text = {
-                val removedText = if (p.removed > 0) {
-                    pluralStringResource(R.plurals.settings_cloud_disconnect_dialog_removed, p.removed, p.removed, p.provider.displayName) + " "
-                } else ""
-                val keptText = if (p.kept > 0) {
-                    pluralStringResource(R.plurals.settings_cloud_disconnect_dialog_kept, p.kept, p.kept) + " "
-                } else ""
-                val gdriveText = if (p.provider == CloudProvider.GOOGLE_DRIVE) {
-                    stringResource(R.string.settings_cloud_disconnect_dialog_gdrive_pending) + " "
-                } else ""
                 Text(
                     buildString {
-                        append(stringResource(R.string.settings_cloud_disconnect_dialog_body_intro)).append(" ")
-                        append(removedText)
-                        append(keptText)
-                        append(gdriveText)
-                        append(stringResource(R.string.settings_cloud_disconnect_dialog_untouched, p.provider.displayName))
+                        append("Stash forgets this sign-in on this phone. ")
+                        append(
+                            if (p.removed > 0) "${p.removed} songs that only stream from ${p.provider.displayName} leave your library, with their play history. "
+                            else "",
+                        )
+                        if (p.kept > 0) append("${p.kept} downloaded songs stay on this phone. ")
+                        if (p.provider == CloudProvider.GOOGLE_DRIVE) append("Songs waiting to be saved to it won't be. ")
+                        append("Your files in ${p.provider.displayName} are not touched.")
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -182,9 +173,9 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                 TextButton(
                     onClick = viewModel::confirmDisconnect,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.settings_account_disconnect)) }
+                ) { Text("Disconnect") }
             },
-            dismissButton = { TextButton(onClick = viewModel::cancelDisconnect) { Text(stringResource(R.string.settings_cancel)) } },
+            dismissButton = { TextButton(onClick = viewModel::cancelDisconnect) { Text("Cancel") } },
         )
     }
     browse?.let { CloudFolderPicker(it, viewModel) }
@@ -205,7 +196,7 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     val openGooglePicker = rememberGooglePicker(viewModel)
     CloudMessages(viewModel)
 
-    SettingsSectionLabel(stringResource(R.string.settings_cloud_folders_section_title))
+    SettingsSectionLabel("Cloud folders")
     val rows = mutableListOf<@Composable () -> Unit>()
     folders.forEach { folder ->
         val provider = accounts.firstOrNull { it.account.id == folder.accountId }?.account?.provider
@@ -217,17 +208,13 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
         rows += {
             if (viewModel.usesPicker(row.account.provider)) {
                 SettingsNavRow(
-                    title = stringResource(R.string.settings_cloud_gdrive_add_songs_title),
+                    title = "Add songs from Google Drive",
                     leadingIcon = Icons.Rounded.LibraryAdd,
                     onClick = { openGooglePicker(row.account.id) },
                 )
             } else {
                 SettingsNavRow(
-                    title = if (accounts.size > 1) {
-                        stringResource(R.string.settings_cloud_add_folder_from_provider, row.account.provider.displayName)
-                    } else {
-                        stringResource(R.string.settings_cloud_add_folder)
-                    },
+                    title = if (accounts.size > 1) "Add a folder from ${row.account.provider.displayName}" else "Add a folder",
                     leadingIcon = Icons.Rounded.CreateNewFolder,
                     onClick = { viewModel.openBrowser(row.account.id, row.account.displayName) },
                 )
@@ -237,8 +224,8 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     if (folders.isNotEmpty()) {
         rows += {
             SettingsNavRow(
-                title = stringResource(R.string.settings_cloud_rescan_title),
-                subtitle = stringResource(R.string.settings_cloud_rescan_subtitle),
+                title = "Rescan now",
+                subtitle = "Picks up songs added, changed or removed in your cloud. Stash also checks twice a day.",
                 leadingIcon = Icons.Rounded.Refresh,
                 onClick = viewModel::rescan,
             )
@@ -247,16 +234,16 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     SettingsGroupCard(rows = rows)
 
     confirmRemove?.let { id ->
-        val fallbackName = stringResource(R.string.settings_cloud_folder_fallback_name)
-        val name = folders.firstOrNull { it.id == id }?.name ?: fallbackName
+        val name = folders.firstOrNull { it.id == id }?.name ?: "this folder"
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text(stringResource(R.string.settings_cloud_remove_folder_dialog_title, name), style = MaterialTheme.typography.titleLarge) },
+            title = { Text("Remove $name?", style = MaterialTheme.typography.titleLarge) },
             text = {
                 Text(
-                    stringResource(R.string.settings_cloud_remove_folder_dialog_body),
+                    "Its songs leave your library, except the ones you downloaded, which stay on this phone. " +
+                        "Nothing is deleted from your cloud.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -268,9 +255,9 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
                         viewModel.removeFolder(id)
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.settings_web_link_action_remove)) }
+                ) { Text("Remove") }
             },
-            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text(stringResource(R.string.settings_cancel)) } },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Cancel") } },
         )
     }
     browse?.let { CloudFolderPicker(it, viewModel) }
@@ -279,14 +266,9 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
 @Composable
 private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider?, onRemove: (() -> Unit)?) {
     val status = when (folder.lastScanStatus) {
-        CloudScanStatus.RUNNING.name -> pluralStringResource(
-            R.plurals.settings_cloud_scan_running_songs_so_far,
-            folder.trackCount,
-            folder.trackCount,
-        )
-        CloudScanStatus.ERROR.name, CloudScanStatus.WAITING.name -> folder.lastScanError ?: stringResource(R.string.settings_cloud_scan_didnt_finish)
-        else -> pluralStringResource(R.plurals.settings_cloud_folder_songs_count, folder.trackCount, folder.trackCount) +
-            (folder.lastScanAt?.let { " · " + stringResource(R.string.settings_cloud_last_checked, relativeTime(it)) } ?: "")
+        CloudScanStatus.RUNNING.name -> "Scanning… ${folder.trackCount} songs so far"
+        CloudScanStatus.ERROR.name, CloudScanStatus.WAITING.name -> folder.lastScanError ?: "The last scan didn't finish"
+        else -> "${folder.trackCount} songs" + (folder.lastScanAt?.let { " · checked ${relativeTime(it)}" } ?: "")
     }
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -311,7 +293,7 @@ private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider
         }
         if (onRemove != null) {
             IconButton(onClick = onRemove) {
-                Icon(Icons.Rounded.RemoveCircleOutline, contentDescription = stringResource(R.string.settings_cloud_remove_folder_content_desc), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Rounded.RemoveCircleOutline, contentDescription = "Remove folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -325,22 +307,22 @@ private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider
 @Composable
 private fun DriveBackupRows(status: UploadStatus, accountId: Long, viewModel: CloudStorageViewModel) {
     SettingsToggleRow(
-        title = stringResource(R.string.settings_cloud_gdrive_backup_title),
+        title = "Back up my downloads to Google Drive",
         subtitle = status.line
-            ?: stringResource(R.string.settings_cloud_gdrive_backup_default_subtitle),
+            ?: "New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.",
         checked = status.backupOn,
         onCheckedChange = { viewModel.setDriveBackup(accountId, it) },
     )
     when {
         status.driveFull -> SettingsNavRow(
-            title = stringResource(R.string.settings_cloud_backup_try_again_title),
-            subtitle = stringResource(R.string.settings_cloud_backup_no_space_subtitle),
+            title = "Try again",
+            subtitle = "Once there's space in your Google Drive.",
             leadingIcon = Icons.Rounded.Refresh,
             onClick = viewModel::retryDriveUploads,
         )
         status.backupOn && status.existing > 0 -> SettingsNavRow(
-            title = pluralStringResource(R.plurals.settings_cloud_backup_existing_title, status.existing, status.existing),
-            subtitle = stringResource(R.string.settings_cloud_backup_backfill_subtitle),
+            title = if (status.existing == 1) "Back up 1 existing download" else "Back up ${status.existing} existing downloads",
+            subtitle = "Downloaded before backup was on.",
             leadingIcon = Icons.Rounded.CloudUpload,
             onClick = viewModel::backUpExistingDownloads,
         )
@@ -357,10 +339,10 @@ private fun CloudFolderPicker(state: CloudBrowseState, viewModel: CloudStorageVi
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (state.trail.isNotEmpty()) {
-                    IconButton(onClick = viewModel::up) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.settings_cloud_folder_picker_up_desc)) }
+                    IconButton(onClick = viewModel::up) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Up") }
                 }
                 Column {
-                    Text(state.current?.name ?: stringResource(R.string.settings_cloud_picker_default_title), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(state.current?.name ?: "Pick your music folder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(state.accountName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -371,7 +353,7 @@ private fun CloudFolderPicker(state: CloudBrowseState, viewModel: CloudStorageVi
                     state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
                     state.error != null -> Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center))
                     state.entries.isEmpty() -> Text(
-                        if (state.current == null) stringResource(R.string.settings_cloud_folder_picker_empty_root) else stringResource(R.string.settings_cloud_folder_picker_empty_subfolder),
+                        if (state.current == null) "No folders here." else "No folders inside. Use this one?",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -391,25 +373,18 @@ private fun CloudFolderPicker(state: CloudBrowseState, viewModel: CloudStorageVi
             }
         },
         confirmButton = {
-            TextButton(onClick = viewModel::pickCurrent, enabled = state.current != null) { Text(stringResource(R.string.settings_cloud_use_this_folder)) }
+            TextButton(onClick = viewModel::pickCurrent, enabled = state.current != null) { Text("Use this folder") }
         },
-        dismissButton = { TextButton(onClick = viewModel::closeBrowser) { Text(stringResource(R.string.settings_cancel)) } },
+        dismissButton = { TextButton(onClick = viewModel::closeBrowser) { Text("Cancel") } },
     )
 }
 
-@Composable
 private fun relativeTime(epochMs: Long): String {
     val minutes = (System.currentTimeMillis() - epochMs) / 60_000
     return when {
-        minutes < 1 -> stringResource(R.string.settings_cloud_time_just_now)
-        minutes < 60 -> pluralStringResource(R.plurals.settings_cloud_time_minutes_ago, minutes.toInt(), minutes.toInt())
-        minutes < 48 * 60 -> {
-            val hours = (minutes / 60).toInt()
-            pluralStringResource(R.plurals.settings_cloud_time_hours_ago, hours, hours)
-        }
-        else -> {
-            val days = (minutes / (24 * 60)).toInt()
-            pluralStringResource(R.plurals.settings_cloud_time_days_ago, days, days)
-        }
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 48 * 60 -> "${minutes / 60} h ago"
+        else -> "${minutes / (24 * 60)} days ago"
     }
 }
