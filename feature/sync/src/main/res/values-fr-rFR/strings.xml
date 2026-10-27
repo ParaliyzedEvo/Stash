@@ -12,7 +12,7 @@
     <!-- Downloads Card -->
     <string name="sync_downloads_title">Téléchargements</string>
     <string name="sync_downloads_subtitle">Afficher les téléchargements en cours, la file d\'attente et l\'historique</string>
-    <string name="sync_downloads_cd">Open downloads</string>
+    <string name="sync_downloads_cd">Téléchargements ouverts</string>
     <!-- Source Dashboard Stats & Empty Hints -->
     <string name="sync_source_stat_mixes">MIXES</string>
     <string name="sync_source_stat_playlists">PLAYLISTS</string>
@@ -47,8 +47,8 @@
     <!-- Failed Downloads Warning Card -->
     <string name="sync_failed_downloads_title">Téléchargements ayant échoué</string>
     <plurals name="sync_failed_downloads_count">
-        <item quantity="one">%d track needs attention</item>
-        <item quantity="other">%d tracks need attention</item>
+        <item quantity="one">%d titre nécessite une attention particulière</item>
+        <item quantity="other">%d titres nécessitent une attention particulière</item>
     </plurals>
     <!-- Sync Terminal -->
     <string name="sync_log_title">JOURNAL DE SYNCHRONISATION</string>
@@ -60,7 +60,7 @@
     <string name="sync_undoing">Annulation…</string>
     <string name="sync_auto_sync_paused_note">La synchronisation automatique a été interrompue après l\'annulation. Appuyez sur « Synchroniser » pour la reprendre.</string>
     <string name="sync_undo_dialog_title">Annuler la dernière synchronisation ?</string>
-    <string name="sync_undo_dialog_body">Your library goes back to how it was before the last sync: playlists it hid come back, playlists it added are hidden, and playlists it emptied are refilled in their original order%1$s.\n\nTracks you added or removed yourself, and Download switches you changed, are kept. Downloaded files that were already deleted can\'t be brought back.\n\nAuto-sync then pauses until you tap Sync, so it doesn\'t redo it.</string>
+    <string name="sync_undo_dialog_body">Votre bibliothèque revient à l\'état où elle se trouvait avant la dernière synchronisation : les playlists qu\'elle avait masquées réapparaissent, celles qu\'elle avait ajoutées sont masquées, et celles qu\'elle avait vidées sont à nouveau remplies dans leur ordre d\'origine%1$s.\n\nLes titres que vous avez ajoutés ou supprimés vous-même, ainsi que les paramètres de téléchargement que vous avez modifiés, sont conservés. Les fichiers téléchargés qui avaient déjà été supprimés ne peuvent pas être restaurés.\n\nLa synchronisation automatique est alors mise en pause jusqu’à ce que vous appuyiez sur « Synchroniser », afin qu’elle ne soit pas effectuée une nouvelle fois.</string>
     <string name="sync_undo_sync_confirm">Annuler la synchronisation</string>
     <string name="sync_undone_title">Synchronisation annulée</string>
     <plurals name="sync_playlists_count">
@@ -68,12 +68,12 @@
         <item quantity="other">%d playlists</item>
     </plurals>
     <!-- Relative Time Strings -->
-    <string name="sync_time_just_now">just now</string>
-    <string name="sync_time_mins_ago">%d min ago</string>
-    <string name="sync_time_hours_ago">%d hr ago</string>
+    <string name="sync_time_just_now">il y a quelques instants</string>
+    <string name="sync_time_mins_ago">Il y a %d minutes</string>
+    <string name="sync_time_hours_ago">Il y a %d heures</string>
     <plurals name="sync_time_days_ago">
-        <item quantity="one">%d day ago</item>
-        <item quantity="other">%d days ago</item>
+        <item quantity="one">Il y a %d jour</item>
+        <item quantity="other">Il y a %d jours</item>
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
