@@ -13,8 +13,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.res.stringResource
-import com.stash.feature.settings.R
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -169,16 +167,16 @@ fun SendDialog(send: IncomingSend, onAdd: () -> Unit, onChoose: () -> Unit, onLa
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(send.name) }
-                    append(" ")
-                    append(stringResource(R.string.settings_inbox_sent_you, send.summary))
-
+                    append(" sent you ")
+                    append(send.summary)
+                    append(".")
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
         },
         text = {
             Text(
-                send.problem ?: stringResource(R.string.settings_inbox_adding_note),
+                send.problem ?: "Adding never removes anything from your library.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -186,12 +184,12 @@ fun SendDialog(send: IncomingSend, onAdd: () -> Unit, onChoose: () -> Unit, onLa
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (send.readable) {
-                    TextButton(onClick = onAdd) { Text(stringResource(R.string.settings_inbox_add_to_library)) }
-                    TextButton(onClick = onChoose) { Text(stringResource(R.string.settings_inbox_choose_what_to_add)) }
-                    TextButton(onClick = onLater) { Text(stringResource(R.string.settings_inbox_not_now)) }
+                    TextButton(onClick = onAdd) { Text("Add to my library") }
+                    TextButton(onClick = onChoose) { Text("Choose what to add") }
+                    TextButton(onClick = onLater) { Text("Not now") }
                 }
                 TextButton(onClick = onDiscard, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Text(stringResource(R.string.settings_inbox_discard))
+                    Text("Discard")
                 }
             }
         },
@@ -203,23 +201,23 @@ fun SendDialog(send: IncomingSend, onAdd: () -> Unit, onChoose: () -> Unit, onLa
 fun InboxStepDialogs(step: InboxStep?, viewModel: InboxViewModel) {
     when (val st = step) {
         is InboxStep.Choosing -> LibraryPickerSheet(
-            title = stringResource(R.string.settings_inbox_what_to_add),
-            intro = WebLibraryImportViewModel.introOf(st.content, stringResource(R.string.settings_inbox_who_sent, st.send.name)),
+            title = "What to add",
+            intro = WebLibraryImportViewModel.introOf(st.content, "${st.send.name} sent"),
             pick = st.pick,
             onPick = viewModel::updatePick,
-            actions = listOf(PickerAction(stringResource(R.string.settings_inbox_add_to_library), viewModel::addChosen, primary = true)),
+            actions = listOf(PickerAction("Add to my library", viewModel::addChosen, primary = true)),
             onDismiss = viewModel::stepDone,
         )
         is InboxStep.Opening -> AlertDialog(
             onDismissRequest = viewModel::cancelOpening,
             containerColor = MaterialTheme.colorScheme.surface,
-            text = { Text(stringResource(R.string.settings_inbox_opening_what_sent, st.send.name), style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = viewModel::cancelOpening) { Text(stringResource(R.string.settings_cancel)) } },
+            text = { Text("Opening what ${st.send.name} sent…", style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = viewModel::cancelOpening) { Text("Cancel") } },
         )
         is InboxStep.Adding -> AlertDialog(
             onDismissRequest = {},
             containerColor = MaterialTheme.colorScheme.surface,
-            text = { Text(stringResource(R.string.settings_inbox_adding_to_library), style = MaterialTheme.typography.bodyMedium) },
+            text = { Text("Adding to your library…", style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {},
         )
         is InboxStep.Added -> AlertDialog(
@@ -227,7 +225,7 @@ fun InboxStepDialogs(step: InboxStep?, viewModel: InboxViewModel) {
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
             text = { Text(st.text, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = viewModel::stepDone) { Text(stringResource(R.string.settings_ok)) } },
+            confirmButton = { TextButton(onClick = viewModel::stepDone) { Text("OK") } },
         )
         null -> Unit
     }

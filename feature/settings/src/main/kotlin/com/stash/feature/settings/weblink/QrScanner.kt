@@ -41,8 +41,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import com.stash.feature.settings.R
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -94,7 +92,7 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
             CameraPreview(onCode)
             Cutout()
             Text(
-                text = stringResource(R.string.settings_qr_point_at_code),
+                text = "Point at the code on your computer.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -107,7 +105,7 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.settings_qr_permission_desc),
+                    text = "Stash needs the camera to scan the code. You can also scan it with your camera app.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White,
                     textAlign = TextAlign.Center,
@@ -123,11 +121,11 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
                     } else {
                         permission.launch(Manifest.permission.CAMERA)
                     }
-                }) { Text(stringResource(R.string.settings_qr_allow_camera)) }
+                }) { Text("Allow camera") }
             }
         }
         IconButton(onClick = onClose, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_qr_close_scanner), tint = Color.White)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close the scanner", tint = Color.White)
         }
     }
 }
