@@ -34,11 +34,6 @@ data class ListeningHistoryCounts(
     fun playsIn(fromDay: Long, toDay: Long): Int = playsByDay.entries.sumOf { (day, n) -> if (day in fromDay..toDay) n else 0 }
 }
 
-sealed interface ClearHistoryResult {
-    data class Success(val removed: Int) : ClearHistoryResult
-    data object Failure : ClearHistoryResult
-}
-
 /**
  * Settings › Library & Storage › Listening history: pause the history, and clear all of it or a
  * date range. This phone only (owner decision 7): nothing already sent to Last.fm, ListenBrainz or
@@ -64,10 +59,10 @@ class ListeningHistorySettingsViewModel @Inject constructor(
         .map { days -> ListeningHistoryCounts(days.associate { it.day to it.plays }, history.today()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListeningHistoryCounts(today = history.today()))
 
-    private val _clearResult = MutableSharedFlow<ClearHistoryResult>(extraBufferCapacity = 2)
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 2)
 
     /** One-off results for a toast. */
-    val clearResult: SharedFlow<ClearHistoryResult> = _clearResult.asSharedFlow()
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     /** Today, read now: the range picker's last selectable day, right after midnight too. */
     fun today(): Long = history.today()
@@ -94,10 +89,16 @@ class ListeningHistorySettingsViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ListeningHistorySettings", "Clear failed", e)
-                _clearResult.tryEmit(ClearHistoryResult.Failure)
+                _messages.tryEmit("Couldn't clear your history. Try again.")
                 return@launch
             }
-            _clearResult.tryEmit(ClearHistoryResult.Success(removed))
+            _messages.tryEmit(
+                when (removed) {
+                    0 -> "Nothing to clear"
+                    1 -> "Cleared 1 play"
+                    else -> "Cleared $removed plays"
+                },
+            )
         }
     }
 

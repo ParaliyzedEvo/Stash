@@ -642,11 +642,6 @@
     </plurals>
     <string name="settings_listening_history_confirm_no_listens">There are no listens on those days. %s</string>
     <string name="settings_listening_history_confirm_clear_button">Clear</string>
-    <string name="settings_listening_history_clear_failed">Couldn\'t clear your history. Try again.</string>
-    <plurals name="settings_listening_history_cleared_plays">
-        <item quantity="one">Cleared %d play</item>
-        <item quantity="other">Cleared %d plays</item>
-    </plurals>
 
     <!-- Settings > Web Library Sheets -->
     <string name="web_library_export_what_to_include">What to include</string>
