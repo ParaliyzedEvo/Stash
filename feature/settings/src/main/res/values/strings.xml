@@ -93,15 +93,6 @@
     <string name="settings_discord_risk_body">Discord has no official way for a phone app to set your status, so Stash signs in as you and uses your account\'s own session. Discord\'s rules call that a self-bot and allow them to action the account.\n\nEnforcement goes after spam rather than status updates, so this is unlikely — but it is your account, so it is your call.\n\nDisconnecting clears your status and deletes the token from this phone.</string>
     <string name="settings_discord_risk_connect">Connect anyway</string>
     <string name="settings_discord_finish_connecting">Finish connecting</string>
-    <!-- Settings > Accounts > Discord Login & Token -->
-    <string name="settings_discord_signin_title">Sign in to Discord</string>
-    <string name="settings_discord_paste_token_action">Paste token</string>
-    <string name="settings_login_successful_connecting">Login successful, connecting…</string>
-    <string name="settings_signin_blocked_question">Sign-in blocked or not working?</string>
-    <string name="settings_discord_paste_token_instead">Paste token instead</string>
-    <string name="settings_discord_connect_dialog_title">Connect Discord</string>
-    <string name="settings_discord_token_instructions">Paste your Discord account token (from DevTools → Application → Local Storage → discord.com → \"token\").</string>
-    <string name="settings_discord_token_label">Token</string>
     <string name="settings_lastfm_connect_first">Connect Last.fm first.</string>
     <string name="settings_lastfm_reach_error">Couldn\'t reach Last.fm. Your plays stay queued and will be sent later.</string>
     <string name="settings_lastfm_no_new_scrobbles">No new scrobbles to send.</string>

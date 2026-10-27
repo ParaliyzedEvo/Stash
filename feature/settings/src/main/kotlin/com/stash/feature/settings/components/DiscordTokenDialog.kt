@@ -16,9 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.stash.feature.settings.R
 
 @Composable
 fun DiscordTokenDialog(
@@ -31,11 +29,12 @@ fun DiscordTokenDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_discord_connect_dialog_title)) },
+        title = { Text("Connect Discord") },
         text = {
             Column {
                 Text(
-                    stringResource(R.string.settings_discord_token_instructions),
+                    "Paste your Discord account token (from DevTools → Application → " +
+                        "Local Storage → discord.com → \"token\").",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -43,7 +42,7 @@ fun DiscordTokenDialog(
                     value = token,
                     onValueChange = { token = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.settings_discord_token_label)) },
+                    label = { Text("Token") },
                     isError = errorMessage != null,
                     supportingText = errorMessage?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                     enabled = !isValidating,
@@ -55,10 +54,10 @@ fun DiscordTokenDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConnect(token) }, enabled = !isValidating) { Text(stringResource(R.string.settings_account_connect)) }
+            TextButton(onClick = { onConnect(token) }, enabled = !isValidating) { Text("Connect") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isValidating) { Text(stringResource(R.string.settings_cancel)) }
+            TextButton(onClick = onDismiss, enabled = !isValidating) { Text("Cancel") }
         },
     )
 }
