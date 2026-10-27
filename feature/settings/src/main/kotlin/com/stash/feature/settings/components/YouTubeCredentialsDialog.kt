@@ -15,10 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.stash.feature.settings.R
 
 /**
  * Dialog that collects the user's Google Cloud OAuth Client ID and Client Secret
@@ -47,7 +45,7 @@ fun YouTubeCredentialsDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = stringResource(R.string.settings_youtube_credentials_title),
+                text = "YouTube Music Credentials",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -55,7 +53,10 @@ fun YouTubeCredentialsDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = stringResource(R.string.settings_youtube_credentials_desc),
+                    text = "Enter your Google Cloud OAuth credentials. " +
+                        "Create them at console.cloud.google.com with the " +
+                        "\"TVs and Limited Input devices\" type and enable " +
+                        "the YouTube Data API v3.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -65,7 +66,7 @@ fun YouTubeCredentialsDialog(
                 OutlinedTextField(
                     value = clientId,
                     onValueChange = { clientId = it },
-                    label = { Text(stringResource(R.string.settings_youtube_client_id_label)) },
+                    label = { Text("Client ID") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -75,7 +76,7 @@ fun YouTubeCredentialsDialog(
                 OutlinedTextField(
                     value = clientSecret,
                     onValueChange = { clientSecret = it },
-                    label = { Text(stringResource(R.string.settings_youtube_client_secret_label)) },
+                    label = { Text("Client Secret") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
@@ -96,12 +97,12 @@ fun YouTubeCredentialsDialog(
                 onClick = { onConfirm(clientId.trim(), clientSecret.trim()) },
                 enabled = clientId.isNotBlank() && clientSecret.isNotBlank(),
             ) {
-                Text(stringResource(R.string.settings_youtube_save_connect))
+                Text("Save & Connect")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.settings_cancel))
+                Text("Cancel")
             }
         },
     )
