@@ -895,4 +895,73 @@
     <string name="diagnostics_copied_toast">Copied</string>
     <string name="diagnostics_copy_button">Copy</string>
     <string name="diagnostics_open_issue_button">Open a GitHub issue</string>
+    <!-- Settings > Cloud Storage -->
+    <string name="settings_cloud_section_title">Cloud storage</string>
+    <string name="settings_cloud_gdrive_add_songs_title">Add songs from Google Drive</string>
+    <string name="settings_cloud_gdrive_add_songs_subtitle">Stash sees only the songs you pick.</string>
+    <string name="settings_cloud_folder_add_title">Add a music folder</string>
+    <string name="settings_cloud_folder_add_subtitle">Read-only. Your files stay as they are.</string>
+    <string name="settings_cloud_disconnect_dialog_title">Disconnect %1$s?</string>
+    <string name="settings_cloud_disconnect_dialog_body_intro">Stash forgets this sign-in on this phone.</string>
+    <plurals name="settings_cloud_disconnect_dialog_removed">
+        <item quantity="one">%1$d song that only streams from %2$s leaves your library, with its play history.</item>
+        <item quantity="other">%1$d songs that only stream from %2$s leave your library, with their play history.</item>
+    </plurals>
+    <plurals name="settings_cloud_disconnect_dialog_kept">
+        <item quantity="one">%d downloaded song stays on this phone.</item>
+        <item quantity="other">%d downloaded songs stay on this phone.</item>
+    </plurals>
+    <string name="settings_cloud_disconnect_dialog_gdrive_pending">Songs waiting to be saved to it won\'t be.</string>
+    <string name="settings_cloud_disconnect_dialog_untouched">Your files in %1$s are not touched.</string>
+
+    <string name="settings_cloud_folders_section_title">Cloud folders</string>
+    <string name="settings_cloud_add_folder_from_provider">Add a folder from %1$s</string>
+    <string name="settings_cloud_add_folder">Add a folder</string>
+    <string name="settings_cloud_rescan_title">Rescan now</string>
+    <string name="settings_cloud_rescan_subtitle">Picks up songs added, changed or removed in your cloud. Stash also checks twice a day.</string>
+    <string name="settings_cloud_remove_folder_dialog_title">Remove %1$s?</string>
+    <string name="settings_cloud_remove_folder_dialog_body">Its songs leave your library, except the ones you downloaded, which stay on this phone. Nothing is deleted from your cloud.</string>
+    <string name="settings_cloud_folder_fallback_name">this folder</string>
+    <string name="settings_cloud_remove_folder_content_desc">Remove folder</string>
+
+    <plurals name="settings_cloud_scan_running_songs_so_far">
+        <item quantity="one">Scanning… %d song so far</item>
+        <item quantity="other">Scanning… %d songs so far</item>
+    </plurals>
+    <string name="settings_cloud_scan_didnt_finish">The last scan didn\'t finish</string>
+    <plurals name="settings_cloud_folder_songs_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <string name="settings_cloud_last_checked">checked %s</string>
+
+    <string name="settings_cloud_gdrive_backup_title">Back up my downloads to Google Drive</string>
+    <string name="settings_cloud_gdrive_backup_default_subtitle">New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.</string>
+    <string name="settings_cloud_backup_try_again_title">Try again</string>
+    <string name="settings_cloud_backup_no_space_subtitle">Once there\'s space in your Google Drive.</string>
+    <plurals name="settings_cloud_backup_existing_title">
+        <item quantity="one">Back up 1 existing download</item>
+        <item quantity="other">Back up %d existing downloads</item>
+    </plurals>
+    <string name="settings_cloud_backup_backfill_subtitle">Downloaded before backup was on.</string>
+
+    <string name="settings_cloud_folder_picker_up_desc">Up</string>
+    <string name="settings_cloud_picker_default_title">Pick your music folder</string>
+    <string name="settings_cloud_folder_picker_empty_root">No folders here.</string>
+    <string name="settings_cloud_folder_picker_empty_subfolder">No folders inside. Use this one?</string>
+    <string name="settings_cloud_use_this_folder">Use this folder</string>
+
+    <string name="settings_cloud_time_just_now">just now</string>
+    <plurals name="settings_cloud_time_minutes_ago">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="settings_cloud_time_hours_ago">
+        <item quantity="one">%d h ago</item>
+        <item quantity="other">%d h ago</item>
+    </plurals>
+    <plurals name="settings_cloud_time_days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
 </resources>
