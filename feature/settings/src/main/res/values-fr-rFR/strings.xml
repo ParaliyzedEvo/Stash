@@ -789,16 +789,16 @@
     <string name="settings_web_link_unlink_note">La suppression d\'un lien n\'entraîne jamais la suppression d\'éléments d\'une bibliothèque.</string>
     <string name="settings_web_link_device_this_phone">Ce téléphone</string>
     <string name="settings_web_link_device_linked">Linked</string>
-    <string name="settings_web_link_device_last_used_today">Last used today</string>
-    <string name="settings_web_link_device_last_used_yesterday">Last used yesterday</string>
+    <string name="settings_web_link_device_last_used_today">Dernière utilisation aujourd\'hui</string>
+    <string name="settings_web_link_device_last_used_yesterday">Dernière utilisation hier</string>
     <plurals name="settings_web_link_device_last_used_days">
-        <item quantity="one">Last used %d day ago</item>
-        <item quantity="other">Last used %d days ago</item>
+        <item quantity="one">Dernière utilisation il y a %d jour</item>
+        <item quantity="other">Dernière utilisation il y a %d jours</item>
     </plurals>
     <string name="settings_web_link_reading_code">Lecture du code…</string>
-    <string name="settings_web_link_confirm_title">Link %s?</string>
+    <string name="settings_web_link_confirm_title">Lien %s ?</string>
     <string name="settings_web_link_confirm_body_before_code">Votre ordinateur vous demandera de vérifier </string>
-    <string name="settings_web_link_confirm_body_after_code">. It will see what you\'re playing here, and you can choose to mirror your library with it.</string>
+    <string name="settings_web_link_confirm_body_after_code">. Il détectera ce que vous écoutez ici, et vous pourrez choisir de synchroniser votre bibliothèque avec lui.</string>
     <string name="settings_web_link_confirm_from_link_warning">Ne continuez que si vous venez d\'ouvrir « Connecter votre téléphone » sur votre propre ordinateur et que celui-ci se trouve devant vous en ce moment.</string>
     <string name="settings_web_link_action_link">Lier</string>
     <string name="settings_web_link_waiting_computer">En attente de votre ordinateur… · </string>
@@ -806,7 +806,7 @@
     <string name="settings_web_link_linked_to">Lié à %s</string>
     <string name="settings_web_link_linked_desc">Lien établi. Aucun contenu n\'est encore répliqué.</string>
     <string name="settings_web_link_code_label">Code </string>
-    <string name="settings_web_link_scan_again">Scan again</string>
+    <string name="settings_web_link_scan_again">Scanner à nouveau</string>
     <string name="settings_web_link_action_rename">Renommer</string>
     <string name="settings_web_link_rename_dialog_title">Renommer</string>
     <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
@@ -817,7 +817,7 @@
     <string name="settings_mirror_dir_to_web">Téléphone → Internet</string>
     <string name="settings_mirror_dir_to_phone">Internet → Téléphone</string>
     <string name="settings_mirror_section_title">Synchroniser vos appareils</string>
-    <string name="settings_mirror_section_desc">Off keeps a separate library on each. What mirrors is end-to-end encrypted.</string>
+    <string name="settings_mirror_section_desc">Off conserve une bibliothèque distincte sur chacune d\'entre elles. Les données mises en miroir sont chiffrées de bout en bout.</string>
     <string name="settings_mirror_likes_title">Likes</string>
     <string name="settings_mirror_likes_waiting_share"> · Waiting for %s to share its likes.</string>
     <string name="settings_mirror_likes_choose_combine"> · Choose how to combine them</string>
@@ -845,9 +845,9 @@
     <string name="settings_mirror_playlist_readonly_web"> · From your phone, read-only on the web</string>
     <string name="settings_mirror_playlist_shared_mix"> · Shared mix</string>
     <string name="settings_mirror_switch_off_note">La désactivation d\'une copie met fin à sa mise en miroir, mais toutes les copies restent à leur emplacement d\'origine.</string>
-    <string name="settings_mirror_first_merge_title">Your likes: %1$d on %2$s, %3$d here</string>
+    <string name="settings_mirror_first_merge_title">Vos « J\'aime » : %1$d sur %2$s, %3$d ici</string>
     <string name="settings_mirror_first_merge_changed">Le nombre de « J\'aime » a changé depuis que vous avez répondu. Vérifiez à nouveau les chiffres.</string>
-    <string name="settings_mirror_merge_add_theirs">Add %s\'s to this phone\'s</string>
+    <string name="settings_mirror_merge_add_theirs">Ajouter les %s à ce téléphone</string>
     <string name="settings_mirror_merge_likes_here">%d likes here</string>
     <string name="settings_mirror_merge_replace_with_theirs">Replace this phone\'s with %s\'s</string>
     <plurals name="settings_mirror_merge_removes_here">
@@ -857,38 +857,38 @@
     <string name="settings_mirror_merge_combine_title">Regroupez-les</string>
     <string name="settings_mirror_merge_combine_detail">Garde les deux, %d « J\'aime » partout</string>
     <string name="settings_mirror_merge_use_theirs">Use %s\'s</string>
-    <string name="settings_mirror_merge_use_mine">Use this phone\'s</string>
+    <string name="settings_mirror_merge_use_mine">Utilisez ce téléphone pour</string>
     <plurals name="settings_mirror_merge_removes_there">
-        <item quantity="one">Removes %1$d like on %2$s</item>
-        <item quantity="other">Removes %1$d likes on %2$s</item>
+        <item quantity="one">Supprime %1$d élément similaire à %2$s</item>
+        <item quantity="other">Supprime %1$d éléments similaires à %2$s</item>
     </plurals>
-    <string name="settings_mirror_merge_external_likes_stay">Likes from Spotify or YouTube Music stay liked on this phone.</string>
-    <string name="settings_mirror_merge_yes_remove">Yes, remove them</string>
-    <string name="settings_mirror_merge_turn_on">Turn on</string>
+    <string name="settings_mirror_merge_external_likes_stay">Les « J\'aime » enregistrés sur Spotify ou YouTube Music restent enregistrés sur ce téléphone.</string>
+    <string name="settings_mirror_merge_yes_remove">Oui, supprime-les</string>
+    <string name="settings_mirror_merge_turn_on">Activer</string>
     <!-- Settings > Link Stash on the Web > LibraryPickerSheet -->
     <string name="settings_picker_likes">Likes</string>
-    <string name="settings_picker_plays">Plays</string>
+    <string name="settings_picker_plays">Lectures</string>
     <string name="settings_picker_playlists">Playlists</string>
-    <string name="settings_picker_playlists_none">none</string>
-    <string name="settings_picker_playlists_ticked_of_total">%1$d of %2$d</string>
-    <string name="settings_picker_choose_playlists_desc">Choose playlists</string>
+    <string name="settings_picker_playlists_none">aucun</string>
+    <string name="settings_picker_playlists_ticked_of_total">%1$d sur %2$d</string>
+    <string name="settings_picker_choose_playlists_desc">Choisir des playlists</string>
     <string name="settings_picker_all">Tout</string>
-    <string name="settings_picker_none">None</string>
+    <string name="settings_picker_none">Aucun</string>
     <plurals name="settings_picker_songs_count">
         <item quantity="one">%d titre</item>
         <item quantity="other">%d titres</item>
     </plurals>
-    <string name="settings_picker_shared_mix"> · Shared mix</string>
+    <string name="settings_picker_shared_mix"> · Mix partagé</string>
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
-    <string name="settings_inbox_sent_you">sent you %s.</string>
-    <string name="settings_inbox_adding_note">Adding never removes anything from your library.</string>
+    <string name="settings_inbox_sent_you">Je vous ai envoyé %s.</string>
+    <string name="settings_inbox_adding_note">L\'ajout ne supprime jamais rien de votre bibliothèque.</string>
     <string name="settings_inbox_add_to_library">Ajouter à ma bibliothèque</string>
     <string name="settings_inbox_choose_what_to_add">Choisissez ce que vous souhaitez ajouter</string>
     <string name="settings_inbox_not_now">Pas maintenant</string>
     <string name="settings_inbox_discard">Ignorer</string>
     <string name="settings_inbox_what_to_add">À ajouter</string>
     <string name="settings_inbox_who_sent">%s envoyé</string>
-    <string name="settings_inbox_opening_what_sent">Opening what %s sent…</string>
+    <string name="settings_inbox_opening_what_sent">Ouverture du message envoyé par %s…</string>
     <string name="settings_inbox_adding_to_library">À ajouter à votre bibliothèque…</string>
     <!-- Settings > Link Stash on the Web > QrScanner -->
     <string name="settings_qr_point_at_code">Sélectionnez le fichier de code sur votre ordinateur.</string>
@@ -947,16 +947,16 @@
     <string name="settings_cloud_backup_try_again_title">Réessayez</string>
     <string name="settings_cloud_backup_no_space_subtitle">Dès qu\'il y aura de l\'espace disponible sur votre Google Drive.</string>
     <plurals name="settings_cloud_backup_existing_title">
-        <item quantity="one">Back up 1 existing download</item>
-        <item quantity="other">Back up %d existing downloads</item>
+        <item quantity="one">Sauvegarder 1 téléchargement existant</item>
+        <item quantity="other">Sauvegarder %d téléchargements existants</item>
     </plurals>
     <string name="settings_cloud_backup_backfill_subtitle">Le téléchargement a eu lieu avant l\'activation de la sauvegarde.</string>
-    <string name="settings_cloud_folder_picker_up_desc">Up</string>
+    <string name="settings_cloud_folder_picker_up_desc">Haut</string>
     <string name="settings_cloud_picker_default_title">Choisissez votre dossier de musique</string>
     <string name="settings_cloud_folder_picker_empty_root">Aucun dossier ici.</string>
     <string name="settings_cloud_folder_picker_empty_subfolder">Il n\'y a pas de dossiers à l\'intérieur. On utilise celui-là ?</string>
-    <string name="settings_cloud_use_this_folder">Use this folder</string>
-    <string name="settings_cloud_time_just_now">just now</string>
+    <string name="settings_cloud_use_this_folder">Utiliser ce dossier</string>
+    <string name="settings_cloud_time_just_now">il y a quelques instants</string>
     <plurals name="settings_cloud_time_minutes_ago">
         <item quantity="one">Il y a %d minute</item>
         <item quantity="other">Il y a %d minutes</item>
