@@ -1,68 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Sync Screen Header & General -->
-    <string name="sync_title">Sync</string>
-    <string name="sync_cancel">Cancel</string>
+    <string name="sync_title">Synchronisation</string>
+    <string name="sync_cancel">Annuler</string>
     <string name="sync_ok">OK</string>
     <!-- Sync Sections -->
     <string name="sync_section_sources">Sources</string>
-    <string name="sync_section_schedule">Schedule</string>
-    <string name="sync_section_library">Library</string>
-    <string name="sync_section_recent_syncs">Recent syncs</string>
+    <string name="sync_section_schedule">Calendrier</string>
+    <string name="sync_section_library">Bibliothèque</string>
+    <string name="sync_section_recent_syncs">Synchronisations récentes</string>
     <!-- Downloads Card -->
-    <string name="sync_downloads_title">Downloads</string>
-    <string name="sync_downloads_subtitle">View current downloads, queue, and history</string>
+    <string name="sync_downloads_title">Téléchargements</string>
+    <string name="sync_downloads_subtitle">Afficher les téléchargements en cours, la file d\'attente et l\'historique</string>
     <string name="sync_downloads_cd">Open downloads</string>
     <!-- Source Dashboard Stats & Empty Hints -->
     <string name="sync_source_stat_mixes">MIXES</string>
     <string name="sync_source_stat_playlists">PLAYLISTS</string>
-    <string name="sync_source_stat_liked">LIKED</string>
-    <string name="sync_source_stat_recommended">RECOMMENDED</string>
-    <string name="sync_source_empty_spotify">Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.</string>
-    <string name="sync_source_empty_youtube">Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.</string>
-    <string name="sync_source_empty_lastfm">A playlist of tracks Last.fm recommends — seeded from what you listen to — will be built on the next sync. Tap Sync Now to start it.</string>
+    <string name="sync_source_stat_liked">AIMÉ</string>
+    <string name="sync_source_stat_recommended">RECOMMANDÉ</string>
+    <string name="sync_source_empty_spotify">Vos playlists Spotify et vos mix quotidiens s\'afficheront ici après la première synchronisation. Appuyez sur « Synchroniser maintenant » pour les charger — rien ne sera téléchargé tant que vous n\'aurez pas activé cette option.</string>
+    <string name="sync_source_empty_youtube">Vos « Home Mixes », vos titres préférés et vos playlists issues de votre bibliothèque YouTube Music s\'afficheront ici après la première synchronisation. Rien ne sera téléchargé tant que vous n\'aurez pas sélectionné ce que vous souhaitez : pas de téléchargements inattendus.</string>
+    <string name="sync_source_empty_lastfm">Une playlist composée de titres recommandés par Last.fm — en fonction de vos écoutes — sera créée lors de la prochaine synchronisation. Appuyez sur « Synchroniser maintenant » pour lancer la synchronisation.</string>
     <!-- Library Maintenance Card -->
-    <string name="sync_blocked_songs_title">Blocked Songs</string>
-    <string name="sync_blocked_songs_none">No blocked songs</string>
+    <string name="sync_blocked_songs_title">Morceaux bloqués</string>
+    <string name="sync_blocked_songs_none">Aucun morceau bloqué</string>
     <plurals name="sync_blocked_songs_count">
-        <item quantity="one">%d song will never re-download</item>
-        <item quantity="other">%d songs will never re-download</item>
+        <item quantity="one">Le titre %d ne sera plus jamais téléchargé</item>
+        <item quantity="other">%d titres ne seront plus jamais téléchargés</item>
     </plurals>
     <!-- Unmatched / Review Warning Card -->
     <plurals name="sync_review_need_review">
-        <item quantity="one">%d song needs review</item>
-        <item quantity="other">%d songs need review</item>
+        <item quantity="one">%d titre doit être réécouté</item>
+        <item quantity="other">%d titres doivent être réécoutés</item>
     </plurals>
     <plurals name="sync_review_flagged_wrong">
-        <item quantity="one">%d song flagged as wrong match</item>
-        <item quantity="other">%d songs flagged as wrong match</item>
+        <item quantity="one">%d titre signalé comme ne correspondant pas</item>
+        <item quantity="other">%d titres signalés comme ne correspondant pas</item>
     </plurals>
     <plurals name="sync_review_unmatched">
-        <item quantity="one">%d song couldn\'t be matched</item>
-        <item quantity="other">%d songs couldn\'t be matched</item>
+        <item quantity="one">%d morceau n\'a pas pu être identifié</item>
+        <item quantity="other">%d morceaux n\'ont pas pu être identifiés</item>
     </plurals>
-    <string name="sync_review_sub_both">%1$d unmatched · %2$d flagged — tap to fix</string>
-    <string name="sync_review_sub_flagged">Tap to pick a replacement</string>
-    <string name="sync_review_sub_unmatched">Tap to review</string>
+    <string name="sync_review_sub_both">%1$d éléments non correspondants · %2$d éléments signalés — appuyez pour corriger</string>
+    <string name="sync_review_sub_flagged">Appuyez pour choisir un produit de remplacement</string>
+    <string name="sync_review_sub_unmatched">Appuyez ici pour consulter</string>
     <!-- Failed Downloads Warning Card -->
-    <string name="sync_failed_downloads_title">Failed Downloads</string>
+    <string name="sync_failed_downloads_title">Téléchargements ayant échoué</string>
     <plurals name="sync_failed_downloads_count">
         <item quantity="one">%d track needs attention</item>
         <item quantity="other">%d tracks need attention</item>
     </plurals>
     <!-- Sync Terminal -->
-    <string name="sync_log_title">SYNC LOG</string>
-    <string name="sync_log_copy">Copy</string>
+    <string name="sync_log_title">JOURNAL DE SYNCHRONISATION</string>
+    <string name="sync_log_copy">Copier</string>
     <!-- Undo Last Sync -->
-    <string name="sync_undo_last_sync_title">Undo last sync</string>
-    <string name="sync_undo_last_sync_subtitle">Puts back the %1$s it changed, as they were %2$s</string>
-    <string name="sync_undo">Undo</string>
-    <string name="sync_undoing">Undoing…</string>
-    <string name="sync_auto_sync_paused_note">Auto-sync paused after Undo. Tap Sync to resume.</string>
-    <string name="sync_undo_dialog_title">Undo last sync?</string>
+    <string name="sync_undo_last_sync_title">Annuler la dernière synchronisation</string>
+    <string name="sync_undo_last_sync_subtitle">Rétablit les %1$s qu\'il a modifiés, tels qu\'ils étaient à l\'origine (%2$s)</string>
+    <string name="sync_undo">Annuler</string>
+    <string name="sync_undoing">Annulation…</string>
+    <string name="sync_auto_sync_paused_note">La synchronisation automatique a été interrompue après l\'annulation. Appuyez sur « Synchroniser » pour la reprendre.</string>
+    <string name="sync_undo_dialog_title">Annuler la dernière synchronisation ?</string>
     <string name="sync_undo_dialog_body">Your library goes back to how it was before the last sync: playlists it hid come back, playlists it added are hidden, and playlists it emptied are refilled in their original order%1$s.\n\nTracks you added or removed yourself, and Download switches you changed, are kept. Downloaded files that were already deleted can\'t be brought back.\n\nAuto-sync then pauses until you tap Sync, so it doesn\'t redo it.</string>
-    <string name="sync_undo_sync_confirm">Undo sync</string>
-    <string name="sync_undone_title">Sync undone</string>
+    <string name="sync_undo_sync_confirm">Annuler la synchronisation</string>
+    <string name="sync_undone_title">Synchronisation annulée</string>
     <plurals name="sync_playlists_count">
         <item quantity="one">%d playlist</item>
         <item quantity="other">%d playlists</item>
@@ -76,9 +76,9 @@
         <item quantity="other">%d days ago</item>
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
-    <string name="sync_switch_to_refresh_title">Switch to Refresh?</string>
-    <string name="sync_switch_to_refresh_body">Refresh pulls fresh tracks each sync — your auto-generated daily mixes, weekly discovery, and other rotating playlists. Tracks that rotate out are removed from the mix and their downloads deleted to keep your library lean. Cleanup runs once all sources are set to Refresh — while any source still accumulates, nothing is deleted. Tracks you added manually are kept.</string>
-    <string name="sync_switch_to_refresh_confirm">Switch to Refresh</string>
+    <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
+    <string name="sync_switch_to_refresh_body">La fonction « Refresh » actualise les titres à chaque synchronisation : vos mix quotidiens générés automatiquement, vos découvertes hebdomadaires et vos autres playlists tournantes. Les titres qui ne font plus partie de la rotation sont retirés du mix et leurs fichiers téléchargés sont supprimés afin d’alléger votre bibliothèque. Le nettoyage s’effectue une fois que toutes les sources sont configurées sur « Refresh » ; tant qu’une source continue d’accumuler des titres, rien n’est supprimé. Les titres que vous avez ajoutés manuellement sont conservés.</string>
+    <string name="sync_switch_to_refresh_confirm">Passer au mode « Actualiser »</string>
     <string name="sync_mix_mode_title">Mode de synchronisation « Mix »</string>
     <string name="sync_mode_refresh">Actualiser</string>
     <string name="sync_mode_accumulate">Accumuler</string>
