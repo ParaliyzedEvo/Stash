@@ -263,7 +263,7 @@
     <string name="settings_full_art_blend_blurred">Blurred art</string>
     <string name="settings_full_art_blend_solid">Solid color</string>
     <string name="settings_full_art_zoom_title">Full art zoom</string>
-    <string name="settings_full_art_zoom_subtitle">How close full art shows the album. 1.0x fits the whole cover across the screen.</string>
+    <string name="settings_full_art_zoom_subtitle">Le niveau d\'agrandissement de la pochette de l\'album. Le réglage 1,0x affiche la pochette en entier sur l\'écran.</string>
     <string name="settings_full_art_pan_title">Full art pan</string>
     <string name="settings_full_art_pan_subtitle">À quelle vitesse chaque page défile dans la partie de l\'écran qui n\'est pas visible</string>
     <string name="settings_full_art_pan_off">Désactivé</string>
@@ -771,8 +771,8 @@
     <string name="settings_web_link_action_unlink_everything">Supprimer tous les liens</string>
     <string name="settings_web_link_section_link_browser">Associer un navigateur</string>
     <string name="settings_web_link_not_linked_instructions">Ouvrez play.stashfm.app › Paramètres › Votre téléphone</string>
-    <string name="settings_web_link_scan_code_button">Scan code</string>
-    <string name="settings_web_link_section_linked_devices">Linked devices</string>
+    <string name="settings_web_link_scan_code_button">Scanner le code</string>
+    <string name="settings_web_link_section_linked_devices">Appareils connectés</string>
     <string name="settings_web_link_link_another_browser">Associer un autre navigateur</string>
     <string name="settings_web_link_up_to_four">Jusqu\'à 4</string>
     <string name="settings_web_link_section_handoff">Passage de relais</string>
@@ -782,12 +782,12 @@
     <string name="settings_web_link_send_library_title">Envoyer ma bibliothèque vers un navigateur</string>
     <string name="settings_web_link_send_library_subtitle">Choisissez ce que vous souhaitez afficher : les « J\'aime », les écoutes, chaque playlist.</string>
     <string name="settings_web_link_section_waiting_for_you">Waiting for you</string>
-    <string name="settings_web_link_sent_you_summary">%1$s sent you %2$s</string>
+    <string name="settings_web_link_sent_you_summary">%1$s vous a envoyé %2$s</string>
     <string name="settings_web_link_sent_problem_discard">%s Jette-le.</string>
     <string name="settings_web_link_sent_actions_subtitle">Ajoutez-le, choisissez ce que vous voulez ajouter ou supprimez-le.</string>
-    <string name="settings_web_link_section_unlink">Unlink</string>
-    <string name="settings_web_link_unlink_note">Unlinking never deletes anything from a library.</string>
-    <string name="settings_web_link_device_this_phone">This phone</string>
+    <string name="settings_web_link_section_unlink">Supprimer le lien</string>
+    <string name="settings_web_link_unlink_note">La suppression d\'un lien n\'entraîne jamais la suppression d\'éléments d\'une bibliothèque.</string>
+    <string name="settings_web_link_device_this_phone">Ce téléphone</string>
     <string name="settings_web_link_device_linked">Linked</string>
     <string name="settings_web_link_device_last_used_today">Last used today</string>
     <string name="settings_web_link_device_last_used_yesterday">Last used yesterday</string>
@@ -795,28 +795,28 @@
         <item quantity="one">Last used %d day ago</item>
         <item quantity="other">Last used %d days ago</item>
     </plurals>
-    <string name="settings_web_link_reading_code">Reading the code…</string>
+    <string name="settings_web_link_reading_code">Lecture du code…</string>
     <string name="settings_web_link_confirm_title">Link %s?</string>
-    <string name="settings_web_link_confirm_body_before_code">Your computer will ask you to check </string>
+    <string name="settings_web_link_confirm_body_before_code">Votre ordinateur vous demandera de vérifier </string>
     <string name="settings_web_link_confirm_body_after_code">. It will see what you\'re playing here, and you can choose to mirror your library with it.</string>
-    <string name="settings_web_link_confirm_from_link_warning">Only continue if you just opened Link your phone on your own computer, and it\'s in front of you now.</string>
-    <string name="settings_web_link_action_link">Link</string>
-    <string name="settings_web_link_waiting_computer">Waiting for your computer… · </string>
-    <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
-    <string name="settings_web_link_linked_to">Linked to %s</string>
-    <string name="settings_web_link_linked_desc">Linked. Nothing is mirrored yet.</string>
+    <string name="settings_web_link_confirm_from_link_warning">Ne continuez que si vous venez d\'ouvrir « Connecter votre téléphone » sur votre propre ordinateur et que celui-ci se trouve devant vous en ce moment.</string>
+    <string name="settings_web_link_action_link">Lier</string>
+    <string name="settings_web_link_waiting_computer">En attente de votre ordinateur… · </string>
+    <string name="settings_web_link_waiting_desc">Vérifiez que %s affiche bien les six mêmes chiffres, puis appuyez sur « Lier » à cet endroit.</string>
+    <string name="settings_web_link_linked_to">Lié à %s</string>
+    <string name="settings_web_link_linked_desc">Lien établi. Aucun contenu n\'est encore répliqué.</string>
     <string name="settings_web_link_code_label">Code </string>
     <string name="settings_web_link_scan_again">Scan again</string>
     <string name="settings_web_link_action_rename">Renommer</string>
     <string name="settings_web_link_rename_dialog_title">Renommer</string>
     <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
-    <string name="settings_web_link_rename_other_hint">This name stays on this phone.</string>
+    <string name="settings_web_link_rename_other_hint">Ce nom restera sur ce téléphone.</string>
     <!-- Settings > Link Stash on the Web > Mirror -->
-    <string name="settings_mirror_dir_off">Off</string>
-    <string name="settings_mirror_dir_both">Both ways</string>
-    <string name="settings_mirror_dir_to_web">Phone → web</string>
-    <string name="settings_mirror_dir_to_phone">Web → phone</string>
-    <string name="settings_mirror_section_title">Mirror between your devices</string>
+    <string name="settings_mirror_dir_off">Désactivé</string>
+    <string name="settings_mirror_dir_both">Dans les deux sens</string>
+    <string name="settings_mirror_dir_to_web">Téléphone → Internet</string>
+    <string name="settings_mirror_dir_to_phone">Internet → Téléphone</string>
+    <string name="settings_mirror_section_title">Synchroniser vos appareils</string>
     <string name="settings_mirror_section_desc">Off keeps a separate library on each. What mirrors is end-to-end encrypted.</string>
     <string name="settings_mirror_likes_title">Likes</string>
     <string name="settings_mirror_likes_waiting_share"> · Waiting for %s to share its likes.</string>
@@ -826,27 +826,27 @@
         <item quantity="one"> · %d chosen</item>
         <item quantity="other"> · %d chosen</item>
     </plurals>
-    <string name="settings_mirror_choose_playlists_title">Choose playlists</string>
-    <string name="settings_mirror_choose_playlists_subtitle">Spotify and YouTube Music playlists go to the web only, read-only there.</string>
+    <string name="settings_mirror_choose_playlists_title">Choisir des playlists</string>
+    <string name="settings_mirror_choose_playlists_subtitle">Les playlists Spotify et YouTube Music sont disponibles uniquement sur le Web, où elles sont en lecture seule.</string>
     <string name="settings_mirror_plays_title">Plays</string>
-    <string name="settings_mirror_plays_subtitle_note"> · Plays from the web show in History, never in your Stash Mixes</string>
+    <string name="settings_mirror_plays_subtitle_note"> · Les morceaux écoutés depuis le site web apparaissent dans l\'historique, mais jamais dans vos « Stash Mixes »</string>
     <plurals name="settings_mirror_held_unlikes">
-        <item quantity="one">Mirroring is holding %1$d unlike from this phone. Send it to %2$s, or keep that like?</item>
-        <item quantity="other">Mirroring is holding %1$d unlikes from this phone. Send them to %2$s, or keep those likes?</item>
+        <item quantity="one">La synchronisation affiche %1$d, ce qui diffère de ce téléphone. Voulez-vous l\'envoyer à %2$s ou conserver cette valeur ?</item>
+        <item quantity="other">La synchronisation contient %1$d « Je n\'aime pas » provenant de ce téléphone. Souhaitez-vous les envoyer vers %2$s ou conserver ces « J\'aime » ?</item>
     </plurals>
     <string name="settings_mirror_keep_likes">Keep the likes</string>
     <string name="settings_mirror_send_unlikes">Send the unlikes</string>
     <string name="settings_mirror_playlists_spotify_ytm_note">Playlists that sync from Spotify or YouTube Music go phone → web only, whatever this says.</string>
     <string name="settings_mirror_new_playlists_too">Mirror new playlists too</string>
     <plurals name="settings_mirror_playlist_songs">
-        <item quantity="one">1 song</item>
-        <item quantity="other">%d songs</item>
+        <item quantity="one">1 titre</item>
+        <item quantity="other">%d titres</item>
     </plurals>
     <string name="settings_mirror_playlist_readonly_web"> · From your phone, read-only on the web</string>
     <string name="settings_mirror_playlist_shared_mix"> · Shared mix</string>
-    <string name="settings_mirror_switch_off_note">Switching one off stops mirroring it and leaves every copy where it is.</string>
+    <string name="settings_mirror_switch_off_note">La désactivation d\'une copie met fin à sa mise en miroir, mais toutes les copies restent à leur emplacement d\'origine.</string>
     <string name="settings_mirror_first_merge_title">Your likes: %1$d on %2$s, %3$d here</string>
-    <string name="settings_mirror_first_merge_changed">Your likes changed since you answered. Check the numbers again.</string>
+    <string name="settings_mirror_first_merge_changed">Le nombre de « J\'aime » a changé depuis que vous avez répondu. Vérifiez à nouveau les chiffres.</string>
     <string name="settings_mirror_merge_add_theirs">Add %s\'s to this phone\'s</string>
     <string name="settings_mirror_merge_likes_here">%d likes here</string>
     <string name="settings_mirror_merge_replace_with_theirs">Replace this phone\'s with %s\'s</string>
@@ -854,8 +854,8 @@
         <item quantity="one">Removes %d like here</item>
         <item quantity="other">Removes %d likes here</item>
     </plurals>
-    <string name="settings_mirror_merge_combine_title">Combine them</string>
-    <string name="settings_mirror_merge_combine_detail">Keep both, %d likes everywhere</string>
+    <string name="settings_mirror_merge_combine_title">Regroupez-les</string>
+    <string name="settings_mirror_merge_combine_detail">Garde les deux, %d « J\'aime » partout</string>
     <string name="settings_mirror_merge_use_theirs">Use %s\'s</string>
     <string name="settings_mirror_merge_use_mine">Use this phone\'s</string>
     <plurals name="settings_mirror_merge_removes_there">
@@ -882,12 +882,12 @@
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
     <string name="settings_inbox_sent_you">sent you %s.</string>
     <string name="settings_inbox_adding_note">Adding never removes anything from your library.</string>
-    <string name="settings_inbox_add_to_library">Add to my library</string>
-    <string name="settings_inbox_choose_what_to_add">Choose what to add</string>
-    <string name="settings_inbox_not_now">Not now</string>
-    <string name="settings_inbox_discard">Discard</string>
-    <string name="settings_inbox_what_to_add">What to add</string>
-    <string name="settings_inbox_who_sent">%s sent</string>
+    <string name="settings_inbox_add_to_library">Ajouter à ma bibliothèque</string>
+    <string name="settings_inbox_choose_what_to_add">Choisissez ce que vous souhaitez ajouter</string>
+    <string name="settings_inbox_not_now">Pas maintenant</string>
+    <string name="settings_inbox_discard">Ignorer</string>
+    <string name="settings_inbox_what_to_add">À ajouter</string>
+    <string name="settings_inbox_who_sent">%s envoyé</string>
     <string name="settings_inbox_opening_what_sent">Opening what %s sent…</string>
     <string name="settings_inbox_adding_to_library">Adding to your library…</string>
     <!-- Settings > Link Stash on the Web > QrScanner -->
