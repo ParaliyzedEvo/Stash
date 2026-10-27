@@ -34,8 +34,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import com.stash.feature.settings.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -134,12 +132,12 @@ fun YouTubeProfileSheet(
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                text = stringResource(R.string.settings_youtube_profile_sheet_title),
+                "Which profile has your music?",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Text(
-                text = stringResource(R.string.settings_youtube_profile_sheet_desc),
+                "Your Google account's YouTube profiles. Stash syncs the one you pick.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 8.dp),
@@ -154,12 +152,12 @@ fun YouTubeProfileSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.settings_youtube_profile_load_failed),
+                        "Couldn't load your profiles",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onLoad) { Text(stringResource(R.string.settings_retry)) }
+                    TextButton(onClick = onLoad) { Text("Retry") }
                 }
                 else -> profiles.forEach { p ->
                     ProfileRow(p, chosen = p.pageId == state.currentPageId) {
@@ -171,12 +169,12 @@ fun YouTubeProfileSheet(
             Spacer(Modifier.height(8.dp))
             if (!enteringId) {
                 TextButton(onClick = { enteringId = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Text(stringResource(R.string.settings_youtube_profile_enter_id_button))
+                    Text("Profile not listed? Enter its ID")
                 }
             } else {
                 Column(Modifier.padding(horizontal = 20.dp)) {
                     Text(
-                        text = stringResource(R.string.settings_youtube_profile_enter_id_desc),
+                        "On myaccount.google.com/brandaccounts, open the profile and copy the number from the address.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -185,7 +183,7 @@ fun YouTubeProfileSheet(
                     OutlinedTextField(
                         value = idText,
                         onValueChange = { idText = it.filter(Char::isDigit) },
-                        label = { Text(stringResource(R.string.settings_youtube_profile_brand_id_label)) },
+                        label = { Text("Brand Account ID") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
@@ -197,7 +195,7 @@ fun YouTubeProfileSheet(
                                 onDismiss()
                             },
                             enabled = valid,
-                        ) { Text(stringResource(R.string.settings_youtube_profile_use_button)) }
+                        ) { Text("Use this profile") }
                     }
                 }
             }
