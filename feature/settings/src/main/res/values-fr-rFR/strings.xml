@@ -837,7 +837,7 @@
     <string name="settings_mirror_keep_likes">Keep the likes</string>
     <string name="settings_mirror_send_unlikes">Send the unlikes</string>
     <string name="settings_mirror_playlists_spotify_ytm_note">Playlists that sync from Spotify or YouTube Music go phone → web only, whatever this says.</string>
-    <string name="settings_mirror_new_playlists_too">Mirror new playlists too</string>
+    <string name="settings_mirror_new_playlists_too">Synchroniser également les nouvelles playlists</string>
     <plurals name="settings_mirror_playlist_songs">
         <item quantity="one">1 titre</item>
         <item quantity="other">%d titres</item>
@@ -872,11 +872,11 @@
     <string name="settings_picker_playlists_none">none</string>
     <string name="settings_picker_playlists_ticked_of_total">%1$d of %2$d</string>
     <string name="settings_picker_choose_playlists_desc">Choose playlists</string>
-    <string name="settings_picker_all">All</string>
+    <string name="settings_picker_all">Tout</string>
     <string name="settings_picker_none">None</string>
     <plurals name="settings_picker_songs_count">
-        <item quantity="one">%d song</item>
-        <item quantity="other">%,d songs</item>
+        <item quantity="one">%d titre</item>
+        <item quantity="other">%d titres</item>
     </plurals>
     <string name="settings_picker_shared_mix"> · Shared mix</string>
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
