@@ -64,6 +64,8 @@
     <string name="settings_search_no_results">No settings found for \"%1$s\"</string>
     <string name="settings_search_placeholder">Search settings</string>
     <string name="settings_search_clear">Clear search</string>
+    <string name="settings_search_stream_or_download">Stream or download</string>
+    <string name="settings_search_sync_your_likes">Sync your likes</string>
 
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Support Stash</string>
@@ -134,6 +136,8 @@
     <string name="settings_youtube_profile_enter_id_button">Profile not listed? Enter its ID</string>
     <string name="settings_youtube_profile_enter_id_desc">On myaccount.google.com/brandaccounts, open the profile and copy the number from the address.</string>
     <string name="settings_youtube_profile_brand_id_label">Brand Account ID</string>
+    <string name="settings_youtube_profile_brand_account">Brand Account</string>
+    <string name="settings_youtube_profile_in_use_desc">In use</string>
     <string name="settings_youtube_profile_use_button">Use this profile</string>
     <string name="settings_yt_sync_title">Add plays to your YouTube Music history</string>
     <string name="settings_yt_sync_retry">Retry YouTube sync</string>
