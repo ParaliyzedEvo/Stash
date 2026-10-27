@@ -124,6 +124,17 @@
     <string name="settings_like_mirror_warning_confirm">I understand</string>
 
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
+    <!-- Settings > Accounts > YouTubeProfileSheet -->
+    <string name="settings_youtube_profile_title">Profile</string>
+    <string name="settings_youtube_profile_default">Your account</string>
+    <string name="settings_youtube_profile_subtitle">The profile Stash syncs your library from</string>
+    <string name="settings_youtube_profile_sheet_title">Which profile has your music?</string>
+    <string name="settings_youtube_profile_sheet_desc">Your Google account\'s YouTube profiles. Stash syncs the one you pick.</string>
+    <string name="settings_youtube_profile_load_failed">Couldn\'t load your profiles</string>
+    <string name="settings_youtube_profile_enter_id_button">Profile not listed? Enter its ID</string>
+    <string name="settings_youtube_profile_enter_id_desc">On myaccount.google.com/brandaccounts, open the profile and copy the number from the address.</string>
+    <string name="settings_youtube_profile_brand_id_label">Brand Account ID</string>
+    <string name="settings_youtube_profile_use_button">Use this profile</string>
     <string name="settings_yt_sync_title">Add plays to your YouTube Music history</string>
     <string name="settings_yt_sync_retry">Retry YouTube sync</string>
     <string name="settings_yt_status_up_to_date">Up to date</string>
