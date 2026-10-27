@@ -162,7 +162,6 @@
     <string name="settings_close">Close</string>
     <string name="settings_done">Done</string>
     <string name="settings_save">Save</string>
-    <string name="settings_retry">Retry</string>
 
     <!-- Settings > Appearance -->
     <string name="settings_theme_system">System</string>
@@ -874,14 +873,4 @@
     <string name="settings_qr_permission_desc">Stash needs the camera to scan the code. You can also scan it with your camera app.</string>
     <string name="settings_qr_allow_camera">Allow camera</string>
     <string name="settings_qr_close_scanner">Close the scanner</string>
-    <!-- Settings > Diagnostics Preview -->
-    <string name="diagnostics_title">Diagnostics</string>
-    <string name="diagnostics_failed_to_build">Failed to build diagnostics</string>
-    <string name="diagnostics_review_description">Review what will be shared. No passwords or tokens are included. Share sends a zip with this report plus the full recent log; attach it to your GitHub issue.</string>
-    <string name="diagnostics_share_subject">Stash diagnostics</string>
-    <string name="diagnostics_share_no_app">No app available to share.</string>
-    <string name="diagnostics_share_button">Share</string>
-    <string name="diagnostics_copied_toast">Copied</string>
-    <string name="diagnostics_copy_button">Copy</string>
-    <string name="diagnostics_open_issue_button">Open a GitHub issue</string>
 </resources>
