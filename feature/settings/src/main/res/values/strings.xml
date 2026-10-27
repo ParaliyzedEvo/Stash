@@ -102,20 +102,6 @@
     <string name="settings_discord_connect_dialog_title">Connect Discord</string>
     <string name="settings_discord_token_instructions">Paste your Discord account token (from DevTools → Application → Local Storage → discord.com → \"token\").</string>
     <string name="settings_discord_token_label">Token</string>
-
-    <!-- Settings > Accounts > Spotify Login & Cookie -->
-    <string name="settings_spotify_signin_title">Sign in to Spotify</string>
-    <string name="settings_spotify_paste_cookie_action">Paste cookie</string>
-    <string name="settings_spotify_paste_cookie_instead">Paste cookie instead</string>
-    <string name="settings_spotify_connect_dialog_title">Connect Spotify</string>
-    <string name="settings_spotify_cookie_dialog_desc">Log into Spotify in a real browser and paste your sp_dc cookie. This works even when in-app sign-in is blocked by Spotify\'s bot check.</string>
-    <string name="settings_spotify_how_to_get_cookie">How to get your sp_dc cookie:</string>
-    <string name="settings_spotify_how_to_get_cookie_steps">Easiest on a computer:\n1. Open open.spotify.com and log in\n2. Press F12 → Application → Cookies\n3. Copy the value of \'sp_dc\'\n\nOn a phone: use a browser that can show cookies (e.g. Firefox add-ons, or a cookie-viewer app).</string>
-    <string name="settings_spotify_cookie_label">sp_dc cookie</string>
-    <string name="settings_spotify_cookie_placeholder">Paste your sp_dc cookie here</string>
-    <string name="settings_spotify_username_label">Spotify username (optional)</string>
-    <string name="settings_spotify_username_placeholder">Your Spotify username</string>
-    <string name="settings_spotify_username_hint">Find at spotify.com/account under \'Username\'</string>
     <string name="settings_lastfm_connect_first">Connect Last.fm first.</string>
     <string name="settings_lastfm_reach_error">Couldn\'t reach Last.fm. Your plays stay queued and will be sent later.</string>
     <string name="settings_lastfm_no_new_scrobbles">No new scrobbles to send.</string>
