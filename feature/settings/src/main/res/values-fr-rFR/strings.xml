@@ -246,7 +246,7 @@
     <string name="settings_title_align_center">Centre</string>
     <string name="settings_title_align_left">Gauche</string>
     <string name="settings_title_button_title">Bouton situé à côté du titre</string>
-    <string name="settings_title_button_subtitle">Opposite the like heart</string>
+    <string name="settings_title_button_subtitle">À l\'opposé du cœur semblable</string>
     <string name="settings_title_button_sleep_timer">Minuterie de mise en veille</string>
     <string name="settings_title_button_none">Aucun</string>
     <string name="settings_title_button_lyrics">Paroles</string>
@@ -257,14 +257,14 @@
     <string name="settings_title_button_share">Partager</string>
     <string name="settings_title_button_download">Télécharger</string>
     <string name="settings_title_button_album">Voir l\'album</string>
-    <string name="settings_full_art_section">Full art</string>
-    <string name="settings_full_art_blend_title">Full art blend</string>
+    <string name="settings_full_art_section">Illustration complète</string>
+    <string name="settings_full_art_blend_title">Mélange artistique complet</string>
     <string name="settings_full_art_blend_subtitle">Ce en quoi l\'art se fond sous l\'emprise des commandes</string>
-    <string name="settings_full_art_blend_blurred">Blurred art</string>
-    <string name="settings_full_art_blend_solid">Solid color</string>
-    <string name="settings_full_art_zoom_title">Full art zoom</string>
+    <string name="settings_full_art_blend_blurred">Illustration floue</string>
+    <string name="settings_full_art_blend_solid">Couleur unie</string>
+    <string name="settings_full_art_zoom_title">Zoom sur l\'illustration complète</string>
     <string name="settings_full_art_zoom_subtitle">Le niveau d\'agrandissement de la pochette de l\'album. Le réglage 1,0x affiche la pochette en entier sur l\'écran.</string>
-    <string name="settings_full_art_pan_title">Full art pan</string>
+    <string name="settings_full_art_pan_title">Panoramique complet</string>
     <string name="settings_full_art_pan_subtitle">À quelle vitesse chaque page défile dans la partie de l\'écran qui n\'est pas visible</string>
     <string name="settings_full_art_pan_off">Désactivé</string>
     <string name="settings_full_art_pan_slow">Lent</string>
@@ -608,8 +608,8 @@
     <string name="settings_listening_history_confirm_clear_button">Effacer</string>
     <string name="settings_listening_history_clear_failed">Impossible d\'effacer votre historique. Veuillez réessayer.</string>
     <plurals name="settings_listening_history_cleared_plays">
-        <item quantity="one">Cleared %d play</item>
-        <item quantity="other">Cleared %d plays</item>
+        <item quantity="one">%d partie terminée</item>
+        <item quantity="other">%d parties terminées</item>
     </plurals>
     <!-- Settings > Web Library Sheets -->
     <string name="web_library_export_what_to_include">Éléments à inclure</string>
@@ -781,14 +781,14 @@
     <string name="settings_web_link_section_your_library">Votre bibliothèque</string>
     <string name="settings_web_link_send_library_title">Envoyer ma bibliothèque vers un navigateur</string>
     <string name="settings_web_link_send_library_subtitle">Choisissez ce que vous souhaitez afficher : les « J\'aime », les écoutes, chaque playlist.</string>
-    <string name="settings_web_link_section_waiting_for_you">Waiting for you</string>
+    <string name="settings_web_link_section_waiting_for_you">Dans votre attente</string>
     <string name="settings_web_link_sent_you_summary">%1$s vous a envoyé %2$s</string>
     <string name="settings_web_link_sent_problem_discard">%s Jette-le.</string>
     <string name="settings_web_link_sent_actions_subtitle">Ajoutez-le, choisissez ce que vous voulez ajouter ou supprimez-le.</string>
     <string name="settings_web_link_section_unlink">Supprimer le lien</string>
     <string name="settings_web_link_unlink_note">La suppression d\'un lien n\'entraîne jamais la suppression d\'éléments d\'une bibliothèque.</string>
     <string name="settings_web_link_device_this_phone">Ce téléphone</string>
-    <string name="settings_web_link_device_linked">Linked</string>
+    <string name="settings_web_link_device_linked">Lié</string>
     <string name="settings_web_link_device_last_used_today">Dernière utilisation aujourd\'hui</string>
     <string name="settings_web_link_device_last_used_yesterday">Dernière utilisation hier</string>
     <plurals name="settings_web_link_device_last_used_days">
@@ -809,7 +809,7 @@
     <string name="settings_web_link_scan_again">Scanner à nouveau</string>
     <string name="settings_web_link_action_rename">Renommer</string>
     <string name="settings_web_link_rename_dialog_title">Renommer</string>
-    <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
+    <string name="settings_web_link_rename_me_hint">C\'est ce nom qui s\'affiche sur vos appareils connectés.</string>
     <string name="settings_web_link_rename_other_hint">Ce nom restera sur ce téléphone.</string>
     <!-- Settings > Link Stash on the Web > Mirror -->
     <string name="settings_mirror_dir_off">Désactivé</string>
@@ -818,45 +818,45 @@
     <string name="settings_mirror_dir_to_phone">Internet → Téléphone</string>
     <string name="settings_mirror_section_title">Synchroniser vos appareils</string>
     <string name="settings_mirror_section_desc">Off conserve une bibliothèque distincte sur chacune d\'entre elles. Les données mises en miroir sont chiffrées de bout en bout.</string>
-    <string name="settings_mirror_likes_title">Likes</string>
-    <string name="settings_mirror_likes_waiting_share"> · Waiting for %s to share its likes.</string>
-    <string name="settings_mirror_likes_choose_combine"> · Choose how to combine them</string>
+    <string name="settings_mirror_likes_title">J\'aime</string>
+    <string name="settings_mirror_likes_waiting_share"> · En attente que %s partage ses mentions « J\'aime ».</string>
+    <string name="settings_mirror_likes_choose_combine"> · Choisissez comment les associer</string>
     <string name="settings_mirror_playlists_title">Playlists</string>
     <plurals name="settings_mirror_playlists_chosen">
-        <item quantity="one"> · %d chosen</item>
-        <item quantity="other"> · %d chosen</item>
+        <item quantity="one"> · %d sélectionnée</item>
+        <item quantity="other"> · %d sélectionnées</item>
     </plurals>
     <string name="settings_mirror_choose_playlists_title">Choisir des playlists</string>
     <string name="settings_mirror_choose_playlists_subtitle">Les playlists Spotify et YouTube Music sont disponibles uniquement sur le Web, où elles sont en lecture seule.</string>
-    <string name="settings_mirror_plays_title">Plays</string>
+    <string name="settings_mirror_plays_title">Lecture</string>
     <string name="settings_mirror_plays_subtitle_note"> · Les morceaux écoutés depuis le site web apparaissent dans l\'historique, mais jamais dans vos « Stash Mixes »</string>
     <plurals name="settings_mirror_held_unlikes">
         <item quantity="one">La synchronisation affiche %1$d, ce qui diffère de ce téléphone. Voulez-vous l\'envoyer à %2$s ou conserver cette valeur ?</item>
         <item quantity="other">La synchronisation contient %1$d « Je n\'aime pas » provenant de ce téléphone. Souhaitez-vous les envoyer vers %2$s ou conserver ces « J\'aime » ?</item>
     </plurals>
-    <string name="settings_mirror_keep_likes">Keep the likes</string>
-    <string name="settings_mirror_send_unlikes">Send the unlikes</string>
-    <string name="settings_mirror_playlists_spotify_ytm_note">Playlists that sync from Spotify or YouTube Music go phone → web only, whatever this says.</string>
+    <string name="settings_mirror_keep_likes">Garder les « J\'aime »</string>
+    <string name="settings_mirror_send_unlikes">Envoyer les « Je n\'aime pas »</string>
+    <string name="settings_mirror_playlists_spotify_ytm_note">Les playlists synchronisées depuis Spotify ou YouTube Music ne se synchronisent que du téléphone vers le Web, quoi qu\'il soit indiqué ici.</string>
     <string name="settings_mirror_new_playlists_too">Synchroniser également les nouvelles playlists</string>
     <plurals name="settings_mirror_playlist_songs">
         <item quantity="one">1 titre</item>
         <item quantity="other">%d titres</item>
     </plurals>
-    <string name="settings_mirror_playlist_readonly_web"> · From your phone, read-only on the web</string>
-    <string name="settings_mirror_playlist_shared_mix"> · Shared mix</string>
+    <string name="settings_mirror_playlist_readonly_web"> · Depuis votre téléphone, en lecture seule sur le Web</string>
+    <string name="settings_mirror_playlist_shared_mix"> · Mix partagé</string>
     <string name="settings_mirror_switch_off_note">La désactivation d\'une copie met fin à sa mise en miroir, mais toutes les copies restent à leur emplacement d\'origine.</string>
     <string name="settings_mirror_first_merge_title">Vos « J\'aime » : %1$d sur %2$s, %3$d ici</string>
     <string name="settings_mirror_first_merge_changed">Le nombre de « J\'aime » a changé depuis que vous avez répondu. Vérifiez à nouveau les chiffres.</string>
     <string name="settings_mirror_merge_add_theirs">Ajouter les %s à ce téléphone</string>
-    <string name="settings_mirror_merge_likes_here">%d likes here</string>
-    <string name="settings_mirror_merge_replace_with_theirs">Replace this phone\'s with %s\'s</string>
+    <string name="settings_mirror_merge_likes_here">%d « J\'aime » ici</string>
+    <string name="settings_mirror_merge_replace_with_theirs">Remplacer ce téléphone par celui de %s</string>
     <plurals name="settings_mirror_merge_removes_here">
-        <item quantity="one">Removes %d like here</item>
-        <item quantity="other">Removes %d likes here</item>
+        <item quantity="one">Supprime %d « J\'aime » ici</item>
+        <item quantity="other">Supprime %d « J\'aime » ici</item>
     </plurals>
     <string name="settings_mirror_merge_combine_title">Regroupez-les</string>
     <string name="settings_mirror_merge_combine_detail">Garde les deux, %d « J\'aime » partout</string>
-    <string name="settings_mirror_merge_use_theirs">Use %s\'s</string>
+    <string name="settings_mirror_merge_use_theirs">Utiliser les %s</string>
     <string name="settings_mirror_merge_use_mine">Utilisez ce téléphone pour</string>
     <plurals name="settings_mirror_merge_removes_there">
         <item quantity="one">Supprime %1$d élément similaire à %2$s</item>
@@ -866,7 +866,7 @@
     <string name="settings_mirror_merge_yes_remove">Oui, supprime-les</string>
     <string name="settings_mirror_merge_turn_on">Activer</string>
     <!-- Settings > Link Stash on the Web > LibraryPickerSheet -->
-    <string name="settings_picker_likes">Likes</string>
+    <string name="settings_picker_likes">J\'aime</string>
     <string name="settings_picker_plays">Lectures</string>
     <string name="settings_picker_playlists">Playlists</string>
     <string name="settings_picker_playlists_none">aucun</string>
