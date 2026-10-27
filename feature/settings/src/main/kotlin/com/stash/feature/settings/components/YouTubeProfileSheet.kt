@@ -227,13 +227,13 @@ private fun ProfileRow(profile: YouTubeProfile, chosen: Boolean, onClick: () -> 
         Column(Modifier.weight(1f)) {
             Text(profile.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOfNotNull(profile.handle, if (profile.pageId != null) stringResource(R.string.settings_youtube_profile_brand_account) else stringResource(R.string.settings_youtube_profile_default)).joinToString(" · "),
+                listOfNotNull(profile.handle, if (profile.pageId != null) "Brand Account" else "Your account").joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (chosen) Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.settings_youtube_profile_in_use_desc), tint = MaterialTheme.colorScheme.primary)
+        if (chosen) Icon(Icons.Rounded.Check, contentDescription = "In use", tint = MaterialTheme.colorScheme.primary)
     }
 }

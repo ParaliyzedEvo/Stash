@@ -67,7 +67,7 @@ fun AccountConnectionCard(
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
     needsAction: Boolean = false,
-    needsActionLabel: String = stringResource(R.string.settings_discord_finish_connecting),
+    needsActionLabel: String = "Finish connecting",
     onNeedsAction: (() -> Unit)? = null,
     expired: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
