@@ -820,8 +820,8 @@
     </plurals>
     <string name="settings_mirror_merge_combine_title">결합</string>
     <string name="settings_mirror_merge_combine_detail">Keep both, %d likes everywhere</string>
-    <string name="settings_mirror_merge_use_theirs">%s의 것 사용</string>
-    <string name="settings_mirror_merge_use_mine">이 휴대폰의 것 사용</string>
+    <string name="settings_mirror_merge_use_theirs">%s의 항목 사용</string>
+    <string name="settings_mirror_merge_use_mine">이 휴대폰의 항목 사용</string>
     <plurals name="settings_mirror_merge_removes_there">
         <item quantity="other">%2$s에서 %1$d 개의 좋아요를 제거합니다</item>
     </plurals>
