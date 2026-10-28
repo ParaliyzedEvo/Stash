@@ -20,7 +20,7 @@
     <string name="sync_source_stat_recommended">추천</string>
     <string name="sync_source_empty_spotify">첫 번째 동기화가 완료되면 Spotify의 재생목록과 데일리 믹스가 여기에 표시됩니다. \'지금 동기화\'를 탭하여 목록을 불러오세요. 다운로드는 다운로드 기능을 직접 활성화하기 전까지 진행되지 않습니다</string>
     <string name="sync_source_empty_youtube">첫 번째 동기화가 완료되면 YouTube Music 라이브러리의 홈 믹스, 좋아요 표시한 노래, 재생목록이 여기에 표시됩니다. 원하는 항목을 직접 선택하기 전까지는 아무것도 다운로드되지 않으므로, 예상되지 않은 다운로드가 발생하지 않습니다</string>
-    <string name="sync_source_empty_lastfm">평소 듣는 음악을 바탕으로 Last.fm이 추천하는 곡들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요</string>
+    <string name="sync_source_empty_lastfm">평소 듣는 노래를 바탕으로 Last.fm이 추천하는 노래들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요</string>
     <!-- Library Maintenance Card -->
     <string name="sync_blocked_songs_title">차단된 노래</string>
     <string name="sync_blocked_songs_none">차단된 노래가 없습니다</string>
@@ -86,5 +86,5 @@
         <item quantity="other">%d 개의 트랙</item>
     </plurals>
     <string name="sync_studio_only_title">스튜디오 녹음만</string>
-    <string name="sync_studio_only_desc">좋아요 표시한 음악에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다</string>
+    <string name="sync_studio_only_desc">좋아요 표시한 노래에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다</string>
 </resources>
