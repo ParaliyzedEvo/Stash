@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">웹 버전 Stash</string>
-    <string name="web_library_export_subtitle">Then in the web player: Settings › Your library › Import</string>
+    <string name="web_library_export_subtitle">그런 다음 웹 플레이어에서 이 경로로 이동하세요: Settings › Your library › Import</string>
     <string name="web_library_export_button">웹 버전 Stash용으로 내보내기</string>
     <string name="web_library_export_working_title">라이브러리를 내보내는 중</string>
     <string name="web_library_export_done_title">웹에서 사용할 준비</string>
@@ -47,7 +47,7 @@
     <string name="settings_version_label">버전</string>
     <string name="settings_license_label">라이선스</string>
     <string name="settings_album_art_credit">앨범 아트</string>
-    <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_album_art_credit_detail">앨범 뒷면 이미지와 내지는 Cover Art Archive 및 Discogs에서 가져옵니다. 이 앱은 Discogs API를 사용하지만 Discogs와 제휴 관계가 없으며, Discogs의 후원이나 보증을 받지 않습니다. \'Discogs\'는 Zink Media, LLC의 상표입니다</string>
     <string name="settings_checking_updates_toast">업데이트를 확인하는 중…</string>
     <string name="settings_checking_updates">확인하는 중…</string>
     <string name="settings_check_updates">업데이트 확인</string>
@@ -101,7 +101,7 @@
     <string name="settings_spotify_paste_cookie_action">쿠키 붙여넣기</string>
     <string name="settings_spotify_paste_cookie_instead">대신 쿠키 붙여넣기</string>
     <string name="settings_spotify_connect_dialog_title">Spotify 연결</string>
-    <string name="settings_spotify_cookie_dialog_desc">Log into Spotify in a real browser and paste your sp_dc cookie. This works even when in-app sign-in is blocked by Spotify\'s bot check.</string>
+    <string name="settings_spotify_cookie_dialog_desc">일반 브라우저에서 Spotify에 로그인한 다음, sp_dc 쿠키를 복사하여 붙여넣으세요. Spotify의 봇 검사로 인해 앱 내 로그인이 차단된 경우에도 이 방법을 사용할 수 있습니다.</string>
     <string name="settings_spotify_how_to_get_cookie">sp_dc 쿠키를 얻는 방법:</string>
     <string name="settings_spotify_how_to_get_cookie_steps">컴퓨터에서 가장 쉬운 방법:\n1. open.spotify.com⁠에 접속하여 로그인합니다\n2. F12 키를 누른 다음 → \'애플리케이션\' → \'쿠키\'로 이동합니다\n3. sp_dc 항목의 값을 복사합니다\n\n휴대폰에서 하는 방법:
 쿠키를 확인할 수 있는 브라우저를 사용하세요. (예시: Firefox 확장 기능 또는 쿠키 뷰어 앱)</string>
@@ -120,7 +120,7 @@
     <string name="settings_youtube_cookie_label">쿠키</string>
     <string name="settings_youtube_cookie_placeholder">여기에 쿠키를 붙여넣으세요</string>
     <string name="settings_youtube_credentials_title">YouTube Music 자격 증명</string>
-    <string name="settings_youtube_credentials_desc">Enter your Google Cloud OAuth credentials. Create them at console.cloud.google.com with the \"TVs and Limited Input devices\" type and enable the YouTube Data API v3.</string>
+    <string name="settings_youtube_credentials_desc">Google Cloud OAuth 인증 정보를 입력하세요. console.cloud.google.com에서 \'TVs and Limited Input devices\' 유형으로 인증 정보를 생성하고 YouTube Data API v3를 사용 설정하세요</string>
     <string name="settings_youtube_client_id_label">클라이언트 ID</string>
     <string name="settings_youtube_client_secret_label">클라이언트 시크릿</string>
     <string name="settings_youtube_save_connect">저장 및 연결</string>
@@ -180,8 +180,8 @@
     <string name="settings_yt_status_protocol_broken">오류로 인해 비활성화됨 — 다음 업데이트에서 다시 활성화됩니다</string>
     <string name="settings_yt_status_disabled">끄기</string>
     <string name="settings_yt_sync_dialog_title">YouTube Music 기록에 재생을 추가하시겠습니까?</string>
-    <string name="settings_yt_sync_dialog_body">Songs you finish in Stash show up in your YouTube Music history, so its recommendations learn from them.</string>
-    <string name="settings_yt_sync_dialog_risk_body">This uses an unofficial YouTube endpoint. It could stop working, and there\'s a small chance YouTube rate-limits your account. Stash pauses itself if it sees errors.</string>
+    <string name="settings_yt_sync_dialog_body">Stash에서 끝까지 재생한 노래는 YouTube Music 재생 기록에 표시되므로, 해당 기록을 바탕으로 추천 음악이 맞춤 설정됩니다</string>
+    <string name="settings_yt_sync_dialog_risk_body">비공식 YouTube 엔드포인트를 사용합니다. 작동이 중단될 수 있으며, 드물게 YouTube에서 계정의 요청을 제한할 수 있습니다. Stash는 오류가 감지되면 자동으로 일시 중지됩니다</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
     <!-- Settings > Accounts > LastFmSection -->
     <string name="settings_lastfm_waiting_approval_body">Last.fm에서 Stash를 승인한 다음 완료를 탭하세요</string>
@@ -215,10 +215,10 @@
     <string name="settings_mix_rotation_daily">매일</string>
     <string name="settings_mix_rotation_3_days">3 일마다</string>
     <string name="settings_mix_rotation_weekly">매주</string>
-    <string name="settings_mix_rotation_footer">Made for you and Mood &amp; decades bring different mixes to the front at midnight. Off: the newest first.</string>
+    <string name="settings_mix_rotation_footer">\'추천\'와 \'분위기 및 시대별\'은 자정마다 서로 다른 믹스를 우선적으로 표시합니다. 끄면 최신 항목부터 표시됩니다</string>
     <string name="settings_unplayed_mixes_first_title">재생하지 않은 믹스 먼저 표시</string>
     <string name="settings_unplayed_mixes_first_subtitle">거의 재생하지 않은 믹스를 먼저 표시합니다</string>
-    <string name="settings_home_mixes_favorite_hint">Long-press a mix on Home to favorite it: favorites always come first.</string>
+    <string name="settings_home_mixes_favorite_hint">홈 화면에서 믹스를 길게 눌러 즐겨찾기에 추가하세요. 즐겨찾기는 항상 목록 맨 앞에 표시됩니다</string>
     <string name="settings_home_layout_summary">%2$d 개의 섹션 중 %1$d 개를 표시합니다</string>
     <string name="settings_language_section">언어</string>
     <string name="settings_language_title">앱 언어</string>
@@ -235,9 +235,9 @@
     <string name="settings_ambient_motion_title">앰비언트 모션</string>
     <string name="settings_ambient_motion_subtitle">지금 현재 중 뒤의 움직이는 색상</string>
     <string name="settings_cycle_album_art_title">앨범 아트 순환</string>
-    <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
+    <string name="settings_cycle_album_art_subtitle">앨범 뒷면과 내지 이미지가 있는 경우, 해당 이미지가 천천히 나타나도록 표시합니다</string>
     <string name="settings_discogs_art_title">Discogs 아트</string>
-    <string name="settings_discogs_art_subtitle">Fill in back covers and inside pages the Cover Art Archive doesn\'t have from Discogs. Its images are uploaded by its users, and some are low quality.</string>
+    <string name="settings_discogs_art_subtitle">Cover Art Archive에 없는 앨범 뒷면과 내지 이미지를 Discogs에서 가져와 채웁니다. Discogs의 이미지는 사용자가 직접 업로드하므로 화질이 낮은 이미지가 있을 수 있습니다</string>
     <string name="settings_title_align_title">제목 정렬</string>
     <string name="settings_title_align_center">중앙</string>
     <string name="settings_title_align_left">왼쪽</string>
@@ -259,9 +259,9 @@
     <string name="settings_full_art_blend_blurred">흐릿한 아트</string>
     <string name="settings_full_art_blend_solid">단색</string>
     <string name="settings_full_art_zoom_title">전체 아트 확대</string>
-    <string name="settings_full_art_zoom_subtitle">How close full art shows the album. 1.0x fits the whole cover across the screen.</string>
+    <string name="settings_full_art_zoom_subtitle">전체 앨범 아트의 확대 비율을 설정합니다. 1.0x는 화면 너비에 맞춰 앨범 커버 전체가 표시되는 크기입니다</string>
     <string name="settings_full_art_pan_title">전체 아트 패닝</string>
-    <string name="settings_full_art_pan_subtitle">How fast each page drifts across the part the screen can\'t show</string>
+    <string name="settings_full_art_pan_subtitle">화면에 표시할 수 없는 부분을 각 페이지가 지나가는 속도</string>
     <string name="settings_full_art_pan_off">끄기</string>
     <string name="settings_full_art_pan_slow">느림</string>
     <string name="settings_full_art_pan_normal">일반</string>
@@ -384,7 +384,7 @@
     <string name="settings_hires_needs_android_14">Android 14 이상이 필요합니다</string>
     <string name="settings_hires_mode_bit_perfect">비트 퍼펙트 USB</string>
     <string name="settings_hires_mode_bit_perfect_desc">원본 오디오. EQ, 정규화 및 크로스페이드가 비활성화되고 DAC가 볼륨을 설정합니다</string>
-    <string name="settings_hires_footer_note">For USB DACs and USB-C dongles. Bluetooth, the speaker and the headphone jack always go through Android\'s mixer.</string>
+    <string name="settings_hires_footer_note">USB DAC 및 USB-C 동글용입니다. 블루투스, 스피커 및 헤드폰 잭은 항상 Android 오디오 믹서를 통해 연결됩니다</string>
     <string name="settings_hires_bit_perfect_dialog_title">먼저 DAC 볼륨을 낮추세요</string>
     <string name="settings_hires_bit_perfect_dialog_body">비트 퍼펙트 모드에서는 Android가 음량을 조절하지 않으며, DAC에서 음량을 직접 조절합니다. DAC에 자체 음량 조절 기능이 없는 경우 휴대폰의 음량 버튼이 작동하지 않을 수 있으며, 음악이 최대 음량으로 재생될 수 있습니다\n\n재생 버튼을 누르기 전에 음량을 낮춰 주세요. 비트 퍼펙트 모드가 활성화되어 있는 동안 이퀄라이저, 음량 정규화 및 크로스페이드는 적용되지 않습니다</string>
     <string name="settings_hires_bit_perfect_confirm">비트 퍼펙트 사용</string>
@@ -462,8 +462,8 @@
     <string name="settings_download_mode_any_network_label">모든 네트워크</string>
     <string name="settings_download_mode_any_network_desc">모바일 데이터도 사용 가능합니다</string>
     <string name="settings_stash_mixes_title">Stash 믹스 (베타)</string>
-    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts and First Listen refresh on their own</string>
-    <string name="settings_stash_mixes_subtitle_disabled">Mixes hidden; no background discovery</string>
+    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts 및 First Listen은 자동으로 새로고침됩니다</string>
+    <string name="settings_stash_mixes_subtitle_disabled">믹스를 숨깁니다. 백그라운드에서 새로운 믹스를 탐색하지 않습니다</string>
     <string name="settings_qobuz_discovery_title">홈 화면의 Qobuz 디스커버리</string>
     <string name="settings_qobuz_discovery_subtitle_enabled">홈 화면에서 신곡, Qobuz 재생목록 및 인기 앨범을 확인할 수 있습니다</string>
     <string name="settings_qobuz_discovery_subtitle_disabled">홈 화면에는 나만의 믹스와 음악만 표시됩니다</string>
@@ -609,13 +609,13 @@
         <item quantity="other">%2$s 이후 %1$s 재생</item>
     </plurals>
     <string name="web_library_export_history_none">아직 재생 기록이 없습니다</string>
-    <string name="web_library_export_history_note">Every play on this phone, for Your record on the web: each year you listened, pressed into a record.</string>
+    <string name="web_library_export_history_note">이 휴대폰에서 재생한 모든 기록은 웹 기록에 저장됩니다. 청취한 연도가 기록으로 저장됩니다</string>
     <!-- The export picker's "Plays" row: the newest plays that go into the web's history (up to 5,000). -->
     <string name="web_library_export_recent_plays">최근 재생</string>
     <!-- Under the Send buttons when the whole history is ticked: a send carries only the library. -->
-    <string name="web_library_export_history_file_only">Your whole listening history goes only in a saved file, not in a send.</string>
+    <string name="web_library_export_history_file_only">전체 청취 기록은 전송되지 않고 저장된 파일에만 보관됩니다</string>
     <!-- After "Saved 3 likes, 2 playlists and 40 plays.": %s is the history's plays ("12,480 plays"). -->
-    <string name="web_library_export_done_history">Your whole listening history went too: %s.</string>
+    <string name="web_library_export_done_history">전체 청취 기록도 함께 전송되었습니다: %s</string>
     <string name="web_library_import_what_to_import">가져올 항목</string>
     <string name="web_library_import_action_import">가져오기</string>
     <string name="web_library_import_reading_title">파일을 읽는 중</string>
@@ -733,7 +733,7 @@
     <string name="settings_equalizer_preset_name_label">프리셋 이름</string>
     <!-- Settings > Link Stash on the Web -->
     <string name="settings_web_link_remove_device_title">%s를 제거하시겠습니까?</string>
-    <string name="settings_web_link_remove_device_desc">It stops seeing your phone at once. Its library stays as it is.</string>
+    <string name="settings_web_link_remove_device_desc">휴대전화와의 연결이 즉시 해제됩니다. 라이브러리는 현재 상태로 유지됩니다</string>
     <string name="settings_web_link_action_remove">제거</string>
     <string name="settings_web_link_unlink_everything_title">모두 연결 해제하시겠습니까?</string>
     <string name="settings_web_link_unlink_everything_desc">Every linked browser is unlinked at once. Nothing is deleted from any library.</string>
@@ -751,11 +751,11 @@
     <string name="settings_web_link_send_library_title">내 라이브러리를 브라우저로 보내기</string>
     <string name="settings_web_link_send_library_subtitle">좋아요, 재생 기록, 각 재생목록 중 무엇을 보낼지 선택하세요</string>
     <string name="settings_web_link_section_waiting_for_you">기다리는 중</string>
-    <string name="settings_web_link_sent_you_summary">%1$s sent you %2$s</string>
+    <string name="settings_web_link_sent_you_summary">%1$s가 %2$s를 보냈습니다</string>
     <string name="settings_web_link_sent_problem_discard">%s Discard it.</string>
-    <string name="settings_web_link_sent_actions_subtitle">Add it, choose what to add, or discard it.</string>
+    <string name="settings_web_link_sent_actions_subtitle">추가하거나, 추가할 항목을 선택하거나, 삭제하세요</string>
     <string name="settings_web_link_section_unlink">연결 해제</string>
-    <string name="settings_web_link_unlink_note">Unlinking never deletes anything from a library.</string>
+    <string name="settings_web_link_unlink_note">연결을 해제해도 라이브러리의 항목은 삭제되지 않습니다</string>
     <string name="settings_web_link_device_this_phone">이 휴대폰</string>
     <string name="settings_web_link_device_linked">연결됨</string>
     <string name="settings_web_link_device_last_used_today">오늘 마지막 사용</string>
@@ -764,7 +764,7 @@
         <item quantity="other">마지막 사용 %d 일 전</item>
     </plurals>
     <string name="settings_web_link_reading_code">이 코드를 읽는 중…</string>
-    <string name="settings_web_link_confirm_title">Link %s?</string>
+    <string name="settings_web_link_confirm_title">%s을 연결하시겠습니까?</string>
     <string name="settings_web_link_confirm_body_before_code">Your computer will ask you to check </string>
     <string name="settings_web_link_confirm_body_after_code">. It will see what you\'re playing here, and you can choose to mirror your library with it.</string>
     <string name="settings_web_link_confirm_from_link_warning">Only continue if you just opened Link your phone on your own computer, and it\'s in front of you now.</string>
@@ -772,13 +772,13 @@
     <string name="settings_web_link_waiting_computer">내 컴퓨터를 기다리는 중… · </string>
     <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
     <string name="settings_web_link_linked_to">%s에 연결됨</string>
-    <string name="settings_web_link_linked_desc">Linked. Nothing is mirrored yet.</string>
+    <string name="settings_web_link_linked_desc">연결되었습니다. 아직 미러링된 항목이 없습니다</string>
     <string name="settings_web_link_code_label">코드 </string>
     <string name="settings_web_link_scan_again">다시 스캔</string>
     <string name="settings_web_link_action_rename">이름 변경</string>
     <string name="settings_web_link_rename_dialog_title">이름 변경</string>
-    <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
-    <string name="settings_web_link_rename_other_hint">This name stays on this phone.</string>
+    <string name="settings_web_link_rename_me_hint">연결된 기기에서 이 이름을 볼 수 있습니다</string>
+    <string name="settings_web_link_rename_other_hint">이 이름은 이 휴대폰에 유지됩니다</string>
     <!-- Settings > Link Stash on the Web > Mirror -->
     <string name="settings_mirror_dir_off">끄기</string>
     <string name="settings_mirror_dir_both">양방향</string>
@@ -787,8 +787,8 @@
     <string name="settings_mirror_section_title">기기 간 미러링</string>
     <string name="settings_mirror_section_desc">Off keeps a separate library on each. What mirrors is end-to-end encrypted.</string>
     <string name="settings_mirror_likes_title">좋아요</string>
-    <string name="settings_mirror_likes_waiting_share"> · Waiting for %s to share its likes.</string>
-    <string name="settings_mirror_likes_choose_combine"> · Choose how to combine them</string>
+    <string name="settings_mirror_likes_waiting_share"> · %s가 좋아요를 공유할 때까지 기다리는 중입니다</string>
+    <string name="settings_mirror_likes_choose_combine"> · 결합 방법을 선택하세요</string>
     <string name="settings_mirror_playlists_title">재생목록</string>
     <plurals name="settings_mirror_playlists_chosen">
         <item quantity="other"> · %d 개 선택됨</item>
@@ -810,9 +810,9 @@
     <string name="settings_mirror_playlist_readonly_web"> · 휴대폰에서는 웹에서 읽기 전용</string>
     <string name="settings_mirror_playlist_shared_mix"> · 공유된 믹스</string>
     <string name="settings_mirror_switch_off_note">Switching one off stops mirroring it and leaves every copy where it is.</string>
-    <string name="settings_mirror_first_merge_title">Your likes: %1$d on %2$s, %3$d here</string>
+    <string name="settings_mirror_first_merge_title">내 좋아요: %2$s에서 %1$d 개, 여기서 %3$d 개</string>
     <string name="settings_mirror_first_merge_changed">Your likes changed since you answered. Check the numbers again.</string>
-    <string name="settings_mirror_merge_add_theirs">Add %s\'s to this phone\'s</string>
+    <string name="settings_mirror_merge_add_theirs">휴대전화에 %s의 항목 추가</string>
     <string name="settings_mirror_merge_likes_here">%d likes here</string>
     <string name="settings_mirror_merge_replace_with_theirs">Replace this phone\'s with %s\'s</string>
     <plurals name="settings_mirror_merge_removes_here">
@@ -858,9 +858,9 @@
     <string name="settings_qr_allow_camera">카메라 허용</string>
     <string name="settings_qr_close_scanner">스캐너 닫기</string>
     <!-- Settings > Diagnostics Preview -->
-    <string name="diagnostics_title">Diagnostics</string>
-    <string name="diagnostics_failed_to_build">Failed to build diagnostics</string>
-    <string name="diagnostics_review_description">Review what will be shared. No passwords or tokens are included. Share sends a zip with this report plus the full recent log; attach it to your GitHub issue.</string>
+    <string name="diagnostics_title">진단</string>
+    <string name="diagnostics_failed_to_build">빌드 진단 실패</string>
+    <string name="diagnostics_review_description">공유될 내용을 검토하세요. 비밀번호나 토큰은 포함되어 있지 않습니다. 공유를 탭하면 이 보고서와 최근 전체 로그가 포함된 ZIP 파일이 전송됩니다. 해당 파일을 GitHub Issue에 첨부하세요</string>
     <string name="diagnostics_share_subject">Stash 진단</string>
     <string name="diagnostics_share_no_app">공유할 수 있는 앱이 없습니다</string>
     <string name="diagnostics_share_button">공유</string>
@@ -881,25 +881,25 @@
     <plurals name="settings_cloud_disconnect_dialog_kept">
         <item quantity="other">%d downloaded songs stay on this phone.</item>
     </plurals>
-    <string name="settings_cloud_disconnect_dialog_gdrive_pending">Songs waiting to be saved to it won\'t be.</string>
-    <string name="settings_cloud_disconnect_dialog_untouched">Your files in %1$s are not touched.</string>
+    <string name="settings_cloud_disconnect_dialog_gdrive_pending">저장 대기 중인 노래는 저장되지 않습니다</string>
+    <string name="settings_cloud_disconnect_dialog_untouched">%1$s에 있는 파일은 변경되지 않습니다</string>
     <string name="settings_cloud_folders_section_title">클라우드 폴더</string>
     <string name="settings_cloud_add_folder_from_provider">%1$s에서 폴더 추가</string>
     <string name="settings_cloud_add_folder">폴더 추가</string>
     <string name="settings_cloud_rescan_title">지금 다시 스캔</string>
-    <string name="settings_cloud_rescan_subtitle">Picks up songs added, changed or removed in your cloud. Stash also checks twice a day.</string>
-    <string name="settings_cloud_remove_folder_dialog_title">Remove %1$s?</string>
+    <string name="settings_cloud_rescan_subtitle">클라우드에 추가, 변경 또는 삭제된 노래를 가져옵니다. Stash는 하루에 두 번 확인합니다</string>
+    <string name="settings_cloud_remove_folder_dialog_title">%1$s를 삭제하시겠습니까?</string>
     <string name="settings_cloud_remove_folder_dialog_body">Its songs leave your library, except the ones you downloaded, which stay on this phone. Nothing is deleted from your cloud.</string>
     <string name="settings_cloud_folder_fallback_name">이 폴더</string>
     <string name="settings_cloud_remove_folder_content_desc">폴더 제거</string>
     <plurals name="settings_cloud_scan_running_songs_so_far">
         <item quantity="other">Scanning… %d songs so far</item>
     </plurals>
-    <string name="settings_cloud_scan_didnt_finish">The last scan didn\'t finish</string>
+    <string name="settings_cloud_scan_didnt_finish">마지막 스캔이 완료되지 않았습니다</string>
     <plurals name="settings_cloud_folder_songs_count">
         <item quantity="other">%d 개의 노래</item>
     </plurals>
-    <string name="settings_cloud_last_checked">checked %s</string>
+    <string name="settings_cloud_last_checked">%s 확인됨</string>
     <string name="settings_cloud_gdrive_backup_title">Back up my downloads to Google Drive</string>
     <string name="settings_cloud_gdrive_backup_default_subtitle">New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.</string>
     <string name="settings_cloud_backup_try_again_title">다시 시도</string>
@@ -907,11 +907,11 @@
     <plurals name="settings_cloud_backup_existing_title">
         <item quantity="other">Back up %d existing downloads</item>
     </plurals>
-    <string name="settings_cloud_backup_backfill_subtitle">Downloaded before backup was on.</string>
+    <string name="settings_cloud_backup_backfill_subtitle">백업이 켜지기 전에 다운로드되었습니다</string>
     <string name="settings_cloud_folder_picker_up_desc">위로</string>
     <string name="settings_cloud_picker_default_title">내 음악 폴더 선택</string>
     <string name="settings_cloud_folder_picker_empty_root">여기에 폴더가 없습니다</string>
-    <string name="settings_cloud_folder_picker_empty_subfolder">No folders inside. Use this one?</string>
+    <string name="settings_cloud_folder_picker_empty_subfolder">내부에 폴더가 없습니다. 이 폴더를 사용하시겠습니까?</string>
     <string name="settings_cloud_use_this_folder">이 폴더 사용</string>
     <string name="settings_cloud_time_just_now">방금</string>
     <plurals name="settings_cloud_time_minutes_ago">
