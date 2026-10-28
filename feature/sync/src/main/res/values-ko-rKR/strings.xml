@@ -18,9 +18,9 @@
     <string name="sync_source_stat_playlists">재생목록</string>
     <string name="sync_source_stat_liked">좋아요</string>
     <string name="sync_source_stat_recommended">추천</string>
-    <string name="sync_source_empty_spotify">Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.</string>
-    <string name="sync_source_empty_youtube">Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.</string>
-    <string name="sync_source_empty_lastfm">A playlist of tracks Last.fm recommends — seeded from what you listen to — will be built on the next sync. Tap Sync Now to start it.</string>
+    <string name="sync_source_empty_spotify">첫 번째 동기화가 완료되면 Spotify의 재생목록과 데일리 믹스가 여기에 표시됩니다. \'지금 동기화\'를 탭하여 목록을 불러오세요. 다운로드는 다운로드 기능을 직접 활성화하기 전까지 진행되지 않습니다</string>
+    <string name="sync_source_empty_youtube">첫 번째 동기화가 완료되면 YouTube Music 라이브러리의 홈 믹스, 좋아요 표시한 노래, 재생목록이 여기에 표시됩니다. 원하는 항목을 직접 선택하기 전까지는 아무것도 다운로드되지 않으므로, 예상되지 않은 다운로드가 발생하지 않습니다</string>
+    <string name="sync_source_empty_lastfm">평소 듣는 음악을 바탕으로 Last.fm이 추천하는 곡들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요</string>
     <!-- Library Maintenance Card -->
     <string name="sync_blocked_songs_title">차단된 노래</string>
     <string name="sync_blocked_songs_none">차단된 노래가 없습니다</string>
@@ -43,7 +43,7 @@
     <!-- Failed Downloads Warning Card -->
     <string name="sync_failed_downloads_title">다운로드 실패</string>
     <plurals name="sync_failed_downloads_count">
-        <item quantity="other">%d tracks need attention</item>
+        <item quantity="other">%d 개의 트랙에 주의가 필요합니다</item>
     </plurals>
     <!-- Sync Terminal -->
     <string name="sync_log_title">동기화 로그</string>
@@ -79,7 +79,7 @@
     <string name="sync_mode_accumulate_desc">새 트랙이 이전 트랙 위에 쌓입니다</string>
     <!-- Last.fm Recommendations Toggle -->
     <string name="sync_recommended_tracks_title">추천 트랙</string>
-    <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생 목록이 최신 상태로 유지됩니다</string>
+    <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생목록이 최신 상태로 유지됩니다</string>
     <string name="sync_lastfm_recommended_disabled_desc">꺼짐 — 추천이 생성되지 않습니다</string>
     <!-- Playlist / Tracks Counts & Studio Only -->
     <plurals name="sync_tracks_count">
