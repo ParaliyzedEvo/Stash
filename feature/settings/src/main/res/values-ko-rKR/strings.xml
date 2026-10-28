@@ -845,7 +845,7 @@
     <string name="settings_inbox_sent_you">%s를 보냈습니다</string>
     <string name="settings_inbox_adding_note">Adding never removes anything from your library.</string>
     <string name="settings_inbox_add_to_library">내 라이브러리에 추가</string>
-    <string name="settings_inbox_choose_what_to_add">Choose what to add</string>
+    <string name="settings_inbox_choose_what_to_add">추가할 내용 선택</string>
     <string name="settings_inbox_not_now">나중에</string>
     <string name="settings_inbox_discard">삭제</string>
     <string name="settings_inbox_what_to_add">추가할 항목</string>
@@ -853,7 +853,7 @@
     <string name="settings_inbox_opening_what_sent">%s가 보낸 내용을 열어보는 중…</string>
     <string name="settings_inbox_adding_to_library">내 라이브러리에 추가하는 중…</string>
     <!-- Settings > Link Stash on the Web > QrScanner -->
-    <string name="settings_qr_point_at_code">Point at the code on your computer.</string>
+    <string name="settings_qr_point_at_code">컴퓨터의 코드를 가리키세요</string>
     <string name="settings_qr_permission_desc">Stash는 코드를 스캔하기 위해 카메라가 필요합니다. 카메라 앱으로 스캔할 수도 있습니다</string>
     <string name="settings_qr_allow_camera">카메라 허용</string>
     <string name="settings_qr_close_scanner">스캐너 닫기</string>
@@ -861,20 +861,20 @@
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_failed_to_build">Failed to build diagnostics</string>
     <string name="diagnostics_review_description">Review what will be shared. No passwords or tokens are included. Share sends a zip with this report plus the full recent log; attach it to your GitHub issue.</string>
-    <string name="diagnostics_share_subject">Stash diagnostics</string>
-    <string name="diagnostics_share_no_app">No app available to share.</string>
-    <string name="diagnostics_share_button">Share</string>
-    <string name="diagnostics_copied_toast">Copied</string>
-    <string name="diagnostics_copy_button">Copy</string>
-    <string name="diagnostics_open_issue_button">Open a GitHub issue</string>
+    <string name="diagnostics_share_subject">Stash 진단</string>
+    <string name="diagnostics_share_no_app">공유할 수 있는 앱이 없습니다</string>
+    <string name="diagnostics_share_button">공유</string>
+    <string name="diagnostics_copied_toast">복사됨</string>
+    <string name="diagnostics_copy_button">복사</string>
+    <string name="diagnostics_open_issue_button">GitHub Issue 열기</string>
     <!-- Settings > Cloud Storage -->
-    <string name="settings_cloud_section_title">Cloud storage</string>
-    <string name="settings_cloud_gdrive_add_songs_title">Add songs from Google Drive</string>
-    <string name="settings_cloud_gdrive_add_songs_subtitle">Stash sees only the songs you pick.</string>
-    <string name="settings_cloud_folder_add_title">Add a music folder</string>
-    <string name="settings_cloud_folder_add_subtitle">Read-only. Your files stay as they are.</string>
-    <string name="settings_cloud_disconnect_dialog_title">Disconnect %1$s?</string>
-    <string name="settings_cloud_disconnect_dialog_body_intro">Stash forgets this sign-in on this phone.</string>
+    <string name="settings_cloud_section_title">클라우드 저장소</string>
+    <string name="settings_cloud_gdrive_add_songs_title">Google 드라이브에서 노래 추가</string>
+    <string name="settings_cloud_gdrive_add_songs_subtitle">Stash는 사용자가 선택한 노래만 표시합니다</string>
+    <string name="settings_cloud_folder_add_title">음악 폴더 추가</string>
+    <string name="settings_cloud_folder_add_subtitle">읽기 전용입니다. 파일은 그대로 유지됩니다</string>
+    <string name="settings_cloud_disconnect_dialog_title">%1$s 연결을 해제하시겠습니까?</string>
+    <string name="settings_cloud_disconnect_dialog_body_intro">Stash가 이 휴대폰에서 로그인 정보를 기억하지 않습니다.</string>
     <plurals name="settings_cloud_disconnect_dialog_removed">
         <item quantity="other">%1$d songs that only stream from %2$s leave your library, with their play history.</item>
     </plurals>
@@ -883,44 +883,44 @@
     </plurals>
     <string name="settings_cloud_disconnect_dialog_gdrive_pending">Songs waiting to be saved to it won\'t be.</string>
     <string name="settings_cloud_disconnect_dialog_untouched">Your files in %1$s are not touched.</string>
-    <string name="settings_cloud_folders_section_title">Cloud folders</string>
-    <string name="settings_cloud_add_folder_from_provider">Add a folder from %1$s</string>
-    <string name="settings_cloud_add_folder">Add a folder</string>
-    <string name="settings_cloud_rescan_title">Rescan now</string>
+    <string name="settings_cloud_folders_section_title">클라우드 폴더</string>
+    <string name="settings_cloud_add_folder_from_provider">%1$s에서 폴더 추가</string>
+    <string name="settings_cloud_add_folder">폴더 추가</string>
+    <string name="settings_cloud_rescan_title">지금 다시 스캔</string>
     <string name="settings_cloud_rescan_subtitle">Picks up songs added, changed or removed in your cloud. Stash also checks twice a day.</string>
     <string name="settings_cloud_remove_folder_dialog_title">Remove %1$s?</string>
     <string name="settings_cloud_remove_folder_dialog_body">Its songs leave your library, except the ones you downloaded, which stay on this phone. Nothing is deleted from your cloud.</string>
-    <string name="settings_cloud_folder_fallback_name">this folder</string>
-    <string name="settings_cloud_remove_folder_content_desc">Remove folder</string>
+    <string name="settings_cloud_folder_fallback_name">이 폴더</string>
+    <string name="settings_cloud_remove_folder_content_desc">폴더 제거</string>
     <plurals name="settings_cloud_scan_running_songs_so_far">
         <item quantity="other">Scanning… %d songs so far</item>
     </plurals>
     <string name="settings_cloud_scan_didnt_finish">The last scan didn\'t finish</string>
     <plurals name="settings_cloud_folder_songs_count">
-        <item quantity="other">%d songs</item>
+        <item quantity="other">%d 개의 노래</item>
     </plurals>
     <string name="settings_cloud_last_checked">checked %s</string>
     <string name="settings_cloud_gdrive_backup_title">Back up my downloads to Google Drive</string>
     <string name="settings_cloud_gdrive_backup_default_subtitle">New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.</string>
-    <string name="settings_cloud_backup_try_again_title">Try again</string>
+    <string name="settings_cloud_backup_try_again_title">다시 시도</string>
     <string name="settings_cloud_backup_no_space_subtitle">Once there\'s space in your Google Drive.</string>
     <plurals name="settings_cloud_backup_existing_title">
         <item quantity="other">Back up %d existing downloads</item>
     </plurals>
     <string name="settings_cloud_backup_backfill_subtitle">Downloaded before backup was on.</string>
-    <string name="settings_cloud_folder_picker_up_desc">Up</string>
-    <string name="settings_cloud_picker_default_title">Pick your music folder</string>
-    <string name="settings_cloud_folder_picker_empty_root">No folders here.</string>
+    <string name="settings_cloud_folder_picker_up_desc">위로</string>
+    <string name="settings_cloud_picker_default_title">내 음악 폴더 선택</string>
+    <string name="settings_cloud_folder_picker_empty_root">여기에 폴더가 없습니다</string>
     <string name="settings_cloud_folder_picker_empty_subfolder">No folders inside. Use this one?</string>
-    <string name="settings_cloud_use_this_folder">Use this folder</string>
-    <string name="settings_cloud_time_just_now">just now</string>
+    <string name="settings_cloud_use_this_folder">이 폴더 사용</string>
+    <string name="settings_cloud_time_just_now">방금</string>
     <plurals name="settings_cloud_time_minutes_ago">
-        <item quantity="other">%d min ago</item>
+        <item quantity="other">%d 분 전</item>
     </plurals>
     <plurals name="settings_cloud_time_hours_ago">
-        <item quantity="other">%d h ago</item>
+        <item quantity="other">%d 시간 전</item>
     </plurals>
     <plurals name="settings_cloud_time_days_ago">
-        <item quantity="other">%d days ago</item>
+        <item quantity="other">%d 일 전</item>
     </plurals>
 </resources>
