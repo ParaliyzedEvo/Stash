@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">웹 버전 Stash</string>
+    <string name="web_library_export_title">Stash 웹 버전</string>
     <string name="web_library_export_subtitle">그런 다음 웹 플레이어에서 이 경로로 이동하세요: Settings › Your library › Import</string>
-    <string name="web_library_export_button">웹 버전 Stash용으로 내보내기</string>
+    <string name="web_library_export_button">Stash 웹 버전용으로 내보내기</string>
     <string name="web_library_export_working_title">라이브러리를 내보내는 중</string>
     <string name="web_library_export_done_title">웹에서 사용할 준비</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
@@ -20,7 +20,7 @@
     <string name="web_library_export_failed_title">내보낼 수 없음</string>
     <string name="web_library_export_failed_body">파일을 쓸 수 없습니다. 다시 시도하거나 다른 저장 위치를 ​​선택하세요</string>
     <string name="web_library_export_ok">확인</string>
-    <string name="web_library_import_button">웹에서 Stash에서 가져오기</string>
+    <string name="web_library_import_button">Stash 웹에서 가져오기</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">전송됨</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
@@ -64,7 +64,7 @@
     <string name="settings_search_sync_your_likes">내 좋아요 동기화</string>
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Stash 후원</string>
-    <string name="settings_support_subtitle">Stash는 무료이며 자원봉사자들이 만듭니다. 유용하다면 프로젝트 지원을 고려해 보세요</string>
+    <string name="settings_support_subtitle">Stash는 무료이며 자원기여자들이 만듭니다. 유용하다면 프로젝트 지원을 고려해 보세요</string>
     <string name="settings_support_donate">후원</string>
     <string name="settings_donate_sheet_title">Stash 후원</string>
     <string name="settings_donate_sheet_thanks">Stash는 무료입니다. 계속 운영할 수 있도록 도와주셔서 감사합니다</string>
@@ -83,7 +83,7 @@
     <string name="settings_cancel">취소</string>
     <string name="settings_enable">활성화</string>
     <string name="settings_disable">비활성화</string>
-    <string name="settings_discord_risk_title">Discord에 연결하기 전에</string>
+    <string name="settings_discord_risk_title">Discord에 연결 전에 읽어보세요</string>
     <string name="settings_discord_risk_body">Discord는 휴대폰 앱에서 상태를 설정할 수 있는 공식적인 방법을 제공하지 않기 때문에, Stash는 사용자의 계정 세션을 이용해 직접 로그인합니다. Discord의 규정상 이를 셀프봇이라고 하며, 계정에 제재가 가해질 수 있습니다\n\n실제로는 상태 업데이트보다는 스팸 행위를 주로 단속하기 때문에 제재를 받을 가능성은 낮습니다. 하지만 본인의 계정이므로, 사용할지는 직접 판단해야 합니다\n\n연결을 해제하면 설정한 상태가 초기화되고, 이 휴대폰에 저장된 토큰도 삭제됩니다</string>
     <string name="settings_discord_risk_connect">그래도 연결</string>
     <string name="settings_discord_finish_connecting">연결 완료</string>
@@ -274,10 +274,10 @@
     <string name="settings_start_tab_search">검색</string>
     <string name="settings_home_layout_section">홈 레이아웃</string>
     <string name="settings_home_layout_desc">홈 섹션을 정렬하거나 사용하지 않는 섹션을 숨길 수 있습니다. 디스커버 메인 페이지는 항상 맨 위에 있습니다</string>
-    <string name="settings_home_section_community_desc">다른 Stash 사용자들이 즐겨 듣는 플레이리스트와 노래를 확인할 수 있습니다. 게시물을 올리면 사용자 이름이 표시됩니다</string>
+    <string name="settings_home_section_community_desc">다른 Stash 사용자들이 즐겨 듣는 재생목록과 노래를 확인할 수 있습니다. 게시물을 올리면 사용자 이름이 표시됩니다</string>
     <string name="settings_home_section_listening_desc">최근 재생한 음악과 재생 기록을 확인할 수 있습니다. 음악을 처음으로 감상한 후 표시됩니다</string>
     <string name="settings_home_show_liked_title">홈 화면에 좋아요 표시한 노래 표시</string>
-    <string name="settings_home_show_liked_subtitle">Stash, Spotify, YouTube의 좋아요 표시한 곡을 하나의 카드로 모아 내 플레이리스트에 표시합니다</string>
+    <string name="settings_home_show_liked_subtitle">Stash, Spotify, YouTube의 좋아요 표시한 곡을 하나의 카드로 모아 내 재생목록에 표시합니다</string>
     <string name="settings_home_section_discover">데일리 디스커버 및 믹스</string>
     <string name="settings_home_section_your_playlists">내 재생목록</string>
     <string name="settings_home_section_new_releases">신규 릴리스</string>
@@ -736,7 +736,7 @@
     <string name="settings_web_link_remove_device_desc">휴대전화와의 연결이 즉시 해제됩니다. 라이브러리는 현재 상태로 유지됩니다</string>
     <string name="settings_web_link_action_remove">제거</string>
     <string name="settings_web_link_unlink_everything_title">모두 연결 해제하시겠습니까?</string>
-    <string name="settings_web_link_unlink_everything_desc">Every linked browser is unlinked at once. Nothing is deleted from any library.</string>
+    <string name="settings_web_link_unlink_everything_desc">연결된 모든 브라우저의 연결이 한 번에 해제됩니다. 어떤 라이브러리에서도 항목이 삭제되지는 않습니다</string>
     <string name="settings_web_link_action_unlink_everything">모두 연결 해제</string>
     <string name="settings_web_link_section_link_browser">브라우저 연결</string>
     <string name="settings_web_link_not_linked_instructions">play.stashfm.app › Settings › Your phone 열기</string>
@@ -752,7 +752,7 @@
     <string name="settings_web_link_send_library_subtitle">좋아요, 재생 기록, 각 재생목록 중 무엇을 보낼지 선택하세요</string>
     <string name="settings_web_link_section_waiting_for_you">기다리는 중</string>
     <string name="settings_web_link_sent_you_summary">%1$s가 %2$s를 보냈습니다</string>
-    <string name="settings_web_link_sent_problem_discard">%s Discard it.</string>
+    <string name="settings_web_link_sent_problem_discard">%s 삭제합니다</string>
     <string name="settings_web_link_sent_actions_subtitle">추가하거나, 추가할 항목을 선택하거나, 삭제하세요</string>
     <string name="settings_web_link_section_unlink">연결 해제</string>
     <string name="settings_web_link_unlink_note">연결을 해제해도 라이브러리의 항목은 삭제되지 않습니다</string>
@@ -765,12 +765,12 @@
     </plurals>
     <string name="settings_web_link_reading_code">이 코드를 읽는 중…</string>
     <string name="settings_web_link_confirm_title">%s을 연결하시겠습니까?</string>
-    <string name="settings_web_link_confirm_body_before_code">Your computer will ask you to check </string>
-    <string name="settings_web_link_confirm_body_after_code">. It will see what you\'re playing here, and you can choose to mirror your library with it.</string>
-    <string name="settings_web_link_confirm_from_link_warning">Only continue if you just opened Link your phone on your own computer, and it\'s in front of you now.</string>
+    <string name="settings_web_link_confirm_body_before_code">컴퓨터에서 확인 요청이 표시됩니다</string>
+    <string name="settings_web_link_confirm_body_after_code">. 여기에서 재생 중인 항목을 확인할 수 있으며, 라이브러리를 미러링할 지 선택할 수 있습니다</string>
+    <string name="settings_web_link_confirm_from_link_warning">직접 컴퓨터에서 ‘Link your phone’을 열었고, 현재 해당 컴퓨터가 눈앞에 있는 경우에만 계속 진행하세요</string>
     <string name="settings_web_link_action_link">링크</string>
     <string name="settings_web_link_waiting_computer">내 컴퓨터를 기다리는 중… · </string>
-    <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
+    <string name="settings_web_link_waiting_desc">%s에 표시된 6자리 숫자가 동일한지 확인한 다음, 해당 기기에서 Link를 탭하세요</string>
     <string name="settings_web_link_linked_to">%s에 연결됨</string>
     <string name="settings_web_link_linked_desc">연결되었습니다. 아직 미러링된 항목이 없습니다</string>
     <string name="settings_web_link_code_label">코드 </string>
@@ -785,7 +785,7 @@
     <string name="settings_mirror_dir_to_web">폰 → 웹</string>
     <string name="settings_mirror_dir_to_phone">웹 → 폰</string>
     <string name="settings_mirror_section_title">기기 간 미러링</string>
-    <string name="settings_mirror_section_desc">Off keeps a separate library on each. What mirrors is end-to-end encrypted.</string>
+    <string name="settings_mirror_section_desc">끄면 각 기기에서 별도의 라이브러리가 유지됩니다. 미러링되는 데이터는 종단 간 암호화로 보호됩니다</string>
     <string name="settings_mirror_likes_title">좋아요</string>
     <string name="settings_mirror_likes_waiting_share"> · %s가 좋아요를 공유할 때까지 기다리는 중입니다</string>
     <string name="settings_mirror_likes_choose_combine"> · 결합 방법을 선택하세요</string>
@@ -798,28 +798,28 @@
     <string name="settings_mirror_plays_title">재생 기록</string>
     <string name="settings_mirror_plays_subtitle_note"> · 웹에서 재생한 내용은 기록에 표시되며, Stash 믹스에는 표시되지 않습니다</string>
     <plurals name="settings_mirror_held_unlikes">
-        <item quantity="other">Mirroring is holding %1$d unlikes from this phone. Send them to %2$s, or keep those likes?</item>
+        <item quantity="other">미러링이 이 휴대폰에서 %1$d 개의 싫어요를 저장하고 있습니다. %2$s로 보내시겠습니까, 아니면 유지하시겠습니까?</item>
     </plurals>
     <string name="settings_mirror_keep_likes">좋아요 유지</string>
     <string name="settings_mirror_send_unlikes">싫어요 보내기</string>
     <string name="settings_mirror_playlists_spotify_ytm_note">Spotify 또는 YouTube Music에서 동기화되는 재생목록은 이 설정과 관계없이 휴대폰 → 웹 방향으로만 동기화됩니다</string>
-    <string name="settings_mirror_new_playlists_too">새 재생 목록도 미러링</string>
+    <string name="settings_mirror_new_playlists_too">새 재생목록도 미러링</string>
     <plurals name="settings_mirror_playlist_songs">
         <item quantity="other">%d 개의 노래</item>
     </plurals>
     <string name="settings_mirror_playlist_readonly_web"> · 휴대폰에서는 웹에서 읽기 전용</string>
     <string name="settings_mirror_playlist_shared_mix"> · 공유된 믹스</string>
-    <string name="settings_mirror_switch_off_note">Switching one off stops mirroring it and leaves every copy where it is.</string>
+    <string name="settings_mirror_switch_off_note">하나를 끄면 미러링이 중지되고 모든 복사본은 원래 위치에 그대로 있습니다</string>
     <string name="settings_mirror_first_merge_title">내 좋아요: %2$s에서 %1$d 개, 여기서 %3$d 개</string>
-    <string name="settings_mirror_first_merge_changed">Your likes changed since you answered. Check the numbers again.</string>
+    <string name="settings_mirror_first_merge_changed">응답한 이후 좋아요 표시 상태가 변경되었습니다. 숫자를 다시 확인하세요</string>
     <string name="settings_mirror_merge_add_theirs">휴대전화에 %s의 항목 추가</string>
-    <string name="settings_mirror_merge_likes_here">%d likes here</string>
-    <string name="settings_mirror_merge_replace_with_theirs">Replace this phone\'s with %s\'s</string>
+    <string name="settings_mirror_merge_likes_here">여기에 %d 개의 좋아요 표시한 항목이 있습니다</string>
+    <string name="settings_mirror_merge_replace_with_theirs">이 휴대폰의 항목을 %s의 항목으로 교체합니다</string>
     <plurals name="settings_mirror_merge_removes_here">
-        <item quantity="other">Removes %d likes here</item>
+        <item quantity="other">여기에서 %d 개의 좋아요를 제거합니다</item>
     </plurals>
     <string name="settings_mirror_merge_combine_title">결합</string>
-    <string name="settings_mirror_merge_combine_detail">Keep both, %d likes everywhere</string>
+    <string name="settings_mirror_merge_combine_detail">양쪽 모두 유지하고, 모든 위치에 %d 개의 좋아요를 유지합니다</string>
     <string name="settings_mirror_merge_use_theirs">%s의 항목 사용</string>
     <string name="settings_mirror_merge_use_mine">이 휴대폰의 항목 사용</string>
     <plurals name="settings_mirror_merge_removes_there">
@@ -843,7 +843,7 @@
     <string name="settings_picker_shared_mix"> · 공유된 믹스</string>
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
     <string name="settings_inbox_sent_you">%s를 보냈습니다</string>
-    <string name="settings_inbox_adding_note">Adding never removes anything from your library.</string>
+    <string name="settings_inbox_adding_note">항목을 추가해도 라이브러리에서 기존 항목이 삭제되지는 않습니다</string>
     <string name="settings_inbox_add_to_library">내 라이브러리에 추가</string>
     <string name="settings_inbox_choose_what_to_add">추가할 내용 선택</string>
     <string name="settings_inbox_not_now">나중에</string>
@@ -876,10 +876,10 @@
     <string name="settings_cloud_disconnect_dialog_title">%1$s 연결을 해제하시겠습니까?</string>
     <string name="settings_cloud_disconnect_dialog_body_intro">Stash가 이 휴대폰에서 로그인 정보를 기억하지 않습니다.</string>
     <plurals name="settings_cloud_disconnect_dialog_removed">
-        <item quantity="other">%1$d songs that only stream from %2$s leave your library, with their play history.</item>
+        <item quantity="other">%2$s에서 스트리밍으로만 재생되는 %1$d 개의 음악이 재생 기록과 함께 라이브러리에서 제거됩니다</item>
     </plurals>
     <plurals name="settings_cloud_disconnect_dialog_kept">
-        <item quantity="other">%d downloaded songs stay on this phone.</item>
+        <item quantity="other">%d 개의 다운로드한 노래는 이 휴대폰에 그대로 유지됩니다</item>
     </plurals>
     <string name="settings_cloud_disconnect_dialog_gdrive_pending">저장 대기 중인 노래는 저장되지 않습니다</string>
     <string name="settings_cloud_disconnect_dialog_untouched">%1$s에 있는 파일은 변경되지 않습니다</string>
@@ -889,23 +889,23 @@
     <string name="settings_cloud_rescan_title">지금 다시 스캔</string>
     <string name="settings_cloud_rescan_subtitle">클라우드에 추가, 변경 또는 삭제된 노래를 가져옵니다. Stash는 하루에 두 번 확인합니다</string>
     <string name="settings_cloud_remove_folder_dialog_title">%1$s를 삭제하시겠습니까?</string>
-    <string name="settings_cloud_remove_folder_dialog_body">Its songs leave your library, except the ones you downloaded, which stay on this phone. Nothing is deleted from your cloud.</string>
+    <string name="settings_cloud_remove_folder_dialog_body">해당 곡들은 라이브러리에서 사라지지만, 다운로드한 곡은 이 휴대폰에 그대로 남아 있습니다. 클라우드에 저장된 항목은 삭제되지 않습니다</string>
     <string name="settings_cloud_folder_fallback_name">이 폴더</string>
     <string name="settings_cloud_remove_folder_content_desc">폴더 제거</string>
     <plurals name="settings_cloud_scan_running_songs_so_far">
-        <item quantity="other">Scanning… %d songs so far</item>
+        <item quantity="other">스캔 중… 현재까지 %d 개의 노래 확인</item>
     </plurals>
     <string name="settings_cloud_scan_didnt_finish">마지막 스캔이 완료되지 않았습니다</string>
     <plurals name="settings_cloud_folder_songs_count">
         <item quantity="other">%d 개의 노래</item>
     </plurals>
     <string name="settings_cloud_last_checked">%s 확인됨</string>
-    <string name="settings_cloud_gdrive_backup_title">Back up my downloads to Google Drive</string>
-    <string name="settings_cloud_gdrive_backup_default_subtitle">New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.</string>
+    <string name="settings_cloud_gdrive_backup_title">내 다운로드 항목을 Google Drive에 백업</string>
+    <string name="settings_cloud_gdrive_backup_default_subtitle">새로 다운로드한 파일은 Google Drive의 Stash 폴더에 저장됩니다. 동기화 설정이 ‘Wi-Fi만 사용’으로 되어 있다면, 동기화와 마찬가지로 Wi-Fi에 연결될 때까지 기다립니다</string>
     <string name="settings_cloud_backup_try_again_title">다시 시도</string>
-    <string name="settings_cloud_backup_no_space_subtitle">Once there\'s space in your Google Drive.</string>
+    <string name="settings_cloud_backup_no_space_subtitle">Google Drive에 저장 공간이 확보되면 진행됩니다</string>
     <plurals name="settings_cloud_backup_existing_title">
-        <item quantity="other">Back up %d existing downloads</item>
+        <item quantity="other">%d 개의 기존 다운로드 항목</item>
     </plurals>
     <string name="settings_cloud_backup_backfill_subtitle">백업이 켜지기 전에 다운로드되었습니다</string>
     <string name="settings_cloud_folder_picker_up_desc">위로</string>
