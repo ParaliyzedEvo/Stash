@@ -1,90 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Sync Screen Header & General -->
-    <string name="sync_title">Sync</string>
-    <string name="sync_cancel">Cancel</string>
-    <string name="sync_ok">OK</string>
+    <string name="sync_title">동기화</string>
+    <string name="sync_cancel">취소</string>
+    <string name="sync_ok">확인</string>
     <!-- Sync Sections -->
-    <string name="sync_section_sources">Sources</string>
-    <string name="sync_section_schedule">Schedule</string>
-    <string name="sync_section_library">Library</string>
-    <string name="sync_section_recent_syncs">Recent syncs</string>
+    <string name="sync_section_sources">소스</string>
+    <string name="sync_section_schedule">스케줄</string>
+    <string name="sync_section_library">라이브러리</string>
+    <string name="sync_section_recent_syncs">최근 동기화</string>
     <!-- Downloads Card -->
-    <string name="sync_downloads_title">Downloads</string>
+    <string name="sync_downloads_title">다운로드</string>
     <string name="sync_downloads_subtitle">View current downloads, queue, and history</string>
-    <string name="sync_downloads_cd">Open downloads</string>
+    <string name="sync_downloads_cd">다운로드 열기</string>
     <!-- Source Dashboard Stats & Empty Hints -->
-    <string name="sync_source_stat_mixes">MIXES</string>
-    <string name="sync_source_stat_playlists">PLAYLISTS</string>
-    <string name="sync_source_stat_liked">LIKED</string>
-    <string name="sync_source_stat_recommended">RECOMMENDED</string>
+    <string name="sync_source_stat_mixes">믹스</string>
+    <string name="sync_source_stat_playlists">재생목록</string>
+    <string name="sync_source_stat_liked">좋아요</string>
+    <string name="sync_source_stat_recommended">추천</string>
     <string name="sync_source_empty_spotify">Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.</string>
     <string name="sync_source_empty_youtube">Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.</string>
     <string name="sync_source_empty_lastfm">A playlist of tracks Last.fm recommends — seeded from what you listen to — will be built on the next sync. Tap Sync Now to start it.</string>
     <!-- Library Maintenance Card -->
-    <string name="sync_blocked_songs_title">Blocked Songs</string>
-    <string name="sync_blocked_songs_none">No blocked songs</string>
+    <string name="sync_blocked_songs_title">차단된 노래</string>
+    <string name="sync_blocked_songs_none">차단된 노래가 없습니다</string>
     <plurals name="sync_blocked_songs_count">
-        <item quantity="other">%d songs will never re-download</item>
+        <item quantity="other">%d 개의 노래는 다시 다운로드되지 않습니다</item>
     </plurals>
     <!-- Unmatched / Review Warning Card -->
     <plurals name="sync_review_need_review">
-        <item quantity="other">%d songs need review</item>
+        <item quantity="other">%d 개의 노래는 검토가 필요합니다</item>
     </plurals>
     <plurals name="sync_review_flagged_wrong">
-        <item quantity="other">%d songs flagged as wrong match</item>
+        <item quantity="other">%d 개의 노래는 잘못된 일치로 표시되었습니다</item>
     </plurals>
     <plurals name="sync_review_unmatched">
-        <item quantity="other">%d songs couldn\'t be matched</item>
+        <item quantity="other">%d 개의 노래는 일치시키지 못하였습니다</item>
     </plurals>
-    <string name="sync_review_sub_both">%1$d unmatched · %2$d flagged — tap to fix</string>
-    <string name="sync_review_sub_flagged">Tap to pick a replacement</string>
-    <string name="sync_review_sub_unmatched">Tap to review</string>
+    <string name="sync_review_sub_both">%1$d개 불일치, %2$d개 플래그 지정됨 - 탭하여 수정</string>
+    <string name="sync_review_sub_flagged">탭하여 대체 항목을 선택</string>
+    <string name="sync_review_sub_unmatched">탭하여 검토</string>
     <!-- Failed Downloads Warning Card -->
-    <string name="sync_failed_downloads_title">Failed Downloads</string>
+    <string name="sync_failed_downloads_title">다운로드 실패</string>
     <plurals name="sync_failed_downloads_count">
         <item quantity="other">%d tracks need attention</item>
     </plurals>
     <!-- Sync Terminal -->
-    <string name="sync_log_title">SYNC LOG</string>
-    <string name="sync_log_copy">Copy</string>
+    <string name="sync_log_title">동기화 로그</string>
+    <string name="sync_log_copy">복사</string>
     <!-- Undo Last Sync -->
-    <string name="sync_undo_last_sync_title">Undo last sync</string>
+    <string name="sync_undo_last_sync_title">마지막 동기화 실행 취소</string>
     <string name="sync_undo_last_sync_subtitle">Puts back the %1$s it changed, as they were %2$s</string>
-    <string name="sync_undo">Undo</string>
-    <string name="sync_undoing">Undoing…</string>
+    <string name="sync_undo">실행 취소</string>
+    <string name="sync_undoing">실행 취소하는 중…</string>
     <string name="sync_auto_sync_paused_note">Auto-sync paused after Undo. Tap Sync to resume.</string>
     <string name="sync_undo_dialog_title">Undo last sync?</string>
     <string name="sync_undo_dialog_body">Your library goes back to how it was before the last sync: playlists it hid come back, playlists it added are hidden, and playlists it emptied are refilled in their original order%1$s.\n\nTracks you added or removed yourself, and Download switches you changed, are kept. Downloaded files that were already deleted can\'t be brought back.\n\nAuto-sync then pauses until you tap Sync, so it doesn\'t redo it.</string>
-    <string name="sync_undo_sync_confirm">Undo sync</string>
-    <string name="sync_undone_title">Sync undone</string>
+    <string name="sync_undo_sync_confirm">동기화 실행 취소</string>
+    <string name="sync_undone_title">동기화 실행 취소됨</string>
     <plurals name="sync_playlists_count">
-        <item quantity="other">%d playlists</item>
+        <item quantity="other">%d 개의 재생목록</item>
     </plurals>
     <!-- Relative Time Strings -->
-    <string name="sync_time_just_now">just now</string>
-    <string name="sync_time_mins_ago">%d min ago</string>
-    <string name="sync_time_hours_ago">%d hr ago</string>
+    <string name="sync_time_just_now">방금</string>
+    <string name="sync_time_mins_ago">%d 분 전</string>
+    <string name="sync_time_hours_ago">%d 시간 전</string>
     <plurals name="sync_time_days_ago">
-        <item quantity="other">%d days ago</item>
+        <item quantity="other">%d 일 전</item>
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">Switch to Refresh?</string>
     <string name="sync_switch_to_refresh_body">Refresh pulls fresh tracks each sync — your auto-generated daily mixes, weekly discovery, and other rotating playlists. Tracks that rotate out are removed from the mix and their downloads deleted to keep your library lean. Cleanup runs once all sources are set to Refresh — while any source still accumulates, nothing is deleted. Tracks you added manually are kept.</string>
     <string name="sync_switch_to_refresh_confirm">Switch to Refresh</string>
-    <string name="sync_mix_mode_title">Mix sync mode</string>
-    <string name="sync_mode_refresh">Refresh</string>
-    <string name="sync_mode_accumulate">Accumulate</string>
-    <string name="sync_mode_refresh_desc">Mixes update with fresh tracks each sync</string>
-    <string name="sync_mode_accumulate_desc">New tracks stack on top of old ones</string>
+    <string name="sync_mix_mode_title">믹스 동기화 모드</string>
+    <string name="sync_mode_refresh">새로고침</string>
+    <string name="sync_mode_accumulate">누적</string>
+    <string name="sync_mode_refresh_desc">믹스는 동기화할 때마다 새로운 트랙으로 업데이트됩니다</string>
+    <string name="sync_mode_accumulate_desc">새 트랙이 이전 트랙 위에 쌓입니다</string>
     <!-- Last.fm Recommendations Toggle -->
-    <string name="sync_recommended_tracks_title">Recommended tracks</string>
-    <string name="sync_lastfm_recommended_enabled_desc">A rotating playlist of Last.fm recommendations is kept up to date</string>
-    <string name="sync_lastfm_recommended_disabled_desc">Off — no recommendations are generated</string>
+    <string name="sync_recommended_tracks_title">추천 트랙</string>
+    <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생 목록이 최신 상태로 유지됩니다</string>
+    <string name="sync_lastfm_recommended_disabled_desc">꺼짐 — 추천이 생성되지 않습니다</string>
     <!-- Playlist / Tracks Counts & Studio Only -->
     <plurals name="sync_tracks_count">
-        <item quantity="other">%d tracks</item>
+        <item quantity="other">%d 개의 트랙</item>
     </plurals>
-    <string name="sync_studio_only_title">Studio recordings only</string>
+    <string name="sync_studio_only_title">스튜디오 녹음만</string>
     <string name="sync_studio_only_desc">Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.</string>
 </resources>
