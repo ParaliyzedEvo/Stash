@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.model.Track
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter). Nothing here writes.
@@ -311,7 +312,89 @@ interface WebLibraryExportDao {
     )
     suspend fun ownFirstPlayAt(): Long?
 
+    /**
+     * One artist and album of this phone's plays, totalled ([ownAlbumTotals]). Your record's Home card ranks albums and artists
+     * from these (stash-player record-card.ts `fromOwn`), so a decade of plays comes back as one row per album, not a row per play.
+     */
+    data class OwnAlbumTotal(
+        val artist: String,
+        val album: String,
+        /** One of its songs: the cover lookup's way in when the album isn't found by its name. */
+        val title: String,
+        /** A cover one of its songs has, when any does. */
+        @ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
+        val plays: Int,
+        /** Each play its song's length, else [GUESS_MS] (the web counts this browser's own plays so on its card). */
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        @ColumnInfo(name = "first_at") val firstAt: Long,
+        @ColumnInfo(name = "last_at") val lastAt: Long,
+    )
+
+    /**
+     * The plays [ownPlaysBefore] pages through, totalled by the song's artist and album as written, the album played last
+     * first (so a name spelled two ways is shown as it was spelled lately).
+     */
+    @Query(
+        """
+        SELECT t.artist AS artist, t.album AS album, MAX(t.title) AS title, MAX(t.album_art_url) AS album_art_url,
+               COUNT(*) AS plays,
+               SUM(CASE WHEN t.duration_ms > 0 THEN t.duration_ms ELSE $GUESS_MS END) AS listened_ms,
+               MIN(le.started_at) AS first_at, MAX(le.started_at) AS last_at
+        FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.origin_device IS NULL AND le.started_at > 0
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        GROUP BY t.artist, t.album
+        ORDER BY last_at DESC, t.artist ASC, t.album ASC
+        """,
+    )
+    suspend fun ownAlbumTotals(): List<OwnAlbumTotal>
+
+    /**
+     * What the phone's own history looks like from far off: how many plays and skips, the newest of each, the time played,
+     * and the blocklist's size. Any change to the plays, the skips or the blocklist changes it, so Your record's Home card
+     * reads the history again only then ([ownHistoryStamp]), never just because Home came back.
+     */
+    data class OwnHistoryStamp(
+        val plays: Int,
+        @ColumnInfo(name = "last_play") val lastPlay: Long,
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        val skips: Int,
+        @ColumnInfo(name = "last_skip") val lastSkip: Long,
+        val blocked: Int,
+    )
+
+    /**
+     * [OwnHistoryStamp], again each time Room sees `listening_events`, `track_skip_events` or `track_blocklist` written (and
+     * only those: a sync rewriting `tracks` doesn't wake it). Cheap: counts and sums over indexed tables, no join.
+     */
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM listening_events WHERE origin_device IS NULL) AS plays,
+            (SELECT COALESCE(MAX(id), 0) FROM listening_events) AS last_play,
+            (SELECT COALESCE(SUM(listened_ms), 0) FROM listening_events WHERE origin_device IS NULL) AS listened_ms,
+            (SELECT COUNT(*) FROM track_skip_events) AS skips,
+            (SELECT COALESCE(MAX(id), 0) FROM track_skip_events) AS last_skip,
+            (SELECT COUNT(*) FROM track_blocklist) AS blocked
+        """,
+    )
+    fun ownHistoryStamp(): Flow<OwnHistoryStamp>
+
+    /**
+     * Emits each time Room sees `tracks` written (the newest id, which a rename doesn't move: read it as "tracks changed", not
+     * for its value). A song renamed, moved to another album or unblocked changes what Your record's card shows without
+     * touching [ownHistoryStamp]. Cheap: one index seek. A sync writes `tracks` many times a second: the card's reader settles
+     * and spaces these out.
+     */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM tracks")
+    fun tracksWritten(): Flow<Long>
+
     companion object {
+        /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
+        const val GUESS_MS = 210_000L
+
         /** [SongColumns] of a track (`t`). */
         const val SONG_COLUMNS =
             "t.id, t.title, t.artist, t.album, t.duration_ms, t.isrc, t.spotify_uri, t.youtube_id, t.album_art_url, t.date_added"
