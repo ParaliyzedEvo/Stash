@@ -46,6 +46,13 @@ internal data class BitchordTrack(
     val artwork: String? = null,
     val audioQuality: String = "",
     val isrc: String? = null,
+    /**
+     * Tidal's parental advisory: which of a song's clean and explicit twins (same title, album
+     * and length, so the same score) this is. The matcher breaks ties on it
+     * ([QobuzCandidateMatcher.pickBest]). Null until the relay passes Tidal's `explicit` through,
+     * and from any server that doesn't: the pick then falls back to length and search order.
+     */
+    val explicit: Boolean? = null,
 )
 
 @Serializable
@@ -306,10 +313,18 @@ class BitchordClient @Inject constructor(
                         else -> return@withContext TidalLookup.Failed
                     }
                     val tracks = json.decodeFromString<BitchordSearchResponse>(body).tracks
+                    val lossless = tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
+                    // The row's own recording when Tidal lists it. The search is by words, so a
+                    // song's twins both come back, and an ISRC match scores 0.95 against 1.0 for a
+                    // twin that matches on words and length: the clean twin beat the explicit
+                    // recording the row names. The Qobuz sources look the ISRC up first.
+                    val sameRecording = query.isrc?.takeIf { it.isNotBlank() }
+                        ?.let { isrc -> lossless.filter { it.isrc.equals(isrc, ignoreCase = true) } }
+                        .orEmpty()
                     val best = QobuzCandidateMatcher.pickBest(
                         query,
-                        tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
-                            .map { it to confidence(query, it) },
+                        sameRecording.ifEmpty { lossless }.map { it to confidence(query, it) },
+                        explicit = { it.explicit },
                     ) { it.duration }
                     if (best == null) {
                         Log.d(TAG, "no confident match among ${tracks.size} for '${query.artist} - ${query.title}'")
@@ -642,13 +657,40 @@ class BitchordClient @Inject constructor(
 
         /**
          * The song's cache identity: ISRC when known (the strongest identity across catalogs),
-         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown).
+         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown, "~" before
+         * it when the length is only a hint, [TrackQuery.durationReliable]); then the version the
+         * pick prefers, `|explicit` or `|clean` ([explicitWant]).
+         *
+         * A hinted length picks differently from an exact one of the same value, so the two don't
+         * share an answer. A search tap once asked with a music video's 4:25 as exact, got the
+         * compilation copy nearest it, and would otherwise keep being served that pick.
+         *
+         * The preference is in the key, rather than a bare version prefix, for two reasons:
+         *  - [QobuzCandidateMatcher.pickBest] takes the explicit twin unless the row is known
+         *    clean, so a clean row and an explicit (or unknown) row with the same words can pick
+         *    different Tidal ids and must not share one cached answer;
+         *  - keys written before that tie-break (no suffix) no longer match. Those picks went by
+         *    search order alone, sometimes to the clean twin, and would otherwise be served for
+         *    [MATCH_TTL_MS]. Their rows are never read again and go with the 30-day prune.
+         * Old misses are dropped with them although the tie-break can't turn a miss into a match:
+         * keeping them would cost a second read on every lookup, and [MISS_TTL_MS] would re-ask
+         * most of them within two weeks anyway. No migration: the table and its rows are unchanged.
          */
         fun cacheKey(q: TrackQuery): String {
-            q.isrc?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }?.let { return "isrc:$it" }
+            val want = explicitWant(q)
+            q.isrc?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }?.let { return "isrc:$it|$want" }
             fun norm(s: String) = s.lowercase().trim().replace(WHITESPACE, " ")
-            val bucket = q.durationMs?.takeIf { it > 0 }?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
-            return "t:${norm(q.artist)}|${norm(q.title)}|${bucket ?: "?"}"
+            val bucket = q.durationMs?.takeIf { it > 0 }
+                ?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
+                ?.let { if (q.durationReliable) "$it" else "~$it" }
+            return "t:${norm(q.artist)}|${norm(q.title)}|${bucket ?: "?"}|$want"
         }
+
+        /**
+         * The twin [cacheKey] is for: "clean" only for a row known to be clean
+         * ([TrackQuery.explicit] false), "explicit" otherwise. Unknown reads as explicit, as it
+         * does in the pick: the two make the same pick, so they share one cached answer.
+         */
+        private fun explicitWant(q: TrackQuery): String = if (q.explicit == false) "clean" else "explicit"
     }
 }
