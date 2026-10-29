@@ -105,6 +105,98 @@ class RecordCardSourceTest {
         assertThat(listOf(ownReads, importedReads)).containsExactly(3, 2).inOrder()
     }
 
+    @Test fun `while a Last fm run writes, the imported part is held, and read once when it ends`() = runTest {
+        val importedStamp = MutableStateFlow(10)
+        val paused = MutableStateFlow(true)
+        var importedReads = 0
+        val source = RecordCardSource(
+            stamps = MutableStateFlow(stamp(1)),
+            tracks = MutableStateFlow(0L),
+            archive = RecordArchiveSource { _, emit -> emit(listOf(row(0)), true) },
+            albums = { emptyList() },
+            scope = backgroundScope,
+            work = StandardTestDispatcher(testScheduler),
+            now = { testScheduler.currentTime },
+            importedStamps = importedStamp,
+            scrobbles = RecordArchiveSource { _, emit ->
+                importedReads++
+                emit((0 until importedStamp.value).map { ArchivePlay("s$it|x|$it", "S$it", "Band", s = 9_000L + it, ms = 210_000, f = 64 or 128) }, true)
+            },
+            importsPaused = paused,
+        )
+        val seen = mutableListOf<Int>()
+        backgroundScope.launch { source.data.collect { seen += it.summary.plays } }
+        runCurrent()
+        // Home opened during a run: a card at once, from what is there
+        assertThat(seen.last()).isEqualTo(11)
+        // pages written: nothing read again
+        for (n in listOf(20, 30, 40)) {
+            importedStamp.value = n
+            advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+            runCurrent()
+        }
+        assertThat(importedReads).isEqualTo(1)
+        // the run ends: one read, of all of it
+        paused.value = false
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(importedReads).isEqualTo(2)
+        assertThat(seen.last()).isEqualTo(41)
+    }
+
+    @Test fun `while the lengths pass writes, the plays are held, read each time it shows what it timed, and once it ends`() = runTest {
+        // The pass rewrites a scrobble's ms: the database's stamp moves with every song, the pass's word only now and then
+        val importedStamp = MutableStateFlow(10)
+        val paused = MutableStateFlow(true)
+        val shown = MutableStateFlow(0)
+        var ms = 210_000L
+        var importedReads = 0
+        val source = RecordCardSource(
+            stamps = MutableStateFlow(stamp(1)),
+            tracks = MutableStateFlow(0L),
+            archive = RecordArchiveSource { _, emit -> emit(listOf(row(0)), true) },
+            albums = { emptyList() },
+            scope = backgroundScope,
+            work = StandardTestDispatcher(testScheduler),
+            now = { testScheduler.currentTime },
+            importedStamps = importedStamp,
+            scrobbles = RecordArchiveSource { _, emit ->
+                importedReads++
+                emit((0 until 10).map { ArchivePlay("s$it|x|$it", "S$it", "Band", s = 9_000L + it, ms = ms, f = 64) }, true)
+            },
+            importsPaused = paused,
+            importsShown = shown,
+        )
+        val seen = mutableListOf<Long>()
+        backgroundScope.launch { source.data.collect { seen += it.summary.totalMs } }
+        runCurrent()
+        assertThat(importedReads).isEqualTo(1)
+        // songs timed: nothing read again
+        ms = 200_000L
+        for (n in 11..14) {
+            importedStamp.value = n
+            advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+            runCurrent()
+        }
+        assertThat(importedReads).isEqualTo(1)
+        // the pass shows what it timed: one read, of the plays as they are now, though the stamp hasn't moved again
+        shown.value = 1
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(importedReads).isEqualTo(2)
+        // more timed, held again; the pass ends: one more read
+        ms = 190_000L
+        importedStamp.value = 15
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(importedReads).isEqualTo(2)
+        paused.value = false
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(importedReads).isEqualTo(3)
+        assertThat(seen.distinct().size).isEqualTo(3)
+    }
+
     @Test fun `a history that can't be read keeps what the card had`() = runTest {
         val stamps = MutableStateFlow(stamp(1))
         var fail = false

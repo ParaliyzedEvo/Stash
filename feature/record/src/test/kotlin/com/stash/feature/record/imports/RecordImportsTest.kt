@@ -1,5 +1,8 @@
 package com.stash.feature.record.imports
 
+import com.stash.feature.record.archive.RecordFlags
+import com.stash.feature.record.lastfm.LastfmMark
+
 import com.google.common.truth.Truth.assertThat
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.importer.ArchiveListens
@@ -94,7 +97,14 @@ class RecordImportsTest {
         private val cancelStops: Boolean = true,
         /** When set, the start-up's question to WorkManager waits on it (the app still starting). */
         startUp: CompletableDeferred<Unit>? = null,
+        /** The archive's write lock, shared with the Last.fm import. */
+        val writes: RecordWrites = RecordWrites(),
     ) {
+        /** Times Remove import stopped the Last.fm job. */
+        var lastfmCancels = 0
+        /** The lengths pass as the imports drive it; [timing]: one was running when it was stopped. */
+        val lengths = mutableListOf<String>()
+        var timing = false
         val store = RecordImportStore(prefs)
         val notices = Notices()
         var launches = 0
@@ -131,6 +141,10 @@ class RecordImportsTest {
                 now = { NOW },
                 zone = ZoneOffset.UTC,
                 io = dispatcher,
+                writeLock = writes,
+                cancelLastfm = { lastfmCancels++ },
+                pauseLengths = { lengths += "pause"; timing },
+                startLengths = { lengths += "start" },
             )
         }
 
@@ -235,6 +249,120 @@ class RecordImportsTest {
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
         rig.imports.showInvite()
         assertThat(rig.store.info.value.inviteHidden).isFalse()
+    }
+
+    @Test fun `the Last fm mark keeps its stuck page, the oldest read and its holes, read back the same, and a fresh mark drops them`() {
+        val prefs = MemoryPrefs()
+        val m = LastfmMark(
+            "me", to = 100, next = 3, pages = 3, done = false, newest = 90, added = 400, covered = 0, at = 100, oldest = 40,
+            stuck = LastfmMark.Stuck(page = 2, runs = 2, since = 10, last = 20, pages = 3, topup = true, tail = true),
+            holes = listOf(LastfmMark.Hole(0, to = 100, at = 50, open = true), LastfmMark.Hole(60, to = 120, at = 70, fails = 2, next = 900, empty = 80)),
+        )
+        RecordImportStore(prefs).setLastfm(m)
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(m)
+        // A stuck page Last.fm gave no count for, and no holes
+        val plain = m.copy(stuck = LastfmMark.Stuck(page = 1, runs = 1, since = 5, last = 5), holes = null, oldest = null)
+        RecordImportStore(prefs).setLastfm(plain)
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain)
+        RecordImportStore(prefs).setLastfm(plain.copy(stuck = null))
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain.copy(stuck = null))
+        assertThat(prefs.map.keys.filter { it.startsWith("lastfm_stuck") || it.startsWith("lastfm_holes") || it.startsWith("lastfm_oldest") }).isEmpty()
+    }
+
+    @Test fun `an earlier build's skipped pages load as the stretches they could hold, and a stuck page kept without its times is dropped`() {
+        val prefs = MemoryPrefs()
+        RecordImportStore(prefs).setLastfm(LastfmMark("me", to = 100, next = 4, pages = 3, done = true, newest = 90, added = 400, covered = 0, at = 100))
+        // As round 2 kept them: "page,to,from,at", from empty for a whole read's page; and a stuck page from before its times were kept
+        prefs.map["lastfm_skipped_pages"] = "2,100,,60;1,95,70,96"
+        prefs.map["lastfm_skipped"] = 2
+        prefs.map["lastfm_stuck_page"] = 3
+        prefs.map["lastfm_stuck_runs"] = 1
+        val read = RecordImportStore(prefs).info.value.lastfm!!
+        assertThat(read.holes).containsExactly(LastfmMark.Hole(0, 100, 60), LastfmMark.Hole(70, 95, 96)).inOrder()
+        assertThat(read.stuck).isNull()
+        // Written back in today's shape: the old keys go
+        RecordImportStore(prefs).setLastfm(read)
+        assertThat(prefs.map.keys).containsNoneOf("lastfm_skipped_pages", "lastfm_skipped")
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(read)
+    }
+
+    @Test fun `remove takes the Last fm import's mark too, and is refused while a Last fm run holds the archive`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.store.setLastfm(LastfmMark("me", 1, 3, 9, false, 0, 400, 2, 1))
+        rig.writes.setLastfmRunning(true)
+        assertThat(rig.imports.removeImport()).isFalse()
+        assertThat(rig.store.info.value.lastfm).isNotNull()
+        rig.writes.setLastfmRunning(false)
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.store.info.value.lastfm).isNull()
+        assertThat(rig.imports.settings.value.importing).isFalse()
+    }
+
+    @Test fun `remove import stops the Last fm job and moves the scrobbles' generation on, so a job run again does nothing`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        val before = rig.store.lastfmGeneration
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.lastfmCancels).isEqualTo(1)
+        assertThat(rig.store.lastfmGeneration).isEqualTo(before + 1)
+        assertThat(rig.store.info.value.lastfmGeneration).isEqualTo(before + 1)
+    }
+
+    @Test fun `a commit lets the lengths pass go first, and starts it after once Last fm is in or one was running`() = runTest {
+        // No Last.fm, nothing running: stopped first all the same, nothing after
+        val rig = Rig(this)
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        assertThat(rig.lengths).containsExactly("pause")
+
+        // Last.fm brought in: the export may time some of its songs now
+        val withLastfm = Rig(this)
+        withLastfm.store.setLastfm(LastfmMark("me", 1, 2, 1, true, 5, 10, 0, 1))
+        withLastfm.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        withLastfm.imports.confirm()
+        runCurrent()
+        assertThat(withLastfm.lengths).containsExactly("pause", "start").inOrder()
+
+        // A pass was running (its scrobbles came from somewhere): it carries on after
+        val running = Rig(this)
+        running.timing = true
+        running.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        running.imports.confirm()
+        runCurrent()
+        assertThat(running.lengths).containsExactly("pause", "start").inOrder()
+    }
+
+    @Test fun `remove import stops the lengths pass first, and nothing starts it after`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.store.setLengths(timed = 3, at = 5)
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.lengths).containsExactly("pause")
+        assertThat(rig.store.lengthsAt).isNull()
+        assertThat(rig.store.info.value.lengthsTimed).isEqualTo(0)
+    }
+
+    @Test fun `scrobbles alone make an import record, with them all removed and nothing else, it goes`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.imports.markAsked()
+        val scrobble = ArchivePlay("ivy|frank ocean|1714564800000", "Ivy", "Frank Ocean", s = 1_714_564_800_000, ms = 249_000, f = RecordFlags.LASTFM)
+        rig.archive.apply(listOf(scrobble), emptyList())
+        rig.imports.recordAfterScrobbles()
+        assertThat(rig.store.info.value.record!!.imports).isEqualTo(1)
+        assertThat(rig.store.info.value.record!!.bySource!!.lastfm).isEqualTo(1)
+        // a top-up later: the same record, no second import counted
+        rig.imports.recordAfterScrobbles()
+        assertThat(rig.store.info.value.record!!.imports).isEqualTo(1)
+        rig.archive.apply(emptyList(), listOf(scrobble.id))
+        rig.imports.recordAfterScrobblesRemoved()
+        assertThat(rig.store.info.value.record).isNull()
+        assertThat(rig.store.info.value.asked).isEqualTo(NOW)
     }
 
     @Test fun `remove is refused while an import runs, and files brought meanwhile wait`() = runTest {

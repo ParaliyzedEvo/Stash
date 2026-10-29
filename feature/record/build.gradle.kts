@@ -27,6 +27,8 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
+    // WorkManager's updateWork answers with a ListenableFuture, awaited (the lengths pass's waiting job takes a Wi-Fi-only change)
+    implementation(libs.kotlinx.coroutines.guava)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
@@ -36,4 +38,6 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation(libs.room.runtime)
+    // The lengths pass's job: what it asks of WorkManager (its network), against WorkManager's own test runtime
+    testImplementation(libs.work.testing)
 }
