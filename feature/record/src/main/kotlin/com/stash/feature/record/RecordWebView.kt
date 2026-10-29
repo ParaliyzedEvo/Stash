@@ -20,6 +20,7 @@ import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewRenderProcess
 import androidx.webkit.WebViewRenderProcessClient
 import com.stash.feature.record.bridge.RecordPort
+import java.io.ByteArrayInputStream
 
 /** The record's address: the bundled build, served by [recordAssetLoader], in the app's mode (bridge protocol v1). */
 internal const val RECORD_URL = "https://appassets.androidplatform.net/record/embed.html?embed=stash-app"
@@ -32,10 +33,11 @@ internal const val BRIDGE = "StashHost"
 
 /**
  * The bundled record over https on the asset loader's own domain, never `file://`: `/record/` is `assets/record/` (the
- * fork's build), `/fonts/` is `assets/record-fonts/` (the faces theme.css loads from the site root). Nothing else of the
- * APK's assets is reachable, and a path that climbs (`..`) is refused.
+ * fork's build), `/fonts/` is `assets/record-fonts/` (the faces theme.css loads from the site root), and `/art/` the
+ * library's covers by the names the host gave the page ([art]: [com.stash.feature.record.art.LibraryArtHandler]). Nothing
+ * else of the APK's assets is reachable, and a path that climbs (`..`) is refused.
  */
-internal fun recordAssetLoader(context: Context): WebViewAssetLoader {
+internal fun recordAssetLoader(context: Context, art: WebViewAssetLoader.PathHandler? = null): WebViewAssetLoader {
     val assets = WebViewAssetLoader.AssetsPathHandler(context)
     fun under(dir: String) = WebViewAssetLoader.PathHandler { path ->
         if (path.split('/').any { it == ".." || it == "." }) null else assets.handle("$dir/$path")
@@ -43,8 +45,25 @@ internal fun recordAssetLoader(context: Context): WebViewAssetLoader {
     return WebViewAssetLoader.Builder()
         .addPathHandler("/record/", under("record"))
         .addPathHandler("/fonts/", under("record-fonts"))
+        .apply { if (art != null) addPathHandler("/art/", art) }
         .build()
 }
+
+/**
+ * What the record's WebView gets for [url]: on the record's own host, the loader's answer or else a 404 with an empty body
+ * (a path no handler serves, one a handler refused, a missing asset, a cover never given), so a request to this origin never reaches the network;
+ * any other host, null (the WebView's own way, which the page's policy already limits).
+ */
+internal fun recordResponse(loader: WebViewAssetLoader, url: Uri): WebResourceResponse? {
+    if (url.host != RECORD_HOST) return null
+    // AndroidX's AssetsPathHandler answers a missing asset with a response that has no body and no status: a 404 too
+    return loader.shouldInterceptRequest(url)?.takeIf { it.data != null } ?: notFound()
+}
+
+/** [RECORD_ORIGIN]'s host. */
+private const val RECORD_HOST = "appassets.androidplatform.net"
+
+private fun notFound() = WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
 
 /** True when this phone's WebView can carry the bridge (Android System WebView 74 or newer). */
 internal fun bridgeSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
@@ -66,7 +85,7 @@ private data class ProxyPort(private val proxy: JavaScriptReplyProxy) : RecordPo
  * Made on a [android.content.MutableContextWrapper] by [RecordViewModel], which keeps it across configuration changes and
  * points the wrapper at whichever Activity shows it.
  *
- * [onGone]: the page's renderer died; this view can't be used again ([release] then only destroys it).
+ * [onGone]: the page's renderer died; this view can't be used again ([release] then only destroys it). [art]: `/art/`.
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 internal class RecordWebView(
@@ -74,9 +93,10 @@ internal class RecordWebView(
     onMessage: (String, RecordPort) -> Unit,
     onResponsive: (Boolean) -> Unit,
     private val onGone: () -> Unit,
+    art: WebViewAssetLoader.PathHandler? = null,
 ) : WebView(context) {
     private var rendererGone = false
-    private val assetLoader = recordAssetLoader(context)
+    private val assetLoader = recordAssetLoader(context, art)
 
     init {
         // Its own size, whatever holds it. Compose's AndroidView adds a view with the ViewGroup default, wrap_content, and a
@@ -128,11 +148,11 @@ internal class RecordWebView(
 
     private inner class Client : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-            assetLoader.shouldInterceptRequest(request.url)
+            recordResponse(assetLoader, request.url)
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
-            if (url.scheme == "https" && url.host == Uri.parse(RECORD_ORIGIN).host) return false
+            if (url.scheme == "https" && url.host == RECORD_HOST) return false
             if (request.isForMainFrame && url.scheme in EXTERNAL_SCHEMES) openOutside(view.context, url)
             return true
         }

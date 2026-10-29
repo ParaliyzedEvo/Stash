@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,6 +53,30 @@ fun interface RecordPlayer {
 /** Real covers by words ([com.stash.feature.record.art.RecordArt]); [onBatch] is called where [covers] was called. */
 fun interface RecordCovers {
     suspend fun covers(songs: List<ArtSong>, retry: CoroutineScope, onBatch: (List<String?>) -> Unit): List<String?>
+}
+
+/**
+ * The library's own covers for the record (owner decision D1; [com.stash.feature.record.art.LibraryArt]): each song's, as an
+ * address the page can show at once (its file made already), or null.
+ */
+interface RecordLibraryArt {
+    /** Which songs have a cover of the person's own files, without making it (cheap: the library's index alone). */
+    suspend fun owned(songs: List<ArtSong>): List<Boolean>
+
+    /** Covers of the person's own files (local, embedded, cloud, imported), made for the page: before any lookup. */
+    suspend fun local(songs: List<ArtSong>): List<String?>
+
+    /** The library's remote covers (from the image cache alone): only for what the lookups found nothing for. */
+    suspend fun remote(songs: List<ArtSong>): List<String?>
+
+    /** No library (a host that shows the lookups' covers alone). */
+    object None : RecordLibraryArt {
+        override suspend fun owned(songs: List<ArtSong>): List<Boolean> = songs.map { false }
+
+        override suspend fun local(songs: List<ArtSong>): List<String?> = songs.map { null }
+
+        override suspend fun remote(songs: List<ArtSong>): List<String?> = songs.map { null }
+    }
 }
 
 /**
@@ -111,8 +136,12 @@ interface RecordSaveSink {
  *   which agrees) and a switch flipped ([sourcesChanged]) send it again, only when it changed: the page presses again for each.
  * - `stash:play`: "Playing …" at once (the record covers the mini player), and the songs to [RecordPlayer], which outlives
  *   the screen: back right after a tap still plays.
- * - `stash:art`: covers looked up here ([RecordCovers]), handed back by the record's own names as each batch lands, then the
- *   whole list with null for none (and any found later, after that).
+ * - `stash:art`: the songs with a cover of the person's own files ([RecordLibraryArt.owned]) have it made
+ *   ([RecordLibraryArt.local], posted as a batch of their own) while the rest are looked up here at the same time
+ *   ([RecordCovers]: a song with its own file is never asked, unless its file couldn't be made); each batch handed back by the
+ *   record's own names as it lands; then for what is still missing the library's remote covers ([RecordLibraryArt.remote]),
+ *   then the whole list with null for none (and any found later, after that). Every list names only its own songs, and the
+ *   last one says what the lists before it said (the page takes the last word for a name).
  * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared; each answered
  *   `stash:save-ack` once it is in the file (the page keeps two in flight). `stash:save-abort`: what was gathered goes.
  * - `stash:import`: the import sheet opens over the record ([RecordEvent.Import]). When an import or a removal changes the
@@ -134,6 +163,7 @@ class RecordHost(
     private val saves: RecordSaveSink,
     private val events: (RecordEvent) -> Unit,
     private val sources: RecordSourceSwitch = RecordSourceSwitch.All,
+    private val library: RecordLibraryArt = RecordLibraryArt.None,
     private val main: CoroutineContext = Dispatchers.Main.immediate,
     private val background: CoroutineContext = Dispatchers.Default,
     private val chunkSize: Int = CHUNK_ROWS,
@@ -441,22 +471,71 @@ class RecordHost(
         val songs = asks.map { if (it.isArtist) ArtSong(it.artist, it.artist, isArtist = true) else ArtSong(it.title!!, it.artist, it.album) }
         val here = pageScope()
         here.launch {
-            // Called where covers() runs (this scope's thread, the main one), so it posts in order, before the final list
-            val found: (List<String?>) -> Unit = { urls ->
-                val list = asks.indices.mapNotNull { i -> urls.getOrNull(i)?.let { asks[i].id to it } }
-                if (list.isNotEmpty()) from.post(RecordMessages.covers(list))
-            }
-            try {
-                val urls = covers.covers(songs, here, found)
-                // Answered to the page that asked: one that has gone since drops it, and a new page ignores names it never asked
-                from.post(RecordMessages.covers(asks.mapIndexed { i, a -> a.id to urls.getOrNull(i) }))
+            val out = arrayOfNulls<String>(asks.size)
+            // 1. Which songs have a cover of their own files (the index alone: nothing made yet)
+            val owned = try {
+                library.owned(songs)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Its drawn covers stay: nothing to say
-                Log.w(TAG, "covers failed: ${e.javaClass.simpleName}")
+                Log.w(TAG, "library covers failed: ${e.javaClass.simpleName}")
+                emptyList()
             }
+            val mine = asks.indices.filter { owned.getOrNull(it) == true }
+            val rest = asks.indices.filter { owned.getOrNull(it) != true }
+            coroutineScope {
+                // 2. Their files made, while the rest are looked up at once: the lookups never wait on a decode
+                launch {
+                    if (mine.isEmpty()) return@launch
+                    fill(out, mine, "library covers") { library.local(mine.map(songs::get)) }
+                    postFound(from, asks, out, mine.filter { out[it] != null })
+                    // A file that couldn't be made: its song goes to the lookups after all
+                    lookUp(mine.filter { out[it] == null }, songs, asks, out, from, here)
+                }
+                launch { lookUp(rest, songs, asks, out, from, here) }
+            }
+            // 3. The library's remote covers where the lookups found nothing
+            val missing = asks.indices.filter { out[it] == null && !asks[it].isArtist }
+            if (missing.isNotEmpty()) fill(out, missing, "library addresses") { library.remote(missing.map(songs::get)) }
+            // Answered to the page that asked: one that has gone since drops it, and a new page ignores names it never asked
+            from.post(RecordMessages.covers(asks.mapIndexed { i, a -> a.id to out[i] }))
         }
+    }
+
+    /** The lookups for the asks at [at]; each batch says only its own names, so a lookup never covers an own cover. */
+    private suspend fun lookUp(
+        at: List<Int>,
+        songs: List<ArtSong>,
+        asks: List<RecordArtAsk>,
+        out: Array<String?>,
+        from: RecordPort,
+        retry: CoroutineScope,
+    ) {
+        if (at.isEmpty()) return
+        // Called where covers() runs (this scope's thread, the main one), so it posts in order, before the final list
+        val found: (List<String?>) -> Unit = { urls ->
+            val list = at.indices.mapNotNull { j -> urls.getOrNull(j)?.let { asks[at[j]].id to it } }
+            if (list.isNotEmpty()) from.post(RecordMessages.covers(list))
+        }
+        // Its drawn covers stay when it fails: nothing to say
+        fill(out, at, "covers") { covers.covers(at.map(songs::get), retry, found) }
+    }
+
+    /** [find]'s answers for the asks at [at] into [out]; one that fails leaves them as they were. */
+    private suspend fun fill(out: Array<String?>, at: List<Int>, what: String, find: suspend () -> List<String?>) {
+        val urls = try {
+            find()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "$what failed: ${e.javaClass.simpleName}")
+            return
+        }
+        at.forEachIndexed { j, i -> urls.getOrNull(j)?.let { out[i] = it } }
+    }
+
+    private fun postFound(from: RecordPort, asks: List<RecordArtAsk>, out: Array<String?>, at: List<Int>) {
+        if (at.isNotEmpty()) from.post(RecordMessages.covers(at.map { asks[it].id to out[it] }))
     }
 
     companion object {
