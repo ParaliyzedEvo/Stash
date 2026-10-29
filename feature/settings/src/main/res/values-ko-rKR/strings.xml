@@ -334,8 +334,8 @@
     <string name="settings_streaming_on_wifi_title">Wi-Fi 스트리밍</string>
     <string name="settings_streaming_on_cellular_title">모바일 데이터 스트리밍</string>
     <string name="settings_streaming_section">스트리밍</string>
-    <string name="settings_on_wifi">Wi-Fi 사용 중</string>
-    <string name="settings_on_cellular">모바일 데이터 사용 중</string>
+    <string name="settings_on_wifi">Wi-Fi 이용 시 음질</string>
+    <string name="settings_on_cellular">모바일 데이터 이용 시 음질</string>
     <string name="settings_save_data_lossless_subtitle">모든 네트워크에서 CD 음질</string>
     <string name="settings_prefer_cloud_copies_title">클라우드 사본 먼저 재생</string>
     <string name="settings_prefer_cloud_copies_subtitle">Qobuz 또는 Tidal보다 클라우드 저장소의 무손실 파일을 먼저 재생합니다</string>
