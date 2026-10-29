@@ -8,6 +8,8 @@ android {
         unitTests {
             // android.util.Log in the host and the ViewModels returns defaults instead of throwing "not mocked".
             isReturnDefaultValues = true
+            // Robolectric (the import written through a real Room database) boots on the merged resources
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -21,9 +23,17 @@ dependencies {
     // Covers: Deezer and Apple's search, through the app's shared client (core:network provides it)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    // Bring your Spotify: the import runs as a foreground job, so it goes on when the person leaves the app
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
+    // The golden export written through a real (in-memory) Room database, as core/data's DAO tests run it
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation(libs.room.runtime)
 }

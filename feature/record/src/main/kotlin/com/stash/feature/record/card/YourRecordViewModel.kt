@@ -1,75 +1,78 @@
 package com.stash.feature.record.card
 
-import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.feature.record.art.ArtSong
 import com.stash.feature.record.art.RecordArt
+import com.stash.feature.record.imports.ImportInfo
+import com.stash.feature.record.imports.ImportState
+import com.stash.feature.record.imports.RecordImports
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import javax.inject.Singleton
-
-/**
- * "Press your record" hidden with its × on this phone (HomeCard.svelte's `dismissed`). Only the invitation (offered once the
- * import exists: [RecordCard.INVITE_ENABLED]); once there is a record, the card shows whatever this says. Settings › Home
- * layout hides the whole section.
- */
-@Singleton
-class RecordInvitePreference @Inject constructor(@ApplicationContext context: Context) {
-    private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-    private val _hidden = MutableStateFlow(prefs.getBoolean(KEY_HIDDEN, false))
-    val hidden: StateFlow<Boolean> = _hidden.asStateFlow()
-
-    fun hide() {
-        prefs.edit().putBoolean(KEY_HIDDEN, true).apply()
-        _hidden.value = true
-    }
-
-    private companion object {
-        const val FILE = "your_record"
-        const val KEY_HIDDEN = "invite_hidden"
-    }
-}
 
 /**
  * Home's Your record card ([YourRecordSection]): the record's own numbers ([RecordCardSource], read only when the history
- * changes) as [RecordCard]'s state, and the sleeve's and the row's covers, looked up once per set of albums and artists and
- * shown as each batch lands.
+ * changes) and the import's state ([RecordImports]) as [RecordCard]'s state, and the sleeve's and the row's covers, looked up
+ * once per set of albums and artists and shown as each batch lands. "Press your record" hidden with its × stays hidden on this
+ * phone until Settings brings it back (HomeCard.svelte's `dismissed`); Settings › Home layout hides the whole section.
  */
 @HiltViewModel
 class YourRecordViewModel @Inject constructor(
     source: RecordCardSource,
     private val art: RecordArt,
-    private val invite: RecordInvitePreference,
+    private val imports: RecordImports,
 ) : ViewModel() {
     private val covers = MutableStateFlow(Covers())
 
     /** The covers found for the view whose albums and artists make [key]. */
     private data class Covers(val key: String = "", val albums: List<String?> = emptyList(), val artists: List<String?> = emptyList())
 
+    private fun cardImport(info: ImportInfo, st: ImportState) =
+        CardImport(info.record != null, info.asked, info.inviteHidden, st, info.unfinished != null)
+
+    /** The last card worked out from the history: where a new subscription starts (Home back after a while: no gap, no flicker). */
+    @Volatile private var lastBase: RecordCardState? = null
+
     /** The card before its covers: worked out off the main thread, and its covers asked for as soon as it is known. */
-    private val base = combine(source.data, invite.hidden) { data, hidden -> RecordCard.stateOf(data.summary, data.albums, hidden) }
+    private val base = combine(source.data, imports.info, imports.state) { data, info, st ->
+        RecordCard.stateOf(data.summary, data.albums, cardImport(info, st))
+    }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
-        .onEach { if (it is RecordCardState.Record) askCovers(it.view) }
+        .onEach {
+            lastBase = it
+            if (it is RecordCardState.Record) askCovers(it.view)
+        }
 
-    /** Null until the history is read: Home shows nothing rather than a card that changes its mind. */
-    val state: StateFlow<RecordCardState?> = combine(base, covers) { s, c ->
+    /** What the import alone decides (on its way, a preview waiting, didn't finish): never waits for the history. */
+    private val importOnly = combine(imports.info, imports.state) { info, st -> RecordCard.importOnly(cardImport(info, st)) }
+
+    /**
+     * Null until the history is read (Home shows nothing rather than a card that changes its mind), unless the import alone
+     * decides the card: that is shown at once.
+     */
+    val state: StateFlow<RecordCardState?> = combine(
+        base.map<RecordCardState, RecordCardState?> { it }.onStart { emit(lastBase) },
+        importOnly,
+        covers,
+    ) { b, io, c ->
+        val s = io ?: b ?: return@combine null
         if (s !is RecordCardState.Record) return@combine s
         val view = s.view
         val mine = c.key == coverKey(view)
@@ -81,7 +84,26 @@ class YourRecordViewModel @Inject constructor(
 
     private var coversJob: Job? = null
 
-    fun hideInvite() = invite.hide()
+    fun hideInvite() = imports.hideInvite()
+
+    /** Get started, How it works, Open, Review: the import sheet. */
+    fun openImport() = imports.openSheet()
+
+    /** "Your import didn't finish" › Try again: the files kept, read again in the sheet (or the sheet, to bring them). */
+    fun retry() {
+        imports.openSheet()
+        imports.again()
+    }
+
+    /** "Your import didn't finish" › ×: the card goes back to what it was, the files kept for it let go. */
+    fun dismissUnfinished() = imports.dismissUnfinished()
+
+    /** "Bring the zip": the files chosen from the card go straight in, in the sheet. */
+    fun bring(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        imports.openSheet()
+        imports.bring(uris)
+    }
 
     /**
      * The sleeve's albums that have no cover of their own and the row's artists, in one ask (RecordCard.svelte), once per set:

@@ -53,6 +53,12 @@ sealed interface RecordAsk {
 
     /** The record closed what it had open after `stash:back` (it says `stash:close` instead when nothing was). */
     data object Backed : RecordAsk
+
+    /**
+     * The page dealt with `stash:archive` chunk [seq] (the done one too; and a chunk of a stream a newer hello replaced, though
+     * it dropped it). Only a whole number from 0.
+     */
+    data class ArchiveAck(val seq: Int) : RecordAsk
 }
 
 /**
@@ -115,6 +121,7 @@ object RecordMessages {
             "stash:save" -> save(m)
             "stash:save-abort" -> m.string("id")?.takeIf { it.isNotEmpty() && it.length <= MAX_SAVE_ID }?.let { RecordAsk.SaveAbort(it) }
             "stash:backed" -> RecordAsk.Backed
+            "stash:archive-ack" -> m.number("seq")?.takeIf { it >= 0 && it == Math.floor(it) && it <= Int.MAX_VALUE }?.let { RecordAsk.ArchiveAck(it.toInt()) }
             else -> null
         }
     }
@@ -216,6 +223,9 @@ object RecordMessages {
 
     /** Back pressed: the record closes what it has open on top and says `stash:backed`, or `stash:close` when nothing was. */
     const val BACK = "{\"type\":\"stash:back\"}"
+
+    /** The archive changed (an import written or removed): the record says hello again and is pressed from the new rows. */
+    const val RELOAD = "{\"type\":\"stash:reload\"}"
 
     /** `stash:save-ack {id, seq}`: chunk [seq] of file [id] is in the file; the page may send more (it keeps two in flight). */
     fun saveAck(id: String, seq: Int): String = buildString(id.length + 48) {

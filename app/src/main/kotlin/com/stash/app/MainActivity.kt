@@ -42,6 +42,8 @@ import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
+import com.stash.feature.record.imports.RecordIntake
+import com.stash.feature.record.imports.RecordShareRouter
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
@@ -59,6 +61,7 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     companion object {
+
         /** [pendingDeepLink] prefix for a shared-track link; the link (long, or short `/t/{id}`) follows. */
         const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
 
@@ -103,6 +106,10 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
+
+    /** Your record's routing of a mixed share: a Spotify export in it goes to the import, the rest to the local import. */
+    @Inject
+    lateinit var recordShareRouter: RecordShareRouter
 
     @Inject
     lateinit var listenTogether: ListenTogetherController
@@ -288,7 +295,7 @@ class MainActivity : AppCompatActivity() {
         // replay the original intent, and the nav back stack is already restored.
         val relaunch = savedInstanceState != null ||
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (!relaunch) {
+        if (!relaunch && !handleRecordImportIntent(intent)) {
             handleShareIntent(intent)
             handleDeepLinkIntent(intent)
         }
@@ -297,8 +304,33 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (handleRecordImportIntent(intent)) return
         handleShareIntent(intent)
         handleDeepLinkIntent(intent)
+    }
+
+    /**
+     * A share that reached this window rather than Your record's intake screen and may hold a Spotify export (a share of mixed
+     * types, `*` `/` `*`, matches the audio filters too): routed by [recordShareRouter] in the app's scope, so a recreation of this
+     * window halfway can't drop it (the window's grant to the files survives a recreation). The export goes to Your record's
+     * import; the rest, or the whole share when nothing in it is an export, to the local import as ever. True when the intent was
+     * taken that way (and is cleared, so a recreation doesn't bring it in twice). Shares typed as audio, and the audio the intake
+     * screen forwards here, go straight to [handleShareIntent].
+     */
+    private fun handleRecordImportIntent(intent: Intent?): Boolean {
+        if (intent == null || intent.action == Intent.ACTION_VIEW) return false
+        if (intent.getBooleanExtra(RecordIntake.EXTRA_FORWARDED, false) || !RecordIntake.mayHoldExport(intent.type)) return false
+        val candidates = RecordIntake.urisOf(intent, packageName)
+        if (candidates.isEmpty()) return false
+        // The local import's own start (a singleton): nothing here holds this window once it's gone
+        recordShareRouter.route(intent.type, RecordIntake.streamsOf(intent), candidates, localImportCoordinator::start)
+        // Taken: a configuration change replays the Activity's intent, and must not bring the files in again
+        setIntent(Intent(intent).apply {
+            action = Intent.ACTION_MAIN
+            data = null
+            removeExtra(Intent.EXTRA_STREAM)
+        })
+        return true
     }
 
     /**
@@ -371,7 +403,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null) return
-        val uris: List<Uri> = when (intent.action) {
+        val uris = shareUris(intent)
+        if (uris.isNotEmpty()) {
+            localImportCoordinator.start(uris)
+        }
+    }
+
+    /** A share's streams, as the local import takes them. */
+    private fun shareUris(intent: Intent): List<Uri> =
+        when (intent.action) {
             Intent.ACTION_SEND -> {
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
                     ?.let { listOf(it) } ?: emptyList()
@@ -385,8 +425,4 @@ class MainActivity : AppCompatActivity() {
             }
             else -> emptyList()
         }
-        if (uris.isNotEmpty()) {
-            localImportCoordinator.start(uris)
-        }
-    }
 }

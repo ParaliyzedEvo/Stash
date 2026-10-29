@@ -2,9 +2,10 @@ package com.stash.feature.record.card
 
 import android.os.SystemClock
 import android.util.Log
+import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.dao.WebLibraryExportDao.OwnAlbumTotal
-import com.stash.core.data.db.dao.WebLibraryExportDao.OwnHistoryStamp
+import com.stash.feature.record.archive.ImportedArchive
 import com.stash.feature.record.archive.OwnArchive
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.archive.RecordSummary
@@ -20,8 +21,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -35,11 +38,16 @@ import kotlin.coroutines.CoroutineContext
 data class CardData(val summary: RecordSummary, val albums: List<OwnAlbumTotal>)
 
 /**
- * The card's numbers, worked out the way the record works out its own (the same rows, [OwnArchive], read by the page's rules,
- * [RecordSummaryBuilder]), so the card and the record never disagree.
+ * The card's numbers, worked out the way the record works out its own (the same rows: the imported plays and this phone's own,
+ * read by the page's rules, [RecordSummaryBuilder]), so the card and the record never disagree.
+ *
+ * The imported plays change only with an import or a removal, and a heavy history is hundreds of thousands of them: their part
+ * of the numbers and of the sleeve's albums is worked out once per [importedStamps] and kept (a few KB: totals and an entry per
+ * artist), and a song played here re-reads this phone's own plays alone.
  *
  * Read only when what they are made of changed, never because Home came back:
- * - the plays, skips or blocklist ([WebLibraryExportDao.ownHistoryStamp]): read once a burst settles ([SETTLE_MS]);
+ * - the plays, skips or blocklist ([WebLibraryExportDao.ownHistoryStamp]), or the imported plays ([RecordPlayDao.stamp]: an
+ *   import or a removal): read once a burst settles ([SETTLE_MS]);
  * - the songs themselves ([WebLibraryExportDao.tracksWritten]: a rename, an album moved). A sync writes them many times a
  *   second, so these are read once the writes settle ([TRACKS_SETTLE_MS]) and at most once every [TRACKS_GAP_MS].
  * The result is kept with its stamp: a new Home after a while (the sharing stopped) reads nothing for the same history. Off the
@@ -48,34 +56,48 @@ data class CardData(val summary: RecordSummary, val albums: List<OwnAlbumTotal>)
 @OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class RecordCardSource internal constructor(
-    private val stamps: Flow<OwnHistoryStamp>,
+    /** Changes when this phone's own history does (compared by value). */
+    private val stamps: Flow<Any>,
     private val tracks: Flow<Long>,
+    /** This phone's own plays. */
     private val archive: RecordArchiveSource,
     private val albums: suspend () -> List<OwnAlbumTotal>,
     scope: CoroutineScope,
+    /** Changes when the imported plays do (an import, a removal). */
+    private val importedStamps: Flow<Any> = flowOf(Unit),
+    private val imported: RecordArchiveSource = RecordArchiveSource { _, emit -> emit(emptyList(), true) },
+    private val importedAlbums: suspend () -> List<OwnAlbumTotal> = { emptyList() },
     /** Where the history is read and summed: off the main thread, one thing at a time. */
     work: CoroutineContext = Dispatchers.Default.limitedParallelism(1),
     private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     @Inject
-    constructor(dao: WebLibraryExportDao) : this(
+    constructor(dao: WebLibraryExportDao, imported: RecordPlayDao) : this(
         stamps = dao.ownHistoryStamp(),
         tracks = dao.tracksWritten(),
         archive = OwnArchive(dao),
         albums = dao::ownAlbumTotals,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        importedStamps = imported.stamp(),
+        imported = ImportedArchive(imported),
+        importedAlbums = imported::albumTotals,
     )
 
-    @Volatile private var kept: Pair<OwnHistoryStamp, CardData>? = null
+    @Volatile private var kept: Pair<Any, CardData>? = null
+
+    /** The imported plays' part, by the stamp it was read at. */
+    private class ImportedPart(val stamp: Any, val summary: RecordSummaryBuilder.Partial, val albums: List<OwnAlbumTotal>)
+
+    @Volatile private var importedPart: ImportedPart? = null
 
     private sealed interface Change {
-        class History(val stamp: OwnHistoryStamp) : Change
+        class History(val stamp: Any) : Change
         data object Tracks : Change
     }
 
     /** The latest card data; the first as soon as it is read (or kept), each later one as above. */
     val data: Flow<CardData> = channelFlow {
-        var latest: OwnHistoryStamp? = null
+        var latest: Any? = null
         // The songs changed since the last read: the next reads afresh even for a history it has kept
         var tracksDirty = false
         var lastTracksRead = Long.MIN_VALUE / 2
@@ -90,7 +112,7 @@ class RecordCardSource internal constructor(
                 val fresh = tracksDirty
                 tracksDirty = false
                 if (fresh) lastTracksRead = now()
-                val data = kept?.takeIf { !fresh && it.first == stamp }?.second ?: read()?.also { kept = stamp to it }
+                val data = kept?.takeIf { !fresh && it.first == stamp }?.second ?: read(stamp)?.also { kept = stamp to it }
                 if (data != null) send(data)
             }
         }
@@ -104,7 +126,8 @@ class RecordCardSource internal constructor(
             }
         }
 
-        merge(stamps.distinctUntilChanged().map { Change.History(it) }, tracks.drop(1).map { Change.Tracks }).collect { change ->
+        val history = combine(stamps, importedStamps) { own, plays -> own to plays }.distinctUntilChanged()
+        merge(history.map { Change.History(it) }, tracks.drop(1).map { Change.Tracks }).collect { change ->
             when (change) {
                 is Change.History -> {
                     val first = latest == null
@@ -125,10 +148,24 @@ class RecordCardSource internal constructor(
         .flowOn(work)
         .shareIn(scope, SharingStarted.WhileSubscribed(STOP_MS), replay = 1)
 
-    private suspend fun read(): CardData? = try {
-        val summary = RecordSummaryBuilder()
+    private suspend fun read(stamp: Any): CardData? = try {
+        val importedStamp = (stamp as? Pair<*, *>)?.second ?: Unit
+        // The imported plays' part, read again only when they changed (they come first, as the record has them)
+        val began = SystemClock.elapsedRealtime()
+        val part = importedPart?.takeIf { it.stamp == importedStamp } ?: run {
+            // record_plays is keyed by id: no set of ids to hold while it's read
+            val b = RecordSummaryBuilder(uniqueIds = true)
+            imported.stream(CHUNK) { rows, _ -> rows.forEach(b::add) }
+            ImportedPart(importedStamp, b.partial(), importedAlbums()).also {
+                importedPart = it
+                Log.i(TAG, "the card read the imported plays (${it.summary.plays}) in ${SystemClock.elapsedRealtime() - began} ms")
+            }
+        }
+        val summary = RecordSummaryBuilder(part.summary)
         archive.stream(CHUNK) { rows, _ -> rows.forEach(summary::add) }
-        CardData(summary.build(), albums())
+        Log.i(TAG, "the card read the history in ${SystemClock.elapsedRealtime() - began} ms")
+        // The album played last first, whichever source it's in (an album's spelling is the one seen first)
+        CardData(summary.build(), (albums() + part.albums).sortedByDescending { it.lastAt })
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

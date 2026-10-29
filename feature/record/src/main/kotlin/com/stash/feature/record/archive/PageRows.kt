@@ -38,6 +38,8 @@ data class RecordSummary(
     /** The earliest start, epoch ms; null with no rows. */
     val first: Long?,
     val topArtists: List<RankedArtist>,
+    /** The streams of this phone's own plays ([RecordFlags.STASH]): enough of them make a record before any import. */
+    val ownStreams: Int = 0,
 )
 
 /**
@@ -49,22 +51,64 @@ data class RecordSummary(
  * exactly as written (no trim, no fold, credits never split) and ranks by the time summed, ties in the order each artist first
  * appears in that sorted list: the artist whose earliest-ending play ends first, then the one whose such play has the smaller
  * id (plain UTF-16 order). So each artist keeps its least (end, id).
+ *
+ * [uniqueIds]: the rows come from a source whose ids are unique already (the imported plays, `record_plays`' primary key), so
+ * no id is kept to check them (a heavy history's are hundreds of thousands of strings, tens of MB).
  */
-class RecordSummaryBuilder {
+class RecordSummaryBuilder(private val uniqueIds: Boolean = false) {
     private class Artist(val name: String, var ms: Long, var firstEnd: Long, var firstId: String)
 
     private val artists = HashMap<String, Artist>()
     private val ids = HashSet<String>()
     private var plays = 0
     private var streams = 0
+    private var ownStreams = 0
     private var totalMs = 0L
     private var first = Long.MAX_VALUE
 
+    /**
+     * What one source's rows came to, without their ids: totals and each artist's time and first (end, id). Small (an entry per
+     * artist), so it can be kept while the source doesn't change, and another source's rows added on top ([RecordSummaryBuilder]
+     * seeded with it) give what reading both would, as long as no id is in both: the record's sources never share one (an
+     * imported Spotify play and a play made in Stash are different players' plays).
+     */
+    class Partial internal constructor(
+        internal val artists: List<Triple<String, Long, Pair<Long, String>>>,
+        internal val plays: Int,
+        internal val streams: Int,
+        internal val ownStreams: Int,
+        internal val totalMs: Long,
+        internal val first: Long,
+    )
+
+    /** Starts from [seed]: rows added now count on top of the source it was made from. */
+    constructor(seed: Partial) : this() {
+        for ((name, ms, firstAt) in seed.artists) artists[name] = Artist(name, ms, firstAt.first, firstAt.second)
+        plays = seed.plays
+        streams = seed.streams
+        ownStreams = seed.ownStreams
+        totalMs = seed.totalMs
+        first = seed.first
+    }
+
+    /** What the rows added so far came to ([Partial]), to keep. */
+    fun partial(): Partial = Partial(
+        artists = artists.values.map { Triple(it.name, it.ms, it.firstEnd to it.firstId) },
+        plays = plays,
+        streams = streams,
+        ownStreams = ownStreams,
+        totalMs = totalMs,
+        first = first,
+    )
+
     /** Takes [r] as the page does; false when the page leaves it out (not a play, or an id already kept). */
     fun add(r: ArchivePlay): Boolean {
-        if (!PageRows.accepts(r) || !ids.add(r.id)) return false
+        if (!PageRows.accepts(r) || (!uniqueIds && !ids.add(r.id))) return false
         plays++
-        if (r.ms >= STREAM_MS) streams++
+        if (r.ms >= STREAM_MS) {
+            streams++
+            if (r.f and RecordFlags.STASH != 0) ownStreams++
+        }
         totalMs += r.ms
         if (r.s < first) first = r.s
         val end = r.s + r.ms
@@ -94,6 +138,7 @@ class RecordSummaryBuilder {
             )
             .take(top)
             .map { RankedArtist(it.name, it.ms) },
+        ownStreams = ownStreams,
     )
 
     companion object {

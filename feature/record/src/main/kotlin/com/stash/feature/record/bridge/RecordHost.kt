@@ -5,6 +5,7 @@ import android.util.Log
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.art.ArtSong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
 
 /** Where the host's messages go: one page's reply proxy (the frame that sent the message). Called on the main thread only. */
@@ -28,6 +30,9 @@ sealed interface RecordEvent {
 
     /** A line for the listener (a snackbar). */
     data class Say(val note: RecordNote) : RecordEvent
+
+    /** The record's "Bring your Spotify" (`stash:import`): the import sheet opens over it. */
+    data object Import : RecordEvent
 }
 
 /** Plays the record's songs in Stash; returns at once (the matching and the queue go on elsewhere: [RecordPlayback]). */
@@ -66,6 +71,10 @@ interface RecordSaveSink {
  *   hello and the last marked `done`. A chunk doesn't say which hello it answers (the record starts over at seq 0), so a new
  *   hello stops the stream still sending for the previous one, and a chunk built for an old hello is never posted, even one a
  *   slow read finishes after its stream was stopped. The theme goes too, so the record has Stash's look from its first frame.
+ *   At most [ARCHIVE_WINDOW] chunks are out unacknowledged (the page answers each with `stash:archive-ack {seq}`): a heavy
+ *   listener's record is 20 chunks of 3 MB, which the WebView would otherwise hold all at once. An ack counts only against a
+ *   chunk of the stream sending now that is still unacknowledged (acks carry no stream, so a stale one moves the window by one
+ *   at most). Only a page that hasn't acked once in [ARCHIVE_ACK_WAIT_MS] gets the rest without waiting; one that has is waited for.
  * - `stash:ready`: the theme again (the web sends it on load and on ready). `stash:counts`: logged (the source switches are
  *   phase 4).
  * - `stash:play`: "Playing …" at once (the record covers the mini player), and the songs to [RecordPlayer], which outlives
@@ -74,7 +83,8 @@ interface RecordSaveSink {
  *   whole list with null for none (and any found later, after that).
  * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared; each answered
  *   `stash:save-ack` once it is in the file (the page keeps two in flight). `stash:save-abort`: what was gathered goes.
- * - `stash:import`: the Spotify import is phase 3; for now the listener is told it's coming.
+ * - `stash:import`: the import sheet opens over the record ([RecordEvent.Import]). When an import or a removal changes the
+ *   archive, [reload] tells the page (`stash:reload`), which says hello again and is answered with the new archive.
  * - `stash:close`: [RecordEvent.Close].
  *
  * Everything a page started (its archive, its covers, the wait on back) runs in that page's own job, which [detach] cancels.
@@ -124,6 +134,20 @@ class RecordHost(
     /** Hellos answered so far; a stream posts only while its own is the latest. */
     private var hellos = 0
     private var stream: Job? = null
+
+    /** The archive chunks the stream sending now has out unacknowledged, and its sender waiting for room. On [main]. */
+    private class Window {
+        val unacked = HashSet<Int>()
+        var room: CompletableDeferred<Unit>? = null
+
+        /** An ack has come on this stream: the page speaks acks, so a slow one is waited for, however long. */
+        var acked = false
+
+        /** The page never acked: the rest goes without waiting. */
+        var blind = false
+    }
+
+    private var window: Window? = null
     private var light = false
     /** When the back still waiting for the page's answer was pressed; null when none is. */
     private var backAsked: Long? = null
@@ -188,13 +212,21 @@ class RecordHost(
             is RecordAsk.Counts -> Log.i(TAG, "the record's sources: spotify ${ask.spotify}, stash ${ask.stash}, lastfm ${ask.lastfm}")
             is RecordAsk.Play -> play(ask)
             is RecordAsk.Art -> art(ask, from)
-            RecordAsk.Import -> events(RecordEvent.Say(RecordNote.ImportComing))
+            RecordAsk.Import -> events(RecordEvent.Import)
             RecordAsk.Close -> close()
             RecordAsk.Backed -> {
                 // The page closed what it had open: the record stays
                 backAsked = null
                 backWait?.cancel()
                 backWait = null
+            }
+            is RecordAsk.ArchiveAck -> window?.let { w ->
+                // Only a chunk of this stream still out: a stale ack, or one twice, moves nothing
+                if (w.unacked.remove(ask.seq)) {
+                    w.acked = true
+                    w.room?.complete(Unit)
+                    w.room = null
+                }
             }
             is RecordAsk.Save, is RecordAsk.SaveAbort -> Unit // the save worker's, before this
         }
@@ -221,6 +253,11 @@ class RecordHost(
         }
     }
 
+    /** The archive changed (an import written or removed): the page says hello again, and gets the new rows. */
+    fun reload() {
+        current?.post(RecordMessages.RELOAD)
+    }
+
     /** The app's theme; the record hears of a change at once, and of the theme with every hello and ready. */
     fun setTheme(light: Boolean) {
         if (this.light == light) return
@@ -238,6 +275,7 @@ class RecordHost(
         page.cancel()
         page = newPage()
         stream = null
+        window = null
         current = null
         hellos++
         unresponsive = false
@@ -263,6 +301,7 @@ class RecordHost(
         current = from
         unresponsive = false
         val mine = ++hellos
+        val w = Window().also { window = it }
         from.post(RecordMessages.theme(light))
         stream = pageScope().launch {
             var seq = 0
@@ -270,8 +309,15 @@ class RecordHost(
             try {
                 withContext(background) {
                     archive.stream(chunkSize) { rows, last ->
-                        val message = RecordMessages.archive(rows, seq++, last)
-                        withContext(main) { if (mine == hellos) from.post(message) }
+                        val s = seq++
+                        val message = RecordMessages.archive(rows, s, last)
+                        awaitRoom(w)
+                        withContext(main) {
+                            if (mine == hellos) {
+                                w.unacked += s
+                                from.post(message)
+                            }
+                        }
                         sent += rows.size
                     }
                 }
@@ -285,6 +331,29 @@ class RecordHost(
                     from.post(RecordMessages.archive(emptyList(), seq, done = true))
                     events(RecordEvent.Say(RecordNote.ArchiveFailed))
                 }
+            }
+        }
+    }
+
+    /**
+     * Waits until fewer than [ARCHIVE_WINDOW] of [w]'s chunks are out unacknowledged. A page that has acked on this stream is
+     * waited for however long it takes (a renderer in the background is slow, and a burst then is what the window prevents; a
+     * new hello or the page going ends the stream). Only a page that hasn't acked once in [ARCHIVE_ACK_WAIT_MS] (one that doesn't
+     * speak acks) gets the rest without waiting.
+     */
+    private suspend fun awaitRoom(w: Window) {
+        while (true) {
+            val (wait, acked) = withContext(main) {
+                if (w.blind || w.unacked.size < ARCHIVE_WINDOW) null else (w.room ?: CompletableDeferred<Unit>().also { w.room = it }) to w.acked
+            } ?: return
+            if (acked) {
+                wait.await()
+                continue
+            }
+            if (withTimeoutOrNull(ARCHIVE_ACK_WAIT_MS) { wait.await() } == null && !withContext(main) { w.acked }) {
+                Log.w(TAG, "the record hasn't acknowledged the archive; the rest goes without waiting")
+                withContext(main) { w.blind = true }
+                return
             }
         }
     }
@@ -325,6 +394,12 @@ class RecordHost(
 
         /** Rows per `stash:archive` chunk (PLAN: 20k; about 3 MB of JSON). */
         const val CHUNK_ROWS = 20_000
+
+        /** `stash:archive` chunks out unacknowledged, at most (the fork's app.ts acks each one). */
+        const val ARCHIVE_WINDOW = 2
+
+        /** A page that hasn't acked a single chunk this long after is taken as one that doesn't: the rest goes without waiting. */
+        const val ARCHIVE_ACK_WAIT_MS = 30_000L
 
         /** Back closes the record when the page hasn't answered it (`stash:backed` or `stash:close`) this long after. */
         const val BACK_WAIT_MS = 1_500L
