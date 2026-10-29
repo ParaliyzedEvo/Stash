@@ -231,7 +231,7 @@
     <string name="settings_ui_scale_subtitle">앱 전체의 텍스트 및 레이아웃 크기</string>
     <string name="settings_amoled_title">순수 검정 (AMOLED)</string>
     <string name="settings_amoled_subtitle">어두운 테마에 검정 배경을 적용합니다</string>
-    <string name="settings_now_playing_section">현재 재생 중</string>
+    <string name="settings_now_playing_section">플레이어</string>
     <string name="settings_ambient_motion_title">앰비언트 모션</string>
     <string name="settings_ambient_motion_subtitle">지금 현재 중 뒤의 움직이는 색상</string>
     <string name="settings_cycle_album_art_title">앨범 아트 순환</string>
