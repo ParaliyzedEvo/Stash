@@ -1434,6 +1434,32 @@ class PlayerRepositoryImpl @Inject constructor(
         playHistory.moveTo(entry, previousGone)
     }
 
+    override suspend fun learnArtwork(arts: Map<Long, String>) {
+        if (arts.isEmpty()) return
+        val controller = ensureController() ?: return
+        withContext(Dispatchers.Main.immediate) {
+            // The rows Up next shows (the logical queue), then the player's items: the playing one is the notification's
+            currentQueueTracks = QueueArt.fill(currentQueueTracks, arts)
+            val withArt = HashMap<Int, MediaItem>()
+            for (i in 0 until controller.mediaItemCount) {
+                val item = controller.getMediaItemAt(i)
+                val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 } ?: item.mediaId.toLongOrNull() ?: continue
+                val art = arts[id] ?: continue
+                if (item.mediaMetadata.artworkUri != null) continue
+                // Metadata only: the same media (its URI, its Play next tag), so the player updates it in place (every
+                // source here takes a metadata-only change, ResolveFirstMediaSource included): the playing song goes on,
+                // the others keep their preparation, the shuffle order is untouched
+                withArt[i] = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
+            }
+            // Neighbours in one call: each call is a timeline change (and a queue refresh for Android Auto)
+            val runs = QueueArt.runs(withArt.keys)
+            for (run in runs) controller.replaceMediaItems(run.first, run.last + 1, run.map { withArt.getValue(it) })
+            timelineDirty = true
+            updateState(controller)
+            Log.d(TAG, "learnArtwork: ${arts.size} covers, ${withArt.size} player items in ${runs.size} replaces")
+        }
+    }
+
     /** replaceMediaItem, but under shuffle the play order is put back exactly as it was. */
     private fun replaceMediaItemKeepingShuffle(controller: MediaController, index: Int, replacement: MediaItem) {
         // A rebuilt item (a stream placeholder for a vanished download) keeps its Play next tag,

@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -52,6 +51,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import android.view.View
 import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -65,6 +68,8 @@ import com.stash.core.ui.theme.StashTextSecondary
 import com.stash.feature.record.bridge.RecordEvent
 import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.text
+import com.stash.feature.record.mixes.RecordMixesTab
+import com.stash.feature.record.mixes.RecordMixesTabViewModel
 import kotlinx.coroutines.launch
 
 /** The record's ground: its own background (the fork's theme.css `--bg`, Stash's dark background), behind the system bars too. */
@@ -84,11 +89,17 @@ internal val RECORD_GROUND_ARGB = 0xFF06060C.toInt()
  *
  * A phone whose Android System WebView is too old for the bridge says so instead. A renderer that dies (memory, a crash)
  * leaves a way to open the record again.
+ *
+ * Two tabs over it, "The record | Mixes" (stash-player `src/routes/spotify/+page.svelte`): the source switches show on the
+ * record's tab only, and the record stays pressed (its WebView kept, only hidden) while Mixes shows ([RecordMixesTab]: the
+ * history mixes, each opening its page with [onOpenMix]). Back on Mixes closes the screen.
  */
 @Composable
 fun RecordScreen(
     onClose: () -> Unit,
+    onOpenMix: (String) -> Unit = {},
     viewModel: RecordViewModel = hiltViewModel(),
+    mixesViewModel: RecordMixesTabViewModel = hiltViewModel(),
 ) {
     val close by rememberUpdatedState(onClose)
     val snackbar = remember { SnackbarHostState() }
@@ -114,7 +125,8 @@ fun RecordScreen(
     val dark = LocalIsDarkTheme.current
     LaunchedEffect(dark) { viewModel.setTheme(light = !dark) }
     val supported = remember { bridgeSupported() }
-    BackHandler { if (supported) viewModel.back() else close() }
+    val tab by viewModel.tab.collectAsStateWithLifecycle()
+    BackHandler { if (supported && tab == RecordTab.RECORD) viewModel.back() else close() }
     LightSystemBarIcons()
     PauseWithScreen(viewModel)
     // A share sheet opens only while Stash is in front (Android refuses one from the background): a video that finished
@@ -133,27 +145,25 @@ fun RecordScreen(
 
     Box(Modifier.fillMaxSize().background(RecordGround)) {
         val gone by viewModel.gone.collectAsStateWithLifecycle()
-        when {
-            !supported -> Notice(
-                title = stringResource(R.string.record_webview_old_title),
-                body = stringResource(R.string.record_webview_old_body),
-                action = null,
+        val switches by viewModel.switches.collectAsStateWithLifecycle()
+        // The bar's last switches stay drawn while it folds away
+        val shown = remember { mutableStateOf(switches) }
+        switches?.let { shown.value = it }
+        val onRecord = tab == RecordTab.RECORD
+        Column(Modifier.fillMaxSize()) {
+            // The status bar is the tabs' now, not the page's
+            RecordTabsBar(
+                tab = tab,
+                onPick = viewModel::pick,
                 onClose = close,
+                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
             )
-            gone -> Notice(
-                title = stringResource(R.string.record_stopped_title),
-                body = stringResource(R.string.record_stopped_body),
-                action = stringResource(R.string.record_open_again) to viewModel::reopen,
-                onClose = close,
-            )
-            else -> {
-                val switches by viewModel.switches.collectAsStateWithLifecycle()
-                // The bar's last switches stay drawn while it folds away
-                val shown = remember { mutableStateOf(switches) }
-                switches?.let { shown.value = it }
-                Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                // The record's tab, laid out the same whichever tab shows: the Mixes tab lies over it, so the hidden WebView is
+                // never resized (its page would reflow) and the record stays pressed underneath
+                Column(Modifier.fillMaxSize().then(if (onRecord) Modifier else Modifier.clearAndSetSemantics { })) {
                     AnimatedVisibility(
-                        visible = switches != null,
+                        visible = switches != null && supported && !gone,
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
@@ -161,17 +171,41 @@ fun RecordScreen(
                             RecordSourceBar(
                                 switches = s,
                                 onFlip = { src -> if (s.isLast(src)) screenScope.launch { say(RecordNote.OneSourceStays) } else viewModel.flip(src) },
-                                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
+                                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
                             )
                         }
                     }
-                    AndroidView(
-                        factory = { context -> viewModel.webView(context) },
-                        onRelease = { viewModel.letGo(it) },
-                        modifier = Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(
-                            // Under the bar the status bar is the bar's, not the page's
-                            if (switches != null) WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal) else WindowInsets.safeDrawing,
-                        ),
+                    val body = Modifier.weight(1f).fillMaxWidth()
+                    when {
+                        !supported -> Notice(
+                            title = stringResource(R.string.record_webview_old_title),
+                            body = stringResource(R.string.record_webview_old_body),
+                            action = null,
+                            onClose = close,
+                            modifier = body,
+                        )
+                        gone -> Notice(
+                            title = stringResource(R.string.record_stopped_title),
+                            body = stringResource(R.string.record_stopped_body),
+                            action = stringResource(R.string.record_open_again) to viewModel::reopen,
+                            onClose = close,
+                            modifier = body,
+                        )
+                        else -> AndroidView(
+                            factory = { context -> viewModel.webView(context) },
+                            onRelease = { viewModel.letGo(it) },
+                            // Hidden (never gone) while Mixes shows: no touches, nothing read out
+                            update = { it.visibility = if (onRecord) View.VISIBLE else View.INVISIBLE },
+                            modifier = body.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)),
+                        )
+                    }
+                }
+                if (!onRecord) {
+                    // Over the record's tab, taking every touch (the source switches lie under its top)
+                    RecordMixesTab(
+                        mixesViewModel,
+                        onOpenMix = onOpenMix,
+                        modifier = Modifier.fillMaxSize().background(RecordGround).pointerInput(Unit) { detectTapGestures { } },
                     )
                 }
             }
@@ -199,8 +233,9 @@ private fun PauseWithScreen(viewModel: RecordViewModel) {
 
 /** A plain page in the record's place: what happened, what to do, and the way back. */
 @Composable
-private fun Notice(title: String, body: String, action: Pair<String, () -> Unit>?, onClose: () -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp)) {
+private fun Notice(title: String, body: String, action: Pair<String, () -> Unit>?, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    // Under the tabs: the status bar is theirs
+    Column(modifier.navigationBarsPadding().padding(24.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = onClose) {
                 Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.record_close), tint = StashTextPrimary)
