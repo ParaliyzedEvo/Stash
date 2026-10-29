@@ -1,9 +1,12 @@
 /**
  * The phone against the web, on the phone's own taste and plays: a debug build writes what Your record's mixes were made from
  * and what they came to (`files/record-mixes.json`, RecordMixes' dump: the taste as the record shows it, the library's songs,
- * this week's stacked plays, `now`, the local day, Home's picks, every mix's item keys and song keys). This runs stash-player's
- * own `historyMixes`, `weekMix` and `homePicks` over the same and says where the two differ: the picks, and each mix's id, title,
- * line, item keys and first 10 song keys.
+ * this week's stacked plays, `now`, the local day, Home's picks, every mix's item keys and song keys, and the Mixes tab's Top
+ * artists, Top songs and "Not in your Stash yet"). This runs stash-player's own `historyMixes`, `weekMix` and `homePicks` over the
+ * same and says where the two differ: the picks, and each mix's id, title, line, item keys and first 10 song keys; and
+ * ui/spotify/mix.ts `mixesLists` (the first 10 artists, each opening their mix or playing; the top 10 songs; the lost favourites
+ * minus the library), in full. The app's two rules of its own are applied to the web's lists, and said: a song whose Spotify id
+ * is on a row of the library is in it (`have[].spotifyId`), and a blocked song (`blocked`, the dump's song keys) is never listed.
  *
  *   adb -s <rig> exec-out run-as com.stash.app.debug cat files/record-mixes.json > build/record-mixes.json
  *   PLAYER=../stash-web/player-upi
@@ -17,17 +20,23 @@ import { descriptorKey } from '@player/identity';
 import { artistSongs, firstSongs, haveIndex, historyMixes, homePicks, MIX_MIN, MIX_SIZE, weekMix, type HistoryMix } from '@player/spotify/mixes';
 import type { ArchivePlay } from '@player/spotify/plays';
 import { songKey, type Taste } from '@player/spotify/taste';
+import { mixesLists, TOP_SONGS } from '@player/ui/spotify/mix';
+import { topSongs } from '@player/ui/spotify/years';
 
 type AppMix = { id: string; title: string; sub: string; songKeys: string[]; items: string[] };
 type Dump = {
 	now: number;
 	day: number;
 	taste: Taste;
-	have: { title: string; artist: string; album?: string; isrc?: string; durationMs?: number }[];
+	have: { title: string; artist: string; album?: string; isrc?: string; durationMs?: number; spotifyId?: string }[];
 	rows: [string, string, string, string | null, string | null, number, number, number][];
 	picks: string[];
 	mixes: AppMix[];
 	week: AppMix | null;
+	artists?: { key: string; name: string; mixId: string | null }[];
+	tops?: string[];
+	lost?: string[];
+	blocked?: string[];
 };
 
 const file = process.argv[2];
@@ -96,5 +105,23 @@ for (const [w, a] of both) {
 	say(same, `${w.id} "${w.title}" · ${w.sub} · ${w.items.length} songs; first song keys ${JSON.stringify(keys.slice(0, 3))}…`);
 	if (!same) console.log(`   app: "${a.title}" · ${a.sub} · ${a.items.length} songs; first song keys ${JSON.stringify(a.songKeys.slice(0, 3))}…`);
 }
-console.log(differ ? `${differ} DIFFER` : 'THE PHONE AND THE WEB AGREE: the picks, and every mix (ids, words, item keys, first 10 song keys)');
+// The rest of the Mixes tab, by ui/spotify/mix.ts `mixesLists` over the same taste and library; then the app's own two rules
+if (d.artists && d.tops && d.lost) {
+	const library = d.have.map((l) => ({ title: l.title, artist: l.artist, ...(l.isrc ? { isrc: l.isrc } : {}), key: descriptorKey(l) }));
+	const lists = mixesLists(t, library);
+	const artists = lists.artists.map((r) => ({ key: r.artist.key, name: r.artist.name, mixId: r.action.kind === 'open' ? r.action.mixId : null }));
+	const blocked = new Set(d.blocked ?? []);
+	const sids = new Set(d.have.flatMap((h) => (h.spotifyId ? [h.spotifyId] : [])));
+	const statOf = new Map(t.songs.map((s) => [s.key, s]));
+	const tops = (blocked.size ? topSongs({ songs: t.songs.filter((s) => !blocked.has(s.key)) }, TOP_SONGS) : lists.tops).map((s) => s.key);
+	const lost = lists.lost.map((s) => s.key).filter((k) => !blocked.has(k) && !(statOf.get(k)?.sid && sids.has(statOf.get(k)!.sid!)));
+	const byApp = lists.lost.length - lost.length;
+	if (blocked.size || byApp) console.log(`(the app's own rules: ${blocked.size} blocked songs never listed; ${byApp} lost songs left out as blocked or in the library by a Spotify id)`);
+	say(JSON.stringify(artists) === JSON.stringify(d.artists), `Top artists: web ${artists.map((a) => `${a.name}${a.mixId ? ' (opens)' : ' (plays)'}`).join(', ')}`);
+	if (JSON.stringify(artists) !== JSON.stringify(d.artists)) console.log(`   app: ${d.artists.map((a) => `${a.name}${a.mixId ? ' (opens)' : ' (plays)'}`).join(', ')}`);
+	say(JSON.stringify(tops) === JSON.stringify(d.tops), `Top songs: web ${JSON.stringify(tops)}`);
+	if (JSON.stringify(tops) !== JSON.stringify(d.tops)) console.log(`   app: ${JSON.stringify(d.tops)}`);
+	say(JSON.stringify(lost) === JSON.stringify(d.lost), `Not in your Stash yet: web ${lost.length} songs, first ${JSON.stringify(lost.slice(0, 5))}…; app ${d.lost.length}`);
+}
+console.log(differ ? `${differ} DIFFER` : 'THE PHONE AND THE WEB AGREE: the picks, every mix (ids, words, item keys, first 10 song keys), Top artists, Top songs and Not in your Stash yet');
 process.exit(differ ? 1 : 0);

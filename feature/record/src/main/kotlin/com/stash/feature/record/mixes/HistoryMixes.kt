@@ -36,6 +36,11 @@ data class LibrarySong(
     /** 0 when the row doesn't know it (the web's `durationMs` undefined). */
     val durationMs: Long = 0,
     val art: String? = null,
+    /**
+     * The Spotify id the row carries, when it has one: a row a Spotify sync made can name the song otherwise than the history
+     * ("A, B" where the history says "A"), and a song of the history with that id is this row all the same.
+     */
+    val spotifyId: String? = null,
 ) : SongIdentity {
     /** identity.ts `keyOf`: the stored key of a library song, `isrc:…` or the words. */
     val libraryKey: String get() = SongKey.descriptorKey(this)
@@ -429,4 +434,82 @@ object HistoryMixes {
         val mixes = listOfNotNull(week) + eras + all.filter { it.kind != MixKind.ERA && it.kind != MixKind.YEAR && it.kind != MixKind.ARTIST }
         return mixes to all.filter { it.kind == MixKind.YEAR }.asReversed()
     }
+
+    // ── The rest of the Mixes tab (routes/spotify/+page.svelte: Top artists, Top songs, "Not in your Stash yet") ──────────────
+
+    /** The page's `artists` (`taste.topArtists.slice(0, 10)`) and `tops` (`topSongs(taste, 10)`). */
+    const val TOP_ARTISTS = 10
+    const val TOP_SONGS = 10
+
+    /** "Not in your Stash yet" shows this many at a time; Show more, as many again (the page's `LOST_PAGE`). */
+    const val LOST_PAGE = 50
+
+    /**
+     * A Top artists row: the artist, and the id of their mix when the taste makes one ([artistMix]: [MIX_MIN] songs or more), which
+     * the row opens; null: too few songs for a mix, so the row plays them ([artistSongs], as the page's `playArtist`).
+     */
+    data class ArtistRow(val artist: TopArtist, val mixId: String?)
+
+    /** The page's `artists` and `artistMixId`: your top 10 artists by time listened, each with their mix's id, else null. */
+    fun topArtists(t: Taste): List<ArtistRow> {
+        val keys = ArtistKeys()
+        return t.topArtists.take(TOP_ARTISTS).map { a ->
+            // artistMix(taste, a)?.id: its id once it has MIX_MIN songs (the same songs historyMixes makes its mix of)
+            ArtistRow(a, if (artistSongs(t, a.key, Int.MAX_VALUE, keys).size >= MIX_MIN) "artist:${a.key}" else null)
+        }
+    }
+
+    /**
+     * years.ts `topSongs`: your most played songs of all time, most first (ties by key); a song only ever started isn't one. And,
+     * the app's own rule, never one [skip] names (a blocked song: the app never shows one).
+     */
+    fun topSongs(t: Taste, n: Int = TOP_SONGS, skip: (SongStat) -> Boolean = { false }): List<SongStat> =
+        t.songs.filter { it.plays > 0 && !skip(it) }
+            // `b.plays - a.plays || (a.key < b.key ? -1 : 1)`: a taste's keys are never two the same
+            .sortedWith { a, b -> if (a.plays != b.plays) b.plays.compareTo(a.plays) else a.key.compareTo(b.key) }
+            .take(n)
+
+    /**
+     * The library as "Not in your Stash yet" looks songs up in it (years.ts `notInLibrary`'s `songIndex(library.map(...))`): every
+     * song of it added, none passed over ([haveIndex] keeps one of each `sameSong`, so a copy with the same ISRC under other words
+     * would be lost to the words' lookup).
+     */
+    fun libraryIndex(items: Iterable<SongIdentity>): SongIndex<Boolean> {
+        val idx = SongIndex<Boolean>()
+        for (i in items) idx.add(i, true)
+        return idx
+    }
+
+    /**
+     * years.ts `notInLibrary`, "Not in your Stash yet": the favourites you lost ([Taste.lost]) minus anything in your library now
+     * (likes and playlists, by `sameSong` on the song's words alone), in the taste's order: a song liked since leaves at once.
+     * The app's own rules besides: a song whose Spotify id is on a row of the library ([spotifyIds]: the row a Like by that id
+     * landed on, a synced row whose words differ) is in it too, and a song [skip] names (a blocked one) is never shown.
+     */
+    fun notInLibrary(
+        keys: List<String>,
+        stats: Map<String, SongStat>,
+        library: SongIndex<Boolean>,
+        spotifyIds: Set<String> = emptySet(),
+        skip: (SongStat) -> Boolean = { false },
+    ): List<SongStat> {
+        val out = ArrayList<SongStat>()
+        for (k in keys) {
+            val s = stats[k] ?: continue
+            if (library.has(SongRef(s.title, s.artist))) continue
+            if (s.sid != null && s.sid in spotifyIds) continue
+            if (skip(s)) continue
+            out += s
+        }
+        return out
+    }
+
+    /** The Spotify id of a row's `spotify_uri` ("spotify:track:…"), else null. */
+    fun spotifyIdOf(uri: String?): String? =
+        uri?.takeIf { it.startsWith(SPOTIFY_TRACK) }?.substring(SPOTIFY_TRACK.length)?.takeIf { it.isNotEmpty() }
+
+    private const val SPOTIFY_TRACK = "spotify:track:"
+
+    /** service.ts `toItem` of a taste's song, as Top songs and "Not in your Stash yet" play it: its words alone (no library copy). */
+    fun songItem(s: SongStat): MixSong = statItem(s.title, s.artist, s.album, s.key, s.sid)
 }
