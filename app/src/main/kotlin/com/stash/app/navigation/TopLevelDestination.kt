@@ -1,5 +1,7 @@
 package com.stash.app.navigation
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import com.stash.core.ui.icons.StashNavIcons
 import kotlinx.serialization.Serializable
 
@@ -81,6 +83,16 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  * scaffold hides the mini player and the tab bar.
  */
 @Serializable data object YourRecordRoute
+
+/**
+ * Opens Your record, from anywhere (Home's card, Settings, a finished import), and never again over itself: an import finished
+ * over the record (its own "Bring your Spotify") has nothing to open. Navigating to it again replaced its back-stack entry in
+ * place, which crashed the app while the NavHost was the Haze source (StashScaffold now keeps the source off the NavHost).
+ */
+fun NavController.openRecord() {
+    if (currentDestination?.hasRoute<YourRecordRoute>() == true) return
+    navigate(YourRecordRoute) { launchSingleTop = true }
+}
 
 @Serializable
 data class SearchArtistRoute(
