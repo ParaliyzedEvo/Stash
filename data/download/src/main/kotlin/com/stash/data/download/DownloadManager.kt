@@ -666,7 +666,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
         // JioSaavnMatcher ignores durationReliable and only matches within max(8 s, 3%) of the
         // row's length, so its file is held to that same window ([lossyAacLengthMatches] with a
         // reliable length) and a match here is never fetched to be thrown away.
@@ -699,7 +699,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
         // The query has the words, ISRC and length TidalStreamResolver asks with for this row
         // (both through forLibrarySource), so it reads the same cached Tidal match the
         // stream played. A YouTube music-video row's length is the video's: the matcher allows
@@ -845,7 +845,7 @@ class DownloadManager @Inject constructor(
             explicit = track.explicit,
             spotifyUri = track.spotifyUri,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
 
         // Bounded failover loop: the duration backstop can reject a degraded
         // source's preview-stub and record it degraded, after which the
@@ -1060,6 +1060,8 @@ class DownloadManager @Inject constructor(
                 targetArtist = track.artist,
                 targetAlbum = track.album,
                 targetDurationMs = track.durationMs,
+                // Picks the album's explicit edition unless the track is known clean.
+                targetExplicit = track.explicit,
             )?.takeIf { YouTubeVideoId.isValid(it.id) }
             if (albumResult != null) {
                 val scored = matchScorer.scoreResults(

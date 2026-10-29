@@ -1434,6 +1434,32 @@ class PlayerRepositoryImpl @Inject constructor(
         playHistory.moveTo(entry, previousGone)
     }
 
+    override suspend fun learnArtwork(arts: Map<Long, String>) {
+        if (arts.isEmpty()) return
+        val controller = ensureController() ?: return
+        withContext(Dispatchers.Main.immediate) {
+            // The rows Up next shows (the logical queue), then the player's items: the playing one is the notification's
+            currentQueueTracks = QueueArt.fill(currentQueueTracks, arts)
+            val withArt = HashMap<Int, MediaItem>()
+            for (i in 0 until controller.mediaItemCount) {
+                val item = controller.getMediaItemAt(i)
+                val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 } ?: item.mediaId.toLongOrNull() ?: continue
+                val art = arts[id] ?: continue
+                if (item.mediaMetadata.artworkUri != null) continue
+                // Metadata only: the same media (its URI, its Play next tag), so the player updates it in place (every
+                // source here takes a metadata-only change, ResolveFirstMediaSource included): the playing song goes on,
+                // the others keep their preparation, the shuffle order is untouched
+                withArt[i] = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
+            }
+            // Neighbours in one call: each call is a timeline change (and a queue refresh for Android Auto)
+            val runs = QueueArt.runs(withArt.keys)
+            for (run in runs) controller.replaceMediaItems(run.first, run.last + 1, run.map { withArt.getValue(it) })
+            timelineDirty = true
+            updateState(controller)
+            Log.d(TAG, "learnArtwork: ${arts.size} covers, ${withArt.size} player items in ${runs.size} replaces")
+        }
+    }
+
     /** replaceMediaItem, but under shuffle the play order is put back exactly as it was. */
     private fun replaceMediaItemKeepingShuffle(controller: MediaController, index: Int, replacement: MediaItem) {
         // A rebuilt item (a stream placeholder for a vanished download) keeps its Play next tag,
@@ -2292,6 +2318,8 @@ class PlayerRepositoryImpl @Inject constructor(
         albumArtUrl = thumbnailUrl,
         isDownloaded = false,
         isStreamable = true,
+        musicVideoType = musicVideoType,
+        explicit = explicit,
     )
 
     private suspend fun playFromStreamInner(item: TrackItem, trackId: Long): StreamRoutingResult {
@@ -2306,6 +2334,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // first tap cached, second tap returned the FIRST track's URL and
         // Media3 no-op'd setMediaItem on the matching mediaId. Repeat taps
         // of the same videoId still hit the cache (intended TTL behaviour).
+        // The library row the tap landed on, when ensureTrackPersisted found one: its art is what
+        // the on-stream art swap below judges. The result's own thumbnail is a YouTube video frame,
+        // so judging that replaced a good library cover with whatever copy the chain picked.
+        val stored = trackDao.getById(trackId)
         val transient = TrackEntity(
             id = trackId,
             title = item.title,
@@ -2314,12 +2346,19 @@ class PlayerRepositoryImpl @Inject constructor(
             durationMs = (item.durationSeconds * 1000).toLong(),
             isDownloaded = false,
             isStreamable = true,
-            albumArtUrl = item.thumbnailUrl,
+            albumArtUrl = stored?.albumArtUrl?.takeIf { it.isNotBlank() } ?: item.thumbnailUrl,
             // Search results carry a YT videoId — propagate it so the
             // YouTube fallback resolver can extract directly when Qobuz
             // doesn't have the track. Without this the transient row's
             // youtubeId stays null and YouTubeStreamResolver bails.
             youtubeId = item.videoId,
+            // A YouTube result, whatever the library row is: the entity's default (SPOTIFY) made
+            // the lossless lookups trust the result's length as a song's. A music video's is an
+            // edit's (Shook Ones' top card is the 4:25 video; the album cut is 5:26), and Tidal
+            // then picked the copy nearest the video.
+            source = com.stash.core.model.MusicSource.YOUTUBE,
+            musicVideoType = item.musicVideoType,
+            explicit = item.explicit ?: stored?.explicit,
         )
         val result = buildMediaItemForTrack(transient)
         if (result is StreamRoutingResult.Item) {

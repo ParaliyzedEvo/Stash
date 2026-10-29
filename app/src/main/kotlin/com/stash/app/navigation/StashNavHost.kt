@@ -33,6 +33,10 @@ import com.stash.feature.listening.history.HistoryScreen
 import com.stash.feature.listening.recap.RecapScreen
 import com.stash.feature.listening.stats.ListeningStatsScreen
 import com.stash.feature.listening.top.TopScreen
+import com.stash.feature.record.RecordScreen
+import com.stash.feature.record.card.YourRecordSection
+import com.stash.feature.record.mixes.RecordMixScreen
+import com.stash.feature.record.mixes.RecordMixesSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -126,7 +130,7 @@ private fun StashNavGraph(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable<HomeRoute> {
+        composable<HomeRoute> { homeEntry ->
             HomeScreen(
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
@@ -194,6 +198,18 @@ private fun StashNavGraph(
                     // A double tap opens one story, not two (the second's cleanup would end the first's music).
                     navController.navigate(RecapRoute(kind, year, month)) { launchSingleTop = true }
                 },
+                    )
+                },
+                yourRecordSection = {
+                    // A double tap opens one record, not two
+                    YourRecordSection(onOpen = { navController.openRecord() })
+                },
+                recordMixesSection = {
+                    RecordMixesSection(
+                        // Only from Home itself: two quick taps on two cards open one page (a single-top second would take over
+                        // the first page's entry, its view model and mix with it)
+                        onOpenMix = { id -> if (navController.currentBackStackEntry === homeEntry) navController.navigate(RecordMixRoute(id)) },
+                        onShowAll = { navController.openRecord(mixes = true) },
                     )
                 },
             )
@@ -405,6 +421,13 @@ private fun StashNavGraph(
                 } else {
                     null
                 },
+                onOpenRecord = { navController.openRecord() },
+                // Not connected: the app's own Last.fm sign-in, on Accounts & Sync
+                yourRecordLastfm = {
+                    com.stash.feature.record.lastfm.recordLastfmSettingsRows(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })
+                },
+                // "Use your record in mixes" and "Kept out of your mixes" (owner decisions D2, D1)
+                yourRecordInMixes = { com.stash.feature.record.taste.recordInMixesSettingsRows() },
             )
         }
         composable<WebLinkRoute> {
@@ -564,6 +587,33 @@ private fun StashNavGraph(
                 },
                 onOpenLastFmRecap = { kind, year, month ->
                     navController.navigate(RecapRoute(kind, year, month, source = "lastfm")) { launchSingleTop = true }
+                },
+            )
+        }
+
+        // Full screen over everything (StashScaffold hides the bottom chrome on this route). Pops only while the record is
+        // the top entry: its close racing a back must not pop Home as well.
+        composable<YourRecordRoute> { entry ->
+            RecordScreen(
+                onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenMix = { id -> if (navController.currentBackStackEntry === entry) navController.navigate(RecordMixRoute(id)) },
+            )
+        }
+
+        // A mix of Your record: a normal screen with the mini player (only the record itself is full screen)
+        composable<RecordMixRoute> { entry ->
+            RecordMixScreen(
+                onBack = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                onOpenRecord = {
+                    if (navController.currentBackStackEntry === entry) {
+                        // Back to the record under it; a mix opened from Home gives its place to the record (closing that comes
+                        // back to Home, not to this page)
+                        if (!navController.popBackStack<YourRecordRoute>(inclusive = false)) {
+                            navController.popBackStack()
+                            navController.openRecord(mixes = true)
+                        }
+                    }
                 },
             )
         }

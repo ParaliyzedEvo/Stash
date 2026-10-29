@@ -47,6 +47,7 @@ import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import com.stash.feature.nowplaying.sheet.PlayerSheetBackHandler
 import com.stash.feature.nowplaying.sheet.PlayerSheetMath
 import com.stash.feature.nowplaying.sheet.PlayerSheetOverlay
+import com.stash.feature.record.imports.RecordImportHost
 import com.stash.feature.nowplaying.sheet.rememberPlayerSheetState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -108,8 +109,8 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    // The Recap story is full screen: no mini player, no tab bar, drawn under the status bar.
-    val immersive = navBackStackEntry?.destination?.hasRoute<RecapRoute>() == true
+    // The Recap story and Your record are full screen: no mini player, no tab bar, drawn under the status bar.
+    val immersive = navBackStackEntry?.destination?.let { it.hasRoute<RecapRoute>() || it.hasRoute<YourRecordRoute>() } == true
     // The artist page draws its header photo under the status bar; it keeps the bottom chrome.
     val bleedTop = immersive || navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
 
@@ -408,9 +409,12 @@ fun StashScaffold(
             // The NavHost takes its host lifecycle from here and caps every page at it.
             LocalLifecycleOwner provides pageLifecycleOwner,
         ) {
-        StashNavHost(
-            navController = navController,
-            modifier = Modifier
+        // The page's own box, the NavHost a plain child of it (never on the NavHost's own modifier): a navigate to the page
+        // already showing (single-top) replaces its back-stack entry in place, and with the NavHost itself the Haze source the
+        // RenderThread then recursed through the render tree until its stack ran out (SIGSEGV, the app gone; bisected on the
+        // Pixel 5: any such navigate, Home's or the record's, crashed while the NavHost was the source, none once it wasn't).
+        Box(
+            Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
                 // The bottom chrome owns the system bar inset, so screens' own Scaffolds don't
@@ -428,6 +432,10 @@ fun StashScaffold(
                     alpha = if (p >= 1f) 0f else 1f
                 }
                 .hazeSource(hazeState),
+        ) {
+        StashNavHost(
+            navController = navController,
+            modifier = Modifier.fillMaxSize(),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
             startDestination = when (startTab) {
@@ -437,6 +445,7 @@ fun StashScaffold(
             },
             posting = communityPosting,
         )
+        }
         }
     }
 
@@ -486,6 +495,14 @@ fun StashScaffold(
 
     // The player's confirmations ("Playing next", "Saved to …"), once, wherever they come from.
     PlayerMessagesToaster()
+
+    // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
+    // shared with Stash, Settings). A finished import opens the record (never over itself: openRecord).
+    RecordImportHost(
+        onOpenRecord = { navController.openRecord() },
+        // Last.fm not connected: the app's own sign-in, on Accounts & Sync
+        onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
+    )
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
