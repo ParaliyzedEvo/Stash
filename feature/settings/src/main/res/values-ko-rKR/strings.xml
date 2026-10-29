@@ -320,8 +320,8 @@
     <string name="settings_connect">연결</string>
     <string name="settings_auto_flac_upgrade_title">동기화 후 FLAC으로 업그레이드</string>
     <string name="settings_auto_flac_upgrade_subtitle">이전 다운로드의 무손실 버전을 찾습니다</string>
-    <string name="settings_tidal_aac_fallback_title">FLAC이 없을 때 Tidal AAC</string>
-    <string name="settings_tidal_aac_fallback_subtitle">FLAC이 없을 경우 Tidal의 320kbps AAC을 재생합니다</string>
+    <string name="settings_tidal_aac_fallback_title">FLAC이 없을 경우 Tidal AAC 재생</string>
+    <string name="settings_tidal_aac_fallback_subtitle">FLAC이 없을 경우 Tidal의 320kbps AAC를 재생합니다</string>
     <string name="settings_lossless_sources_title">무손실 소스</string>
     <string name="settings_lossless_sources_needs_setup">아직 설정되지 않음</string>
     <string name="settings_output_section">출력</string>
@@ -346,8 +346,8 @@
     <string name="settings_lossy_fallback_title">손실 압축 대체</string>
     <string name="settings_state_on">켜기</string>
     <string name="settings_state_off">끄기</string>
-    <string name="settings_lossy_fallback_switch_label">무손실 음원이 없을 경우 JioSaavn, 그 다음 YouTube 순서로 재생가능여부를 확인하여 재생합니다</string>
-    <string name="settings_lossy_fallback_switch_label_aac">무손실 음원이 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
+    <string name="settings_lossy_fallback_switch_label">매칭되는 무손실 음원이 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
+    <string name="settings_lossy_fallback_switch_label_aac">Tidal에 ACC가 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
     <string name="settings_advanced">고급</string>
     <string name="settings_custom_relay_desc">Stash를 자체 무손실 릴레이로 지정하세요. Stash보다 우선순위가 높습니다</string>
     <string name="settings_custom_endpoint_label">사용자 정의 무손실 엔드포인트</string>
@@ -406,7 +406,7 @@
     <!-- Settings > Audio & Quality > AudioQualityPicker -->
     <string name="settings_audio_quality_bitrate_size">%1$d kbps  ~%2$s MB/min</string>
     <string name="settings_quality_tier_max">최대</string>
-    <string name="settings_quality_tier_best">최상</string>
+    <string name="settings_quality_tier_best">최고</string>
     <string name="settings_quality_tier_high">높음</string>
     <string name="settings_quality_tier_normal">보통</string>
     <string name="settings_quality_tier_low">낮음</string>
