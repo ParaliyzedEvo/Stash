@@ -26,7 +26,7 @@
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
     <string name="web_library_sent_body">%2$s, %3$s, %4$s를 %1$s로 전송하였습니다. 추가하기 전에 해당 위치에서 물어봅니다</string>
     <!-- Settings > About -->
-    <string name="settings_about_title">정보 및 도움말</string>
+    <string name="settings_about_title">정보 및 문의</string>
     <string name="settings_diagnostics_section">진단</string>
     <string name="settings_share_latest_crash">최신 충돌 보고서 공유</string>
     <string name="settings_attach_most_recent_crash">버그 보고서에 마지막 충돌 첨부</string>
@@ -38,7 +38,7 @@
     <string name="settings_share_diagnostics_bundle">진단 공유</string>
     <string name="settings_bundle_recent_logs">로그 및 연결 상태, 암호 없음</string>
     <string name="settings_share_diagnostics">진단 공유</string>
-    <string name="settings_help_section">도움말</string>
+    <string name="settings_help_section">문의</string>
     <string name="settings_about_section">정보</string>
     <string name="settings_update_on_latest">최신 버전을 사용 중입니다 (%1$s)</string>
     <string name="settings_update_available">업데이트 사용 가능: %1$s</string>
