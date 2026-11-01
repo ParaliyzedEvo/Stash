@@ -146,7 +146,7 @@
     <string name="settings_account_not_connected">Sin conectar</string>
     <string name="settings_like_mirror_row_title">Dar Me gusta también en %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Dar Love también en Last.fm</string>
-    <string name="settings_like_mirror_row_subtitle">Las canciones que marques con Me gusta en Stash a partir de ahora</string>
+    <string name="settings_like_mirror_row_subtitle">A partir de ahora, las canciones que marques con un corazón en Stash se reflejarán</string>
     <string name="settings_listenbrainz_dialog_title">Conectar ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Enviar ahora</string>
     <plurals name="settings_scrobbles_waiting">
@@ -219,7 +219,7 @@
     <string name="settings_mix_rotation_daily">Diario</string>
     <string name="settings_mix_rotation_3_days">Cada 3 días</string>
     <string name="settings_mix_rotation_weekly">Semanal</string>
-    <string name="settings_mix_rotation_footer">Hecho para ti y Estados de ánimo y décadas traen mezclas distintas al frente a medianoche. Desactivado: primero las más recientes.</string>
+    <string name="settings_mix_rotation_footer">«Hecho para ti» y «Estados de ánimo y décadas» traen mezclas distintas al frente a medianoche. Desactivado: primero las más recientes.</string>
     <string name="settings_unplayed_mixes_first_title">Primero las mezclas sin reproducir</string>
     <string name="settings_unplayed_mixes_first_subtitle">Las mezclas que apenas has reproducido van primero</string>
     <string name="settings_home_mixes_favorite_hint">Mantén pulsado un mix en Inicio para marcarlo como favorito: los favoritos siempre van primero.</string>
@@ -238,7 +238,7 @@
     <string name="settings_now_playing_section">Reproducción</string>
     <string name="settings_ambient_motion_title">Animación ambiental</string>
     <string name="settings_ambient_motion_subtitle">Color en movimiento detrás de Reproducción</string>
-    <string name="settings_cycle_album_art_title">Rotar la portada del álbum</string>
+    <string name="settings_cycle_album_art_title">Alternar la portada del álbum</string>
     <string name="settings_cycle_album_art_subtitle">Muestra poco a poco la contraportada y las páginas internas del álbum, cuando las tenga</string>
     <string name="settings_discogs_art_title">Discogs art</string>
     <string name="settings_discogs_art_subtitle">Fill in back covers and inside pages the Cover Art Archive doesn\'t have from Discogs. Its images are uploaded by its users, and some are low quality.</string>
@@ -330,7 +330,7 @@
     <string name="settings_lossless_sources_needs_setup">Aún sin configurar</string>
     <string name="settings_output_section">Salida</string>
     <string name="settings_hires_output_title">Salida Hi-Res</string>
-    <string name="settings_hires_value_match_rate">Ajustar al DAC</string>
+    <string name="settings_hires_value_match_rate">Ajustar el DAC</string>
     <string name="settings_hires_value_bit_perfect">Bit-perfect</string>
     <string name="settings_lossless_tier_max_short">Máx.</string>
     <string name="settings_lossless_tier_hires_short">Hi-Res</string>
@@ -461,7 +461,7 @@
     <string name="settings_backup_section">Copia de seguridad y transferencia</string>
     <string name="settings_download_recommendations_title">Actualización en segundo plano</string>
     <string name="settings_download_mode_wifi_charging_label">Wi‑Fi y cargando</string>
-    <string name="settings_download_mode_wifi_charging_desc">Con Wi-Fi mientras carga. Lo más amable con la batería y los datos.</string>
+    <string name="settings_download_mode_wifi_charging_desc">Con Wi-Fi mientras se carga. Lo más ligero para la batería y los datos.</string>
     <string name="settings_download_mode_wifi_any_label">Wi‑Fi en cualquier momento</string>
     <string name="settings_download_mode_wifi_any_desc">Con Wi-Fi, cargando o no.</string>
     <string name="settings_download_mode_any_network_label">Cualquier red</string>
