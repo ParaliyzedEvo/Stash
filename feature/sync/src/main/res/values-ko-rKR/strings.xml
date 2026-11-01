@@ -70,13 +70,13 @@
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">새로 고침으로 전환하시겠습니까?</string>
-    <string name="sync_switch_to_refresh_body">새로고침을 설정하면 동기화할 때마다 새로운 트랙을 가져옵니다 — 여기에는 매일 자동 생성되는 믹스, 주간 음악 추천 및 기타 주기적으로 바뀌는 재생목록이 포함됩니다. 재생목록에서 제외된 트랙은 믹스에서 제거되며, 라이브러리를 깔끔하게 유지하기 위해 해당 트랙의 다운로드 파일도 삭제됩니다. 모든 소스가 새로고침으로 설정된 경우에만 정리 작업이 실행됩니다 — 하나라도 계속 누적하는 소스가 있다면 트랙이 삭제되지 않습니다. 직접 추가한 트랙은 그대로 유지됩니다</string>
+    <string name="sync_switch_to_refresh_body">Refresh mirrors your playlists and Liked songs: a song removed on the service is removed here too. Its download is deleted once every account is set to Refresh; while any account keeps songs, nothing is deleted. Songs you added in Stash are kept. Mixes follow their own Stack setting.</string>
     <string name="sync_switch_to_refresh_confirm">새로고침으로 전환</string>
-    <string name="sync_mix_mode_title">믹스 동기화 모드</string>
+    <string name="sync_mix_mode_title">When a song leaves a playlist</string>
     <string name="sync_mode_refresh">새로고침</string>
     <string name="sync_mode_accumulate">누적</string>
-    <string name="sync_mode_refresh_desc">믹스는 동기화할 때마다 새로운 트랙으로 업데이트됩니다</string>
-    <string name="sync_mode_accumulate_desc">새 트랙이 이전 트랙 위에 쌓입니다</string>
+    <string name="sync_mode_refresh_desc">Removed here too, so your playlists match your account</string>
+    <string name="sync_mode_accumulate_desc">Kept here, so nothing you synced disappears</string>
     <!-- Last.fm Recommendations Toggle -->
     <string name="sync_recommended_tracks_title">추천 트랙</string>
     <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생목록이 최신 상태로 유지됩니다</string>
@@ -87,4 +87,82 @@
     </plurals>
     <string name="sync_studio_only_title">스튜디오 녹음만</string>
     <string name="sync_studio_only_desc">좋아요 표시한 노래에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다</string>
+    <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
+    <string name="sync_arrival_title">How should your music arrive?</string>
+    <string name="sync_arrival_stream_title">Stream everything</string>
+    <string name="sync_arrival_recommended">Recommended</string>
+    <string name="sync_arrival_stream_body">Surface your library for streaming.</string>
+    <string name="sync_arrival_save_title">Save to this phone</string>
+    <string name="sync_arrival_save_body">Pick the playlists you want to download.</string>
+    <string name="sync_arrival_sync_now">Sync now</string>
+    <string name="sync_button">Sync</string>
+    <string name="sync_play_new">Play something new</string>
+    <string name="sync_stack">Stack</string>
+    <string name="sync_stacking">Stacking</string>
+    <string name="sync_stack_on">Keeps every song</string>
+    <string name="sync_stack_off">Shows this week\'s songs only</string>
+    <string name="sync_stack_explainer">Stack a mix to keep every song it brings you. Each sync adds the new ones and removes none.</string>
+    <string name="sync_arrival_change_later">Change it any time from the top of Sync.</string>
+    <!-- Sync tab overhaul: nothing connected / ready -->
+    <string name="sync_firstrun_title">Bring your music in</string>
+    <string name="sync_firstrun_body">Connect an account and sync. Every playlist, mix and liked song shows up on Home and in Library.</string>
+    <string name="sync_connect_spotify">Connect Spotify</string>
+    <string name="sync_connect_soundcloud">Connect SoundCloud</string>
+    <string name="sync_connect_youtube">Connect YouTube Music</string>
+    <string name="sync_connect_lastfm">Also use Last.fm for scrobbles</string>
+    <string name="sync_ready_body">Tap Sync and every playlist, mix and liked song shows up on Home and in Library.</string>
+    <!-- Sync tab overhaul: synced -->
+    <string name="sync_home_title">Your music is here</string>
+    <string name="sync_home_summary">%1$s · %2$s · %3$s</string>
+    <string name="sync_home_synced_ago">synced %1$s</string>
+    <string name="sync_open_library">Open Library</string>
+    <string name="sync_account_summary">%1$s · %2$s</string>
+    <plurals name="sync_songs_count">
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="sync_mixes_count">
+        <item quantity="other">%d mixes</item>
+    </plurals>
+    <string name="sync_auto_sync">Auto-sync</string>
+    <string name="sync_auto_sync_off">Off</string>
+    <string name="sync_auto_sync_at">At %1$s</string>
+    <string name="sync_auto_sync_at_wifi">At %1$s · Wi-Fi</string>
+    <string name="sync_history_row">History, blocked songs, undo</string>
+    <string name="sync_accounts_row">Accounts</string>
+    <!-- Sync tab overhaul: syncing -->
+    <string name="sync_syncing_title">Bringing in your music</string>
+    <string name="sync_syncing_body">Play anything that\'s landed. You can leave this screen.</string>
+    <string name="sync_stop">Stop</string>
+    <!-- Sync tab overhaul: Download mode -->
+    <string name="sync_download_title">On this phone</string>
+    <string name="sync_download_choose">Choose what to save</string>
+    <string name="sync_download_note">Download mode plays your downloads and hides anything that\'s not downloaded.</string>
+    <string name="sync_download_none">Nothing saved yet.</string>
+    <string name="sync_saved_cd">Saved</string>
+    <!-- Sync tab overhaul: History screen -->
+    <string name="sync_history_title">History</string>
+    <string name="sync_history_mixes_section">Your playlists</string>
+    <!-- Sync tab overhaul: an account's playlists -->
+    <string name="sync_manage_all_in_library">All in your library</string>
+    <string name="sync_manage_pick_to_save">Pick what to keep on this phone</string>
+    <string name="sync_manage_save_all">Save all</string>
+    <string name="sync_manage_search">Search playlists and mixes</string>
+    <string name="sync_manage_tab_playlists">Playlists %1$d</string>
+    <string name="sync_manage_tab_mixes">Mixes %1$d</string>
+    <string name="sync_manage_tab_liked">Liked</string>
+    <string name="sync_manage_on_phone">%1$s · on this phone</string>
+    <string name="sync_manage_no_match">No playlists matching “%1$s”</string>
+    <string name="sync_manage_empty">Nothing here yet. It fills in as Sync reads your account.</string>
+    <string name="sync_save">Save</string>
+    <string name="sync_saved_state">Saved</string>
+    <string name="sync_not_saved_state">Not saved</string>
+    <string name="sync_back">Back</string>
+    <string name="sync_manage_in_library_count">%1$d of %2$d in your library</string>
+    <string name="sync_manage_add_all">Add all</string>
+    <string name="sync_manage_remove_all">Remove all</string>
+    <string name="sync_manage_not_in_library">Not in your library</string>
+    <string name="sync_manage_out_section">Not in your library · %1$d</string>
+    <string name="sync_in_library">In your library</string>
+    <string name="sync_in_library_on">In your library</string>
+    <string name="sync_in_library_off">Not in your library</string>
 </resources>
