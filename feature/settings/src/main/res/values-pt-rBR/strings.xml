@@ -146,7 +146,7 @@
     <string name="settings_account_not_connected">Não conectado</string>
     <string name="settings_like_mirror_row_title">Curtir também no %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Dar Love também no Last.fm</string>
-    <string name="settings_like_mirror_row_subtitle">As músicas que você curtir no Stash a partir de agora</string>
+    <string name="settings_like_mirror_row_subtitle">A partir de agora, as músicas que você marcar com um coração no Stash serão sincronizadas</string>
     <string name="settings_listenbrainz_dialog_title">Conectar o ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Enviar agora</string>
     <plurals name="settings_scrobbles_waiting">
@@ -219,7 +219,7 @@
     <string name="settings_mix_rotation_daily">Diário</string>
     <string name="settings_mix_rotation_3_days">A cada 3 dias</string>
     <string name="settings_mix_rotation_weekly">Semanal</string>
-    <string name="settings_mix_rotation_footer">Feito para você e Humor e décadas trazem mixes diferentes para a frente à meia-noite. Desativado: os mais recentes primeiro.</string>
+    <string name="settings_mix_rotation_footer">“Feito para você” e “Humor e décadas” trazem mixes diferentes para o topo à meia-noite. Desativado: os mais recentes primeiro.</string>
     <string name="settings_unplayed_mixes_first_title">Mixes não reproduzidos primeiro</string>
     <string name="settings_unplayed_mixes_first_subtitle">Mixes pouco reproduzidos primeiro</string>
     <string name="settings_home_mixes_favorite_hint">Toque e segure um mix no Início para favoritá-lo: os favoritos sempre vêm primeiro.</string>
@@ -237,7 +237,7 @@
     <string name="settings_amoled_subtitle">Fundos pretos no tema escuro</string>
     <string name="settings_now_playing_section">Em reprodução</string>
     <string name="settings_ambient_motion_title">Movimento ambiente</string>
-    <string name="settings_ambient_motion_subtitle">Cor em movimento atrás de Em reprodução</string>
+    <string name="settings_ambient_motion_subtitle">Cor em movimento atrás de “Em reprodução”</string>
     <string name="settings_cycle_album_art_title">Alternar a capa do álbum</string>
     <string name="settings_cycle_album_art_subtitle">Mostra aos poucos o verso e as páginas internas do álbum, quando houver</string>
     <string name="settings_discogs_art_title">Discogs art</string>
@@ -327,10 +327,10 @@
     <string name="settings_tidal_aac_fallback_title">Tidal AAC quando não há FLAC</string>
     <string name="settings_tidal_aac_fallback_subtitle">AAC de 320 kbps do Tidal quando não há FLAC</string>
     <string name="settings_lossless_sources_title">Fontes sem perdas</string>
-    <string name="settings_lossless_sources_needs_setup">Ainda não configurado</string>
+    <string name="settings_lossless_sources_needs_setup">Ainda não configurada</string>
     <string name="settings_output_section">Saída</string>
     <string name="settings_hires_output_title">Saída Hi-Res</string>
-    <string name="settings_hires_value_match_rate">Ajustar ao DAC</string>
+    <string name="settings_hires_value_match_rate">Ajustar o DAC</string>
     <string name="settings_hires_value_bit_perfect">Bit-perfect</string>
     <string name="settings_lossless_tier_max_short">Máx.</string>
     <string name="settings_lossless_tier_hires_short">Hi-Res</string>
@@ -457,8 +457,8 @@
     <string name="settings_storage_section">Armazenamento</string>
     <string name="settings_downloads_section">Transferências</string>
     <string name="settings_library_section">Biblioteca</string>
-    <string name="settings_discovery_section">Descoberta</string>
-    <string name="settings_backup_section">Backup e transferência</string>
+    <string name="settings_discovery_section">Descobertas</string>
+    <string name="settings_backup_section">Backup &amp; transferência</string>
     <string name="settings_download_recommendations_title">Atualização em segundo plano</string>
     <string name="settings_download_mode_wifi_charging_label">Wi-Fi + carregamento</string>
     <string name="settings_download_mode_wifi_charging_desc">No Wi-Fi enquanto carrega. Mais econômico para a bateria e os dados.</string>
@@ -468,7 +468,7 @@
     <string name="settings_download_mode_any_network_desc">Também com dados móveis.</string>
     <string name="settings_stash_mixes_title">Stash Mixes (beta)</string>
     <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts e First Listen se atualizam por conta própria</string>
-    <string name="settings_stash_mixes_subtitle_disabled">Mixes ocultos; sem descoberta em segundo plano</string>
+    <string name="settings_stash_mixes_subtitle_disabled">Mixes ocultos; sem descobertas em segundo plano</string>
     <string name="settings_qobuz_discovery_title">Descobertas do Qobuz na página inicial</string>
     <string name="settings_qobuz_discovery_subtitle_enabled">Novos lançamentos, Listas de reprodução Qobuz e Principais álbuns no Início</string>
     <string name="settings_qobuz_discovery_subtitle_disabled">O Início mostra apenas seus mixes e sua música</string>
