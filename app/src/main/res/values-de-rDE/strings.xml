@@ -16,4 +16,6 @@
         <item quantity="one">%d-Song erneut heruntergeladen: Er wurde als kurzer Clip gespeichert</item>
         <item quantity="other">%d-Songs erneut heruntergeladen: Sie wurden als kurze Clips gespeichert</item>
     </plurals>
+    <string name="widget_now_playing_square_label"></string>
+    <string name="widget_now_playing_label"></string>
 </resources>
