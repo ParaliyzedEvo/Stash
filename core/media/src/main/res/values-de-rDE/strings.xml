@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="notification_action_like">Zu Favoriten hinzufügen</string>
-    <string name="notification_action_unlike">Von Favoriten entfernen</string>
+    <string name="notification_action_unlike">Von Favoriten entfernen Aus</string>
     <string name="notification_action_repeat_off">Wiederholung Aus</string>
     <string name="notification_action_repeat_all">Alle Wiederholen</string>
     <string name="notification_action_repeat_one">Einen Wiederholen</string>
