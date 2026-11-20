@@ -229,7 +229,7 @@
     <string name="record_mix_late">%1$d 年末</string>
     <string name="record_mix_dot">%1$s · %2$s</string>
     <string name="record_mix_and">%1$s和%2$s</string>
-    <string name="record_mix_comma">、</string>
+    <string name="record_mix_comma">"、 "</string>
     <string name="record_mix_constants">一直都在</string>
     <string name="record_mix_constants_sub">年复一年你总会回来听的歌</string>
     <string name="record_mix_lost">重新发现</string>

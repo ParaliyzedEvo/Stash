@@ -5,4 +5,17 @@
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Verbindung zu %1$s fehlgeschlagen</string>
     <string name="like_mirror_signed_out">Deine Likes erreichen %1$s nicht. Melde dich in den Einstellungen erneut an.</string>
+    <string name="widget_next">Nächster Song</string>
+    <string name="widget_preview_title">Songtitel</string>
+    <string name="widget_preview_artist">Künstler</string>
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Bereinigt %d Duplikatsong</item>
+        <item quantity="other">Bereinigt %d doppelte Lieder</item>
+    </plurals>
+    <plurals name="clips_downloading_again">
+        <item quantity="one">%d-Song erneut heruntergeladen: Er wurde als kurzer Clip gespeichert</item>
+        <item quantity="other">%d-Songs erneut heruntergeladen: Sie wurden als kurze Clips gespeichert</item>
+    </plurals>
+    <string name="widget_now_playing_square_label">Wird wiedergegeben (mit Cover)</string>
+    <string name="widget_now_playing_label">Wird wiedergegeben</string>
 </resources>
