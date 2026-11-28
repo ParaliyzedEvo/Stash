@@ -725,4 +725,191 @@
     <string name="settings_album_colours_neutral">Neutro</string>
     <string name="settings_send_computer_usb_unplugged">Non ancora collegato a un computer.</string>
     <string name="settings_spotify_already_other_body">%1$s è già uno dei tuoi altri account Spotify. Per collegarlo qui, rimuovi prima %1$s e poi collegalo di nuovo.</string>
+    <plurals name="settings_library_health_download_again_button">
+        <item quantity="one">Scaricalo di nuovo %d</item>
+        <item quantity="many">Scaricali di nuovo %d</item>
+        <item quantity="other">Scaricali di nuovo %d</item>
+    </plurals>
+    <plurals name="settings_duplicates_count">
+        <item quantity="one">%d possibile duplicato: due righe che potrebbero corrispondere a un\'unica canzone.</item>
+        <item quantity="many">%d possibili duplicati: coppie di righe che potrebbero rappresentare un\'unica canzone.</item>
+        <item quantity="other">%d possibili duplicati: coppie di righe che potrebbero rappresentare un\'unica canzone.</item>
+    </plurals>
+    <string name="web_library_export_send_to_picker">Invia a…</string>
+    <string name="settings_duplicates_title">Possibili duplicati</string>
+    <string name="settings_duplicates_kind_two_files">La stessa canzone, due volte sul tuo telefono</string>
+    <string name="settings_duplicates_not_duplicate">Non è un duplicato</string>
+    <string name="settings_library_health_retry_scan">Riprova la scansione</string>
+    <string name="settings_library_health_section_flac_upgrades">Aggiornamenti FLAC</string>
+    <plurals name="blocked_songs_count">
+        <item quantity="one">%d brano</item>
+        <item quantity="many">%d brani</item>
+        <item quantity="other">%d brani</item>
+    </plurals>
+    <string name="web_library_import_action_import">Importare</string>
+    <string name="settings_library_health_retry">Riprova</string>
+    <string name="settings_library_health_flac_upgrades_desc">Cerca le versioni senza perdita di dati dei brani scaricati che non sono ancora in formato FLAC. Continua a funzionare in background. Per eseguirlo dopo ogni sincronizzazione, attivalo in Audio e qualità.</string>
+    <string name="settings_library_health_fetch_lyrics_button">Recupera i testi</string>
+    <plurals name="web_library_export_history_detail">
+        <item quantity="one">%1$s riproduzione da %2$s</item>
+        <item quantity="many">%1$s riproduzioni da %2$s</item>
+        <item quantity="other">%1$s riproduzioni da %2$s</item>
+    </plurals>
+    <plurals name="settings_equalizer_loudness_backfill_progress">
+        <item quantity="one">%1$d di %2$d traccia</item>
+        <item quantity="many">%1$d di %2$d tracce</item>
+        <item quantity="other">%1$d di %2$d tracce</item>
+    </plurals>
+    <string name="web_library_export_send_to_target">Invia a %s</string>
+    <string name="settings_library_health_total_downloaded">Totale scaricato</string>
+    <string name="settings_library_health_section_quality_info">Informazioni sulla qualità</string>
+    <string name="settings_duplicates_confirm_text">Entrambi sono presenti sul tuo telefono. L\'unione mantiene \"%1$s\" ed elimina l\'altro file (%2$s).</string>
+    <string name="settings_equalizer_section_5band_eq">EQ a 5 bande</string>
+    <string name="settings_equalizer_preset_flat">Piatto</string>
+    <string name="settings_library_health_scan_files">Scansiona i file</string>
+    <string name="web_library_import_what_to_import">Cosa importare</string>
+    <plurals name="settings_library_health_scan_complete">
+        <item quantity="one">Scansione completata: %1$d di \\%2$d brano aggiornato.</item>
+        <item quantity="many">Scansione completata: %1$d di \\%2$d brani aggiornati.</item>
+        <item quantity="other">Scansione completata: %1$d di \\%2$d brani aggiornati.</item>
+    </plurals>
+    <plurals name="settings_library_health_scan_unreadable">
+        <item quantity="one">%d impossibile leggere la traccia — probabilmente mancante sul disco o non supportata da MediaMetadataRetriever.</item>
+        <item quantity="many">%d impossibile leggere le tracce — probabilmente mancante sul disco o non supportata da MediaMetadataRetriever.</item>
+        <item quantity="other">%d impossibile leggere le tracce — probabilmente mancante sul disco o non supportata da MediaMetadataRetriever.</item>
+    </plurals>
+    <string name="settings_library_health_fetch_again_button">Recupera di nuovo</string>
+    <string name="settings_library_health_done">Fatto</string>
+    <string name="settings_library_health_refresh_button">Aggiorna</string>
+    <string name="settings_duplicates_review">Revisione</string>
+    <string name="settings_equalizer_section_preamp">Preamplificatore</string>
+    <string name="settings_duplicates_cancel">Cancellare</string>
+    <string name="settings_library_health_fetch_lyrics_title">Recupera i testi</string>
+    <string name="settings_equalizer_preset_vocal">Vocaloce</string>
+    <string name="settings_duplicates_kept_file_missing">La copia che stai conservando non è più sul tuo telefono. Tieni l\'altra.</string>
+    <string name="web_library_export_what_to_include">Cosa includere</string>
+    <plurals name="settings_listening_history_cleared_plays">
+        <item quantity="one">Cancellata %d riproduzione</item>
+        <item quantity="many">Cancellate %d riproduzioni</item>
+        <item quantity="other">Cancellate %d riproduzioni</item>
+    </plurals>
+    <string name="settings_listening_history_confirm_clear_button">Cancella</string>
+    <string name="web_library_export_history_label">Tutta la tua cronologia di ascolto</string>
+    <string name="settings_library_health_verify_button">Verifica</string>
+    <string name="settings_library_health_checking_library_progress">Controllo della libreria in corso… %1$d / %2$d</string>
+    <string name="web_library_export_history_note">Ogni brano riprodotto su questo telefono, per il tuo album sul web: ogni anno d\'ascolto registrato in un album.</string>
+    <string name="blocked_songs_empty_title">Nessun brano bloccato</string>
+    <string name="settings_library_health_format_unknown">Sconosciuto</string>
+    <plurals name="settings_library_health_backfill_idle_desc">
+        <item quantity="one">La traccia %d è stata scaricata prima della versione 0.8.1 e risulta ancora in un formato sconosciuto. Eseguire una scansione una tantum per leggere il codec e il bitrate effettivi dal disco.</item>
+        <item quantity="many">Le tracce %d sono state scaricate prima della versione 0.8.1 e risultano ancora in un formato sconosciuto. Eseguire una scansione una tantum per leggere il codec e il bitrate effettivi dal disco.</item>
+        <item quantity="other">Le tracce %d sono state scaricate prima della versione 0.8.1 e risultano ancora in un formato sconosciuto. Eseguire una scansione una tantum per leggere il codec e il bitrate effettivi dal disco.</item>
+    </plurals>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Cerca i testi delle canzoni scaricate che non li contengono. L\'applicazione continua a funzionare in background, permettendoti di uscire dall\'app. Una notifica ti mostrerà l\'avanzamento.</string>
+    <string name="settings_duplicates_kind_same_song">La stessa canzone</string>
+    <plurals name="settings_scrobbles_waiting">
+        <item quantity="one">%d riproduzione in attesa di invio</item>
+        <item quantity="many">%d riproduzioni in attesa di invio</item>
+        <item quantity="other">%d riproduzioni in attesa di invio</item>
+    </plurals>
+    <string name="web_library_export_save_as_file">Salva come file</string>
+    <string name="web_library_export_send_to_title">Invia a</string>
+    <string name="web_library_export_history_file_only">Tutta la tua cronologia d\'ascolto finisce solo in un file salvato, non viene inviata.</string>
+    <string name="web_library_export_done_history">Tutta la tua cronologia di ascolto è andata persa: %s.</string>
+    <string name="blocked_songs_subtitle">Questi brani vengono saltati durante ogni sincronizzazione. Tocca Sblocca per consentirne nuovamente la riproduzione.</string>
+    <string name="settings_library_health_desc">Analisi del formato e del bitrate di ogni brano scaricato. Utilizza queste informazioni per verificare cosa sta effettivamente scaricando il tuo programma di sincronizzazione.</string>
+    <string name="settings_library_health_empty_hint">Nessun brano scaricato al momento. Esegui prima una sincronizzazione.</string>
+    <string name="settings_library_health_scanning_progress">Scansione in corso… %1$d / %2$d</string>
+    <string name="settings_library_health_section_missing_downloads">Download mancanti</string>
+    <plurals name="settings_library_health_restore_queued">
+        <item quantity="one">È stato aggiunto %d brano alla coda. Il download avviene in background — la scheda Sincronizzazione mostra l\'avanzamento.</item>
+        <item quantity="many">Sono stati aggiunti %d brani alla coda. Il download avviene in background — la scheda Sincronizzazione mostra l\'avanzamento.</item>
+        <item quantity="other">Sono stati aggiunti %d brani alla coda. Il download avviene in background — la scheda Sincronizzazione mostra l\'avanzamento.</item>
+    </plurals>
+    <plurals name="settings_library_health_missing_downloads_desc">
+        <item quantity="one">La traccia %d è stata scaricata in precedenza, ma il file non è presente su questo dispositivo. Collega prima gli account di provenienza, quindi scarica nuovamente.</item>
+        <item quantity="many">La tracce %d sono state scaricate in precedenza, ma i file non sono presenti su questo dispositivo. Collega prima gli account di provenienza, quindi scarica nuovamente.</item>
+        <item quantity="other">La tracce %d sono state scaricate in precedenza, ma i file non sono presenti su questo dispositivo. Collega prima gli account di provenienza, quindi scarica nuovamente.</item>
+    </plurals>
+    <string name="settings_library_health_section_verify_library">Verifica la libreria</string>
+    <string name="settings_library_health_verify_idle_desc">Sincronizza la coda di download con la tua libreria e ricostruisci le statistiche relative a brani e spazio di archiviazione visualizzate nella scheda Sincronizzazione. Non modifica le playlist né attiva alcuna sincronizzazione di rete.</string>
+    <plurals name="settings_library_health_verified_stale_entries">
+        <item quantity="one">%d voce obsoleta ripulita</item>
+        <item quantity="many">%d voci obsolete eliminate</item>
+        <item quantity="other">%d voci obsolete eliminate</item>
+    </plurals>
+    <string name="settings_library_health_verified_summary">Verificato — %1$s, %2$s.</string>
+    <string name="settings_library_health_refresh_quality_info_title">Aggiorna le informazioni sulla qualità</string>
+    <string name="settings_library_health_refreshing_quality_info_toast">Aggiornamento delle informazioni sulla qualità - in esecuzione in background.</string>
+    <string name="settings_library_health_section_duplicates">Duplicati</string>
+    <string name="settings_duplicates_none">Nessun duplicato possibile.</string>
+    <string name="settings_duplicates_last_run">Ordinato su %1$s: %2$d uniti, %3$d brani mixati inutilizzati rimossi.</string>
+    <string name="settings_duplicates_desc">Coppie di righe che possono rappresentare un\'unica canzone. L\'opzione Unisci mantiene la riga selezionata, con le playlist, gli ascolti e i \"Mi piace\" di entrambe le righe. L\'assenza di duplicati nasconde definitivamente la coppia.</string>
+    <string name="settings_duplicates_kind_two_uploads">Due caricamenti o elenchi di una canzone</string>
+    <string name="settings_duplicates_kind_version_words">Stesso titolo e stessa lunghezza, parole diverse nella versione</string>
+    <string name="settings_duplicates_merge">Unire</string>
+    <string name="settings_duplicates_confirm_title">Rimuovere la copia in eccesso?</string>
+    <string name="settings_duplicates_confirm_yes">Unisci e rimuovi</string>
+    <string name="settings_duplicates_merged">Fusione.</string>
+    <string name="settings_duplicates_merged_file_removed">Brani uniti. La copia aggiuntiva è stata rimossa.</string>
+    <string name="settings_duplicates_not_merged">Impossibile unire questi due elementi.</string>
+    <string name="settings_duplicates_dismissed">Non verrà più trasmesso.</string>
+    <string name="settings_library_health_section_lyrics">Testi</string>
+    <string name="settings_library_health_fetching_lyrics_progress">Recupero dei testi… %1$d / %2$d</string>
+    <string name="settings_library_health_fetching_lyrics">Recupero del testo…</string>
+    <string name="settings_library_health_lyrics_done_nothing">Fatto: non è stato necessario alcun aggiornamento.</string>
+    <plurals name="settings_library_health_lyrics_not_found">
+        <item quantity="one">Nessun testo trovato per il brano %d.</item>
+        <item quantity="many">Nessun testo trovato per i brani %d.</item>
+        <item quantity="other">Nessun testo trovato per i brani %d.</item>
+    </plurals>
+    <string name="settings_library_health_lyrics_bailed">Interruzione prematura: il servizio dei testi non risponde. Riprova più tardi.</string>
+    <string name="settings_equalizer_loudness_first_run_message">La normalizzazione del volume è attiva. I brani avranno un suono più uniforme poiché la tua libreria viene analizzata in background.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Bypassato: l\'uscita bit-perfect è attiva, quindi il DAC riceve la musica senza modifiche. Passa all\'uscita Hi-Res su \"Corrispondenza DAC USB\" in Audio e qualità per utilizzare l\'equalizzatore.</string>
+    <string name="settings_equalizer_section_bass_boost">Potenziamento bassi</string>
+    <string name="settings_equalizer_section_loudness">Normalizzazione del volume</string>
+    <string name="settings_equalizer_loudness_desc">Riproduce ogni brano a un volume costante.</string>
+    <string name="settings_equalizer_loudness_charging_hint">Si attiva automaticamente durante la ricarica.</string>
+    <string name="settings_equalizer_save_preset">Salva preimpostazione</string>
+    <string name="settings_equalizer_save">Salva</string>
+    <string name="settings_equalizer_preset_bass_boost">Potenziamento dei bassi</string>
+    <string name="settings_equalizer_preset_treble_boost">Potenziamento degli alti</string>
+    <plurals name="settings_library_health_lyrics_done_updated">
+        <item quantity="one">Fatto: %d traccia aggiornata.</item>
+        <item quantity="many">Fatto: %d tracce aggiornate.</item>
+        <item quantity="other">Fatto: %d tracce aggiornate.</item>
+    </plurals>
+    <plurals name="settings_library_health_verified_missing_files">
+        <item quantity="one">%d file mancante trovato</item>
+        <item quantity="many">%d file mancanti trovati</item>
+        <item quantity="other">%d file mancanti trovati</item>
+    </plurals>
+    <string name="settings_listening_history_clear_failed">Impossibile cancellare la cronologia. Riprova.</string>
+    <string name="web_library_export_history_none">Nessuna riproduzione finora</string>
+    <string name="settings_library_health_refresh_quality_info_desc">Estrai nuovamente profondità in bit e frequenza di campionamento per i brani FLAC in cui mancano. Viene eseguito in background.</string>
+    <string name="settings_library_health_check_upgrades_button">Verifica la disponibilità di aggiornamenti</string>
+    <string name="settings_library_health_fetch_lyrics_queued_desc">In coda, in attesa di una connessione adeguata. Tocca per iniziare ora su qualsiasi rete.</string>
+    <string name="settings_library_health_verification_failed">La verifica non è stata completata: %s</string>
+    <plurals name="settings_library_health_adopted_songs">
+        <item quantity="one">Trovato il brano %d già presente sul disco e aggiunto alla libreria.</item>
+        <item quantity="many">Trovati i brani %d già presente sul disco e aggiunti alla libreria.</item>
+        <item quantity="other">Trovati i brani %d già presente sul disco e aggiunti alla libreria.</item>
+    </plurals>
+    <string name="web_library_import_failed_title">Impossibile importare</string>
+    <string name="web_library_import_reading_title">Lettura del file</string>
+    <string name="web_library_import_adding_title">Aggiungere alla tua libreria</string>
+    <string name="blocked_songs_title">Brani bloccati</string>
+    <string name="web_library_import_done_title">Importato</string>
+    <string name="blocked_songs_unblock_button">Sblocca</string>
+    <string name="settings_library_health_section_breakdown">Analisi della libreria</string>
+    <string name="settings_library_health_verify_again_button">Verificare di nuovo</string>
+    <plurals name="settings_library_health_scanned_tracks_none_matched">
+        <item quantity="one">Verificata la traccia %d non ancora scaricata — non corrisponde a nessun file sul disco.</item>
+        <item quantity="many">Verificate le tracce %d non ancora scaricate — nessuna corrisponde a un file sul disco.</item>
+        <item quantity="other">Verificate le tracce %d non ancora scaricate — nessuna corrisponde a un file sul disco.</item>
+    </plurals>
+    <string name="web_library_export_plays_detail">la tua ultima %,d</string>
+    <string name="web_library_export_recent_plays">Riproduzioni recenti</string>
+    <string name="blocked_songs_empty_desc">I brani che blocchi con \"Elimina e blocca\" vengono visualizzati qui. Tocca \"Sblocca\" per consentirne nuovamente l\'utilizzo alla prossima sincronizzazione.</string>
+    <string name="settings_library_health_section_backfill">Completa metadati mancanti</string>
 </resources>
