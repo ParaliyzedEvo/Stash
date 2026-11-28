@@ -20,4 +20,15 @@
     <string name="resuming_channel_name">Pemutaran</string>
     <string name="notification_action_repeat_off">Ulangi Nonaktif</string>
     <string name="resuming_notification_title">Melanjutkan…</string>
+    <string name="lt_suggestions_full">Host masih memiliki lagu-lagu yang Anda sarankan. Coba lagi setelah host memberikan tanggapan.</string>
+    <string name="lt_add_waiting">Anda sedang tidak terhubung. Lagu akan ditambahkan ke antrean setelah Anda terhubung kembali.</string>
+    <string name="lt_your_song_skipped">%1$s dilewati: host tidak dapat memutarnya</string>
+    <plurals name="lt_guest_cap">
+        <item quantity="other">Anda dapat memiliki hingga %1$d lagu dalam antrean. Tambahkan lagu lainnya saat lagu mulai diputar.</item>
+    </plurals>
+    <string name="lt_your_song_skipped_by">%1$s dilewati: %2$s tidak dapat memutarnya</string>
+    <string name="lt_stopped_cant_play">Sesi dijeda: Anda tidak dapat memutar %1$s</string>
+    <string name="lt_stopped_cant_play_more">Sesi dijeda: Anda tidak dapat memutar %1$s. Ketuk Putar untuk mencoba lagu berikutnya.</string>
+    <string name="lt_only_host_changes_song">Hanya host yang dapat mengganti lagu. Gunakan Putar Berikutnya untuk menambahkannya ke antrean.</string>
+    <string name="lt_queue_full">Antrean sesi sudah penuh</string>
 </resources>
