@@ -50,4 +50,53 @@
     <!-- Settings > Cloud Storage -->
     <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
     <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
+<string name="settings_duplicates_desc">成对的记录可能其实是同一首歌。合并会保留你勾选的那一条，并把两者的歌单、播放记录和喜欢都保留下来。选择“不是重复项”会永久隐藏这一对。</string>
+    <string name="settings_spotify_others_add_subtitle_unnamed">Stash 会读取它的歌单和已点赞的歌曲。</string>
+    <string name="settings_title_button_save">保存到歌单</string>
+    <plurals name="settings_send_computer_finished">
+        <item quantity="other">你 %1$d 的歌曲已在你的电脑上。</item>
+    </plurals>
+    <string name="settings_qobuz_discovery_subtitle_enabled">首页显示“新发行”“Qobuz 歌单”和“热门专辑”</string>
+    <string name="settings_home_show_liked_title">在首页显示已点赞的歌曲</string>
+    <string name="settings_spotify_others_playlists_title">歌单</string>
+    <string name="settings_spotify_others_add_subtitle">Stash 会读取它的歌单和已点赞的歌曲。红心仍会发送到 %1$s。</string>
+    <string name="settings_search_sync_your_likes">同步已点赞的歌曲</string>
+    <string name="settings_home_section_your_playlists">你的歌单</string>
+    <string name="settings_mirror_choose_playlists_title">选择歌单</string>
+    <string name="settings_picker_playlists">歌单</string>
+    <string name="settings_picker_choose_playlists_desc">选择歌单</string>
+    <string name="settings_addons_page_asked">已询问 {1} 中的 {0,selectordinal,one{第 # 个}two{第 # 个}few{第 # 个}other{第 # 个}}</string>
+    <string name="settings_spotify_others_sync_now_body">现在就导入 %1$s 的歌单和已点赞的歌曲，或等下次同步。</string>
+    <string name="settings_library_health_verify_idle_desc">把下载队列与曲库核对，并重建“同步”标签上显示的曲目和存储统计。不会影响歌单，也不会触发网络同步。</string>
+    <string name="settings_home_section_qobuz_playlists">Qobuz 歌单</string>
+    <string name="settings_storage_layout_playlist_label">按歌单</string>
+    <string name="settings_storage_layout_playlist_desc">每个歌单一个文件夹；没有歌单的曲目使用“艺人 / 专辑”。</string>
+    <string name="settings_backup_import_scope_merge_desc">从备份中添加缺少的歌曲和歌单。不会删除或替换任何内容；设置保持不变。</string>
+    <string name="settings_spotify_others_liked_title">已点赞的歌曲</string>
+    <string name="settings_spotify_others_liked_subtitle">与你在 Spotify 上其他已点赞的歌曲一起显示</string>
+    <plurals name="web_library_import_playlists_updated">
+        <item quantity="other">你已有的 %,d 个歌单中有新歌曲</item>
+    </plurals>
+    <string name="settings_spotify_others_remove_body">Stash 会在此设备上退出 %1$s 的登录，并把它的歌单、专辑和已点赞的歌曲从你的曲库中移除。你已下载的歌曲仍留在这台设备上。\n\n随时可以再次添加 %1$s，把它的歌单带回来。</string>
+    <string name="settings_home_show_liked_subtitle">把你在 Stash、Spotify 和 YouTube 的喜欢合成一张卡片，放进你的歌单</string>
+    <string name="settings_home_section_community_desc">其他 Stash 听众喜欢的歌单和歌曲。你的帖子会显示你的名字。</string>
+    <string name="settings_spotify_others_playlists_subtitle">它自己的歌单以及它关注的歌单</string>
+    <string name="settings_backup_export_scope_likes_only_label">仅已点赞的歌曲</string>
+    <string name="settings_backup_export_scope_likes_only_desc">只包含你点赞过的歌曲，文件很小。</string>
+    <plurals name="web_library_export_playlists">
+        <item quantity="other">%d 个歌单</item>
+    </plurals>
+    <string name="settings_web_link_send_library_subtitle">选择要发送的内容：喜欢、播放记录、各个歌单。</string>
+    <string name="settings_mirror_playlists_title">歌单</string>
+    <string name="settings_mirror_new_playlists_too">也镜像新的歌单</string>
+    <string name="settings_your_record_remove_body">为你的唱片导入的一切内容（来自 Spotify 和 Last.fm）都会从这台设备上删除。你在 Stash 中的播放记录会保留。导入的歌单和已点赞的歌曲仍留在你的曲库中。</string>
+    <string name="settings_spotify_disconnect_all_body">Stash 会在此设备上退出你所有 Spotify 账号（%1$s）的登录并停止同步。其他账号的歌单会离开你的曲库，Spotify 中仍在等待下载的歌曲会从队列中移除。\n\n已经下载的歌曲仍留在这台设备上。</string>
+    <string name="settings_disconnect_spotify_refresh_note">Spotify 以“刷新”模式同步：如果你接下来连接了别的账号，它的首次同步会把此账号的歌单从 Stash 中移除。在“同步历史”中用“撤销上次同步”可以找回，直到下一次同步开始。</string>
+    <string name="settings_mirror_choose_playlists_subtitle">Spotify 和 YouTube Music 的歌单只会同步到网页端，并且在那里是只读的。</string>
+    <string name="settings_mirror_playlists_spotify_ytm_note">从 Spotify 或 YouTube Music 同步的歌单只会从手机同步到网页端，无论这里怎么设置。</string>
+    <string name="settings_mirror_first_merge_changed">你回答之后点赞的数量变了，请再核对一下数字。</string>
+    <string name="settings_backup_export_scope_library_only_desc">歌曲、歌单和历史记录，不含设置。</string>
+    <plurals name="web_library_import_playlists">
+        <item quantity="other">%,d 个歌单</item>
+    </plurals>
 </resources>
