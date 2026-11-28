@@ -422,4 +422,6 @@
         <item quantity="other">%d 개의 대체 항목을 찾았습니다.</item>
     </plurals>
     <string name="sync_schedule_tap_hint">칩을 탭하여 변경하세요</string>
+    <string name="sync_undo_paused_suffix">" 동기화를 탭할 때까지 자동 동기화가 일시 중지됩니다."</string>
+    <string name="failed_matches_find_hint">노래를 탭하여 직접 찾으세요.</string>
 </resources>
