@@ -279,8 +279,9 @@
     <string name="record_mix_week">Esta semana, hace años</string>
     <string name="record_mix_week_one_year">Alrededor del %1$s de %2$d</string>
     <plurals name="record_mix_week_years">
-        <item quantity="one">Alrededor del %1$s, en %2$d año anterior</item>
-        <item quantity="other">Alrededor del %1$s, en %2$d años anteriores</item>
+        <item quantity="one">Hace alrededor de %1$s, durante los últimos %2$d años</item>
+        <item quantity="many">Hace alrededor de %1$s, durante los últimos %2$d años</item>
+        <item quantity="other">Hace alrededor de %1$s, durante los últimos %2$d años</item>
     </plurals>
     <string name="record_mix_about_min">unos %1$d min</string>
     <string name="record_mix_about_hr">unas %1$d h</string>
