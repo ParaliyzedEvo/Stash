@@ -86,7 +86,7 @@
     <string name="settings_lossless_tier_hires">Hi-Res (24-бит/96кГц)</string>
     <string name="settings_lossless_tier_hires_hint">~70 МБ / 4 минуты</string>
     <string name="settings_lossless_tier_cd">CD (16-бит/44.1 кГц)</string>
-    <string name="settings_lossless_tier_cd_hint">~28 МБ / 4 мин.</string>
+    <string name="settings_lossless_tier_cd_hint">~28 МБ / 4 мин</string>
     <!-- Settings > Audio & Quality > HiResOutputSection -->
     <!-- Settings > Audio & Quality > SupporterSection -->
     <string name="settings_supporter_code_label">6-значный код</string>
@@ -193,4 +193,5 @@
     <!-- Settings > Cloud Storage -->
     <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
     <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
+<string name="update_sheet_eyebrow">Доступно обновление</string>
 </resources>
