@@ -3,10 +3,12 @@
     <string name="record_eyebrow">Votre disque</string>
     <plurals name="record_hours">
         <item quantity="one">heure</item>
+        <item quantity="many">heures</item>
         <item quantity="other">heures</item>
     </plurals>
     <plurals name="record_plays">
         <item quantity="one">%1$s écoute</item>
+        <item quantity="many">%1$s écoutes</item>
         <item quantity="other">%1$s écoutes</item>
     </plurals>
     <string name="record_since">depuis %1$d · %2$s</string>
@@ -27,6 +29,7 @@
     <string name="record_note_playing">Lecture de %1$s</string>
     <plurals name="record_note_playing_songs">
         <item quantity="one">Lecture de %1$d titre</item>
+        <item quantity="many">Lecture de %1$d titres</item>
         <item quantity="other">Lecture de %1$d titres</item>
     </plurals>
     <string name="record_note_none_found">Ces titres sont introuvables.</string>
@@ -37,13 +40,13 @@
     <string name="record_note_share_dropped">Le partage ne s’est pas ouvert : le disque s’est fermé avant.</string>
     <string name="record_share">Partager</string>
     <string name="record_waiting_title">En attente de Spotify</string>
-    <string name="record_waiting_body">Demandé le %1$s. En attendant, vous pouvez déjà ajouter Last.fm.</string>
+    <string name="record_waiting_body">Demande envoyée le %1$s. Les données de Last.fm peuvent arriver entre-temps.</string>
     <string name="record_waiting_bring">Ajouter le zip</string>
     <string name="record_waiting_how">Autres façons</string>
     <string name="record_pressing_title">Pressage de votre disque</string>
     <string name="record_pressing_open">Ouvrir</string>
     <string name="record_ready_title">Prêt à presser</string>
-    <string name="record_ready_body">Rien n’est enregistré tant que vous n’importez pas.</string>
+    <string name="record_ready_body">Rien n’est enregistré avant l’importation.</string>
     <string name="record_ready_review">Vérifier</string>
     <string name="record_import_intro">Chaque année d’écoute, au même endroit. Vos écoutes dans Stash sont déjà là : commencez par Spotify ou Last.fm, et ajoutez l’autre quand vous voulez.</string>
     <string name="record_import_ask_title">Demandez vos données à Spotify</string>
@@ -74,33 +77,40 @@
     <string name="record_preview_span">%1$s à %2$s</string>
     <plurals name="record_preview_hours">
         <item quantity="one">heure</item>
+        <item quantity="many">heures</item>
         <item quantity="other">heures</item>
     </plurals>
     <plurals name="record_preview_years">
         <item quantity="one">an</item>
+        <item quantity="many">ans</item>
         <item quantity="other">ans</item>
     </plurals>
     <plurals name="record_preview_plays">
         <item quantity="one">écoute</item>
+        <item quantity="many">écoutes</item>
         <item quantity="other">écoutes</item>
     </plurals>
     <plurals name="record_preview_here">
         <item quantity="one">%1$s écoute est déjà là et n’est comptée qu’une fois.</item>
+        <item quantity="many">%1$s écoutes sont déjà là et ne sont comptées qu’une fois.</item>
         <item quantity="other">%1$s écoutes sont déjà là et ne sont comptées qu’une fois.</item>
     </plurals>
     <string name="record_preview_account_title">Seule votre dernière année est là</string>
     <string name="record_preview_account_body">Tout votre historique arrive dans l’autre e-mail, Historique de streaming étendu. Ajoutez ce zip ici quand il arrivera.</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d titre</item>
+        <item quantity="many">%1$d titres</item>
         <item quantity="other">%1$d titres</item>
     </plurals>
     <string name="record_preview_liked">Titres aimés</string>
     <plurals name="record_preview_all_here_file">
-        <item quantity="one">La %1$s écoute de ce fichier est déjà là.</item>
+        <item quantity="one">L’écoute de ce fichier est déjà là.</item>
+        <item quantity="many">Les %1$s écoutes de ce fichier sont déjà là.</item>
         <item quantity="other">Les %1$s écoutes de ce fichier sont déjà là.</item>
     </plurals>
     <plurals name="record_preview_all_here_files">
-        <item quantity="one">La %1$s écoute de ces fichiers est déjà là.</item>
+        <item quantity="one">L’écoute de ces fichiers est déjà là.</item>
+        <item quantity="many">Les %1$s écoutes de ces fichiers sont déjà là.</item>
         <item quantity="other">Les %1$s écoutes de ces fichiers sont déjà là.</item>
     </plurals>
     <string name="record_preview_no_plays">Ce fichier ne contient aucune écoute.</string>
@@ -110,11 +120,13 @@
     <string name="record_preview_already">Déjà dans votre bibliothèque</string>
     <plurals name="record_preview_liked_added">
         <item quantity="one">%1$s titre, ajouté à vos J’aime</item>
+        <item quantity="many">%1$s titres, ajoutés à vos J’aime</item>
         <item quantity="other">%1$s titres, ajoutés à vos J’aime</item>
     </plurals>
     <string name="record_preview_liked_download_title">Vos titres aimés se téléchargent sur ce téléphone</string>
     <plurals name="record_preview_liked_download">
         <item quantity="one">Ce titre sera aussi téléchargé.</item>
+        <item quantity="many">Ces %1$s titres seront aussi téléchargés.</item>
         <item quantity="other">Ces %1$s titres seront aussi téléchargés.</item>
     </plurals>
     <string name="record_preview_import">Importer</string>
@@ -148,18 +160,21 @@
     <string name="record_done_three">%1$s, %2$s et %3$s</string>
     <plurals name="record_done_plays">
         <item quantity="one">%1$s écoute</item>
+        <item quantity="many">%1$s écoutes</item>
         <item quantity="other">%1$s écoutes</item>
     </plurals>
     <plurals name="record_done_playlists">
         <item quantity="one">%1$s playlist</item>
+        <item quantity="many">%1$s playlists</item>
         <item quantity="other">%1$s playlists</item>
     </plurals>
     <plurals name="record_done_likes">
         <item quantity="one">%1$s titre aimé</item>
+        <item quantity="many">%1$s titres aimés</item>
         <item quantity="other">%1$s titres aimés</item>
     </plurals>
     <string name="record_done_nothing">Votre disque est à jour</string>
-    <string name="record_way_spotify_what">Tout votre historique, vos playlists et vos J’aime. Aucune connexion requise.</string>
+    <string name="record_way_spotify_what">Tout votre historique, vos playlists et vos mentions « J’aime ». Pas besoin de vous connecter.</string>
     <string name="record_way_spotify_time">Spotify l’envoie par e-mail en quelques jours</string>
     <string name="record_way_spotify_waiting">En attente de Spotify · demandé le %1$s</string>
     <string name="record_way_lastfm_what">Tout ce que vous avez scrobblé.</string>
@@ -167,6 +182,7 @@
     <string name="record_lastfm_heading">Ajoutez vos scrobbles Last.fm</string>
     <plurals name="record_lastfm_scrobbles">
         <item quantity="one">%1$s scrobble</item>
+        <item quantity="many">%1$s scrobbles</item>
         <item quantity="other">%1$s scrobbles</item>
     </plurals>
     <string name="record_lastfm_asking">Interrogation de Last.fm…</string>
@@ -215,7 +231,7 @@
     <string name="record_source_described">%1$s, %2$s</string>
     <string name="record_source_one_stays">Une source reste toujours activée</string>
     <string name="record_intake_not_export">Ce n’est pas un export Spotify</string>
-    <string name="record_intake_busy">Une importation est en cours. Ajoutez-le une fois qu’elle sera terminée.</string>
+    <string name="record_intake_busy">Une importation est en cours. Ajoutez l’élément une fois l’importation terminée.</string>
     <string name="record_import_taste">Calcul de vos goûts…</string>
     <string name="record_in_mixes_title">Utiliser votre disque dans les mix</string>
     <string name="record_in_mixes_subtitle">Vos mix, Daily Discover et vos Stash Mixes, s’appuient sur les artistes que vous aimez depuis des années et écartent les titres que vous passez. Désactivé, ils suivent ce que vous écoutez ici.</string>
@@ -229,9 +245,9 @@
     <string name="record_kept_out_row">%1$s · %2$s</string>
     <string name="record_kept_out_hidden">Masqué sur Spotify</string>
     <plurals name="record_kept_out_skipped">
-        <item quantity="one">Passé %1$s fois sur %2$s</item>
-        <item quantity="many">Passé %1$s fois sur %2$s</item>
-        <item quantity="other">Passé %1$s fois sur %2$s</item>
+        <item quantity="one">Ignoré %1$s fois sur %2$s</item>
+        <item quantity="many">Ignorés %1$s fois sur %2$s</item>
+        <item quantity="other">Ignorés %1$s fois sur %2$s</item>
     </plurals>
     <string name="record_kept_out_interlude">Un interlude que vous passez</string>
     <string name="record_kept_out_put_back">Remettre</string>
@@ -240,7 +256,7 @@
     <string name="record_kept_out_put_back_done">%1$s peut passer dans vos prochains mix</string>
     <string name="record_kept_out_put_back_failed">Impossible de le remettre pour l’instant. Réessayez.</string>
     <!-- Your record's history mixes (phase 5c). -->
-    <string name="record_mix_locale">fr-FR</string>
+    <string name="record_mix_locale">fr</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Début %1$d</string>
     <string name="record_mix_mid">Mi-%1$d</string>
@@ -252,7 +268,7 @@
     <string name="record_mix_constants_sub">Les titres que vous retrouvez, année après année</string>
     <string name="record_mix_lost">Redécouvrir</string>
     <string name="record_mix_lost_sub">Des favoris que vous n’avez pas écoutés depuis un moment</string>
-    <string name="record_mix_repeat">En boucle, à l’époque</string>
+    <string name="record_mix_repeat">En répétition, à l’époque</string>
     <string name="record_mix_repeat_sub">Les titres que vous ne pouviez plus arrêter d’écouter</string>
     <string name="record_mix_started">Comment tout a commencé</string>
     <string name="record_mix_started_sub">Le premier titre que vous avez écouté de chacun de vos artistes préférés</string>
@@ -260,17 +276,19 @@
     <string name="record_mix_year_so_far">Votre %1$d jusqu’ici</string>
     <string name="record_mix_artist">Votre %1$s</string>
     <string name="record_mix_artist_sub">Les titres que vous avez le plus écoutés, depuis %1$d</string>
-    <string name="record_mix_week">Cette semaine, il y a des années</string>
+    <string name="record_mix_week">Cette semaine, il y a quelques années</string>
     <string name="record_mix_week_one_year">Autour du %1$s %2$d</string>
     <plurals name="record_mix_week_years">
-        <item quantity="one">Autour du %1$s, sur %2$d année passée</item>
-        <item quantity="other">Autour du %1$s, sur %2$d années passées</item>
+        <item quantity="one">Vers %1$s, au cours des %2$d dernières années</item>
+        <item quantity="many">Vers %1$s, au cours des %2$d dernières années</item>
+        <item quantity="other">Vers %1$s, au cours des %2$d dernières années</item>
     </plurals>
     <string name="record_mix_about_min">environ %1$d min</string>
     <string name="record_mix_about_hr">environ %1$d h</string>
     <string name="record_mix_about_hr_min">environ %1$d h %2$d min</string>
     <plurals name="record_mix_songs">
         <item quantity="one">%1$d titre</item>
+        <item quantity="many">%1$d titres</item>
         <item quantity="other">%1$d titres</item>
     </plurals>
     <string name="record_mix_card_with">avec %1$s</string>
@@ -278,6 +296,7 @@
     <string name="record_mix_card_constants">Année après année</string>
     <plurals name="record_mix_card_up_to_years">
         <item quantity="one">%1$s, jusqu’à %2$d an</item>
+        <item quantity="many">%1$s, jusqu’à %2$d ans</item>
         <item quantity="other">%1$s, jusqu’à %2$d ans</item>
     </plurals>
     <string name="record_mix_card_repeat">Obsessions</string>
@@ -291,6 +310,7 @@
     <string name="record_mix_card_year">Votre année</string>
     <plurals name="record_mix_card_hours">
         <item quantity="one">%1$s heure d’écoute</item>
+        <item quantity="many">%1$s heures d’écoute</item>
         <item quantity="other">%1$s heures d’écoute</item>
     </plurals>
     <string name="record_mix_card_started">Là où tout a commencé</string>
@@ -322,10 +342,12 @@
     <string name="record_mixes_top_artists">Artistes les plus écoutés</string>
     <plurals name="record_mixes_artist_hours">
         <item quantity="one">%1$s heure</item>
+        <item quantity="many">%1$s heures</item>
         <item quantity="other">%1$s heures</item>
     </plurals>
     <plurals name="record_mixes_artist_plays">
         <item quantity="one">%1$s écoute</item>
+        <item quantity="many">%1$s écoutes</item>
         <item quantity="other">%1$s écoutes</item>
     </plurals>
     <string name="record_mixes_artist_open">Ouvrir vos titres les plus écoutés de %1$s</string>
@@ -334,6 +356,7 @@
     <string name="record_mixes_lost">Pas encore dans votre Stash</string>
     <plurals name="record_mixes_lost_line">
         <item quantity="one">%1$d titre que vous avez adoré et pas écouté depuis un an. Aimez-le pour le garder.</item>
+        <item quantity="many">%1$d titres que vous avez adorés et pas écoutés depuis un an. Aimez-en un pour le garder.</item>
         <item quantity="other">%1$d titres que vous avez adorés et pas écoutés depuis un an. Aimez-en un pour le garder.</item>
     </plurals>
     <string name="record_mixes_lost_play">Écouter « Pas encore dans votre Stash » (%1$s)</string>
@@ -341,7 +364,7 @@
     <string name="record_song_more">Plus d’options pour %1$s</string>
     <string name="record_song_like">J’aime</string>
     <string name="record_song_unlike">Je n’aime plus</string>
-    <string name="record_like_failed">Impossible d’ajouter à vos titres aimés</string>
+    <string name="record_like_failed">Impossible d’ajouter à vos mentions « J’aime »</string>
     <string name="record_unlike_failed">Impossible de retirer de vos titres aimés</string>
     <string name="record_song_playing_next">À écouter ensuite</string>
     <string name="record_song_added_to_queue">Ajouté à la file d’attente</string>
@@ -350,4 +373,11 @@
     <string name="record_song_playlist_failed">Impossible d’ajouter à la playlist</string>
     <string name="record_song_radio_failed">Impossible de lancer une radio à partir de ce titre. Réessayez dans un instant.</string>
     <string name="record_song_blocked">Impossible d’ajouter un titre bloqué</string>
+    <string name="record_card_more">Afficher les options</string>
+    <string name="record_card_hide">Masquer cette carte</string>
+    <string name="record_card_hidden_keep_mixes">Carte masquée. Vos mixes restent sur l’accueil. Paramètres › Apparence › Disposition de l’accueil la fait revenir.</string>
+    <string name="record_card_hidden">Carte masquée. Paramètres › Apparence › Disposition de l’accueil la fait revenir.</string>
+    <string name="record_most_played_label">Le plus écouté</string>
+    <string name="record_in_mixes_page_label">Votre disque</string>
+    <string name="record_card_hide_keep_mixes">Masquer cette carte — vos mixes restent</string>
 </resources>
