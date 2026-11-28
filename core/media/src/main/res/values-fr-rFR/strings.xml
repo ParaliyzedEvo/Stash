@@ -10,5 +10,9 @@
     <string name="shuffle_play">Lecture aléatoire</string>
     <string name="resuming_channel_name">Lecture</string>
     <string name="resuming_notification_title">Reprise…</string>
-    <string name="cast_no_wifi">Impossible de diffuser : connectez votre téléphone au même réseau Wi-Fi que l\'enceinte</string>
+    <string name="cast_no_wifi">Impossible de diffuser : connectez votre téléphone au même réseau Wi-Fi que l\'enceinte</string>
+    <string name="lt_your_song_skipped_by">%1$s ignoré : %2$s ne peut pas la jouer</string>
+    <string name="lt_your_song_skipped">%1$s ignoré : l’hôte ne peut pas le lire</string>
+    <string name="lt_stopped_cant_play">Session en pause : vous ne pouvez pas écouter %1$s</string>
+    <string name="lt_stopped_cant_play_more">Session en pause : vous ne pouvez pas écouter %1$s. Touchez « Lecture » pour essayer le titre suivant.</string>
 </resources>
