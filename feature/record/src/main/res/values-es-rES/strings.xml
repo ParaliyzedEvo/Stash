@@ -55,7 +55,7 @@
     <string name="record_import_extended_history">Historial de reproducción ampliado</string>
     <string name="record_import_ask_button">Abrir la página de privacidad de Spotify</string>
     <string name="record_import_asked">Solicitado el %1$s</string>
-    <string name="record_import_email_title">Spotify te envía un zip por correo</string>
+    <string name="record_import_email_title">Spotify te envía un archivo zip por correo</string>
     <string name="record_import_email_body">Uno por cada solicitud. Descárgalo cuando llegue; no hace falta abrirlo.</string>
     <string name="record_import_open_title">Abre el zip con Stash</string>
     <string name="record_import_open_body">Desde el correo o tus archivos, usa Abrir con o Compartir y elige Stash. O elígelo aquí.</string>
