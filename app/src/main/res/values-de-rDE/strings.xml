@@ -19,4 +19,9 @@
         <item quantity="other">%d Songs werden erneut heruntergeladen: als kurze Clips gespeichert</item>
     </plurals>
     <string name="widget_now_playing_square_description">Das Cover des aktuell laufenden Songs mit Schaltflächen für Wiedergabe/Pause und Weiter</string>
+    <string name="widget_preview_title">Songtitel</string>
+    <string name="widget_next">Nächster Song</string>
+    <string name="widget_now_playing_square_label">Wird wiedergegeben (mit Cover)</string>
+    <string name="widget_now_playing_label">Wird wiedergegeben</string>
+    <string name="widget_preview_artist">Künstler</string>
 </resources>
