@@ -423,4 +423,43 @@
     <string name="sync_downloads_row">下载</string>
     <string name="sync_save">保存</string>
     <string name="failed_matches_find_preview">预览这个版本</string>
+    <string name="sync_source_empty_youtube">你的“首页混音”“已点赞的歌曲”以及 YouTube Music 曲库中的歌单会在首次同步后出现在这里。在你选择之前不会下载任何内容 — 不会有意外下载。</string>
+    <string name="sync_history_mixes_section">你的歌单</string>
+    <string name="sync_firstrun_body">连接一个账号并同步。每一个歌单、混音和已点赞的歌曲都会出现在“首页”和“曲库”中。</string>
+    <plurals name="sync_history_not_read">
+        <item quantity="other">%d 个歌单未读取</item>
+    </plurals>
+    <string name="sync_manage_tab_playlists">歌单 %1$d</string>
+    <string name="sync_manage_search">搜索歌单和混音</string>
+    <string name="sync_source_empty_lastfm">下次同步时会建立一个由 Last.fm 推荐曲目组成的歌单 — 根据你的收听内容生成。点按“立即同步”开始。</string>
+    <string name="sync_source_stat_playlists">歌单</string>
+    <plurals name="sync_playlists_count">
+        <item quantity="other">%d 个歌单</item>
+    </plurals>
+    <string name="sync_mix_mode_title">当一首歌离开歌单时</string>
+    <string name="sync_lastfm_recommended_enabled_desc">Last.fm 推荐的轮换歌单会保持更新</string>
+    <string name="sync_arrival_save_body">选择你想下载的歌单。</string>
+    <string name="sync_ready_body">点按“同步”，每一个歌单、混音和已点赞的歌曲都会出现在“首页”和“曲库”中。</string>
+    <string name="sync_hero_download_on">开启 — 已开启的歌单和混音会保存到这台手机</string>
+    <plurals name="sync_phase_fetching_playlists">
+        <item quantity="other">已获取 %d 个歌单…</item>
+    </plurals>
+    <string name="sync_phase_fetching_playlists_init">正在获取歌单…</string>
+    <string name="sync_downloads_clear_queue_confirm">所有等待中的下载都会取消，正在进行的会停止。你歌单中的歌曲会在下次同步时重新下载，或在你点按歌单上的“下载”时下载。</string>
+    <string name="sync_source_cd_manage_playlists">管理 %s 的歌单</string>
+    <string name="sync_manage_no_match">没有与“%1$s”匹配的歌单</string>
+    <string name="sync_hero_download_off">关闭 — 已开启的歌单改为串流播放</string>
+    <plurals name="sync_undo_playlists_count">
+        <item quantity="other">%d 个歌单</item>
+    </plurals>
+    <string name="sync_source_empty_spotify">你的 Spotify 歌单和每日混音会在首次同步后出现在这里。点按“立即同步”加载 — 在你开启之前不会下载任何内容。</string>
+    <string name="sync_mode_refresh_desc">这里也会移除，让你的歌单与账号保持一致</string>
+    <string name="sync_studio_only_desc">从“已点赞的歌曲”中排除翻唱、现场录音和用户上传的内容。其他 YouTube 歌单不受影响。</string>
+    <string name="sync_source_manage_playlists">管理歌单</string>
+    <plurals name="sync_history_not_read_detail">
+        <item quantity="other">无法读取 %1$d 个歌单：%2$s（保持原样）</item>
+    </plurals>
+    <string name="sync_switch_to_refresh_body">“刷新”会镜像你的歌单和已点赞的歌曲：在服务上被移除的歌曲，这里也会被移除。当所有账号都设为“刷新”后，其下载内容会被删除；只要还有账号保留歌曲，就不会删除任何内容。你在 Stash 中添加的歌曲会保留。混音遵循自己的“堆叠”设置。</string>
+    <string name="sync_lastfm_explainer">根据你最常播放和收听的歌曲，生成一个由 Last.fm 推荐曲目组成的轮换歌单。每次刷新都会换入新的推荐；曲目会与 YouTube Music / Spotify 匹配，并像普通同步一样下载，同时遵守你的网络设置。</string>
+    <string name="sync_undo_dialog_body">你的曲库会回到上次同步之前的状态：它隐藏的歌单会回来，它添加的歌单会被隐藏，它清空的歌单会按原来的顺序重新填满%1$s。\n\n你自己添加或移除的曲目，以及你改动过的下载开关，都会保留。已被删除的下载文件无法找回。\n\n随后自动同步会暂停，直到你点按“同步”，以免重复执行。</string>
 </resources>
