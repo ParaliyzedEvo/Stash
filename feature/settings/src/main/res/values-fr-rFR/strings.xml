@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">Stash sur le Web</string>
-    <string name="web_library_export_subtitle">Puis, dans le lecteur Web : Paramètres › Votre bibliothèque › Importer</string>
+    <string name="web_library_export_subtitle">Puis, dans le lecteur Web : Paramètres › Votre bibliothèque › Importer</string>
     <string name="web_library_export_button">Exporter vers Stash sur le Web</string>
     <string name="web_library_export_working_title">Exportation de votre bibliothèque</string>
     <string name="web_library_export_done_title">Prêt pour le Web</string>
@@ -44,7 +44,7 @@
     <string name="settings_help_section">Aide</string>
     <string name="settings_about_section">À propos</string>
     <string name="settings_update_on_latest">Vous utilisez la dernière version (%1$s)</string>
-    <string name="settings_update_available">Mise à jour disponible : %1$s</string>
+    <string name="settings_update_available">Mise à jour disponible : %1$s</string>
     <string name="settings_update_see_releases">voir les versions</string>
     <string name="settings_update_check_failed">Impossible de vérifier les mises à jour — réessayez plus tard</string>
     <string name="settings_version_label">Version</string>
@@ -87,14 +87,14 @@
     <string name="settings_enable">Activer</string>
     <string name="settings_disable">Désactiver</string>
     <string name="settings_discord_risk_title">Avant de connecter Discord</string>
-    <string name="settings_discord_risk_body">Discord ne propose aucun moyen officiel de définir votre statut depuis une application mobile. Stash se connecte donc en votre nom et utilise la session de votre compte. Selon les règles de Discord, cela constitue un self-bot, et Discord peut prendre des mesures à l’encontre de votre compte.\n\nL’application de ces règles vise surtout le spam, et non les mises à jour de statut ; le risque de sanction est donc faible. Mais il s’agit de votre compte, à vous de décider.\n\nEn vous déconnectant, votre statut est effacé et le jeton est supprimé de ce téléphone.</string>
+    <string name="settings_discord_risk_body">Discord ne propose aucun moyen officiel de définir votre statut depuis une application mobile. Stash se connecte donc en votre nom et utilise la session de votre compte. Selon les règles de Discord, cela constitue un self-bot, et Discord peut prendre des mesures à l’encontre de votre compte.\n\nL’application de ces règles vise surtout le spam, et non les mises à jour de statut ; le risque de sanction est donc faible. Mais il s’agit de votre compte, à vous de décider.\n\nEn vous déconnectant, votre statut est effacé et le jeton est supprimé de ce téléphone.</string>
     <string name="settings_discord_risk_connect">Connecter quand même</string>
     <string name="settings_discord_finish_connecting">Terminer la connexion</string>
     <!-- Settings > Accounts > Discord Login & Token -->
     <string name="settings_discord_signin_title">Se connecter à Discord</string>
     <string name="settings_discord_paste_token_action">Coller le jeton</string>
     <string name="settings_login_successful_connecting">Connexion réussie, connexion en cours…</string>
-    <string name="settings_signin_blocked_question">La connexion est bloquée ou ne fonctionne pas ?</string>
+    <string name="settings_signin_blocked_question">La connexion est bloquée ou ne fonctionne pas ?</string>
     <string name="settings_discord_paste_token_instead">Collez plutôt le jeton</string>
     <string name="settings_discord_connect_dialog_title">Se connecter à Discord</string>
     <string name="settings_discord_token_instructions">Collez le jeton de votre compte Discord (accessible via DevTools → Application → Stockage local → discord.com → « token »).</string>
@@ -105,8 +105,8 @@
     <string name="settings_spotify_paste_cookie_instead">Collez plutôt le cookie</string>
     <string name="settings_spotify_connect_dialog_title">Se connecter à Spotify</string>
     <string name="settings_spotify_cookie_dialog_desc">Connectez-vous à Spotify depuis un véritable navigateur et collez votre cookie sp_dc. Cela fonctionne même lorsque la connexion via l\'application est bloquée par le système de détection des bots de Spotify.</string>
-    <string name="settings_spotify_how_to_get_cookie">Comment récupérer votre cookie sp_dc :</string>
-    <string name="settings_spotify_how_to_get_cookie_steps">La méthode la plus simple sur un ordinateur :\n1. Ouvrez open.spotify.com et connectez-vous\n2. Appuyez sur F12 → Application → Cookies\n3. Copiez la valeur de « sp_dc »\n\nSur un téléphone : utilisez un navigateur capable d\'afficher les cookies (par exemple, les extensions Firefox ou une application de visualisation des cookies).</string>
+    <string name="settings_spotify_how_to_get_cookie">Comment récupérer votre cookie sp_dc :</string>
+    <string name="settings_spotify_how_to_get_cookie_steps">La méthode la plus simple sur un ordinateur :\n1. Ouvrez open.spotify.com et connectez-vous\n2. Appuyez sur F12 → Application → Cookies\n3. Copiez la valeur de « sp_dc »\n\nSur un téléphone : utilisez un navigateur capable d\'afficher les cookies (par exemple, les extensions Firefox ou une application de visualisation des cookies).</string>
     <string name="settings_spotify_cookie_label">sp_dc cookie</string>
     <string name="settings_spotify_cookie_placeholder">Collez ici votre cookie sp_dc</string>
     <string name="settings_spotify_username_label">Nom d\'utilisateur Spotify (facultatif)</string>
@@ -117,8 +117,8 @@
     <string name="settings_youtube_paste_cookie_action">Coller le cookie</string>
     <string name="settings_youtube_connect_dialog_title">Se connecter à YouTube Music</string>
     <string name="settings_youtube_cookie_dialog_desc">Collez vos cookies YouTube Music pour vous connecter.</string>
-    <string name="settings_youtube_how_to_get_cookies">Comment récupérer vos cookies :</string>
-    <string name="settings_youtube_how_to_get_cookies_steps">1. Ouvrez une fenêtre privée/incognito\n2. Rendez-vous sur music.youtube.com et connectez-vous\n3. Appuyez sur F12 pour ouvrir les outils de développement\n4. Allez dans l\'onglet « Réseau », puis cliquez sur n\'importe quelle requête\n5. Recherchez « Cookie » dans les en-têtes de requête\n6. Copiez la valeur COMPLÈTE du cookie\n\nElle doit contenir : SAPISID, LOGIN_INFO, SID</string>
+    <string name="settings_youtube_how_to_get_cookies">Comment récupérer vos cookies :</string>
+    <string name="settings_youtube_how_to_get_cookies_steps">1. Ouvrez une fenêtre privée/incognito\n2. Rendez-vous sur music.youtube.com et connectez-vous\n3. Appuyez sur F12 pour ouvrir les outils de développement\n4. Allez dans l\'onglet « Réseau », puis cliquez sur n\'importe quelle requête\n5. Recherchez « Cookie » dans les en-têtes de requête\n6. Copiez la valeur COMPLÈTE du cookie\n\nElle doit contenir : SAPISID, LOGIN_INFO, SID</string>
     <string name="settings_youtube_cookie_label">Cookie</string>
     <string name="settings_youtube_cookie_placeholder">Collez votre cookie ici</string>
     <string name="settings_lastfm_connect_first">Connectez d’abord Last.fm.</string>
@@ -139,7 +139,7 @@
     <string name="settings_like_status_waiting">%1$d en attente</string>
     <string name="settings_like_status_offline">%1$d en attente de connexion</string>
     <string name="settings_like_status_retrying">%1$d en attente · nouvel essai bientôt</string>
-    <string name="settings_like_status_needs_you">Dernière erreur : %1$s · touchez pour réessayer</string>
+    <string name="settings_like_status_needs_you">Dernière erreur : %1$s · touchez pour réessayer</string>
     <string name="settings_like_error_signed_out">connexion expirée</string>
     <string name="settings_like_error_rate_limited">trop de requêtes</string>
     <string name="settings_like_error_refused">refusé</string>
@@ -152,10 +152,10 @@
     </plurals>
     <string name="settings_account_connect">Connecter</string>
     <!-- Settings > Accounts > DisconnectAccountDialog -->
-    <string name="settings_disconnect_account_title">Déconnecter %1$s ?</string>
+    <string name="settings_disconnect_account_title">Déconnecter %1$s ?</string>
     <string name="settings_disconnect_account_body">Stash déconnecte votre compte %1$s sur ce téléphone et arrête sa synchronisation. Les titres de %1$s dont le téléchargement est encore en attente sont retirés de la file d’attente.\n\nLes titres déjà téléchargés restent dans votre bibliothèque et vous pouvez vous reconnecter à tout moment.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
-    <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
+    <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
     <string name="settings_like_mirror_risk_body">Mettre un cœur à un titre dans Stash l’ajoute aussi à vos J’aime sur %1$s, et retirer le cœur retire ce J’aime, mais jamais un J’aime qui y était déjà. Seuls les J’aime ajoutés à partir de maintenant sont synchronisés.\n\nCette fonction utilise le point de terminaison privé du lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte.</string>
     <string name="settings_like_mirror_warning_confirm">J’ai compris</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
@@ -163,10 +163,10 @@
     <string name="settings_youtube_profile_title">Profil</string>
     <string name="settings_youtube_profile_default">Votre compte</string>
     <string name="settings_youtube_profile_subtitle">Le profil Stash synchronise votre bibliothèque à partir de</string>
-    <string name="settings_youtube_profile_sheet_title">Dans quel profil se trouve votre musique ?</string>
+    <string name="settings_youtube_profile_sheet_title">Dans quel profil se trouve votre musique ?</string>
     <string name="settings_youtube_profile_sheet_desc">Les profils YouTube associés à votre compte Google. Stash synchronise celui que vous choisissez.</string>
     <string name="settings_youtube_profile_load_failed">Impossible de charger vos profils</string>
-    <string name="settings_youtube_profile_enter_id_button">Le profil n\'apparaît pas dans la liste ? Saisissez son identifiant.</string>
+    <string name="settings_youtube_profile_enter_id_button">Le profil n\'apparaît pas dans la liste ? Saisissez son identifiant</string>
     <string name="settings_youtube_profile_enter_id_desc">Sur myaccount.google.com/brandaccounts, ouvrez le profil et copiez le numéro figurant dans l\'adresse.</string>
     <string name="settings_youtube_profile_brand_id_label">Identifiant du compte de marque</string>
     <string name="settings_youtube_profile_brand_account">Compte de marque</string>
@@ -180,7 +180,7 @@
     <string name="settings_yt_status_auth_failed">Connexion à YT Music perdue — reconnectez-vous</string>
     <string name="settings_yt_status_protocol_broken">Désactivé en raison d’erreurs — sera réactivé dans la prochaine mise à jour</string>
     <string name="settings_yt_status_disabled">Désactivé</string>
-    <string name="settings_yt_sync_dialog_title">Ajouter vos lectures à l’historique de YouTube Music ?</string>
+    <string name="settings_yt_sync_dialog_title">Ajouter vos lectures à l’historique de YouTube Music ?</string>
     <string name="settings_yt_sync_dialog_body">Les titres que vous écoutez jusqu’au bout dans Stash apparaissent dans votre historique YouTube Music, afin que ses recommandations en tiennent compte.</string>
     <string name="settings_yt_sync_dialog_risk_body">Cette fonctionnalité utilise un point de terminaison YouTube non officiel. Elle pourrait cesser de fonctionner, et il existe un faible risque que YouTube impose des limites de débit à votre compte. Stash se met automatiquement en pause s\'il détecte des erreurs.</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
@@ -216,10 +216,10 @@
     <string name="settings_mix_rotation_daily">Quotidien</string>
     <string name="settings_mix_rotation_3_days">Tous les 3 jours</string>
     <string name="settings_mix_rotation_weekly">Hebdomadaire</string>
-    <string name="settings_mix_rotation_footer">« Pour vous » et « Ambiances et décennies » font remonter d’autres mixes à minuit. Désactivé : les plus récents d’abord.</string>
+    <string name="settings_mix_rotation_footer">« Pour vous » et « Ambiances et décennies » font remonter d’autres mixes à minuit. Désactivé : les plus récents d’abord.</string>
     <string name="settings_unplayed_mixes_first_title">Mixes jamais écoutés d’abord</string>
     <string name="settings_unplayed_mixes_first_subtitle">Les mixes que vous avez à peine écoutés passent en premier</string>
-    <string name="settings_home_mixes_favorite_hint">Appuyez longuement sur un mix de l’accueil pour l’ajouter à vos favoris : les favoris passent toujours en premier.</string>
+    <string name="settings_home_mixes_favorite_hint">Appuyez longuement sur un mix de l’accueil pour l’ajouter à vos favoris : les favoris passent toujours en premier.</string>
     <string name="settings_home_layout_summary">%1$d sections sur %2$d affichées</string>
     <string name="settings_language_section">Langue</string>
     <string name="settings_language_title">Langue de l\'application</string>
@@ -305,7 +305,7 @@
     <string name="settings_download_quality_rates_desc">Définit les débits des téléchargements YouTube ci-dessous, et ceux de JioSaavn à 96 kbit/s en Basse et Normale, 160 en Élevée, 320 en Meilleure et Max.</string>
     <string name="settings_save_data_title">Économiser les données</string>
     <string name="settings_lossless_title">Sans perte</string>
-    <string name="settings_lossless_subtitle_off">Désactivé : les titres sont lus depuis JioSaavn ou YouTube</string>
+    <string name="settings_lossless_subtitle_off">Désactivé : les titres sont lus depuis JioSaavn ou YouTube</string>
     <string name="settings_lossless_subtitle_no_source">Aucune source sans perte n\'a encore été configurée</string>
     <string name="settings_lossless_subtitle_active">Lecture en FLAC</string>
     <string name="settings_qobuz_no_source_warning">Aucune source sans perte configurée — connectez votre compte Qobuz ci-dessous</string>
@@ -359,18 +359,18 @@
     <string name="settings_lossless_tier_cd_hint">~28 Mo / 4 min</string>
     <!-- Settings > Audio & Quality > HiResOutputSection -->
     <string name="settings_hires_verdict_idle">Lancez un titre pour voir le traitement du son jusqu’à vos oreilles.</string>
-    <string name="settings_hires_verdict_now">En cours : %1$s</string>
-    <string name="settings_hires_verdict_now_with_device">En cours : %1$s · %2$s</string>
+    <string name="settings_hires_verdict_now">En cours : %1$s</string>
+    <string name="settings_hires_verdict_now_with_device">En cours : %1$s · %2$s</string>
     <string name="settings_hires_mode_standard">Standard</string>
     <string name="settings_hires_mode_standard_desc">Le mixeur d\'Android, généralement réglé sur 48 kHz. C\'est ce dont disposent toutes les applications.</string>
     <string name="settings_hires_mode_match_rate">Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre</string>
     <string name="settings_hires_mode_match_rate_desc">Votre DAC suit la fréquence d’échantillonnage de chaque titre, ce qui évite tout rééchantillonnage.</string>
     <string name="settings_hires_needs_android_14">Nécessite Android 14 ou une version ultérieure.</string>
     <string name="settings_hires_mode_bit_perfect">USB bit-perfect</string>
-    <string name="settings_hires_mode_bit_perfect_desc">Son non modifié. L’égaliseur, la normalisation et le fondu enchaîné sont désactivés ; c’est votre DAC qui règle le volume.</string>
+    <string name="settings_hires_mode_bit_perfect_desc">Son non modifié. L’égaliseur, la normalisation et le fondu enchaîné sont désactivés ; c’est votre DAC qui règle le volume.</string>
     <string name="settings_hires_footer_note">Pour les DAC USB et les adaptateurs USB-C. Le Bluetooth, le haut-parleur et la prise casque passent toujours par le mixeur d\'Android.</string>
     <string name="settings_hires_bit_perfect_dialog_title">Baissez d’abord le volume du DAC</string>
-    <string name="settings_hires_bit_perfect_dialog_body">En mode bit-perfect, Android ne modifie pas le volume : c’est votre DAC qui le règle. Si votre DAC ne dispose pas de son propre réglage du volume, les touches de volume du téléphone peuvent cesser de fonctionner et la musique risque d’être diffusée au volume maximal.\n\nBaissez le volume avant de lancer la lecture. L’égaliseur, la normalisation et le fondu enchaîné sont contournés lorsque le mode bit-perfect est actif.</string>
+    <string name="settings_hires_bit_perfect_dialog_body">En mode bit-perfect, Android ne modifie pas le volume : c’est votre DAC qui le règle. Si votre DAC ne dispose pas de son propre réglage du volume, les touches de volume du téléphone peuvent cesser de fonctionner et la musique risque d’être diffusée au volume maximal.\n\nBaissez le volume avant de lancer la lecture. L’égaliseur, la normalisation et le fondu enchaîné sont contournés lorsque le mode bit-perfect est actif.</string>
     <string name="settings_hires_bit_perfect_confirm">Utiliser le mode bit-perfect</string>
     <!-- Settings > Audio & Quality > SupporterSection -->
     <string name="settings_supporter_remove_from_device">Retirer de cet appareil</string>
@@ -416,15 +416,15 @@
     <string name="settings_lyrics_apple_music_desc">Paroles synchronisées mot à mot quand Apple Music les propose</string>
     <string name="settings_lyrics_recheck_title">Rechercher à nouveau des paroles synchronisées mot à mot dans la bibliothèque</string>
     <string name="settings_lyrics_recheck_desc">Recherche des paroles synchronisées pour les titres qui n’en ont pas encore. L’opération s’exécute lentement en arrière-plan.</string>
-    <string name="settings_lyrics_recheck_dialog_title">Revérifier votre bibliothèque ?</string>
-    <string name="settings_lyrics_recheck_dialog_body">Stash interroge les services de paroles pour chaque titre qui n’a pas encore de paroles synchronisées mot à mot, à raison d’un titre toutes les quelques secondes ; une grande bibliothèque peut donc prendre des heures. L’opération ne s’exécute qu’en Wi-Fi lorsque la batterie est suffisamment chargée, et vous pouvez l’annuler à tout moment. Les titres pour lesquels aucun résultat n’est trouvé conservent leurs paroles actuelles.</string>
+    <string name="settings_lyrics_recheck_dialog_title">Revérifier votre bibliothèque ?</string>
+    <string name="settings_lyrics_recheck_dialog_body">Stash interroge les services de paroles pour chaque titre qui n’a pas encore de paroles synchronisées mot à mot, à raison d’un titre toutes les quelques secondes ; une grande bibliothèque peut donc prendre des heures. L’opération ne s’exécute qu’en Wi-Fi lorsque la batterie est suffisamment chargée, et vous pouvez l’annuler à tout moment. Les titres pour lesquels aucun résultat n’est trouvé conservent leurs paroles actuelles.</string>
     <string name="settings_lyrics_recheck_dialog_confirm">Revérifier</string>
     <string name="settings_lyrics_recheck_progress">Vérification… %1$,d / %2$,d</string>
     <string name="settings_lyrics_recheck_starting">Vérification…</string>
     <string name="settings_lyrics_recheck_waiting">En attente du Wi-Fi et d’une charge suffisante de la batterie…</string>
-    <string name="settings_lyrics_recheck_last_checked">Dernière vérification : %1$s</string>
+    <string name="settings_lyrics_recheck_last_checked">Dernière vérification : %1$s</string>
     <string name="settings_lyrics_recheck_partway">La vérification s’est arrêtée en cours de route. Appuyez pour la reprendre là où elle s’est arrêtée.</string>
-    <string name="settings_lyrics_recheck_stopped_early">Arrêt prématuré : les services de paroles sont occupés. Appuyez pour réessayer plus tard.</string>
+    <string name="settings_lyrics_recheck_stopped_early">Arrêt prématuré : les services de paroles sont occupés. Appuyez pour réessayer plus tard.</string>
     <!-- Settings > Library & Storage -->
     <string name="settings_storage_section">Stockage</string>
     <string name="settings_downloads_section">Téléchargements</string>
@@ -440,13 +440,13 @@
     <string name="settings_download_mode_any_network_desc">Les données mobiles aussi.</string>
     <string name="settings_stash_mixes_title">Stash Mixes (bêta)</string>
     <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts et First Listen s’actualisent d’eux-mêmes</string>
-    <string name="settings_stash_mixes_subtitle_disabled">Mixes masqués ; aucune détection d\'arrière-plan</string>
+    <string name="settings_stash_mixes_subtitle_disabled">Mixes masqués ; aucune détection d\'arrière-plan</string>
     <string name="settings_qobuz_discovery_title">Découvertes Qobuz sur l’accueil</string>
     <string name="settings_qobuz_discovery_subtitle_enabled">Nouveautés, Playlists Qobuz et Meilleurs albums sur l’accueil</string>
     <string name="settings_qobuz_discovery_subtitle_disabled">L’accueil n’affiche que vos mixes et votre musique</string>
     <string name="settings_library_health_title">État de la bibliothèque</string>
     <string name="settings_listening_history_title">Historique d’écoute</string>
-    <string name="settings_listening_history_paused_subtitle">En pause : les nouvelles écoutes ne sont pas enregistrées</string>
+    <string name="settings_listening_history_paused_subtitle">En pause : les nouvelles écoutes ne sont pas enregistrées</string>
     <string name="settings_listening_history_active_subtitle">Mettez en pause l’historique d’écoute ou effacez les données mémorisées par ce téléphone.</string>
     <string name="settings_web_link_nav_title">Associer Stash à la version Web</string>
     <string name="settings_web_link_nav_subtitle">Reprenez là où vous en étiez, mettez votre bibliothèque en miroir et envoyez-la</string>
@@ -458,7 +458,7 @@
     <string name="settings_backup_status_processing">Traitement…</string>
     <string name="settings_backup_status_ok">OK</string>
     <string name="settings_backup_export_dialog_title">Exporter la sauvegarde</string>
-    <string name="settings_backup_export_dialog_subtitle">Choisissez le contenu de cette sauvegarde :</string>
+    <string name="settings_backup_export_dialog_subtitle">Choisissez le contenu de cette sauvegarde :</string>
     <string name="settings_backup_export_scope_likes_only_label">Titres aimés uniquement</string>
     <string name="settings_backup_export_scope_likes_only_desc">Tout ce que vous avez aimé, rien d’autre. Fichier léger.</string>
     <string name="settings_backup_export_scope_everything_label">Tout</string>
@@ -469,9 +469,9 @@
     <string name="settings_backup_export_scope_settings_only_desc">Préférences sans bibliothèque associée.</string>
     <string name="settings_backup_export_choose_file_button">Choisir un fichier</string>
     <string name="settings_backup_import_dialog_title">Importer la sauvegarde</string>
-    <string name="settings_backup_import_dialog_subtitle">Choisissez les éléments à restaurer :</string>
+    <string name="settings_backup_import_dialog_subtitle">Choisissez les éléments à restaurer :</string>
     <string name="settings_backup_import_scope_merge_label">Fusionner avec la bibliothèque</string>
-    <string name="settings_backup_import_scope_merge_desc">Ajoute à la bibliothèque les titres et playlists manquants à partir de la sauvegarde. Rien n’est supprimé ni remplacé ; les paramètres restent inchangés.</string>
+    <string name="settings_backup_import_scope_merge_desc">Ajoute à la bibliothèque les titres et playlists manquants à partir de la sauvegarde. Rien n’est supprimé ni remplacé ; les paramètres restent inchangés.</string>
     <string name="settings_backup_import_scope_merge_confirm">Fusionner</string>
     <string name="settings_backup_import_scope_replace_library_label">Remplacer uniquement la bibliothèque</string>
     <string name="settings_backup_import_scope_replace_library_desc">Restaure la bibliothèque de la sauvegarde. Vos paramètres actuels sont conservés.</string>
@@ -480,7 +480,7 @@
     <string name="settings_backup_import_scope_restore_settings_desc">Restaure les paramètres de la sauvegarde. Votre bibliothèque actuelle est conservée.</string>
     <string name="settings_backup_import_scope_restore_settings_confirm">Restaurer les paramètres</string>
     <string name="settings_backup_import_scope_replace_everything_label">Tout remplacer</string>
-    <string name="settings_backup_import_scope_replace_everything_desc">Restauration complète à l’identique : remplace toute votre bibliothèque ET tous vos paramètres.</string>
+    <string name="settings_backup_import_scope_replace_everything_desc">Restauration complète à l’identique : remplace toute votre bibliothèque ET tous vos paramètres.</string>
     <string name="settings_backup_import_scope_replace_everything_confirm">Tout écraser</string>
     <string name="settings_backup_import_destructive_warning">Cette action est irréversible.</string>
     <string name="settings_storage_backup_title">Sauvegarde</string>
@@ -503,11 +503,11 @@
     <string name="settings_storage_new_downloads_location_note">Les nouveaux téléchargements arrivent ici</string>
     <string name="settings_storage_folder_structure_label">Structure des dossiers</string>
     <string name="settings_storage_layout_artist_album_label">Artiste / Album</string>
-    <string name="settings_storage_layout_artist_album_desc">Dossiers imbriqués : un par artiste, puis un par album.</string>
+    <string name="settings_storage_layout_artist_album_desc">Dossiers imbriqués : un par artiste, puis un par album.</string>
     <string name="settings_storage_layout_single_folder_label">Dossier unique</string>
     <string name="settings_storage_layout_single_folder_desc">Tous les titres dans un seul dossier, nommés artiste - titre.</string>
     <string name="settings_storage_layout_playlist_label">Par playlist</string>
-    <string name="settings_storage_layout_playlist_desc">Un dossier par playlist ; les titres sans playlist utilisent Artiste / Album.</string>
+    <string name="settings_storage_layout_playlist_desc">Un dossier par playlist ; les titres sans playlist utilisent Artiste / Album.</string>
     <!-- Settings > Library & Storage > Move Library -->
     <string name="settings_storage_move_library_title">Bibliothèque existante</string>
     <plurals name="settings_storage_move_library_has_external_desc">
@@ -535,8 +535,8 @@
     <!-- Settings > Library & Storage > Reorganize Library -->
     <string name="settings_storage_reorganize_title">Réorganiser les titres existants</string>
     <plurals name="settings_storage_reorganize_desc">
-        <item quantity="one">%1$d titre téléchargé ne respecte pas encore la structure « %2$s ». Le déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
-        <item quantity="other">%1$d titres téléchargés ne respectent pas encore la structure « %2$s ». Les déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
+        <item quantity="one">%1$d titre téléchargé ne respecte pas encore la structure « %2$s ». Le déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
+        <item quantity="other">%1$d titres téléchargés ne respectent pas encore la structure « %2$s ». Les déplacer maintenant ? Les nouveaux téléchargements l’utilisent déjà.</item>
     </plurals>
     <plurals name="settings_storage_reorganize_button">
         <item quantity="one">Déplacer %1$d titre dans « %2$s »</item>
@@ -570,8 +570,8 @@
     <string name="settings_listening_history_clear_keeps_scrobbles">Cette action ne supprime rien de ce qui a déjà été envoyé à Last.fm, ListenBrainz ou YouTube Music.</string>
     <string name="settings_listening_history_picker_title">Jours à effacer</string>
     <string name="settings_listening_history_picker_next">Suivant</string>
-    <string name="settings_listening_history_confirm_everything_title">Effacer tout votre historique d’écoute ?</string>
-    <string name="settings_listening_history_confirm_range_title">Effacer %s ?</string>
+    <string name="settings_listening_history_confirm_everything_title">Effacer tout votre historique d’écoute ?</string>
+    <string name="settings_listening_history_confirm_range_title">Effacer %s ?</string>
     <plurals name="settings_listening_history_confirm_plays_leave">
         <item quantity="one">%1$s quitte l’historique de ce téléphone, et le nombre d’écoutes est recalculé sans ce titre. %2$s</item>
         <item quantity="other">%1$s quittent l’historique de ce téléphone, et le nombre d’écoutes est recalculé sans ces titres. %2$s</item>
@@ -598,13 +598,13 @@
         <item quantity="other">%1$s lectures depuis %2$s</item>
     </plurals>
     <string name="web_library_export_history_none">Aucune lecture pour le moment</string>
-    <string name="web_library_export_history_note">Chaque lecture sur ce téléphone, pour Votre disque sur le Web : chaque année que vous avez écoutée, pressée dans un disque.</string>
+    <string name="web_library_export_history_note">Chaque lecture sur ce téléphone, pour Votre disque sur le Web : chaque année que vous avez écoutée, pressée dans un disque.</string>
     <!-- The export picker's "Plays" row: the newest plays that go into the web's history (up to 5,000). -->
     <string name="web_library_export_recent_plays">Lectures récentes</string>
     <!-- Under the Send buttons when the whole history is ticked: a send carries only the library. -->
     <string name="web_library_export_history_file_only">L’intégralité de votre historique d’écoute est enregistrée uniquement dans un fichier, et non dans l’envoi.</string>
     <!-- After "Saved 3 likes, 2 playlists and 40 plays.": %s is the history's plays ("12,480 plays"). -->
-    <string name="web_library_export_done_history">Tout votre historique d’écoute a également été inclus : %s.</string>
+    <string name="web_library_export_done_history">Tout votre historique d’écoute a également été inclus : %s.</string>
     <string name="web_library_import_what_to_import">Éléments à importer</string>
     <string name="web_library_import_action_import">Importer</string>
     <string name="web_library_import_reading_title">Lecture du fichier</string>
@@ -681,7 +681,7 @@
         <item quantity="other">%d titres non téléchargés vérifiés — aucun fichier correspondant trouvé sur le disque.</item>
     </plurals>
     <string name="settings_library_health_verify_again_button">Vérifier à nouveau</string>
-    <string name="settings_library_health_verification_failed">Échec de la vérification : %s</string>
+    <string name="settings_library_health_verification_failed">Échec de la vérification : %s</string>
     <string name="settings_library_health_retry">Réessayer</string>
     <string name="settings_library_health_section_quality_info">Informations sur la qualité</string>
     <string name="settings_library_health_refresh_quality_info_title">Actualiser les informations de qualité</string>
@@ -694,7 +694,7 @@
     <string name="settings_library_health_section_lyrics">Paroles</string>
     <string name="settings_library_health_fetch_lyrics_title">Récupérer les paroles</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">En attente d’une connexion adaptée. Appuyez pour démarrer maintenant sur n’importe quel réseau.</string>
-    <string name="settings_library_health_fetch_lyrics_idle_desc">Recherche les paroles manquantes des titres téléchargés. L’opération continue en arrière-plan ; vous pouvez quitter l’app. Une notification indique la progression.</string>
+    <string name="settings_library_health_fetch_lyrics_idle_desc">Recherche les paroles manquantes des titres téléchargés. L’opération continue en arrière-plan ; vous pouvez quitter l’app. Une notification indique la progression.</string>
     <string name="settings_library_health_fetch_lyrics_button">Récupérer les paroles</string>
     <string name="settings_library_health_fetching_lyrics_progress">Récupération des paroles… %1$d / %2$d</string>
     <string name="settings_library_health_fetching_lyrics">Récupération des paroles…</string>
@@ -702,16 +702,16 @@
         <item quantity="one">Terminé : %d titre mis à jour.</item>
         <item quantity="other">Terminé : %d titres mis à jour.</item>
     </plurals>
-    <string name="settings_library_health_lyrics_done_nothing">Terminé : aucune mise à jour nécessaire.</string>
+    <string name="settings_library_health_lyrics_done_nothing">Terminé : aucune mise à jour nécessaire.</string>
     <plurals name="settings_library_health_lyrics_not_found">
         <item quantity="one">Aucune parole trouvée pour %d titre.</item>
         <item quantity="other">Aucune parole trouvée pour %d titres.</item>
     </plurals>
-    <string name="settings_library_health_lyrics_bailed">Arrêt prématuré : le service de paroles ne répond pas. Réessayez dans quelques instants.</string>
+    <string name="settings_library_health_lyrics_bailed">Arrêt prématuré : le service de paroles ne répond pas. Réessayez dans quelques instants.</string>
     <string name="settings_library_health_fetch_again_button">Récupérer à nouveau</string>
     <!-- Settings > Equalizer -->
     <string name="settings_equalizer_loudness_first_run_message">La normalisation du volume est activée. Les titres auront un volume plus homogène à mesure que le volume de votre bibliothèque sera analysé en arrière-plan.</string>
-    <string name="settings_equalizer_bit_perfect_bypassed">Contourné : la sortie bit-perfect est activée, votre DAC reçoit donc la musique sans modification. Réglez la sortie Hi-Res sur « Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre » dans « Audio &amp; qualité » pour utiliser l’égaliseur.</string>
+    <string name="settings_equalizer_bit_perfect_bypassed">Contourné : la sortie bit-perfect est activée, votre DAC reçoit donc la musique sans modification. Réglez la sortie Hi-Res sur « Adapter le DAC USB à la fréquence d’échantillonnage de chaque titre » dans « Audio &amp; qualité » pour utiliser l’égaliseur.</string>
     <string name="settings_equalizer_section_5band_eq">Égaliseur 5 bandes</string>
     <string name="settings_equalizer_section_bass_boost">Renforcement des basses</string>
     <string name="settings_equalizer_section_loudness">Normalisation du volume</string>
@@ -735,10 +735,10 @@
     <string name="settings_equalizer_save_preset_dialog_title">Enregistrer le préréglage</string>
     <string name="settings_equalizer_preset_name_label">Nom du préréglage</string>
     <!-- Settings > Link Stash on the Web -->
-    <string name="settings_web_link_remove_device_title">Supprimer %s ?</string>
+    <string name="settings_web_link_remove_device_title">Supprimer %s ?</string>
     <string name="settings_web_link_remove_device_desc">Il cesse immédiatement de détecter votre téléphone. Sa bibliothèque reste inchangée.</string>
     <string name="settings_web_link_action_remove">Supprimer</string>
-    <string name="settings_web_link_unlink_everything_title">Tout dissocier ?</string>
+    <string name="settings_web_link_unlink_everything_title">Tout dissocier ?</string>
     <string name="settings_web_link_unlink_everything_desc">Tous les navigateurs associés sont désassociés d\'un seul coup. Rien n\'est supprimé des bibliothèques.</string>
     <string name="settings_web_link_action_unlink_everything">Supprimer tous les liens</string>
     <string name="settings_web_link_section_link_browser">Associer un navigateur</string>
@@ -752,7 +752,7 @@
     <string name="settings_web_link_handoff_subtitle">Partagez ce que vous écoutez avec vos appareils connectés.</string>
     <string name="settings_web_link_section_your_library">Votre bibliothèque</string>
     <string name="settings_web_link_send_library_title">Envoyer ma bibliothèque vers un navigateur</string>
-    <string name="settings_web_link_send_library_subtitle">Choisissez ce que vous souhaitez afficher : les « J\'aime », les écoutes, chaque playlist.</string>
+    <string name="settings_web_link_send_library_subtitle">Choisissez ce que vous souhaitez afficher : les « J\'aime », les écoutes, chaque playlist.</string>
     <string name="settings_web_link_section_waiting_for_you">Dans votre attente</string>
     <string name="settings_web_link_sent_you_summary">%1$s vous a envoyé %2$s</string>
     <string name="settings_web_link_sent_problem_discard">%s Jette-le.</string>
@@ -768,7 +768,7 @@
         <item quantity="other">Dernière utilisation il y a %d jours</item>
     </plurals>
     <string name="settings_web_link_reading_code">Lecture du code…</string>
-    <string name="settings_web_link_confirm_title">Lien %s ?</string>
+    <string name="settings_web_link_confirm_title">Lien %s ?</string>
     <string name="settings_web_link_confirm_body_before_code">"Votre ordinateur vous demandera de vérifier "</string>
     <string name="settings_web_link_confirm_body_after_code">. Il détectera ce que vous écoutez ici, et vous pourrez choisir de synchroniser votre bibliothèque avec lui.</string>
     <string name="settings_web_link_confirm_from_link_warning">Ne continuez que si vous venez d\'ouvrir « Connecter votre téléphone » sur votre propre ordinateur et que celui-ci se trouve devant vous en ce moment.</string>
@@ -803,8 +803,8 @@
     <string name="settings_mirror_plays_title">Lecture</string>
     <string name="settings_mirror_plays_subtitle_note">" · Les morceaux écoutés depuis le site web apparaissent dans l\'historique, mais jamais dans vos « Stash Mixes »"</string>
     <plurals name="settings_mirror_held_unlikes">
-        <item quantity="one">La synchronisation affiche %1$d, ce qui diffère de ce téléphone. Voulez-vous l\'envoyer à %2$s ou conserver cette valeur ?</item>
-        <item quantity="other">La synchronisation contient %1$d « Je n\'aime pas » provenant de ce téléphone. Souhaitez-vous les envoyer vers %2$s ou conserver ces « J\'aime » ?</item>
+        <item quantity="one">La synchronisation affiche %1$d, ce qui diffère de ce téléphone. Voulez-vous l\'envoyer à %2$s ou conserver cette valeur ?</item>
+        <item quantity="other">La synchronisation contient %1$d « Je n\'aime pas » provenant de ce téléphone. Souhaitez-vous les envoyer vers %2$s ou conserver ces « J\'aime » ?</item>
     </plurals>
     <string name="settings_mirror_keep_likes">Garder les « J\'aime »</string>
     <string name="settings_mirror_send_unlikes">Envoyer les « Je n\'aime pas »</string>
@@ -817,7 +817,7 @@
     <string name="settings_mirror_playlist_readonly_web">" · Depuis votre téléphone, en lecture seule sur le Web"</string>
     <string name="settings_mirror_playlist_shared_mix">" · Mix partagé"</string>
     <string name="settings_mirror_switch_off_note">La désactivation d\'une copie met fin à sa mise en miroir, mais toutes les copies restent à leur emplacement d\'origine.</string>
-    <string name="settings_mirror_first_merge_title">Vos « J\'aime » : %1$d sur %2$s, %3$d ici</string>
+    <string name="settings_mirror_first_merge_title">Vos « J\'aime » : %1$d sur %2$s, %3$d ici</string>
     <string name="settings_mirror_first_merge_changed">Le nombre de « J\'aime » a changé depuis que vous avez répondu. Vérifiez à nouveau les chiffres.</string>
     <string name="settings_mirror_merge_add_theirs">Ajouter les %s à ce téléphone</string>
     <string name="settings_mirror_merge_likes_here">%d « J\'aime » ici</string>
@@ -870,7 +870,7 @@
     <!-- Settings > Diagnostics Preview -->
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_failed_to_build">Échec de la génération des diagnostics</string>
-    <string name="diagnostics_review_description">Vérifiez le contenu qui sera partagé. Aucun mot de passe ni jeton n\'est inclus. La fonction « Partager » envoie un fichier ZIP contenant ce rapport ainsi que l\'intégralité du journal récent ; joignez-le à votre ticket GitHub.</string>
+    <string name="diagnostics_review_description">Vérifiez le contenu qui sera partagé. Aucun mot de passe ni jeton n\'est inclus. La fonction « Partager » envoie un fichier ZIP contenant ce rapport ainsi que l\'intégralité du journal récent ; joignez-le à votre ticket GitHub.</string>
     <string name="diagnostics_share_subject">Diagnostics Stash</string>
     <string name="diagnostics_share_no_app">Aucune application n\'est disponible pour le partage.</string>
     <string name="diagnostics_share_button">Partager</string>
@@ -883,7 +883,7 @@
     <string name="settings_cloud_gdrive_add_songs_subtitle">Stash n\'affiche que les morceaux que vous sélectionnez.</string>
     <string name="settings_cloud_folder_add_title">Ajouter un dossier de musique</string>
     <string name="settings_cloud_folder_add_subtitle">En lecture seule. Vos fichiers restent tels quels.</string>
-    <string name="settings_cloud_disconnect_dialog_title">Déconnecter %1$s ?</string>
+    <string name="settings_cloud_disconnect_dialog_title">Déconnecter %1$s ?</string>
     <string name="settings_cloud_disconnect_dialog_body_intro">Stash oublie les identifiants de connexion sur ce téléphone.</string>
     <plurals name="settings_cloud_disconnect_dialog_removed">
         <item quantity="one">Le %1$d titre, disponible uniquement en streaming sur %2$s, quitte votre bibliothèque, avec son historique d\'écoute.</item>
@@ -900,7 +900,7 @@
     <string name="settings_cloud_add_folder">Ajouter un dossier</string>
     <string name="settings_cloud_rescan_title">Relancer la numérisation maintenant</string>
     <string name="settings_cloud_rescan_subtitle">Il récupère les morceaux ajoutés, modifiés ou supprimés dans votre espace de stockage en ligne. Stash effectue également cette vérification deux fois par jour.</string>
-    <string name="settings_cloud_remove_folder_dialog_title">Supprimer %1$s ?</string>
+    <string name="settings_cloud_remove_folder_dialog_title">Supprimer %1$s ?</string>
     <string name="settings_cloud_remove_folder_dialog_body">Vos morceaux sont supprimés de votre bibliothèque, à l\'exception de ceux que vous avez téléchargés, qui restent sur ce téléphone. Rien n\'est supprimé de votre espace de stockage dans le cloud.</string>
     <string name="settings_cloud_folder_fallback_name">ce dossier</string>
     <string name="settings_cloud_remove_folder_content_desc">Supprimer le dossier</string>
@@ -926,7 +926,7 @@
     <string name="settings_cloud_folder_picker_up_desc">Haut</string>
     <string name="settings_cloud_picker_default_title">Choisissez votre dossier de musique</string>
     <string name="settings_cloud_folder_picker_empty_root">Aucun dossier ici.</string>
-    <string name="settings_cloud_folder_picker_empty_subfolder">Il n\'y a pas de dossiers à l\'intérieur. On utilise celui-là ?</string>
+    <string name="settings_cloud_folder_picker_empty_subfolder">Il n\'y a pas de dossiers à l\'intérieur. On utilise celui-là ?</string>
     <string name="settings_cloud_use_this_folder">Utiliser ce dossier</string>
     <string name="settings_cloud_time_just_now">il y a quelques instants</string>
     <plurals name="settings_cloud_time_minutes_ago">
@@ -943,4 +943,43 @@
     </plurals>
     <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
     <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
+<string name="update_failed_not_an_update">Ce téléchargement n’est pas une mise à jour de Stash : rien n’a été installé.</string>
+    <string name="settings_support_thanks_line">Vous soutenez Stash : l’accès illimité à Tidal est activé.</string>
+    <string name="settings_spotify_others_read_only">En lecture seule : les cœurs vont à %1$s</string>
+    <string name="settings_spotify_others_sync_now_title">Synchroniser maintenant ?</string>
+    <string name="settings_spotify_others_remove_title">Supprimer %1$s ?</string>
+    <string name="settings_spotify_disconnect_all_title">Déconnecter tous les comptes Spotify ?</string>
+    <string name="settings_disconnect_spotify_refresh_note">Spotify se synchronise en mode Actualiser : si vous connectez un autre compte, sa première synchronisation retire de Stash les playlists de ce compte. « Annuler la dernière synchronisation » dans l’historique les ramène, jusqu’à la synchronisation suivante.</string>
+    <string name="settings_data_saver_subtitle">En données mobiles et en Wi-Fi limité : streams de qualité moindre, images plus petites, pas de préchargement. Les téléchargements ne changent pas.</string>
+    <string name="settings_send_computer_usb_no_mtp">Branché, mais « Transfert de fichiers » est désactivé : touchez la notification USB et choisissez « Transfert de fichiers ».</string>
+    <string name="settings_send_computer_copying">Préparation des titres : %1$d sur %2$d</string>
+    <string name="settings_send_computer_waiting_desc">Ouvrez Stash sur votre ordinateur : il commence à les prendre tout seul.</string>
+    <string name="settings_send_computer_taking">Votre ordinateur les prend : %1$d sur %2$d</string>
+    <plurals name="settings_duplicates_count">
+        <item quantity="one">%d doublon possible : deux lignes qui pourraient correspondre à un même titre.</item>
+        <item quantity="many">%d doublons possibles : des paires de lignes pouvant correspondre à un même titre.</item>
+        <item quantity="other">%d doublons possibles : des paires de lignes pouvant correspondre à un même titre.</item>
+    </plurals>
+    <string name="settings_duplicates_last_run">Nettoyé le %1$s : %2$d fusionnés, %3$d titres de mixes inutilisés supprimés.</string>
+    <string name="settings_duplicates_confirm_title">Supprimer la copie en trop ?</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Vous avez donné 5 $ ou plus sur Ko-fi ? Débloquez-le avec votre e-mail Ko-fi.</string>
+    <string name="settings_your_stash_cloud_signed_out">Déconnecté sur ce téléphone : reconnectez-vous</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Source : Spotify : %1$s écoute.</item>
+        <item quantity="many">Source : Spotify : %1$s écoutes.</item>
+        <item quantity="other">Source : Spotify : %1$s écoutes.</item>
+    </plurals>
+    <string name="settings_your_record_remove_title">Supprimer votre historique importé ?</string>
+    <string name="web_library_import_result_nothing_new">Rien de nouveau : vous aviez déjà tout.</string>
+    <string name="settings_flac_upgrade_done_none">Terminé : aucune nouvelle version FLAC trouvée.</string>
+    <string name="settings_flac_upgrade_done_upgraded">Terminé : %1$s est passé en FLAC.</string>
+    <string name="settings_addons_order_footer">Quand aucune n’a le titre : JioSaavn, puis YouTube.</string>
+    <string name="settings_addons_status_wants_more">En veut voir plus : à vérifier</string>
+    <string name="settings_addons_status_replaced_detail">Stash possède maintenant sa propre extension sous ce nom et utilise celle-ci. Cette copie n’est pas utilisée : vous pouvez la supprimer.</string>
+    <string name="settings_addons_unreadable">Stash n’a pas pu lire les extensions que vous venez d’ajouter : elles ne s’affichent donc pas ici. Elles restent enregistrées. Fermez Stash et rouvrez-le.</string>
+    <string name="settings_addons_page_sees_nothing_now">Stash ne demande rien à cette extension pour le moment : son serveur ne voit rien.</string>
+    <string name="settings_addons_page_sees_address_only">Stash ne demande plus de titres à cette extension pour le moment. Il continue toutefois à vérifier de temps en temps si l’extension est présente ; son serveur voit donc votre adresse IP, mais rien d’autre.</string>
+    <string name="settings_addons_remove_title">Supprimer %1$s ?</string>
+    <string name="settings_addons_tidal_use_stash_title">Utiliser plutôt le Tidal de Stash ?</string>
+    <string name="settings_addons_preview_alone">Aucune autre source n’est activée : Stash lui demande tous les titres que vous jouez ou téléchargez.</string>
 </resources>
