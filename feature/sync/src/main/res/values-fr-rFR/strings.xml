@@ -19,7 +19,7 @@
     <string name="sync_source_stat_liked">AIMÉ</string>
     <string name="sync_source_stat_recommended">RECOMMANDÉ</string>
     <string name="sync_source_empty_spotify">Vos playlists Spotify et vos mix quotidiens s\'afficheront ici après la première synchronisation. Appuyez sur « Synchroniser maintenant » pour les charger — rien ne sera téléchargé tant que vous n\'aurez pas activé cette option.</string>
-    <string name="sync_source_empty_youtube">Vos « Home Mixes », vos titres préférés et vos playlists issues de votre bibliothèque YouTube Music s\'afficheront ici après la première synchronisation. Rien ne sera téléchargé tant que vous n\'aurez pas sélectionné ce que vous souhaitez : pas de téléchargements inattendus.</string>
+    <string name="sync_source_empty_youtube">Vos « Home Mixes », vos titres préférés et vos playlists issues de votre bibliothèque YouTube Music s’afficheront ici après la première synchronisation. Rien ne sera téléchargé tant que vous n’aurez pas sélectionné ce que vous souhaitez : pas de téléchargements inattendus.</string>
     <string name="sync_source_empty_lastfm">Une playlist composée de titres recommandés par Last.fm — en fonction de vos écoutes — sera créée lors de la prochaine synchronisation. Appuyez sur « Synchroniser maintenant » pour lancer la synchronisation.</string>
     <!-- Library Maintenance Card -->
     <string name="sync_blocked_songs_title">Morceaux bloqués</string>
@@ -59,8 +59,8 @@
     <string name="sync_undo">Annuler</string>
     <string name="sync_undoing">Annulation…</string>
     <string name="sync_auto_sync_paused_note">La synchronisation automatique a été interrompue après l\'annulation. Appuyez sur « Synchroniser » pour la reprendre.</string>
-    <string name="sync_undo_dialog_title">Annuler la dernière synchronisation ?</string>
-    <string name="sync_undo_dialog_body">Votre bibliothèque revient à l\'état où elle se trouvait avant la dernière synchronisation : les playlists qu\'elle avait masquées réapparaissent, celles qu\'elle avait ajoutées sont masquées, et celles qu\'elle avait vidées sont à nouveau remplies dans leur ordre d\'origine%1$s.\n\nLes titres que vous avez ajoutés ou supprimés vous-même, ainsi que les paramètres de téléchargement que vous avez modifiés, sont conservés. Les fichiers téléchargés qui avaient déjà été supprimés ne peuvent pas être restaurés.\n\nLa synchronisation automatique est alors mise en pause jusqu’à ce que vous appuyiez sur « Synchroniser », afin qu’elle ne soit pas effectuée une nouvelle fois.</string>
+    <string name="sync_undo_dialog_title">Annuler la dernière synchronisation ?</string>
+    <string name="sync_undo_dialog_body">Votre bibliothèque revient à l’état où elle se trouvait avant la dernière synchronisation : les playlists qu’elle avait masquées réapparaissent, celles qu’elle avait ajoutées sont masquées, et celles qu’elle avait vidées sont à nouveau remplies dans leur ordre d’origine%1$s.\n\nLes titres que vous avez ajoutés ou supprimés vous-même, ainsi que les paramètres de téléchargement que vous avez modifiés, sont conservés. Les fichiers téléchargés qui avaient déjà été supprimés ne peuvent pas être restaurés.\n\nLa synchronisation automatique est alors mise en pause jusqu’à ce que vous appuyiez sur « Synchroniser », afin qu’elle ne soit pas effectuée une nouvelle fois.</string>
     <string name="sync_undo_sync_confirm">Annuler la synchronisation</string>
     <string name="sync_undone_title">Synchronisation annulée</string>
     <plurals name="sync_playlists_count">
@@ -76,8 +76,8 @@
         <item quantity="other">Il y a %d jours</item>
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
-    <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
-    <string name="sync_switch_to_refresh_body">La fonction « Refresh » actualise les titres à chaque synchronisation : vos mix quotidiens générés automatiquement, vos découvertes hebdomadaires et vos autres playlists tournantes. Les titres qui ne font plus partie de la rotation sont retirés du mix et leurs fichiers téléchargés sont supprimés afin d’alléger votre bibliothèque. Le nettoyage s’effectue une fois que toutes les sources sont configurées sur « Refresh » ; tant qu’une source continue d’accumuler des titres, rien n’est supprimé. Les titres que vous avez ajoutés manuellement sont conservés.</string>
+    <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
+    <string name="sync_switch_to_refresh_body">Le mode « Actualiser » synchronise vos playlists et vos titres aimés : un titre supprimé du service est également supprimé ici. Son téléchargement est supprimé une fois que tous les comptes sont réglés sur « Actualiser » ; tant qu’un compte conserve des titres, rien n’est supprimé. Les titres que vous avez ajoutés dans Stash sont conservés. Les Mix suivent leur propre réglage Stack.</string>
     <string name="sync_switch_to_refresh_confirm">Passer au mode « Actualiser »</string>
     <string name="sync_mix_mode_title">Mode de synchronisation « Mix »</string>
     <string name="sync_mode_refresh">Actualiser</string>
@@ -102,4 +102,32 @@
     <!-- Sync tab overhaul: Download mode -->
     <!-- Sync tab overhaul: History screen -->
     <!-- Sync tab overhaul: an account's playlists -->
+<string name="sync_downloads_clear_confirm_title">%s ?</string>
+    <string name="sync_failed_downloads_empty_title">Tout est à jour !</string>
+    <string name="sync_saved_albums_off">Désactivé : aucun album enregistré n’est pris en compte. Les albums déjà présents restent jusqu’à ce que vous les supprimiez.</string>
+    <string name="sync_arrival_title">Comment voulez-vous recevoir votre musique ?</string>
+    <string name="sync_other_account_mixes_off">Désactivé : ses mixes ne sont pas lus, l’Accueil n’affiche donc pas deux fois chaque élément.</string>
+    <plurals name="sync_history_not_read_detail">
+        <item quantity="one">Impossible de lire %1$d playlist : %2$s (inchangée)</item>
+        <item quantity="many">Impossible de lire %1$d playlists : %2$s (inchangées)</item>
+        <item quantity="other">Impossible de lire %1$d playlists : %2$s (inchangées)</item>
+    </plurals>
+    <string name="sync_history_error">Erreur : %s</string>
+    <plurals name="sync_manage_save_all_albums_title">
+        <item quantity="one">Enregistrer %d album ?</item>
+        <item quantity="many">Enregistrer %d albums ?</item>
+        <item quantity="other">Enregistrer %d albums ?</item>
+    </plurals>
+    <string name="sync_discover_mixes_off">Désactivé : aucun nouveau Mix n’est ajouté et les synchronisations sont plus courtes</string>
+    <string name="sync_lastfm_explainer">Crée une playlist rotative de titres recommandés par Last.fm, à partir de ce que vous écoutez et scrobblez le plus. Chaque actualisation remplace les suggestions ; les titres sont appariés à YouTube Music ou Spotify puis téléchargés comme toute autre synchronisation, en respectant vos réglages réseau.</string>
+    <string name="sync_dismiss_dialog_title">Arrêter de réessayer ce titre ?</string>
+    <string name="sync_failed_matches_msg_invalid_video">Impossible d’approuver : cette correspondance n’est pas une vidéo YouTube valide.</string>
+    <string name="sync_failed_matches_msg_blocked">Impossible d’approuver : ce titre figure sur votre liste de blocage.</string>
+    <string name="sync_failed_matches_msg_already_linked">Impossible d’approuver : « %1$s » est déjà lié à %2$s — %3$s. Essayez plutôt de l’ignorer.</string>
+    <string name="sync_flagged_msg_already_linked">Impossible de remplacer : « %1$s » est déjà lié à %2$s.</string>
+    <string name="sync_flagged_msg_blocked">Impossible de remplacer : ce titre figure sur votre liste de blocage.</string>
+    <string name="sync_schedule_not_scheduled">Non planifiée : choisissez au moins un jour</string>
+    <string name="sync_hero_download_off">Désactivé : les playlists activées sont diffusées en streaming</string>
+    <string name="sync_hero_download_on">Activé : les playlists et Mix activés sont enregistrés sur ce téléphone</string>
+    <string name="downloads_state_storage_full">En pause : votre téléphone n’a plus d’espace</string>
 </resources>
